@@ -50,6 +50,10 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   (`cbb paste-helper uinput`, the opt-in keys helper the desktop connector asks for Shift+Insert), `internal/tmuxpaste` (`cbb paste-helper tmux`),
   `internal/consolepaste` (`cbb paste-helper console`, TIOCSTI); `internal/lockcheck` tells
   them a locked session.
+- `internal/keyboard`: the Bluetooth keyboards' layouts (the same as `cbb_core::keyboard` and the
+  Android kit's `Keyboard`, all checked against `testdata/interop/keyboard.json`);
+  `internal/blekeyboard`: a Linux computer as a BLE keyboard through BlueZ (`cbb keyboard`,
+  `internal/service/keyboard.go`; `bluetest` plays BlueZ in tests).
 - `internal/actions`: quick actions on a member (the presets, the user's settings, the checks
   on the signer, the log; `system_linux.go` runs them through logind and writes the polkit
   rule, `session_darwin.go` and `session_windows.go` in the agent); `internal/service/actions.go`

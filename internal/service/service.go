@@ -21,9 +21,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/godbus/dbus/v5"
+
 	"github.com/HunterEwok/clipboardbridge/internal/actions"
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
+	"github.com/HunterEwok/clipboardbridge/internal/blekeyboard"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -97,6 +100,10 @@ type Config struct {
 	// on Windows, whatever the system.
 	actInSession bool
 
+	// KeyboardBus connects to the bus BlueZ is on, for the Bluetooth
+	// keyboard; the system bus on Linux if nil. Tests replace it.
+	KeyboardBus func() (*dbus.Conn, error)
+
 	// newMode is the sync mode of a device that makes or joins a group;
 	// clip.Own if nil. Tests that sync take clip.Shared.
 	newMode *clip.Mode
@@ -155,6 +162,13 @@ type Service struct {
 	clock  *hlc.Clock
 	logf   func(string, ...any)
 	broken *control.RequestError // the group's files cannot be read; set once at start
+
+	// The Bluetooth keyboard (keyboard.go): nil while it is off or does
+	// not run, with why in kbdErr.
+	kbdMu   sync.Mutex
+	kbd     *blekeyboard.Keyboard
+	kbdConn *dbus.Conn
+	kbdErr  error
 
 	createMu      sync.Mutex // one group creation at a time
 	mu            sync.Mutex
@@ -379,6 +393,8 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 	go s.watchSleep(ctx)
+	go s.applyKeyboard()
+	defer s.closeKeyboard()
 
 	select {
 	case <-ctx.Done():

@@ -130,7 +130,7 @@ The order may change.
     `cbb relay` on a VPS. See "Docker" below.
 24. **Planned for 0.6.** FreeBSD: the full service on FreeBSD (servers, desktops, and OPNsense or
     pfSense gateways as the hub). See "FreeBSD" below.
-25. **Partly: the Android TV variant of the app (docs/apps.md, "Android TV"), the Nano ESP32's USB keyboard (lite/esp32/README.md) and the Android phone as a Bluetooth keyboard (docs/apps.md, "Android: the Bluetooth keyboard") are done; the Linux and Nano Bluetooth keyboards and the TVs' own remotes follow.** Devices that are hard to type into: TVs,
+25. **Partly: the Android TV variant of the app (docs/apps.md, "Android TV"), the Nano ESP32's USB keyboard (lite/esp32/README.md) and the Android phone and a Linux computer as a Bluetooth keyboard (docs/apps.md, "Android: the Bluetooth keyboard"; `cbb keyboard`) are done; the Nano's Bluetooth keyboard and the TVs' own remotes follow.** Devices that are hard to type into: TVs,
     set-top boxes, game consoles, VR headsets, car head units, boot and login screens, so
     that a text copied on any device of the group lands in a field there without typing it
     with a remote. See "Devices that are hard to type into" below.

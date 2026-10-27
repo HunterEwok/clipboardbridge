@@ -491,6 +491,15 @@ The Xbox and the Nintendo Switch take only USB keyboards, so use the Nano ESP32 
 and a PC; the registration after the Bluetooth stack restarts; and a phone without the
 profile.
 
+A Linux computer does the same with `cbb keyboard` (docs/reference/cli.md). It is a Bluetooth
+LE keyboard: the service registers the HID over GATT service with BlueZ
+(`internal/blekeyboard`). Classic Bluetooth HID would need bluetoothd's input plugin off,
+which would cost the computer its own Bluetooth keyboards and mice. `cbb keyboard pair`
+makes it discoverable for two minutes, with its own pairing agent as the default
+meanwhile. The layouts are the same tables (`internal/keyboard`, checked against the same
+vectors). The tests run against a fake BlueZ on a private bus; a real adapter and host are
+not yet tried.
+
 ## Releasing the Android app
 
 Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,

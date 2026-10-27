@@ -14,6 +14,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   its layout (English (US) or Russian, the Nano ESP32's key tables) and the speed. A text
   with characters the layout cannot type is refused, and the app names them. A phone whose
   maker left the HID Device profile out says it cannot act as a keyboard.
+- `cbb keyboard` makes a Linux computer a Bluetooth LE keyboard (HID over GATT through
+  BlueZ) for a TV, tablet or computer near it: `pair` makes it discoverable for two minutes,
+  `type` types a text there, and `on -pastes` sends remote pastes there. It uses the same
+  layouts as the phone and the Nano.
 - `cbb update` installs the newest signed release on a computer installed with `get.sh`,
   `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
   `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the

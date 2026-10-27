@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/blekeyboard"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
@@ -30,6 +31,9 @@ const (
 	targetDesktop = "desktop"
 	targetTmux    = "tmux"
 	targetConsole = "console"
+	// targetKeyboard is the Bluetooth keyboard's host (keyboard.go), which
+	// no watcher offers.
+	targetKeyboard = "bluetooth-keyboard"
 )
 
 // injectWait bounds how long a watcher may take to inject; typing takes
@@ -107,6 +111,9 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 	// shell: in a typed text, and in tmux and on a console. There it needs
 	// the user's leave for Enter; a desktop's terminal takes a paste
 	// bracketed.
+	if r, ok := s.keyboardPaste(body, text, set.Enter); ok {
+		return r
+	}
 	lines := strings.Contains(text, "\n") && !set.Enter
 	if lines && body.Mode == group.PasteByTyping {
 		res.Reason = "a typed text with a line break would run it, and this device takes pastes without Enter only; send it as a paste or as one line"
@@ -343,6 +350,9 @@ func (s *Service) pasteStatusLocked() *control.Paste {
 		if w.inject != "" && !slices.Contains(p.Targets, w.inject) {
 			p.Targets = append(p.Targets, w.inject)
 		}
+	}
+	if k, err := blekeyboard.Load(s.cfg.StateDir); err == nil && k.On && k.Pastes {
+		p.Targets = append(p.Targets, targetKeyboard)
 	}
 	slices.Sort(p.Targets)
 	return p
