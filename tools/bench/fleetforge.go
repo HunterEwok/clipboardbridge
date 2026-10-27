@@ -93,6 +93,21 @@ func forgeServer(ctx context.Context, f *Fleet, net, args string) (*Device, erro
 	return d, err
 }
 
+// forgeOn copies forge into the member d and returns its name there.
+func forgeOn(ctx context.Context, d *Device) (string, error) {
+	dir, err := os.MkdirTemp("", "cbbfleet-forge")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	bin, err := buildForge(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	_, err = docker(ctx, "cp", bin, d.Container+":/usr/local/bin/cbbbench-forge")
+	return "cbbbench-forge", err
+}
+
 // runForge runs forge on h as m, with signer's key, against target.
 func runForge(ctx context.Context, h, m, signer, target *Device, cases ...string) (string, error) {
 	id, err := deviceOf(ctx, target)
