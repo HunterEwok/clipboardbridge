@@ -390,6 +390,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   group, where Linux members held the CA keys, and says what 0.5 and 0.6 built: the Mac as
   a hub, the phones away from home, the server credentials in both phone kits, the project's
   forwarder at `cbb.tools`.
+- The designs that are built moved from docs/roadmap.md into docs/design.md: quick
+  actions, secure updates, watches, what the servers learn, the phone hub's steps, OpenWrt,
+  Docker and FreeBSD. The roadmap keeps what comes next, its items sorted into done, partly
+  done and next, under the same numbers.
 - `cbb forward` keeps no file per group any more, and deletes those earlier versions kept
   (D-75): only `forward-state.json`, which holds, under a keyed hash of each period's tag,
   the version of its newest credential and a hash of its period key (`-state`, `none` for

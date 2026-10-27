@@ -2,7 +2,7 @@
 // Copyright (C) 2026 HunterEwok
 
 // Package update updates an installed clipboardbridge to the newest signed
-// release (docs/roadmap.md, "Secure updates"): it fetches the release files
+// release (docs/design.md, "Secure updates"): it fetches the release files
 // of docs/protocol.md, section 16, checks them with internal/release,
 // downloads the archive for this system and checks it and the programs in
 // it against release.json, and installs it with the archive's own

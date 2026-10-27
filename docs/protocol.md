@@ -2070,7 +2070,7 @@ An admin orders one member to do something with a **command**: signed like a rec
 makes the receiver the group's hub (section 11, "Moving the hub"); `paste` puts a text where
 the receiver's focus is, and `paste-off` turns remote paste off on the receiver (design.md,
 "Remote paste"); `action` runs one of the receiver's quick actions, and `actions-off` turns
-them all off there (roadmap.md, "Quick actions"); `away-off` turns sync away from home off on
+them all off there (design.md, "Quick actions"); `away-off` turns sync away from home off on
 the receiver (section 11), which only its own user turns on again (D-45).
 
 ### The command
@@ -2184,7 +2184,7 @@ off already. A member before 0.6 refuses it as an unknown type. The lite member 
 ## 16. Signed releases
 
 Every release is described by signed files, so that a program updates only to a release the
-project signed, whichever server it came from (roadmap, "Secure updates"; D-69). The Go
+project signed, whichever server it came from (design.md, "Secure updates"; D-69). The Go
 package `internal/release`, `lite/core` (`release.rs`) and the phone kits (`Releases`) check
 them alike, against `testdata/interop/go-release.json`.
 

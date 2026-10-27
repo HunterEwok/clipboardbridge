@@ -324,6 +324,87 @@ creates the phone is the root of the group (D-33 to D-36; the wire side is secti
 - A group that a computer created, with the shortcut for iPhones without the app, stays for
   users without a phone app (["without the app"](guide/without-app.md)).
 
+### Watches
+
+Steps 1 and 2 done in 0.4, step 3 and the admin key in 0.6; prompt delivery on the iPhone
+waits for the Apple developer account. Decided on 2026-10-24: a watch is never
+the group's root, but it carries notifications, a switch for sync away from home and the
+emergency actions, with an admin key of its own.
+
+#### Why not the root
+
+The Apple Watch has a Secure Enclave and CryptoKit makes P-256 keys in it, so it could hold
+the root key. But watchOS gives an ordinary app no sockets: no TCP or TLS to the members, no
+Bonjour, no listening, only `URLSession` and WatchConnectivity to its paired iPhone (Apple's
+TN3135; low-level networking is for audio streaming apps only). A watch therefore always
+works through its iPhone and cannot be a member. A root key on the watch with the iPhone as
+the carrier would keep the root safe from a compromised phone, but the root signs rarely and
+the iPhone's key already sits in the Secure Enclave behind Face ID, so the group stays as it is.
+
+#### What the watch does
+
+1. **Notifications.** The phone app notifies of the group's events, and iOS and Wear OS show
+   them on the watch: a device added or removed, an admin made, frozen or unfrozen, the group
+   taken over, a certificate close to expiry that did not renew, the hub unreachable while
+   away from home, a remote paste received or refused. Each is a setting.
+2. **Sync away from home.** A switch on the watch turns the phone's own away mode on and off,
+   as the app's switch does (`AwayFromHome`, `cbbtun`).
+3. **Emergency actions** with the watch's own admin key: freeze an admin computer, remove an
+   ordinary device, turn remote paste off on a member, turn sync away from home **off** on a
+   member. The watch shows what it signs and asks for a tap; the phone only carries the
+   record into the group.
+
+#### The watch's admin key
+
+A key in the watch's Secure Enclave (on Wear OS, the watch's Keystore, where a key in the
+TEE is enough and StrongBox is not required), which the root certifies as an admin CA once,
+as it does an admin phone. A watch without a passcode, or with wrist detection off, is not
+certified; the key is usable only while the watch is unlocked, and the watch checks wrist
+detection before each signature. The watch's device record has its
+own role, `watch`. A watch on the wrist stays unlocked without asking for Face ID or a
+fingerprint at each signature, so it signs the emergency actions above and nothing else: it
+freezes admin computers (D-60) and removes ordinary devices, but never removes an admin,
+makes one, admits devices, renews certificates or takes the group over. Any admin can freeze
+a watch like an admin computer; removing one takes the root or an admin phone.
+Every receiver checks these limits, in Go, Rust, Swift and Kotlin, with interop vectors.
+
+Turning sync away from home on stays a decision on each device (D-45); a signed command only
+turns it off, as any admin turns remote paste off (D-59).
+
+#### Delivery
+
+On Android the foreground service receives the events by itself, so the watch hears of them
+at once. On the iPhone the app has no background sync and learns of events only when it
+syncs, so a notification may come late. To make it prompt, the hub could wake the phone with
+an Apple push whose content is encrypted to the phone's key and decrypted only on the phone
+(a Notification Service Extension); Apple would see that a push was sent, and when, but
+nothing in it. Decided (D-74): the push goes through a stateless sender at `cbb.tools`,
+since only the app's developer holds the key for Apple's push service, and the user agrees
+to it first, after being told what Apple and `cbb.tools` learn (that a push was sent and
+when; the push token, the hub's address and the time). It needs the Apple developer
+account; until then, and for users who do not agree, iPhone notifications come with the
+next sync or a background refresh. The lock screen shows the full text, and the app points
+to the system setting that hides previews until the phone is unlocked.
+
+#### Steps
+
+One pull request each, smaller ones together:
+
+1. Notifications for the group's events in both phone apps, with a setting each. Done on
+   both phones (docs/apps.md, Notifications).
+2. The watch apps (watchOS, then Wear OS): the events and the away switch. Done on both
+   (docs/apps.md, Apple Watch and Wear OS).
+3. The `watch` role and its admin key: the records' rules and limits in Go, Rust, Swift and
+   Kotlin, the interop vectors, certifying a watch from the root phone; the signed command
+   that turns sync away from home off on a member. Done; not yet tried on a real watch.
+4. Emergency actions on the watch, and the quick actions. Done.
+5. Prompt iPhone notifications through an encrypted Apple push (D-74), after the Apple
+   developer account.
+
+Not yet verified on a real watch: the Secure Enclave key on the watch, WatchConnectivity
+waking the phone app in the background long enough to send a record, the Data Layer
+starting the Android app's listener for the Wear OS switch, and the delay of notifications.
+
 ### The iPhone button
 
 The button is for an iPhone without the app; a phone with the app, iPhone or Android, is a
@@ -995,23 +1076,52 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
 | A network blocks WireGuard | AmneziaWG, then VLESS; AmneziaWG for the phone hub as for any hub | VLESS for the phone hub's own registration is to be checked |
 | The root phone that is the hub is lost | an admin phone takes over and is the hub; devices far away are invited again | |
 
-- **Built so far:** the hub's side in `mobile/cbbtun` (`StartHub`, `Register`): the clients'
-  tunnels, the member port that leads to the kit's member listener on the loopback address,
-  and the registration with the forwarder by the member key, with the forwarder's check of
-  it; in both kits the member listener (`MemberListener`) and the hub's answer to a hello's
-  tunnel key (`PhoneHub`, by the rules of a computer's hub); in both apps the phone as the
-  hub, on by default in a group made on the phone, its registration with the forwarder set
-  in Settings, its status on Home, its member port and Bonjour service (`r=phone`) only on
-  the home networks it remembers (the gateway's address and the network of the phone's
-  address, so a café's Wi-Fi is not home, as D-63), and on Android the foreground service
-  option; the clients' short retries for a phone hub (5 s); and remote invitations made
-  and served on the phone (docs/protocol.md, section 12); moving the hub to an admin
-  computer, from a phone or a computer, and the hub moving with a takeover; several hubs
-  in the order the records give (phones first, then the root, then by device ID), every
-  client keeping each hub's offer and its own preshared key, the hubs sharing their
-  clients, and a computer's hub giving way to a hub above it and coming back when that one
-  goes (docs/protocol.md, section 11, "Several hubs"). Still to do: the phone hub giving way
-  to a hub above it, and the signed table of main hubs (D-65).
+##### Steps
+
+All built in 0.5, but for what each step names as still to do.
+
+1. Done: the hub's side in `mobile/cbbtun` (`StartHub`, `Register`): the clients' tunnels,
+   the member port leading to the kit's member listener, and the registration with the
+   forwarder and its hellos by the phone's member key, which the forwarder takes when the
+   group's records make that key the root's or an admin's (docs/protocol.md, section 13);
+   tested with the Go client through a forwarder.
+2. Done: the listening member in both kits (`MemberListener`, on the loopback address for
+   the tunnel or on every address for the home network) and the hub's part of the member
+   protocol (`PhoneHub`, MemberNode's `hub`): it admits a client by the tunnel key its hello
+   offers, by the rules of a computer's hub, and answers with its offer; tested over member
+   TLS in the Kotlin kit and over a pipe in the Swift kit.
+3. Done: the phone hub in both apps: on by default in a group made on a phone, `StartHub`
+   with the member listener's port, `Register` with the forwarder set in Settings and the
+   group's authority records, its status on Home and in Settings, publishing of the member
+   port (`r=phone`) on the home networks the phone remembers, and on Android the option to
+   keep it running in the foreground service. Still to do on the bench: a computer and the
+   lite member through the forwarder to a phone.
+4. Done: clients for a hub that comes and goes: a hub whose device record says `phone` is
+   tried at least every 5 s instead of up to 30 s, in `cbb`, the lite member and both apps.
+   Still to measure on real phones: the battery cost and the forwarder's load.
+5. Done: remote invitations made and served on the phone (step 7 of the order of work in
+   [design.md](design.md#order-of-work)): cbbtun's guest tunnel (`Hub.Invite`), the kits'
+   `InvitationWindow`, and in both apps "Invite a device from afar", which shares the file
+   and asks the user to confirm the device; tested against `cbb`'s joiner. Still to do:
+   using an invitation on a phone or a TV, so that a parent's TV joins.
+6. Done: moving the hub to an admin computer (docs/protocol.md, section 11, "Moving the
+   hub"): the `hub` command with the clients' keys, the old hub passing the new hub's offer
+   to its clients with their own preshared keys, the clients' rules for following it in
+   `cbb`, the lite member and both kits, `cbb global move`, and in both apps "Move the hub
+   to a computer" with the suggestion of a computer that is always on, and the hub moving
+   with an admin phone's takeover; `TestMoveHub` moves a hub with a client away from home.
+   Still to do on the bench: moving from a phone to the Linux desktop with the lite member far away.
+7. Done: several hubs with a priority (D-65; docs/protocol.md, section 11, "Several hubs"):
+   the order of hubs from the records (`go-hubs.json` checks Go, both kits and the lite
+   member), the clients keeping every hub's offer with a preshared key of their own, the
+   hubs sharing their clients and passing each other's offers on, and a computer's hub
+   yielding to a higher one and serving again when it goes; `TestSeveralHubs` switches both
+   ways. Still to do: the phone hub yielding to a hub above it, the signed table of main
+   hubs the user orders, and a bench run with two computers as hubs.
+
+Not yet verified on real devices: how long iOS keeps the forwarder registration and the
+tunnel up while the app is open and the screen locks, the battery cost of the clients'
+retries, and the Android foreground service as a hub across battery savers.
 
 #### Reaching the hub
 
@@ -1400,6 +1510,53 @@ only adds to it.
    WireGuard only, so a group whose hub hides its tunnel keeps it at home); the ESP32 when
    WireGuard on it is mature.
 
+### What the servers learn
+
+Built in 0.6 (D-67, D-75), in Go, the lite member's core and both phone kits; the wire
+format is in docs/protocol.md, section 18. A forwarder and a relay check short credentials
+made for them instead of the group's records, which name the root's and the admins' devices
+with their names, systems and dates:
+
+- **Periods.** The group lives in periods of about 30 days. For each, the root signs inside
+  the group a fresh tag for the servers and a fresh period key, and every device signs with
+  its member key a fresh server key, the only key it shows the servers in that period. A
+  removal or a takeover starts a new period at once, since a removed device knows the tag.
+- **The hubs' credential**, signed by the period key: padded hashes of the hubs' and the
+  admins' server keys. The forwarder takes the first period key it sees for a tag, then only
+  that one and the newest version, so a member that is no hub cannot take the hub's place.
+- **The members' credential**, for a relay: padded hashes of the members' server keys,
+  signed by the period key or an admin's server key. The relay knows devices by these
+  pseudonyms only, and the members map them back to devices by the server credentials.
+- A device registers with a certificate of its server key alone, which names neither a
+  device nor a group, and the hub gets a new WireGuard key with each period.
+- What stays: the period's tag and pseudonyms (for a month), roughly how many hubs or
+  members there are, addresses, timing and sizes.
+- Inside the group every device keeps using the full records.
+
+#### What is left to hide
+
+Researched and decided for 0.6 (D-75). Even with the credentials the servers see something; from the
+most to the least revealing: the addresses of the hub and its clients, their online times
+and the volume; a stable pseudonym per device; the group tag; how many devices there are;
+when the root changes; the root certificate. Decided:
+
+- **The forwarder stores nothing about a group.** Before 0.6 `cbb forward` kept a file per
+  group with its tag, root certificates and removals (device IDs and dates); now only a
+  keyed hash of each period's tag, the version of its newest credential and a hash of its
+  period key remain, enough to refuse an older credential. The relay keeps pseudonyms, not
+  device IDs.
+- **Padding.** The credentials' lists are padded to 4, 8, 16 and up to 256 entries, so the
+  count of devices shows only roughly.
+- **Rotating keys and pseudonyms.** Each device's server key and the tag the servers see
+  change with each period, so a server cannot link a device or a group across periods; the
+  hub's WireGuard key changes with them.
+- **No logs.** The forwarder and the relay on `cbb.tools` keep no logs and no addresses on
+  disk, with a hardened systemd unit; a bench case checks it, and the docs say what the
+  hosting provider still sees and that a system VPN hides the user's address.
+- **Not done:** a transparency report or warrant canary (the defence is that the servers
+  hold almost nothing), and keeping the hub registered all the time (the iPhone cannot, D-73;
+  Android could, at a battery cost).
+
 ### Admin phones, the devices list and revocation
 
 A user may have several phones, for example an iPhone and an Android phone. All of them join
@@ -1787,6 +1944,217 @@ remote paste off, or the root or an admin phone removes it; removal reaches ever
 records, and from then on its commands fail the signature check. Keys in hardware ("Device keys in hardware" in [roadmap.md](roadmap.md#device-keys-in-hardware))
 narrow this to a thief who also has the computer running.
 
+### Quick actions
+
+Built in 0.6 (D-71), after remote paste, whose signed commands and opt-in it reuses. How to
+use it is in the guide, [quick actions](guide/quick-actions.md).
+
+One button runs an action on a member: in the phone apps, on the watch, or with
+`cbb action -on <device> <action>`. Running commands on another machine is the most dangerous thing
+the group could do, so the rule is that **the network never carries a command**: every
+action is defined on the member that runs it, and the button sends only its name.
+
+#### Presets and the user's own
+
+- **Presets**: lock the screen, sleep, reboot, shut down, cancel a pending shutdown, restart
+  the service. Each is off until the device's own user turns it on, as with remote paste
+  (D-59).
+- **The user's own**: added on the device itself, with a name and a command line,
+  `cbb action add <name> -- <command>`, a program by its full path with fixed arguments and
+  no shell, which must end within 15 seconds. The command takes no arguments from the network, so nothing a sender writes reaches a shell.
+  It runs as the desktop user. An action that needs root, like reboot, gets exactly that
+  right only with the user's consent, after a prompt that lists what it grants, as the
+  firewall prompt does; the installer adds nothing by itself (D-71):
+  - on Linux the service's unit sets `NoNewPrivileges=yes`, so sudo cannot work for it: the
+    presets go to logind over D-Bus with a polkit rule, and sudoers lines are only for
+    actions the agent runs as the desktop user;
+  - on a Mac, the loginwindow Apple events for the presets, and a sudoers line for a forced
+    shutdown;
+  - on Windows the service runs as `NT SERVICE\clipboardbridge` with almost no rights, and the
+    agent runs the presets as the signed-in user; for a PC with nobody signed in the service
+    gets `SeShutdownPrivilege` and nothing more.
+- **Consent on the device only.** Every action, preset or own, is off until the device's own
+  user turns it on there (`sudo cbb action enable NAME`), never by a command from the
+  network; a request for an action that is off is refused with that instruction. Any admin
+  may turn actions off remotely.
+- The member lists its actions in its hello, so the apps and the watch show them as buttons.
+  A preset may ask for a second tap (reboot, shut down).
+
+#### Checks on the member
+
+The command is signed by the sender's admin key and checked by the member, as a remote paste
+is: the action exists and is on, the signer is an admin that is neither removed nor frozen,
+the signer's kind is allowed for that action (each action lists the kinds that may run it:
+the root, admin phones, watches, admin computers; all admins by default), and the command is
+fresh and not a replay. Reboot and shut down are allowed by default only to admins whose key
+is in hardware (the phones, the watches, computers with the key in a TPM or the Secure
+Enclave), and the device's user can change that per action; the phones ask for a second tap.
+Commands are limited per signer, so a stolen admin cannot reboot a member in a loop. The
+member answers with the exit status only, never the output. Any admin turns quick actions off on any member
+with a signed command, and the member logs every action it runs and who asked.
+
+#### Where
+
+Linux, Mac and Windows run actions; lite members run the presets reboot and restart the
+service (the ESP32 restarts); the phones send only, since iOS runs nothing for another
+device and Android would need more rights than the app should hold.
+
+#### Steps
+
+All built in 0.6:
+
+1. Actions on the computers: the presets, `cbb action`, the rights prompt, the signed
+   command and its checks in Go, with interop vectors for Rust, Swift and Kotlin.
+2. The buttons in the phone apps.
+3. The presets on the lite member.
+4. The buttons on the watch.
+
+### Secure updates
+
+Built in 0.6 (D-69), but for the project's own keys, which wait for the owner's hardware
+keys: until the root keys are built into the programs, the installers and `cbb update`
+check `SHA256SUMS` and GitHub's build provenance attestation only, and say so. A program
+updates only to a release the project signed, from whichever server, so that a server, the
+network or a stolen GitHub token cannot slip in another build or an older one. How to use
+it is in the install guide, [updating](guide/install.md#updating); the wire format is in
+docs/protocol.md, section 16.
+
+#### The signed manifest
+
+- **Two tiers of keys.** Two **root keys**, each on its own hardware key (YubiKey) kept
+  offline and apart, certify the **release key** in `keys.json`. The release key lives in
+  the Secure Enclave of the owner's Mac and asks for Touch ID at each signature; `keys.json`
+  expires and is signed again every 90 days. The programs pin the root keys, so a lost or
+  stolen Mac is replaced by a new release key certified by a root, with no reinstall, and a
+  thief of the Mac cannot rotate to a key of their own.
+- All signatures are P-256 in the envelope of the group's records (`body`, `sig` and the key's
+  hash), which Go, `lite/core` (no_std), CryptoKit, Kotlin, openssl and PowerShell verify
+  with what they already have. Each file has a `type`, so one kind is never taken for
+  another.
+- Each release gets `release.json`: the version, the date, the channel, the lowest version
+  that may update to it directly, and the SHA-256 and size of every file, with the hashes of
+  the binaries inside each archive and the Docker image's digest. GitHub releases are
+  immutable, so a small `stable.json` beside it names the current release of the channel with
+  a sequence number and an expiry, and is signed again before it expires; a mirror then cannot
+  freeze a device on an old release.
+- **The key never sits in CI.** The release workflow builds the files and an unsigned
+  `release.json` into a draft and stops. `tools/release-sign` on the owner's Mac checks the
+  build attestations against the commit of the tag the owner pushed, optionally rebuilds the
+  targets without cgo and compares the hashes, signs, and publishes the release. Only then a
+  second workflow updates Docker, Homebrew, winget and the mirror, after checking the
+  signature. A stolen GitHub token can publish files but not a manifest any program accepts.
+- The check refuses a signature that fails, an expired `keys.json` or `stable.json`, a
+  version lower than the highest the device has ever seen (not only the installed one), and
+  a file whose SHA-256 differs. `get.sh` and `get.ps1` carry the root keys and check the
+  manifest with openssl or .NET (macOS and nearly every Linux have openssl, Windows has
+  .NET). Without a way to check they stop, since the sums come from the same server as the
+  archives; `CBB_VERIFY=skip` installs unchecked for whoever chooses to.
+
+#### Where updates come from
+
+- GitHub Releases is the source, and `https://dl.cbb.tools/` mirrors each release with the
+  same files and signed manifests, on a name of its own, apart from the forwarder. A setting
+  names another mirror or turns the check off. Since the signature is checked, neither is
+  trusted.
+- Members pass the signed manifest and the archives to each other inside the group, so about
+  one device per group asks the internet; each still checks the signatures itself.
+- An update check tells the server the device's address, its system and its version. It is
+  at most once a day, sends no group data and works with sync away from home off. The
+  documentation says so, and the check can be turned off.
+- The service's egress limit (D-61) allows only the group's servers, so the service never
+  downloads updates itself. `cbb update` runs as its own short-lived process, from a timer
+  (systemd, launchd, a Windows scheduled task) or by hand, with only the update servers
+  allowed.
+
+#### Per platform
+
+- **Linux, macOS and Windows from `get.sh`/`get.ps1`:** `cbb update` (`-check` only reports)
+  downloads the archive, checks the manifest and the sums, swaps the binaries atomically,
+  restarts the service and the agent, and puts the previous binaries back if the new service
+  does not report healthy within a minute. Off by default: the installers ask "update
+  automatically?" as they ask about the firewall, and `cbb update -auto on|off` changes it
+  later.
+- **Homebrew, winget, Docker and distribution packages:** these update through their own
+  tool. `cbb update` sees how it was installed and prints the command (`brew upgrade`,
+  `winget upgrade`, `docker compose pull`) instead of replacing files. The release workflow
+  already publishes the formula and the winget manifest from the same sums.
+- **Windows:** the files are also Authenticode-signed once the project has a certificate
+  (an application to the SignPath Foundation, which signs open-source projects for free,
+  after the signing is written), and `cbb update` checks that signature too when the
+  installed copy has one.
+- **The tray app** checks with the service and shows "update available" with a button that
+  runs `cbb update` through UAC or pkexec, like its other admin actions.
+- **The Mac app:** Sparkle with its EdDSA signature, once the app is signed and notarized
+  (waits for the Apple developer account), with the same manifest feeding the appcast.
+- **The lite member on Linux:** `cbb update` the same way, for its own archive (built).
+- **The Nano ESP32:** OTA into the second app partition, checked against the manifest and
+  the release key in the firmware, with a fallback to the old partition if the new one does
+  not boot. Later, with the firmware's sync (item 15).
+- **Android, sideloaded APK:** the app checks the manifest, downloads the APK, checks its
+  SHA-256 and that its signing certificate matches the installed app's, and hands it to
+  `PackageInstaller`. On Android 12 and later an app that installed itself can update
+  without asking each time (`setRequireUserAction`), and the user turns that on in settings.
+  Installed from a store, the app leaves updates to the store.
+- **iPhone and the watches:** only the App Store and TestFlight update them; the app shows
+  that a newer version exists.
+
+#### In the group
+
+- Each device's hello carries its version. `cbb status` and the tray app mark devices that
+  run an older version than the newest signed release the group passed around; the phone
+  apps are to follow.
+- Later: an admin asks a member to update with a signed command, like `mode` (protocol
+  section 15). The member still installs only a signed release and only if its own user
+  allowed automatic updates.
+
+#### Steps
+
+1. **Built but for the keys:** the root keys on the hardware keys, the release key in the
+   Mac's Secure Enclave, `keys.json`, `release.json` and `stable.json`, with verifiers in
+   Go, `lite/core`, the Swift kit and the Kotlin kit and shared vectors (valid, bad
+   signature, expired, wrong type, older version, wrong key, the `keys.json` chain).
+2. **Built but for the keys:** the release flow: the draft, `tools/release-sign`, the
+   publishing workflow, the mirror, and `get.sh` and `get.ps1` checking the manifest.
+3. **Built:** `cbb update` and `-check` on Linux, OpenWrt, FreeBSD, macOS and Windows
+   (`internal/update`): download, check the archive and the programs in it, install with
+   the new release's own installer (which replaces files by rename or after stopping them,
+   never over a running program, and keeps the user's answers; on Windows `cbb update`
+   runs from a copy in its own folder, since `install.ps1` stops every program in
+   Program Files\clipboardbridge), wait a minute for the service to report the new version,
+   and otherwise install the previous programs again with the same installer and keep a
+   list of failed versions; the installers record the method (`get`, `brew`, `winget`,
+   `docker`, `package`), and the others print their tool's command; on Windows the new
+   programs must have the installed ones' Authenticode signer once those are signed; tests
+   with a tampered file, a bad signature, an expired manifest, an older version, a path out
+   of the archive and a new program that never becomes healthy.
+4. **Built:** automatic updates: the installers' question (`--auto-update`, kept), the
+   timers (systemd, launchd, a scheduled task as SYSTEM, cron on OpenWrt and FreeBSD),
+   `cbb update -auto`, at most one check a day, the failed versions skipped.
+5. **Built:** members pass the newest signed release to each other
+   (protocol section 16, "In the group": `release_seq` in the hello, the `release`
+   message, checked as a download is), `cbb update` hands what it fetched to the service,
+   `cbb status` says when a newer release is out and marks the devices that run an older
+   one, and the tray app shows "Update to X", which runs `cbb update` through UAC or
+   pkexec. The archives pass through the group too: the service keeps the archive
+   `cbb update` installed and serves it by its hash, and `cbb update` on another member
+   takes it from the group before it downloads.
+6. **Built:** the Android app's own update for the sideloaded APK (`ApkUpdate.kt`,
+   docs/apps.md, "Updates"): the signed files checked with the Kotlin kit, the APK's hash
+   and signing certificate, `PackageInstaller` with `USER_ACTION_NOT_REQUIRED`, Settings'
+   "Check for updates" and "Update automatically", nothing for a copy from a store. Not
+   yet run on a device; installs from 2027 need the owner's registration with Google's
+   developer verification.
+7. **Built for Linux and OpenWrt:** the lite member's `cbb update` (`lite/src/update.rs`),
+   checked with `lite/core`'s verifier, downloading with the system's curl, wget or
+   uclient-fetch, installing and rolling back as step 3 does, with the same timers. The
+   Nano ESP32 follows with its sync (item 15): a partition table with two app slots and a
+   bootloader with rollback, and OTA from a member, checked against the manifest.
+8. Sparkle in the Mac app, after the Apple account, with its own Ed25519 key and the appcast
+   made by `tools/release-sign`.
+9. On the bench: an update from the previous release on every device (L9), a refused
+   downgrade, a refused unsigned build, a rotation of the release key by a root, and a drill
+   for a lost release key.
+
 ## 7. Deployment view
 
 Where each part runs and how it is installed:
@@ -1802,6 +2170,221 @@ Where each part runs and how it is installed:
 | A server | `cbb forward` or `cbb relay` as a hardened systemd unit, or the Docker image | [running your own servers](admin/self-hosting.md) |
 
 The ports, files and logs of each are in [devices, ports and files](reference/devices.md).
+
+### OpenWrt routers
+
+Built in 0.6; how to install it is in the [install guide](guide/install.md).
+
+A router has no desktop and no clipboard of its own, so on a router Clipboard Bridge is
+infrastructure, not a place to copy and paste:
+
+- **The hub for sync away from home.** The router is always on and is the device with the
+  public address, so it needs no port forwarding: it opens the hub's UDP port on its own
+  WAN.
+- **An always-on member at home.** Phones and lite members sync through it when no
+  computer is on, and it holds `clipboardbridge.local` (it is never on battery).
+- **A member on every subnet.** A router sits on the home network and the IoT subnet at
+  once, so a device on the IoT subnet syncs with the router directly, and the router passes
+  its events on as every member does. No rule from the IoT subnet into the home network is
+  needed, only one that lets the IoT subnet reach the router's member port.
+- **Not a place for remote paste or CA keys.** It has no screen to paste on. It should
+  join as an ordinary full member, never as the creator or an admin: CA keys do not belong
+  on a box that faces the internet.
+
+#### Full or lite
+
+| | `cbb` (Go, full member) | the lite member's `cbb` (Rust) |
+|---|---|---|
+| Size of the binary | about 25 MB stripped (6.4 MB compressed with xz) for arm64; armv7, mips and mipsle the same order | 1.7 MB for arm64 (static musl) |
+| Routers it fits | 128 MB of flash or more, or eMMC (for example the Banana Pi BPI-R4); 256 MB of RAM or more | almost any OpenWrt router, 16 MB of flash and 64 MB of RAM |
+| Hub | yes | no: lite members are clients only |
+| Away from home | yes, as hub or client, with obfuscation and VLESS | as a client, with plain WireGuard (GotaTun); never AmneziaWG |
+| Builds | Go cross-compiles statically for every OpenWrt CPU: aarch64, armv7, mips and mipsle (softfloat), x86-64; arm64 and armv7 are in every release already | aarch64, armv7, x86-64 with stable Rust; mips and mipsle are Tier 3 in Rust (nightly and `-Zbuild-std`) |
+
+Recommendation: the full service first, aimed at routers with room for it, because the hub
+is what a router adds that nothing else does; the lite member afterwards for small routers, as
+packaging around what exists.
+
+#### What OpenWrt needs that other Linux does not
+
+- **No systemd.** A procd init script (`/etc/init.d/clipboardbridge`) runs the service as
+  its own user with respawn, and a UCI file (`/etc/config/clipboardbridge`) holds the
+  settings: interfaces, port, hub.
+- **`/var` is in RAM.** The state goes to `/etc/clipboardbridge`, which survives reboots,
+  and a file in `/lib/upgrade/keep.d` keeps it across `sysupgrade`. The service writes it
+  rarely (the identity, the records, the clock mark), so the flash does not wear.
+- **The firewall is fw4 (nftables).** The rules are published by the procd service as its
+  data, so they exist only while the service runs: the member port and mDNS from the zones
+  the user names (the `lan` zone already accepts input; an IoT zone usually does not), and
+  the hub's UDP port from `wan` only while the router is the hub. `uci commit` rewrites
+  `/etc/config/firewall` and drops its comments, so the installer writes UCI rules only for
+  zones the user names, and removes exactly those. `firewall.sh` learns a `fw4` kind ahead of
+  plain nftables, whose rules fw4 would flush.
+- **mDNS only on the inside.** Without a list `cbb` announces on every interface. On a
+  router that would send the group's names and device IDs onto the provider's network, so
+  the service takes a list of interfaces (`CBB_INTERFACES`) for mDNS and the member port, by default the devices of the
+  `lan` zone. Avahi, already installed on many routers, keeps working: `cbb` shares port
+  5353 with it as it does on desktop Linux.
+- **Time.** Many routers have no clock that runs while they are off, and certificates need
+  the right time, so the service starts after NTP has set the clock: a hook in
+  `/etc/hotplug.d/ntp` leaves a flag in `/var/state`, as dnsmasq does.
+- **The member port and WAN.** The listener checks the interface each connection arrives
+  on, so the member port refuses WAN even when the firewall is opened by mistake; binding to
+  addresses would break when DHCP or PPPoE changes them.
+- **Packages.** OpenWrt 25.12 and later only, which install `.apk` packages (apk 3); 24.10
+  and older (`.ipk`, opkg) are not supported. The first step installs with a script, as
+  `get.sh` does elsewhere; then a signed apk feed of our own on `cbb.tools`, built by the
+  release job, since the 25.12 SDK's Go is older than the one `go.mod` needs. ASU and owut
+  drop a package from another feed on upgrade, and the docs say so.
+- **What the base system lacks.** No curl (`get.sh` fetches with `uclient-fetch`, whose
+  `wget` does not take `--https-only`), no `useradd` or `sudo`, and no `/usr/local`; the
+  socket and state paths are set per platform. Measured on a BPI-R4 with 25.12.6: 4 GB of
+  RAM, eMMC, avahi; the full `cbb` builds for mips and mipsle (softfloat) without a change
+  and passes its tests under qemu-mips (29 MB stripped, 6 MB with xz; UPX is not used, since
+  it costs RAM).
+- **The router's own WireGuard or AmneziaWG** stays separate: `cbb` runs its tunnel in its
+  own process (amneziawg-go with netstack) on a port of its own and adds no interface or
+  route.
+
+The security rules of sync away from home do not change: the router is the user's own
+device, the tunnel is the group's own WireGuard, member TLS runs inside it, and nothing but
+the hub's UDP port faces the internet.
+
+#### Steps
+
+One pull request each, smaller ones together:
+
+1. Done. The service on a router: a list of interfaces for mDNS and the member port
+   (`CBB_INTERFACES`), the paths of OpenWrt (the socket in `/var/run`, the state in
+   `/etc/clipboardbridge/state`, `/usr/share` for the installer's files), release builds
+   for mips and mipsle (softfloat), and a CI job that runs the tests under qemu-mips.
+2. Done. `packaging/openwrt`: the procd script (its own user, no capabilities,
+   `no_new_privs`, `GOMEMLIMIT`), the UCI file, install and uninstall through `get.sh` (it
+   recognises OpenWrt by `/etc/openwrt_release`, fetches with `uclient-fetch` and tells mips
+   from mipsle by the package architecture), the fw4 rules as procd service data, the state
+   in `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in
+   OpenWrt's root file system and on OpenWrt booted in QEMU. Still to check on the BPI-R4:
+   that fw4 loads changed service data by itself (`firewall.sh` reloads it anyway).
+3. Done. The router as the hub: `cbb global hub` opens its UDP port on `wan` through the
+   service's own rules and `cbb global off` closes it; the bench takes the router (and a
+   FreeBSD computer) as a device under test ([testbench.md](testbench.md)). Still to run
+   on the BPI-R4.
+4. Done. A signed apk feed for `cbb.tools`, built by the release job once the feed's key is
+   in the secrets ([maintaining.md](maintaining.md#the-openwrt-feed)); CI installs from a
+   feed signed with a test key.
+5. The lite member on OpenWrt. Done: the procd script runs `cbb run` for it, `get.sh
+   --lite` installs it on aarch64, armv7, x86-64, mips and mipsle, and it takes
+   `CBB_INTERFACES`. On mips and mipsle it is built with nightly Rust (`-Zbuild-std`,
+   `lite/packaging/mips.sh`) and without the tunnel in 0.6, since GotaTun needs 64-bit
+   atomics; CI runs its Go tests under qemu-mips; the tunnel there is planned for 0.7
+   (roadmap item 37).
+
+Later, if wanted: a LuCI page with the status and the QR code for joining.
+
+### Docker
+
+Built for 0.5 ([packaging/docker](../packaging/docker/README.md)).
+
+An image with the full service, for the machines that are always on but have no desktop: a
+NAS (Synology, QNAP, TrueNAS, Unraid), a home server, a VPS. Like a router, the container is
+infrastructure, not a place to copy and paste:
+
+- **An always-on member, and the hub only by choice.** At home it keeps the group's events
+  while no computer is on and holds `clipboardbridge.local`. Only the root or an admin can be
+  the hub, so a container is the hub for sync away from home only once the user made it an
+  admin, with its keys in a file in the volume: the least safe of the key levels (roadmap item 31),
+  which the user must allow explicitly. The service enforces it already: in the image
+  (`CBB_CONTAINER`) it makes no group and offers no admin key unless `CBB_KEYS_IN_FILE=yes`.
+- **A forwarder or a relay on a VPS.** `cbb forward` and `cbb relay` hold no group keys, so
+  a container on a rented server is the natural way to run them.
+- **Never the creator, and an admin only by choice.** It joins as an ordinary full member;
+  CA keys stay on the devices the user holds.
+
+What the image needs:
+
+- **One small image for every CPU.** `cbb` is static and carries its own certificate roots,
+  so the image is the binary and nothing else (`FROM scratch`), for linux/amd64, linux/arm64 and linux/arm/v7, published
+  to the GitHub Container Registry with each release and carrying the same build
+  attestations as the release archives. The documentation pins it by digest.
+- **No privileges.** The tunnel runs in the process (WireGuard on gVisor netstack), so the
+  container needs no `NET_ADMIN`, no `/dev/net/tun` and no `--privileged`. It runs as its
+  own user with a read-only root file system; the state is one volume
+  (`/var/lib/clipboardbridge`).
+- **Host networking at home.** mDNS and the member port must be on the home network, so a
+  member at home runs with `network_mode: host`; behind Docker's bridge the other devices
+  would not find it. A forwarder or a relay on a VPS publishes its ports instead (UDP 8764,
+  TCP 443 for VLESS).
+- **The host's firewall stays the host's.** The container cannot change it, so `cbb` answers
+  the firewall question with No (as `--no-firewall` does): it
+  prints the exact rules for the host and says in `cbb status` whether a home member could
+  reach it. Its own limit (`internal/netguard`) works inside the container as everywhere.
+- **Joining without a screen.** `docker exec -it clipboardbridge cbb pair` shows the QR code
+  in the terminal, as on any server.
+
+Steps, one pull request each, smaller ones together:
+
+1. Done. `packaging/docker`: the Dockerfile, a compose file for a home member and one for a
+   forwarder or relay, and a CI job that builds the image and has two containers join a
+   group and sync.
+2. Done. The release workflow publishes the multi-arch image with its attestations; README and
+   the installer pages say how to run it on the common NAS systems.
+3. Done. The bench takes a container as a device (`os = "docker"`), an ordinary member that
+   never makes the group, with the case P35 in [testbench.md](testbench.md); as the hub it
+   is a manual step, by the owner's choice.
+
+### FreeBSD
+
+Built in 0.6.
+
+FreeBSD runs servers, some desktops, and the gateways OPNsense and pfSense. Go builds `cbb`
+for it (`GOOS=freebsd`, amd64 and arm64, no cgo); the service needs from the system:
+
+- **The service.** An rc.d script that runs `cbb` as its own user through daemon(8), with
+  the state in `/var/db/clipboardbridge`; `get.sh` recognises FreeBSD and installs it. A
+  port and a `pkg` package follow.
+- **The control socket.** As on every system, the socket's file modes decide who may
+  connect, and FreeBSD honours them; `cbb` checks no peer credentials. Reading
+  them (`LOCAL_PEERCRED` on FreeBSD, `SO_PEERCRED` on Linux) for the log is optional
+  hardening.
+- **The firewall.** FreeBSD has pf and ipfw; `cbb` detects which one is active and asks as on
+  the other systems (the same consent prompt, the same rules: the member port and mDNS from
+  the home subnets only, the hub's UDP port while it is the hub). On OPNsense and pfSense
+  the rules belong in the gateway's own configuration, which rewrites pf, so there `cbb`
+  installs a plugin hook on OPNsense and prints them on pfSense (step 4).
+- **The desktop.** FreeBSD desktops run X11 and Wayland, so the Linux desktop connector
+  (`internal/desktop`) is built for FreeBSD too and tested there.
+- **A gateway as the hub.** OPNsense and pfSense are what OpenWrt is on other routers: always
+  on, with the public address. They reuse the OpenWrt work: mDNS and the member port only on
+  the inside interfaces, the hub's port on the WAN only while it is the hub, no CA keys.
+
+The protection is the same as on Linux: the service's own limit to the home network until
+sync away from home is on, member TLS, and the tunnel away from home.
+
+Steps:
+
+1. Done. Release builds for freebsd-amd64 and freebsd-arm64, the paths (the socket in
+   `/var/run`, the state in `/var/db`, the settings in `/usr/local/etc`), FreeBSD's uptime
+   clock and system version, and a CI job that runs the Go tests in a FreeBSD 15.1 virtual
+   machine. The control socket needs no change: its file modes keep others out on FreeBSD
+   too.
+2. Done. The rc.d script, `get.sh` (with FreeBSD's own `fetch`), the pf anchor and the ipfw
+   rule set with the consent prompt; the CI job installs it, opens and closes the ports in pf
+   and removes it all.
+3. Done. The desktop connector on FreeBSD: X11 and Wayland's data control and remote paste
+   through XTEST and the virtual keyboard, started from XDG autostart; the lock check reads
+   the processes with ps, since FreeBSD has no logind, and refuses keys on GNOME, whose lock
+   screen nothing else tells. The RemoteDesktop portal, the ei protocol and uinput stay on
+   Linux. The CI job runs the X11 tests under Xvfb in the virtual machine.
+4. OPNsense and pfSense as the hub. Done: the OPNsense `plugins.inc.d` hook, kept here under
+   the AGPL, which the installer adds and which names the service's pf anchor in
+   OPNsense's ruleset and lists the service; printed rules only, unsupported, on pfSense,
+   with an rc.d `clipboardbridge.sh` since pfSense starts only those. The check of port
+   5353: FreeBSD lets a socket share a port with another user's only when root opened it,
+   so the service opens its mDNS sockets as root and then runs as its user, which shares
+   the port with avahi; mdns-repeater sets no `SO_REUSEPORT`, so it and the service still
+   exclude each other, and the guide says to turn it off. Still to come: our own pkg
+   repository on `cbb.tools`, and the port in the ports tree after one release in the
+   field.
 
 ## 8. Crosscutting concepts
 

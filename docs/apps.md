@@ -177,7 +177,7 @@ Screen, in the colour chosen in Settings, and never what was copied:
 
 ## Notifications
 
-The app notifies of the group's events (roadmap item 26, step 1), each kind with a switch
+The app notifies of the group's events (design.md, "Watches", step 1), each kind with a switch
 in Settings, all on by default: a device joined or was removed, became an admin, was frozen
 or unfrozen, the group was taken over, and the hub does not answer through the tunnel for
 two minutes while away from home. The app compares the devices with what it saw last time
