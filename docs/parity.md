@@ -69,6 +69,7 @@ on every platform of the class, on the roadmap).
 | Wallpaper colours theme | yes | **OS** | Material You exists only on Android |
 | Remote paste, images and files | yes | yes | the iPhone takes no remote paste (**OS**: no app may type into another) |
 | Remote invitations | planned | planned | roadmap item 12; computers have them |
+| Arrange the tiles and collections (the model; the screens follow) | yes | yes | kept on each installation; the watches show their phone's |
 | Act as a Bluetooth keyboard for a TV, tablet or computer | yes | **OS** | iOS keeps the HID service to the system; some Android makers leave the profile out, which the app says |
 | Tested on a real phone | not yet | not yet | |
 

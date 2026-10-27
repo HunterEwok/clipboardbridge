@@ -130,7 +130,10 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 - **33.** **Researched; not built (D-73).** The iPhone as a hub in the background, as a Network
     Extension. See "Research: the iPhone hub in a Network Extension" below.
 - **34.** **Collections** in the apps: the user's own sets of devices and the order of the tiles,
-    arranged by dragging, personal to each app installation (D-72). See "Collections" below.
+    arranged by dragging, personal to each app installation (D-72). The model, the same in Go,
+    Kotlin and Swift against shared vectors, is done
+    ([apps.md](apps.md#collections-and-the-order-of-the-tiles)); the apps' Arrange screens
+    follow. See "Collections" below.
 - **36.** **Russian versions of the documentation for users**, postponed: the README, the guide
     and the reference pages for users, in `docs/ru/` and `README.ru.md`; the documents for
     developers stay in English. The rule of D-8 then allows Cyrillic in those two places as
@@ -305,7 +308,7 @@ settings also erases its Bluetooth pairings.
 
 ## Collections
 
-Planned for 0.6 (D-72). A user with many devices puts them into collections and sets the
+Planned for 0.6 (D-72); the model and its rules are built ([apps.md](apps.md#collections-and-the-order-of-the-tiles)), the screens follow. A user with many devices puts them into collections and sets the
 order of the tiles in every graphical app: the phones, the Mac app, the tray app, and the
 watches, which show their phone's arrangement as sections.
 
