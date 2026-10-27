@@ -441,6 +441,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   names the key it already uses, instead of starting it again at once, which the hub refused
   as too soon after the last handshake and cost another 5 seconds. The hub starts its tunnel
   with the new key before its state names it.
+- An image or file fetched again after a fetch that gave up no longer gives up itself on a
+  slow link: the pieces the peer still sends for the first fetch now count as the peer
+  sending, so only a peer that sends nothing for 15 seconds ends a fetch.
 - The Android app's dependencies take Guava 33.7.2, which fixes GHSA-xxph-c9ww-hj94 in the
   33.3.1 that CameraX and Media3 bring in.
 - A device that registers with its relay again, after the group's credentials changed, no
