@@ -28,7 +28,7 @@ type Watch struct {
 func NewWatch(b *Board) *Watch { return &Watch{b: b, seen: b.ChangeCount()} }
 
 func item(it Item) connector.Item {
-	ci := connector.Item{Text: it.Text, Secret: it.Secret, Remote: it.Remote}
+	ci := connector.Item{Text: it.Text, Secret: it.Secret, Remote: it.Remote, HTML: it.HTML}
 	if it.ImageType != "" {
 		ci.Image = &connector.Image{Type: it.ImageType, Data: it.Image}
 	}
@@ -98,6 +98,18 @@ func (w *Watch) Write(text string, secret bool) error {
 // WriteImage puts an image on the pasteboard, with its text, if any.
 func (w *Watch) WriteImage(img connector.Image, text string) error {
 	change, err := w.b.WriteImage(img.Type, img.Data, text)
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.own, w.seen = change, change
+	w.mu.Unlock()
+	return nil
+}
+
+// WriteHTML puts formatted text on the pasteboard, with its plain text.
+func (w *Watch) WriteHTML(html, text string) error {
+	change, err := w.b.WriteHTML(html, text)
 	if err != nil {
 		return err
 	}

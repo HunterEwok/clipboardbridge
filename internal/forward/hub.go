@@ -73,6 +73,12 @@ type HubConfig struct {
 	// forwarder that its member key is the root's or an admin's.
 	Authority func() (key crypto.Signer, admin *x509.Certificate, records []group.Record)
 	Cert      func() tls.Certificate
+	// Credentials, if set, returns the chain of the group's hubs'
+	// credentials that lists this hub (docs/protocol.md, section 18), and
+	// HubCert the hub's certificate for it, which names no device. A nil
+	// chain registers with Cert and Authority instead.
+	Credentials func() []group.Credential
+	HubCert     func() (tls.Certificate, error)
 
 	// Send sends a packet from the hub's WireGuard port, so that the
 	// forwarder learns where that port is reached.
@@ -99,6 +105,11 @@ const (
 	maxBackoff = time.Minute
 )
 
+// errNewCredential ends a registration when the group's hubs' credential
+// changed, so that the hub registers again at once with the new one, and
+// the forwarder refuses the old one from then on.
+var errNewCredential = errors.New("the group's hubs' credential changed")
+
 // Register keeps the hub registered with its forwarder until ctx is done,
 // registering again whenever the connection breaks.
 func Register(ctx context.Context, cfg HubConfig) {
@@ -112,6 +123,10 @@ func Register(ctx context.Context, cfg HubConfig) {
 		err := registerOnce(ctx, cfg, report)
 		if ctx.Err() != nil {
 			return
+		}
+		if errors.Is(err, errNewCredential) {
+			backoff = minBackoff
+			continue
 		}
 		report(Report{Err: err})
 		if time.Since(start) > maxBackoff {
@@ -162,7 +177,19 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
 	raw.SetDeadline(time.Now().Add(setupTimeout))
-	tc := tls.Client(raw, TLSVerifiedByPin(cfg.Cert(), Protocol, cfg.Link.Pin, "forwarder"))
+	var creds []group.Credential
+	if cfg.Credentials != nil && cfg.HubCert != nil {
+		creds = cfg.Credentials()
+	}
+	var cert tls.Certificate
+	if creds != nil {
+		if cert, err = cfg.HubCert(); err != nil {
+			return fmt.Errorf("the hub's certificate: %w", err)
+		}
+	} else {
+		cert = cfg.Cert()
+	}
+	tc := tls.Client(raw, TLSVerifiedByPin(cert, Protocol, cfg.Link.Pin, "forwarder"))
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}
@@ -188,8 +215,8 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 	if err != nil {
 		return err
 	}
-	c := claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation, VLESS: cfg.VLESSID}
-	if cfg.Authority != nil {
+	c := claim{Key: priv.PublicKey().Bytes(), Proof: p, Obfuscation: cfg.Obfuscation, VLESS: cfg.VLESSID, Credentials: creds}
+	if creds == nil && cfg.Authority != nil {
 		key, admin, records := cfg.Authority()
 		if key != nil {
 			if c.AdminSig, err = SignAdmin(key, cs, c.Key); err != nil {
@@ -271,6 +298,11 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 				report(Report{Registered: true, Seen: seen, VLESS: vl})
 			}
 		case <-t.C:
+			if creds != nil {
+				if now := cfg.Credentials(); len(now) > 0 && now[len(now)-1].ID() != creds[len(creds)-1].ID() {
+					return errNewCredential
+				}
+			}
 			counter = max(counter+1, uint64(time.Now().UnixNano()))
 			// A hello that cannot go out now goes with the next one.
 			_ = cfg.Send(cfg.Link.Endpoint, hello(&mask, &key, a.ID, counter))

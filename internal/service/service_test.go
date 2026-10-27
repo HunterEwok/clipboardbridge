@@ -1549,6 +1549,22 @@ func TestTakeover(t *testing.T) {
 			return err == nil && len(id.Roots) == 1
 		})
 	}
+	// The servers' view follows: the old root's hubs' credential, which
+	// named a an heir, a's link to its root, and the new root's credential,
+	// which lists a as a hub.
+	aKey := group.KeyHashOf(id.Cert)
+	waitFor(t, "b keeps the credentials across the handover", func() bool {
+		bid, err := group.Load(b.dir)
+		if err != nil {
+			return false
+		}
+		creds, err := group.LoadCredentials(b.dir, bid.Trusted())
+		if err != nil {
+			return false
+		}
+		ch, err := group.CheckChain(bid.GroupCA.Cert, creds.Chain(bid.Trusted()))
+		return err == nil && len(ch.Roots) == 2 && slices.Contains(ch.Last().Hubs, aKey)
+	})
 	waitFor(t, "a lists itself as the root and the pi no more", func() bool {
 		root := false
 		for _, d := range a.devices(t) {

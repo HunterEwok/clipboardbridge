@@ -29,12 +29,16 @@ import (
 // the group carries.
 const MaxImage = clip.MaxMedia
 
+// MaxHTML is the largest formatted text a board reads or writes; a larger
+// one goes as its plain text alone.
+const MaxHTML = 8 << 20
+
 // KeepCopies is how long the folder of received files stays after a newer
 // copy replaced it, for a paste that is still reading it.
 var KeepCopies = 10 * time.Minute
 
 // An Image is clipboard data of an image type: clip.TypePNG or
-// clip.TypeJPEG.
+// clip.TypeJPEG (and, as the service sends it, clip.TypeHTML).
 type Image struct {
 	Type string
 	Data []byte
@@ -58,17 +62,32 @@ type FileBoard interface {
 	WriteFiles(paths []string) error
 }
 
-// sendMedia reports a copied image or files to the service, until ctx is
-// done.
+// An HTMLBoard is a clipboard that takes formatted text. Its Current and
+// Next return an Item with HTML set, and Text to its plain text, when the
+// clipboard holds both.
+type HTMLBoard interface {
+	// WriteHTML puts formatted text into the clipboard, with text as its
+	// plain text.
+	WriteHTML(html, text string) error
+}
+
+// sendMedia reports a copied image, files or formatted text to the
+// service, until ctx is done.
 func sendMedia(ctx context.Context, socket string, it Item, logf func(string, ...any)) error {
 	var parts []mediafile.Part
 	var text string
-	if it.Image != nil {
+	var data []byte
+	switch {
+	case it.Image != nil:
 		if len(it.Text) <= clip.MaxAltText {
 			text = it.Text
 		}
-		parts = []mediafile.Part{{Part: control.Part{Type: it.Image.Type, Size: int64(len(it.Image.Data))}}}
-	} else {
+		data = it.Image.Data
+		parts = []mediafile.Part{{Part: control.Part{Type: it.Image.Type, Size: int64(len(data))}}}
+	case it.formatted():
+		text, data = it.Text, []byte(it.HTML)
+		parts = []mediafile.Part{{Part: control.Part{Type: clip.TypeHTML, Size: int64(len(data))}}}
+	default:
 		var skipped int
 		var err error
 		if parts, skipped, err = mediafile.Collect(it.Files); err != nil {
@@ -88,8 +107,8 @@ func sendMedia(ctx context.Context, socket string, it Item, logf func(string, ..
 	defer c.Close()
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	if it.Image != nil {
-		err = sendImage(c, *it.Image, text, parts[0])
+	if data != nil {
+		err = sendData(c, data, text, parts[0])
 	} else {
 		err = mediafile.Send(c, control.OpCopiedMedia, parts, "")
 	}
@@ -103,13 +122,14 @@ func sendMedia(ctx context.Context, socket string, it Item, logf func(string, ..
 	return err
 }
 
-// sendImage sends an image from memory, as mediafile.Send sends files.
-func sendImage(c *control.Client, img Image, text string, p mediafile.Part) error {
+// sendData sends clipboard data from memory, an image or formatted text,
+// as mediafile.Send sends files.
+func sendData(c *control.Client, data []byte, text string, p mediafile.Part) error {
 	err := c.Send(&control.Message{Header: control.Header{Op: control.OpCopiedMedia}, Payload: []byte(text)})
 	if err == nil {
 		err = c.Send(&control.Message{Header: control.Header{Op: control.OpPart, Part: &p.Part}})
 	}
-	for b := img.Data; err == nil && len(b) > 0; {
+	for b := data; err == nil && len(b) > 0; {
 		n := min(len(b), 1<<20)
 		err = c.Send(&control.Message{Header: control.Header{Op: control.OpData}, Payload: b[:n]})
 		b = b[n:]
@@ -120,17 +140,18 @@ func sendImage(c *control.Client, img Image, text string, p mediafile.Part) erro
 	return err
 }
 
-// media is a copy fetched from the service: an image or the paths of
-// saved files, and its plain-text alternative.
+// media is a copy fetched from the service: an image, formatted text or
+// the paths of saved files, and its plain-text alternative.
 type media struct {
 	image *Image
+	html  string
 	files []string
 	text  string
 }
 
 // fetchMedia asks the service for the clipboard's copy: of an image, the
-// PNG if it has one, else the JPEG; files are saved in a new folder of
-// copies, if any.
+// PNG if it has one, else the JPEG, and its formatted text, if any; files
+// are saved in a new folder of copies, if any.
 func fetchMedia(ctx context.Context, socket string, copies *copies) (media, error) {
 	c, err := control.Dial(socket)
 	if err != nil {
@@ -163,29 +184,43 @@ func fetchMedia(ctx context.Context, socket string, copies *copies) (media, erro
 		}
 		return got, nil
 	}
-	got.image, err = receiveImage(c, first)
-	return got, err
+	parts, err := receiveData(c, first)
+	if err != nil {
+		return media{}, err
+	}
+	for _, typ := range []string{clip.TypePNG, clip.TypeJPEG} {
+		for _, p := range parts {
+			if p.Type == typ && got.image == nil {
+				got.image = &p
+			}
+		}
+	}
+	for _, p := range parts {
+		if p.Type == clip.TypeHTML {
+			got.html = string(p.Data)
+		}
+	}
+	if got.image == nil && got.html == "" {
+		return media{}, errors.New("the copy holds no image or formatted text")
+	}
+	return got, nil
 }
 
-// receiveImage collects the image parts that follow paste-media's first
-// answer, starting with m, and picks the best.
-func receiveImage(c *control.Client, m *control.Message) (*Image, error) {
+// receiveData collects the parts of clipboard data that follow
+// paste-media's first answer, starting with m.
+func receiveData(c *control.Client, m *control.Message) ([]Image, error) {
 	var imgs []Image
 	var size int64
 	for {
 		switch {
 		case m.Done:
-			for _, typ := range []string{clip.TypePNG, clip.TypeJPEG} {
-				for _, img := range imgs {
-					if img.Type == typ {
-						return &img, nil
-					}
-				}
-			}
-			return nil, errors.New("the copy holds no image")
+			return imgs, nil
 		case m.Part != nil:
 			if size += m.Part.Size; size > MaxImage {
 				return nil, fmt.Errorf("the copy is larger than %d bytes", MaxImage)
+			}
+			if m.Part.Type == clip.TypeHTML && m.Part.Size > MaxHTML {
+				return nil, fmt.Errorf("the formatted text is larger than %d bytes", MaxHTML)
 			}
 			imgs = append(imgs, Image{Type: m.Part.Type, Data: make([]byte, 0, m.Part.Size)})
 		case len(imgs) > 0:

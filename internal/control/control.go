@@ -145,13 +145,14 @@ type Header struct {
 	Devices      []Device `json:"devices,omitempty"`
 
 	// Images and files: in a part message, the part whose bytes follow;
-	// Value, in config, the setting's new value. Images and Files, in a
-	// watch request, say the watcher's clipboard takes and gives images,
-	// and files.
+	// Value, in config, the setting's new value. Images, Files and HTML,
+	// in a watch request, say the watcher's clipboard takes and gives
+	// images, files, and formatted text.
 	Part   *Part  `json:"part,omitempty"`
 	Value  string `json:"value,omitempty"`
 	Images bool   `json:"images,omitempty"`
 	Files  bool   `json:"files,omitempty"`
+	HTML   bool   `json:"html,omitempty"`
 }
 
 // Part is a part of a copy of images or files, as copy-media and

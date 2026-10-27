@@ -4,9 +4,9 @@
 package forward
 
 import (
-	"cmp"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,48 +16,39 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
-// rememberedGroups bounds the groups whose records the forwarder keeps
-// after their registration ends; past it the group that registered least
-// recently is forgotten first.
+// rememberedGroups bounds the groups whose records, or credential
+// versions, the forwarder keeps after their registration ends; past it the
+// group that registered least recently is forgotten first.
 const rememberedGroups = 100_000
 
-// memory keeps, for each group that registered, its authority records
-// (group.Records.AuthorityRecords: revocations, freezes, thaws, roots and
-// the root's own device records, which make phones admins or not;
-// docs/protocol.md, section 13). A hub that the group removed, or an admin
-// it demoted, could otherwise register again while the group's own hub is
-// away, with the records from before. With a directory it also writes
-// there, one file per group, the records that are no device records
-// (D-39): the removals, freezes and roots outlive a restart, and no device
-// name is ever written.
+// memory keeps in memory, for each group that registered with records (a
+// hub from before the credentials, docs/protocol.md, section 13), its
+// authority records (group.Records.AuthorityRecords: revocations, freezes,
+// thaws, roots and the root's own device records, which make phones admins
+// or not). A hub that the group removed, or an admin it demoted, could
+// otherwise register again while the group's own hub is away, with the
+// records from before. Nothing of them is written to disk: a group that
+// registers with a credential needs none of them (versions).
 type memory struct {
-	dir string // "" keeps them in memory only
-
 	mu     sync.Mutex
 	groups map[string][]group.Record // by group tag
-	order  []string                  // the tags, least recently saved first
-	loaded bool
+	order  []string                  // the tags, least recently kept first
 }
 
-func newMemory(dir string) *memory { return &memory{dir: dir, groups: map[string][]group.Record{}} }
+func newMemory() *memory { return &memory{groups: map[string][]group.Record{}} }
 
 // records returns what the forwarder knows of the group's authority.
 func (m *memory) records(tag string) []group.Record {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.loadLocked()
 	return m.groups[tag]
 }
 
 // keep remembers the group's authority records, checked ones only: what
 // authority returned.
-func (m *memory) keep(tag string, kept []group.Record) error {
-	if !validTag(tag) {
-		return nil
-	}
+func (m *memory) keep(tag string, kept []group.Record) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.loadLocked()
 	if i := slices.Index(m.order, tag); i >= 0 {
 		m.order = slices.Delete(m.order, i, i+1)
 	}
@@ -69,93 +60,44 @@ func (m *memory) keep(tag string, kept []group.Record) error {
 		}
 	}
 	m.groups[tag] = kept
-	var gone []string
 	for len(m.order) > rememberedGroups {
-		gone = append(gone, m.order[0])
 		delete(m.groups, m.order[0])
 		m.order = m.order[1:]
 	}
-	if m.dir == "" {
-		return nil
-	}
-	for _, t := range gone {
-		os.Remove(m.file(t))
-	}
-	var lasting []group.Record
-	for _, r := range kept {
-		if r.Type() != group.RecordDevice {
-			lasting = append(lasting, r)
-		}
-	}
-	b, err := json.Marshal(lasting)
-	if err != nil {
-		return err
-	}
-	return writeFile(m.file(tag), b)
 }
 
-func (m *memory) file(tag string) string { return filepath.Join(m.dir, tag+".json") }
-
-// loadLocked reads the directory once, the files saved least recently
-// first.
-func (m *memory) loadLocked() {
-	if m.loaded || m.dir == "" {
-		m.loaded = true
-		return
+// RemoveGroupFiles deletes the files that earlier versions kept in dir, one
+// for each group that registered, with its roots and removals, and then dir
+// itself when nothing else is left in it. It returns how many it deleted.
+func RemoveGroupFiles(dir string) (int, error) {
+	es, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
 	}
-	m.loaded = true
-	es, err := os.ReadDir(m.dir)
 	if err != nil {
-		return
+		return 0, err
 	}
-	type saved struct {
-		tag string
-		mod int64
-	}
-	var all []saved
+	n := 0
 	for _, e := range es {
 		name := e.Name()
-		tag, ok := strings.CutSuffix(name, ".json")
+		tag, ok := strings.CutSuffix(strings.TrimSuffix(name, ".tmp"), ".json")
 		if !ok || !validTag(tag) {
 			continue
 		}
-		info, err := e.Info()
-		if err != nil {
-			continue
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			return n, err
 		}
-		all = append(all, saved{tag, info.ModTime().UnixNano()})
+		n++
 	}
-	slices.SortFunc(all, func(a, b saved) int { return cmp.Compare(a.mod, b.mod) })
-	for _, s := range all {
-		b, err := os.ReadFile(m.file(s.tag))
-		if err != nil {
-			continue
-		}
-		var rs []group.Record
-		if json.Unmarshal(b, &rs) != nil {
-			continue
-		}
-		m.groups[s.tag] = rs
-		m.order = append(m.order, s.tag)
-	}
+	os.Remove(dir) // only when it is empty
+	return n, nil
 }
 
-// validTag reports whether tag is a group tag, 16 lowercase hex digits, and
-// so a safe file name.
+// validTag reports whether tag is a group tag, 16 lowercase hex digits.
 func validTag(tag string) bool {
 	if len(tag) != 16 {
 		return false
 	}
 	_, err := hex.DecodeString(tag)
 	return err == nil && tag == strings.ToLower(tag)
-}
-
-// writeFile writes b to name through a temporary file, so that a crash
-// leaves the old file or the new one.
-func writeFile(name string, b []byte) error {
-	tmp := name + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, name)
 }

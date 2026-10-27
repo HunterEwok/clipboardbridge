@@ -64,11 +64,14 @@ func startForwarder(t *testing.T, limits Limits) (*Forwarder, string) {
 
 func startForwarderWith(t *testing.T, cfg Config) (*Forwarder, string) {
 	t.Helper()
-	cert, err := NewCert()
-	if err != nil {
-		t.Fatal(err)
+	if cfg.Cert.Certificate == nil {
+		cert, err := NewCert()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.Cert = cert
 	}
-	cfg.Listen, cfg.Cert, cfg.Logf = "127.0.0.1:0", cert, t.Logf
+	cfg.Listen, cfg.Logf = "127.0.0.1:0", t.Logf
 	f, err := Listen(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +88,7 @@ func startForwarderWith(t *testing.T, cfg Config) (*Forwarder, string) {
 		cancel()
 		<-done
 	})
-	return f, Pin(cert.Leaf)
+	return f, Pin(cfg.Cert.Leaf)
 }
 
 type hubSide struct {
@@ -490,17 +493,18 @@ func TestHello(t *testing.T) {
 }
 
 // hubAuth is what a hand-made registration shows: the key that signs it,
-// the admin CA of that key (nil for a root), and records.
+// the admin CA of that key (nil for a root), and records, or credentials.
 type hubAuth struct {
 	key     crypto.Signer
 	admin   *x509.Certificate
 	records []group.Record
+	creds   []group.Credential
 }
 
 // sign fills c's admin fields for the session cs.
 func (a hubAuth) sign(t *testing.T, c *claim, cs tls.ConnectionState) {
 	t.Helper()
-	c.Records = a.records
+	c.Records, c.Credentials = a.records, a.creds
 	if a.key == nil {
 		return
 	}
@@ -985,12 +989,12 @@ func TestRegistrationByMemberKey(t *testing.T) {
 }
 
 // TestRegistrationRemembersRemovals checks that the forwarder keeps a
-// group's authority records after its registration ends, in its state
-// directory across a restart, so that an admin phone the group removed
-// cannot register again with the records from before.
+// group's authority records after its registration ends, in memory only,
+// so that an admin phone the group removed cannot register again with the
+// records from before.
 func TestRegistrationRemembersRemovals(t *testing.T) {
 	dir := t.TempDir()
-	f, pin := startForwarderWith(t, Config{StateDir: dir})
+	f, pin := startForwarderWith(t, Config{StateFile: filepath.Join(dir, "state.json")})
 	cert, tag, root := member(t)
 	now := time.Now()
 	dev, _ := group.DeviceOf(cert.Leaf)
@@ -1047,15 +1051,9 @@ func TestRegistrationRemembersRemovals(t *testing.T) {
 		t.Errorf("the removed admin phone while the group is away: %+v", a)
 	}
 
-	// A forwarder that starts again on the same directory knows it too.
-	g, gpin := startForwarderWith(t, Config{StateDir: dir})
-	if a := rawRegister(t, g, gpin, phone, pk.PublicKey().Bytes(), pk, hubAuth{records: before}); a.Error == "" {
-		t.Errorf("the removed admin phone after a restart: %+v", a)
-	}
-	b, err := os.ReadFile(filepath.Join(dir, tag+".json"))
-	var kept []group.Record
-	if err != nil || json.Unmarshal(b, &kept) != nil || len(kept) != 1 || kept[0].Type() != group.RecordRevoke {
-		t.Errorf("the group's file keeps no device records, only the removal: %q, %v", b, err)
+	// Nothing of them goes to disk.
+	if es, err := os.ReadDir(dir); err != nil || len(es) != 0 {
+		t.Errorf("the forwarder wrote records: %v, %v", es, err)
 	}
 }
 

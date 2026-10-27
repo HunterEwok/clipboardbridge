@@ -954,8 +954,13 @@ The user picks one of three levels for the group, at its root:
 
 ## What the servers learn
 
-Planned for 0.6 (D-67). A forwarder and a relay now see the group's authority records,
-which name the root's and the admins' devices with their names, systems and dates, and the
+In progress for 0.6 (D-67). Built in Go: the hubs' credential, which a computer that is the
+group's root signs and the members pass on, the links of a handover, and the forwarder that
+takes hubs by it and keeps on disk only a keyed hash of each tag with the newest version
+(docs/protocol.md, section 18). Still to come: the phones keeping and signing it, the
+members' credential for a relay, and the relay's pseudonyms. Until then a forwarder still
+sees the records of a phone's group, and a relay those of any group: the group's authority
+records, which name the root's and the admins' devices with their names, systems and dates, and the
 removals with who made them and when. Signed records cannot be cut, so the servers get
 credentials made for them instead, signed with the group's keys:
 

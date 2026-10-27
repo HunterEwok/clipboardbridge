@@ -318,7 +318,17 @@ func (w *Wayland) read(id uint32, types []string) (connector.Item, bool, error) 
 	if image != "" {
 		return connector.Item{Image: &connector.Image{Type: image, Data: data}}, len(data) > 0, nil
 	}
-	return connector.Item{Text: string(data), Secret: slices.Contains(types, secretType)}, len(data) > 0, nil
+	it := connector.Item{Text: string(data), Secret: slices.Contains(types, secretType)}
+	// Formatted text next to the text, as a browser or an office program
+	// copies it; without it, or when it cannot be read, the text alone.
+	if len(data) > 0 && !it.Secret && slices.Contains(types, clip.TypeHTML) {
+		if html, err := w.receive(id, clip.TypeHTML, connector.MaxHTML, readTimeout); err == nil {
+			it.HTML = htmlText(html)
+		} else {
+			w.logf("cbb: reading the clipboard's formatted text: %v; its text goes alone", err)
+		}
+	}
+	return it, len(data) > 0, nil
 }
 
 // receive reads the offer's data of the type mime through a pipe, at most
@@ -394,6 +404,12 @@ func (w *Wayland) Write(text string, secret bool) error {
 // with its text, if any.
 func (w *Wayland) WriteImage(img connector.Image, text string) error {
 	return w.write(connector.Item{Text: text, Image: &img}, map[string][]byte{img.Type: img.Data}, []string{img.Type})
+}
+
+// WriteHTML sets the clipboard and the primary selection to formatted
+// text, with its plain text.
+func (w *Wayland) WriteHTML(html, text string) error {
+	return w.write(connector.Item{Text: text, HTML: html}, map[string][]byte{clip.TypeHTML: []byte(html)}, []string{clip.TypeHTML})
 }
 
 // WriteFiles sets the clipboard and the primary selection to the files,

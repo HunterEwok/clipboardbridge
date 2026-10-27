@@ -19,7 +19,12 @@ import (
 	"unsafe"
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/connector"
 )
+
+// maxHTML is the largest formatted text read; a larger one is left out
+// and its text goes alone.
+const maxHTML = connector.MaxHTML
 
 // Supported reports whether this build reaches the pasteboard.
 const Supported = true
@@ -70,7 +75,36 @@ func (b *Board) Read() (Item, bool, error) {
 		it.Text = C.GoStringN(text, C.int(n))
 		C.free(unsafe.Pointer(text))
 	}
+	if !it.Secret && it.Text != "" {
+		it.HTML = b.readHTML()
+	}
 	return it, true, nil
+}
+
+// readHTML returns the pasteboard's formatted text, or "" when it holds
+// none, or more than the group carries.
+func (b *Board) readHTML() string {
+	var html *C.char
+	var n C.long
+	if C.cb_read_html(b.name, &html, &n, C.long(maxHTML)) != 1 {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(html))
+	return C.GoStringN(html, C.int(n))
+}
+
+// WriteHTML puts formatted text on the pasteboard with its plain text,
+// and returns the new change counter.
+func (b *Board) WriteHTML(html, text string) (int64, error) {
+	ch := C.CString(html)
+	defer C.free(unsafe.Pointer(ch))
+	ct := C.CString(text)
+	defer C.free(unsafe.Pointer(ct))
+	change := C.cb_write_html(b.name, ch, C.long(len(html)), ct, C.long(len(text)))
+	if change < 0 {
+		return 0, errors.New("pasteboard: the formatted text could not be written")
+	}
+	return int64(change), nil
 }
 
 // readImage returns the pasteboard's image, if it holds no text.

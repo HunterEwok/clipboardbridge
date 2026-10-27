@@ -40,8 +40,10 @@ func (s *Service) registerForwarderLocked(ctx context.Context, h *tunnel.Hub, st
 			}
 			return s.id.ForwarderCertificate()
 		},
-		Authority: s.forwarderAuthority,
-		Send:      h.Send,
+		Authority:   s.forwarderAuthority,
+		Credentials: s.hubCredentials,
+		HubCert:     s.hubCert,
+		Send:        h.Send,
 		Report: func(r forward.Report) {
 			s.tunMu.Lock()
 			defer s.tunMu.Unlock()

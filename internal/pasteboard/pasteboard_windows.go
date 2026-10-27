@@ -19,7 +19,12 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
+	"github.com/HunterEwok/clipboardbridge/internal/connector"
 )
+
+// maxHTML is the largest formatted text read; a larger one is left out
+// and its text goes alone.
+const maxHTML = connector.MaxHTML
 
 // Supported reports whether this build reaches the clipboard.
 const Supported = true
@@ -32,6 +37,9 @@ const Supported = true
 // the text is read with LF and written with CR LF, so the group carries one
 // form. A text with a NUL ends there, since the clipboard's text format ends
 // at the first NUL.
+//
+// Formatted text, the "HTML Format" that browsers and Office write, is read
+// next to the text, never with a secret, and written with it.
 //
 // An image is read when the clipboard holds no text: the "PNG" format that
 // browsers and Office put there, else the bitmap as a PNG. One is written
@@ -78,12 +86,14 @@ var (
 	formatsOnce                                   sync.Once
 	cfExclude, cfViewerIgnore, cfHistory, cfCloud uintptr
 	cfPNG                                         uintptr // an image as a PNG file
+	cfHTML                                        uintptr // formatted text, "HTML Format"
 	cfDropEffect                                  uintptr // whether pasted files are copied or moved
 )
 
 func registerFormats() {
 	formatsOnce.Do(func() {
 		cfPNG = register("PNG")
+		cfHTML = register("HTML Format")
 		cfDropEffect = register("Preferred DropEffect")
 		cfExclude = register("ExcludeClipboardContentFromMonitorProcessing")
 		cfViewerIgnore = register("Clipboard Viewer Ignore")
@@ -151,10 +161,56 @@ func (b *Board) Read() (Item, bool, error) {
 		registerFormats()
 		it.Text = strings.ReplaceAll(text, "\r\n", "\n")
 		it.Secret = available(cfExclude) || available(cfViewerIgnore) || zero(cfHistory)
+		if !it.Secret && it.Text != "" {
+			it.HTML = readHTML()
+		}
 		ok = true
 		return nil
 	})
 	return it, ok, err
+}
+
+// readHTML returns the open clipboard's formatted text, or "" when it
+// holds none, or one that is too large or cannot be read: its text then
+// goes alone.
+func readHTML() string {
+	if !available(cfHTML) {
+		return ""
+	}
+	h, _, _ := procGetClipboardData.Call(cfHTML)
+	if h == 0 {
+		return ""
+	}
+	data, err := globalBytes(h, maxHTML)
+	if err != nil {
+		return ""
+	}
+	html, err := parseCFHTML(data)
+	if err != nil {
+		return ""
+	}
+	return html
+}
+
+// WriteHTML puts formatted text on the clipboard as "HTML Format", with
+// its plain text, and returns the new change counter.
+func (b *Board) WriteHTML(html, text string) (int64, error) {
+	text = windowsText(text)
+	registerFormats()
+	err := onThread(func(hwnd uintptr) error {
+		if err := open(hwnd); err != nil {
+			return err
+		}
+		defer procCloseClipboard.Call()
+		if r, _, err := procEmptyClipboard.Call(); r == 0 {
+			return fmt.Errorf("pasteboard: emptying the clipboard: %w", err)
+		}
+		return errors.Join(set(cfUnicodeText, utf16Bytes(text)), set(cfHTML, append(makeCFHTML(html), 0)))
+	})
+	if err != nil {
+		return 0, err
+	}
+	return b.ChangeCount(), nil
 }
 
 // Write puts a text on the clipboard and returns the new change counter.
