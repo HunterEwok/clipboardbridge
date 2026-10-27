@@ -106,7 +106,9 @@ The order of what comes next is the [roadmap](docs/roadmap.md).
 - **Using it**: the [quick start](docs/guide/quickstart.md), [how it works](docs/guide/how-it-works.md)
   (with pictures), [installing](docs/guide/install.md), [away from home](docs/guide/away-from-home.md),
   [networks that block VPNs](docs/guide/blocked-networks.md), [keys and attestation](docs/guide/keys.md),
-  [the apps](docs/guide/apps.md), [without the app](docs/guide/without-app.md) and
+  [images and files](docs/guide/images-and-files.md), [remote paste](docs/guide/remote-paste.md),
+  [quick actions](docs/guide/quick-actions.md), [the apps](docs/guide/apps.md),
+  [without the app](docs/guide/without-app.md), [a lost device](docs/guide/lost-device.md) and
   [troubleshooting](docs/guide/troubleshooting.md).
 - **Running servers**: [your own forwarder or relay](docs/admin/self-hosting.md), the
   [Docker image](packaging/docker/README.md), the [lite member](lite/README.md).

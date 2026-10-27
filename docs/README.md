@@ -15,7 +15,11 @@ For anyone with a phone or a computer, in plain words.
 | [The apps](guide/apps.md) | the phone, watch and desktop apps |
 | [Away from home](guide/away-from-home.md) | the hub, a forwarder, invitations |
 | [Networks that block VPNs](guide/blocked-networks.md) | AmneziaWG and VLESS with REALITY |
+| [Images, files and formatted text](guide/images-and-files.md) | what goes where, the sizes, saving received files |
+| [Remote paste](guide/remote-paste.md) | an admin puts a text into the focused app on another device |
+| [Quick actions](guide/quick-actions.md) | lock, sleep or restart a device from a phone or another computer |
 | [Keys and attestation](guide/keys.md) | where each device keeps its keys, how devices prove it, the three levels |
+| [If a device is lost](guide/lost-device.md) | remove it, freeze an admin, take the group over |
 | [Without the app](guide/without-app.md) | a group held by a computer, the iPhone shortcut, joining over SSH or a VPN |
 | [Troubleshooting](guide/troubleshooting.md) | logs, the firewall, pairing, other networks |
 

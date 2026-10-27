@@ -68,10 +68,9 @@ without telling any outside service which devices you have.
 
 ## If a device is lost
 
-Remove it from the group (`cbb revoke NAME`, or the device page in the app). A key in hardware
-cannot be used without the device, and the phone asks for your face, fingerprint or
-passcode before the root's or an admin's key signs anything. A key in a file can: remove
-such a device as soon as you can.
+Remove it from the group as soon as you can: see [if a device is lost or stolen](lost-device.md).
+A key in hardware cannot be used without the device; a key in a file can, until the device
+is removed.
 
 ## What is not built yet
 
