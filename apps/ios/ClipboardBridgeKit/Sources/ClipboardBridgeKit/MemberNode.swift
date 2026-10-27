@@ -37,6 +37,16 @@ public protocol RecordStore: AnyObject, Sendable {
     func mayHost(_ device: String, chain: [Data]) -> Bool
 }
 
+/// Keeps the group's server credentials for a node (docs/protocol.md,
+/// section 18), which it sends each peer after the hello and passes on.
+public protocol CredentialKeeper: AnyObject, Sendable {
+    /// Every credential kept.
+    var all: [ServerCredentials.Credential] { get }
+    /// Takes credentials a peer sent and returns those that were new and
+    /// valid.
+    func add(_ credentials: [ServerCredentials.Credential]) -> [ServerCredentials.Credential]
+}
+
 public extension RecordStore {
     func refused(chain: [Data]) -> String? { nil }
     func mayHost(_ device: String, chain: [Data]) -> Bool { true }
@@ -80,6 +90,8 @@ public actor MemberNode {
     /// The images and files this phone holds whole, which it serves to its
     /// peers (section 4, "Content"); the hellos say so. nil serves none.
     private let content: ContentStore?
+    /// The group's server credentials; nil keeps none and passes none on.
+    private let credentials: CredentialKeeper?
     /// This phone's sync mode, which the hellos state; nil for a phone
     /// without one, which shares.
     public private(set) var mode: String?
@@ -142,12 +154,13 @@ public actor MemberNode {
                 mode: String? = nil,
                 onCommand: (@Sendable (String?, Member.Record) -> Member.CommandResult)? = nil,
                 onEvidence: @escaping @Sendable (String?, [Data], Member.Evidence) -> Void = { _, _, _ in },
-                content: ContentStore? = nil) {
+                content: ContentStore? = nil,
+                credentials: CredentialKeeper? = nil) {
         (self.engine, self.name, self.role, self.records, self.renew, self.adminCA, self.onChange, self.onCert) =
             (engine, name, role, records, renew, adminCA, onChange, onCert)
         (self.tunnelKey, self.tunnelPSK, self.onTunnel, self.hub, self.os, self.device) = (tunnelKey, tunnelPSK, onTunnel, hub, os, device?.cleaned)
         (self.hubShare, self.onHubs, self.mode, self.onCommand, self.onEvidence) = (hubShare, onHubs, mode, onCommand, onEvidence)
-        self.content = content
+        (self.content, self.credentials) = (content, credentials)
     }
 
     /// Replaces the sync mode that the next connections' hellos state.
@@ -356,6 +369,7 @@ public actor MemberNode {
                 if let hubShare, let p = c.peer, !t.peerChain.isEmpty, let share = hubShare(p, t.peerChain) {
                     c.enqueue(.hubs(share))
                 }
+                if let all = credentials?.all, !all.isEmpty { c.enqueue(.credentials(all)) }
                 continue
             }
             switch m {
@@ -371,6 +385,8 @@ public actor MemberNode {
                 if let p = c.peer, records?.mayHost(p, chain: t.peerChain) != false { onTunnel(p, o) }
             case let .hubs(share):
                 if let p = c.peer, records?.mayHost(p, chain: t.peerChain) != false { onHubs(p, t.peerChain, share) }
+            case let .credentials(cs) where !cs.isEmpty && cs.count <= ServerCredentials.maxCredentials:
+                if let fresh = credentials?.add(cs), !fresh.isEmpty { sendCredentials(fresh, except: id) }
             case let .records(rs):
                 if let store = records, !rs.isEmpty {
                     let fresh = store.add(rs)
@@ -645,6 +661,14 @@ public actor MemberNode {
     private func dropRefused() {
         guard let store = records else { return }
         for c in conns.values where store.refused(chain: c.transport.peerChain) != nil { c.goodbye() }
+    }
+
+    /// Sends server credentials signed on this phone to every connected
+    /// member.
+    public func sendCredentials(_ cs: [ServerCredentials.Credential]) { sendCredentials(cs, except: nil) }
+
+    private func sendCredentials(_ cs: [ServerCredentials.Credential], except: ObjectIdentifier?) {
+        for (id, c) in conns where id != except && c.peerRole != nil { c.enqueue(.credentials(cs)) }
     }
 
     private func sendRecords(_ rs: [Member.Record], except: ObjectIdentifier?) {

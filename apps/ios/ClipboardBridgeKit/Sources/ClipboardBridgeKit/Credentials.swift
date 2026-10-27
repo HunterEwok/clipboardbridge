@@ -413,3 +413,82 @@ public struct CredentialStore: Sendable {
         return want.contains { !head.contains($0) }
     }
 }
+
+/// A device's keys for the servers, one set per period (Go's
+/// group.ServerKeys): its server key, and on the root that started the
+/// period, the period key. The app keeps them in the Secure Enclave or the
+/// Keystore, without user presence, since they sign in the background.
+public protocol PeriodKeys: AnyObject {
+    /// The key of kind (serverKey or periodKey) for the period tag, made
+    /// when there is none.
+    func get(_ kind: String, tag: String) throws -> CertificateSigner
+    func has(_ kind: String, tag: String) -> Bool
+    /// Drops the keys of every period but tag.
+    func keep(_ tag: String)
+}
+
+public enum PeriodKeyKind {
+    public static let serverKey = "server"
+    public static let periodKey = "period"
+}
+
+/// Brings a device's server credentials up to date as far as it can, as
+/// Go's refreshCredential (docs/protocol.md, section 18).
+public enum CredentialRefresh {
+    /// Returns what it signed and the store took, for the peers. On the
+    /// current root, a new period when the one kept is due or a member that
+    /// sent its server key left the group; on every member, its server key
+    /// for the period; on the root, the hubs' and the members' credentials
+    /// when they list other keys than the records and the server
+    /// credentials say; on an admin that the hubs' credential lists, the
+    /// members' credential. root is the current root's certificate;
+    /// rootSigner, given only on the phone that holds that root, is asked
+    /// for its key when a period must be signed, which costs Face ID, so
+    /// about once a month.
+    public static func refresh(_ store: inout CredentialStore, records: RecordSet, groupCA: Data, root: Data, member: CertificateSigner,
+                               keys: PeriodKeys, nowMS: Int64, rootSigner: (() throws -> CertificateSigner)? = nil) throws -> [ServerCredentials.Credential] {
+        let rootKey = try CertificateInfo(der: root).publicKey
+        let devices = records.devices
+        let isMember = { (k: Data) in devices.contains { !$0.frozen && $0.keys.contains(k) } }
+        var signed: [ServerCredentials.Credential] = []
+        func add(_ c: ServerCredentials.Credential) { signed += store.add(root: rootKey, isMember: isMember, [c]).fresh }
+
+        if let rootSigner, store.periodStale(root: rootKey, isMember: isMember, nowMS: nowMS) {
+            let tag = ServerCredentials.newPeriodTag()
+            let pk = try keys.get(PeriodKeyKind.periodKey, tag: tag)
+            let prev = store.period(root: rootKey)?.1.version ?? 0
+            add(try ServerCredentials.signPeriod(groupTag: GroupCertificates.tag(groupCA: groupCA), tag: tag, periodKey: pk.publicKeyDER,
+                                                 version: ServerCredentials.nextVersion(prev, nowMS: nowMS), nowMS: nowMS, root: rootSigner()))
+        }
+        guard let p = store.period(root: rootKey)?.1 else { return signed }
+        keys.keep(p.tag)
+
+        let sk = try keys.get(PeriodKeyKind.serverKey, tag: p.tag)
+        let mine = Data(SHA256.hash(data: sk.publicKeyDER))
+        if store.server(member: Data(SHA256.hash(data: member.publicKeyDER))) != mine {
+            add(try ServerCredentials.signServer(p, serverKey: sk.publicKeyDER, version: ServerCredentials.nextVersion(0, nowMS: nowMS), member: member))
+        }
+
+        let l = ServerCredentials.lists(records)
+        let hubs = store.serverKeys(l.hubs), admins = store.serverKeys(l.admins), members = store.serverKeys(l.members)
+        let hb = store.hubs?.1
+        let signer: CertificateSigner
+        if rootSigner != nil, keys.has(PeriodKeyKind.periodKey, tag: p.tag) {
+            let pk = try keys.get(PeriodKeyKind.periodKey, tag: p.tag)
+            if hb == nil || store.listStale(hb!.hubs, want: hubs, ordered: true) || store.listStale(hb!.admins, want: admins, ordered: false) {
+                add(try ServerCredentials.signHubs(p, hubs: hubs, admins: admins, version: ServerCredentials.nextVersion(hb?.version ?? 0, nowMS: nowMS),
+                                                   periodKey: pk))
+            }
+            signer = pk
+        } else if let hb, hb.admins.contains(mine) {
+            signer = sk
+        } else {
+            return signed
+        }
+        let mb = store.members?.1
+        if mb == nil || store.listStale(mb!.members, want: members, ordered: false) {
+            add(try ServerCredentials.signMembers(p, members: members, version: ServerCredentials.nextVersion(mb?.version ?? 0, nowMS: nowMS), key: signer))
+        }
+        return signed
+    }
+}

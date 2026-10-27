@@ -114,4 +114,62 @@ final class CredentialsTests: XCTestCase {
         XCTAssertEqual(store.all.count, 1)
         XCTAssertEqual(ServerCredentials.nextVersion(5, nowMS: now), now / 1000)
     }
+
+    /// Keys in memory, as the app keeps them in the Secure Enclave.
+    final class Keys: PeriodKeys {
+        var keys: [String: SoftwareSigner] = [:]
+        func get(_ kind: String, tag: String) throws -> CertificateSigner {
+            if let k = keys["\(kind) \(tag)"] { return k }
+            let k = SoftwareSigner()
+            keys["\(kind) \(tag)"] = k
+            return k
+        }
+        func has(_ kind: String, tag: String) -> Bool { keys["\(kind) \(tag)"] != nil }
+        func keep(_ tag: String) { keys = keys.filter { $0.key.hasSuffix(" \(tag)") } }
+    }
+
+    /// A root phone starts a period, signs its own server key and the
+    /// lists, and asks for the root key only for the period.
+    func testRootStartsAPeriod() throws {
+        let t0 = Date(timeIntervalSince1970: 1_792_000_000)
+        let rootKey = SoftwareSigner(), member = SoftwareSigner()
+        let g = try PhoneGroup.create(caSigner: rootKey, memberKey: member.publicKeyDER, name: "Root", now: t0)
+        var store = CredentialStore(groupCA: g.groupCA)
+        let keys = Keys()
+        var asked = 0
+        let root = { () -> CertificateSigner in asked += 1; return rootKey }
+        let now = Int64(t0.timeIntervalSince1970 * 1000)
+        let signed = try CredentialRefresh.refresh(&store, records: g.records, groupCA: g.groupCA, root: g.currentRoot, member: member,
+                                                   keys: keys, nowMS: now, rootSigner: root)
+        XCTAssertEqual(try signed.map { try $0.open().type }, ["period", "server", "hubs", "members"])
+        XCTAssertEqual(asked, 1)
+        let tag = try XCTUnwrap(store.period(root: rootKey.publicKeyDER)).1.tag
+        let mine = Data(SHA256.hash(data: try keys.get(PeriodKeyKind.serverKey, tag: tag).publicKeyDER))
+        XCTAssertTrue(try XCTUnwrap(store.members).1.members.contains(mine))
+        // Nothing changed: nothing to sign, no Face ID.
+        XCTAssertEqual(try CredentialRefresh.refresh(&store, records: g.records, groupCA: g.groupCA, root: g.currentRoot, member: member,
+                                                     keys: keys, nowMS: now + 1000, rootSigner: root).count, 0)
+        XCTAssertEqual(asked, 1)
+        // A month on: a new period, and the keys of the one before are gone.
+        let later = try CredentialRefresh.refresh(&store, records: g.records, groupCA: g.groupCA, root: g.currentRoot, member: member,
+                                                  keys: keys, nowMS: now + ServerCredentials.periodRenewMS, rootSigner: root)
+        XCTAssertEqual(try later.first?.open().type, "period")
+        XCTAssertEqual(asked, 2)
+        XCTAssertEqual(keys.keys.count, 2)
+        // Without the root key, and with a server key of its own, it signs only that.
+        var other = CredentialStore(groupCA: g.groupCA)
+        other.add(root: rootKey.publicKeyDER, isMember: { _ in true }, store.all)
+        let alone = try CredentialRefresh.refresh(&other, records: g.records, groupCA: g.groupCA, root: g.currentRoot, member: member,
+                                                  keys: Keys(), nowMS: now + ServerCredentials.periodRenewMS + 1000)
+        XCTAssertEqual(try alone.map { try $0.open().type }, ["server"])
+    }
+
+    /// A message with credentials comes back the same.
+    func testCredentialsMessage() throws {
+        let c = try ServerCredentials.sign(ServerCredentials.Body(type: ServerCredentials.hubs, group: "0123456789abcdef", version: 1, expires_ms: 1,
+                                                                  hubs: ServerCredentials.pad([])), key: SoftwareSigner())
+        let m = Member.Message.credentials([c])
+        let f = try Member.encode(m)
+        XCTAssertEqual(try Member.decode(body: Data(f.dropFirst(4))), m)
+    }
 }

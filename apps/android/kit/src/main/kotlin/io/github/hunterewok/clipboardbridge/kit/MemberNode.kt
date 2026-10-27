@@ -36,6 +36,18 @@ interface RecordStore {
 }
 
 /**
+ * Keeps the group's server credentials for a node (docs/protocol.md,
+ * section 18), which it sends each peer after the hello and passes on.
+ */
+interface CredentialKeeper {
+    /** Every credential kept. */
+    val all: List<ServerCredentials.Credential>
+
+    /** Takes credentials a peer sent and returns those that were new and valid. */
+    fun add(credentials: List<ServerCredentials.Credential>): List<ServerCredentials.Credential>
+}
+
+/**
  * The phone as a member: its sync engine and its connections to the
  * computers, which it dials (docs/protocol.md, section 9). Each connection
  * runs the member protocol of section 4: a hello first, then events, a
@@ -116,6 +128,8 @@ class MemberNode(
      * peers (section 4, "Content"); the hellos say so. null serves none.
      */
     private val content: ContentStore? = null,
+    /** The group's server credentials; null keeps none and passes none on. */
+    private val credentials: CredentialKeeper? = null,
 ) {
     val device: Member.DeviceInfo? = device?.cleaned
     private val lock = Any()
@@ -340,6 +354,7 @@ class MemberNode(
                     }
                     if (c.peer != null && chain.isNotEmpty()) hubShare?.invoke(c.peer, chain)?.let { c.enqueue(Member.Message.Hubs(it)) }
                     for (e in evidence()) c.enqueue(Member.Message.Evidence(e))
+                    credentials?.all?.takeIf { it.isNotEmpty() }?.let { c.enqueue(Member.Message.Credentials(it)) }
                     continue
                 }
                 when (m) {
@@ -362,6 +377,10 @@ class MemberNode(
                                 dropRefusedLocked()
                             }
                         }
+                    }
+                    is Member.Message.Credentials -> if (m.credentials.isNotEmpty() && m.credentials.size <= ServerCredentials.MAX_CREDENTIALS) {
+                        val fresh = credentials?.add(m.credentials).orEmpty()
+                        if (fresh.isNotEmpty()) synchronized(lock) { sendCredentials(fresh, c) }
                     }
                     is Member.Message.Command -> {
                         val o = Wire.parse(m.command.body)
@@ -584,6 +603,13 @@ class MemberNode(
     private fun dropRefusedLocked() {
         val store = records ?: return
         for (c in conns) if (store.refused(c.transport.peerChain) != null) c.goodbye()
+    }
+
+    /** Sends server credentials signed on this phone to every connected member. */
+    fun sendCredentials(cs: List<ServerCredentials.Credential>) = synchronized(lock) { sendCredentials(cs, null) }
+
+    private fun sendCredentials(cs: List<ServerCredentials.Credential>, except: Conn?) {
+        for (c in conns) if (c !== except && c.peerRole != null) c.enqueue(Member.Message.Credentials(cs))
     }
 
     private fun sendRecords(rs: List<Member.Record>, except: Conn?) {

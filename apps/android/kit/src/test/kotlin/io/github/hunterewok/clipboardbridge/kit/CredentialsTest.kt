@@ -114,4 +114,46 @@ class CredentialsTest {
         assertEquals(store.all, back.all)
         assertEquals(ServerCredentials.nextVersion(5, now), now / 1000)
     }
+
+    /** Keys in memory, as the app keeps them in the Keystore. */
+    private class Keys : PeriodKeys {
+        val keys = mutableMapOf<String, SoftwareSigner>()
+        override fun get(kind: String, tag: String) = keys.getOrPut("$kind $tag") { SoftwareSigner() }
+        override fun has(kind: String, tag: String) = "$kind $tag" in keys
+        override fun keep(tag: String) {
+            keys.keys.retainAll { it.endsWith(" $tag") }
+        }
+    }
+
+    /** A root phone starts a period, signs its own server key and the lists, and asks for the root key only for the period. */
+    @Test
+    fun rootStartsAPeriod() {
+        val t0 = java.time.Instant.ofEpochMilli(1_792_000_000_000)
+        val rootKey = SoftwareSigner()
+        val member = SoftwareSigner()
+        val g = PhoneGroup.create(rootKey, member.publicKeyDER, t0, "Root")
+        val store = CredentialStore(g.groupCA)
+        val keys = Keys()
+        var asked = 0
+        val root = { asked++; rootKey as CertificateSigner }
+        val now = t0.toEpochMilli()
+        val signed = CredentialRefresh.refresh(store, g.records, g.groupCA, g.currentRoot, member, keys, now, root)
+        assertEquals(listOf("period", "server", "hubs", "members"), signed.map { it.open().type })
+        assertEquals(1, asked)
+        val mine = sha256(keys.get(PeriodKeys.SERVER_KEY, store.period(rootKey.publicKeyDER)!!.second.tag).publicKeyDER)
+        assertTrue(store.members()!!.second.members.any { it.contentEquals(mine) })
+        // Nothing changed: nothing to sign, no Face ID.
+        assertEquals(0, CredentialRefresh.refresh(store, g.records, g.groupCA, g.currentRoot, member, keys, now + 1000, root).size)
+        assertEquals(1, asked)
+        // A month on: a new period, and the keys of the one before are gone.
+        val later = CredentialRefresh.refresh(store, g.records, g.groupCA, g.currentRoot, member, keys, now + ServerCredentials.PERIOD_RENEW_MS, root)
+        assertEquals("period", later.first().open().type)
+        assertEquals(2, asked)
+        assertEquals(2, keys.keys.size)
+        // Without the root key, and with a server key of its own, it signs only that.
+        val other = CredentialStore(g.groupCA)
+        other.add(rootKey.publicKeyDER, { true }, store.all)
+        val alone = CredentialRefresh.refresh(other, g.records, g.groupCA, g.currentRoot, member, Keys(), now + ServerCredentials.PERIOD_RENEW_MS + 1000)
+        assertEquals(listOf("server"), alone.map { it.open().type })
+    }
 }

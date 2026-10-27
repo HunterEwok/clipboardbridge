@@ -5,7 +5,6 @@ package io.github.hunterewok.clipboardbridge.kit
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.security.SecureRandom
 
@@ -381,5 +380,101 @@ class CredentialStore(private val groupCA: ByteArray) {
     }
 }
 
-@Suppress("unused")
-private val keepImports = JsonPrimitive::class
+/**
+ * A device's keys for the servers, one set per period (Go's
+ * group.ServerKeys): its server key, and on the root that started the
+ * period, the period key. The app keeps them in the Keystore or the Secure
+ * Enclave, without user presence, since they sign in the background.
+ */
+interface PeriodKeys {
+    /** The key of kind (SERVER_KEY or PERIOD_KEY) for the period tag, made when there is none. */
+    fun get(kind: String, tag: String): CertificateSigner
+
+    fun has(kind: String, tag: String): Boolean
+
+    /** Drops the keys of every period but tag. */
+    fun keep(tag: String)
+
+    companion object {
+        const val SERVER_KEY = "server"
+        const val PERIOD_KEY = "period"
+    }
+}
+
+/**
+ * Brings a device's server credentials up to date as far as it can, as
+ * Go's refreshCredential (docs/protocol.md, section 18), and returns what
+ * it signed and the store took, for the peers. On the current root, a new
+ * period when the one kept is due or a member that sent its server key
+ * left the group; on every member, its server key for the period; on the
+ * root, the hubs' and the members' credentials when they list other keys
+ * than the records and the server credentials say; on an admin that the
+ * hubs' credential lists, the members' credential.
+ *
+ * root is the current root's certificate; rootSigner, given only on the
+ * phone that holds that root, is asked for its key when a period must be
+ * signed, which costs Face ID or the fingerprint, so about once a month.
+ */
+object CredentialRefresh {
+    fun refresh(
+        store: CredentialStore,
+        records: RecordSet,
+        groupCA: ByteArray,
+        root: ByteArray,
+        member: CertificateSigner,
+        keys: PeriodKeys,
+        nowMS: Long,
+        rootSigner: (() -> CertificateSigner)? = null,
+    ): List<ServerCredentials.Credential> {
+        val rootKey = CertificateInfo(root).publicKey
+        val isMember = { k: ByteArray -> isMember(records, k) }
+        val signed = mutableListOf<ServerCredentials.Credential>()
+        fun add(c: ServerCredentials.Credential) {
+            signed += store.add(rootKey, isMember, listOf(c)).first
+        }
+
+        if (rootSigner != null && store.periodStale(rootKey, isMember, nowMS)) {
+            val tag = ServerCredentials.newPeriodTag()
+            val pk = keys.get(PeriodKeys.PERIOD_KEY, tag)
+            val prev = store.period(rootKey)?.second?.version ?: 0
+            add(
+                ServerCredentials.signPeriod(
+                    GroupCertificates.tag(groupCA), tag, pk.publicKeyDER, ServerCredentials.nextVersion(prev, nowMS), nowMS, rootSigner(),
+                ),
+            )
+        }
+        val p = store.period(rootKey)?.second ?: return signed
+        keys.keep(p.tag)
+
+        val sk = keys.get(PeriodKeys.SERVER_KEY, p.tag)
+        val mine = sha256(sk.publicKeyDER)
+        if (store.server(sha256(member.publicKeyDER))?.contentEquals(mine) != true) {
+            add(ServerCredentials.signServer(p, sk.publicKeyDER, ServerCredentials.nextVersion(0, nowMS), member))
+        }
+
+        val l = ServerCredentials.lists(records)
+        val hubs = store.serverKeys(l.hubs)
+        val admins = store.serverKeys(l.admins)
+        val members = store.serverKeys(l.members)
+        val hb = store.hubs()?.second
+        val signer = when {
+            rootSigner != null && keys.has(PeriodKeys.PERIOD_KEY, p.tag) -> {
+                val pk = keys.get(PeriodKeys.PERIOD_KEY, p.tag)
+                if (hb == null || store.listStale(hb.hubs, hubs, true) || store.listStale(hb.admins, admins, false)) {
+                    add(ServerCredentials.signHubs(p, hubs, admins, ServerCredentials.nextVersion(hb?.version ?: 0, nowMS), pk))
+                }
+                pk
+            }
+            hb != null && hb.admins.any { it.contentEquals(mine) } -> sk
+            else -> return signed
+        }
+        val mb = store.members()?.second
+        if (mb == null || store.listStale(mb.members, members, false)) {
+            add(ServerCredentials.signMembers(p, members, ServerCredentials.nextVersion(mb?.version ?: 0, nowMS), signer))
+        }
+        return signed
+    }
+
+    /** Whether k is the member key of a device of the group that is not frozen (Go's Records.IsMember). */
+    fun isMember(records: RecordSet, k: ByteArray): Boolean = records.devices.any { d -> !d.frozen && d.keys.any { it.contentEquals(k) } }
+}
