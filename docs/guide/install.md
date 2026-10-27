@@ -61,6 +61,24 @@ winget install HunterEwok.clipboardbridge
 cbb install           # in the administrator terminal; again after each winget upgrade
 ```
 
+## OpenWrt
+
+A router with OpenWrt 25.12 or later and room for a 25 MB program (128 MB of flash or
+more, or eMMC; 256 MB of RAM), as root over SSH:
+
+```sh
+uclient-fetch -qO - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh
+```
+
+It installs `cbb` with a procd service that runs as its own user without capabilities. The
+service works only on the devices of the `lan` zone: mDNS and the member port never answer
+on `wan`. Another zone, such as an IoT network, goes into `/etc/config/clipboardbridge`
+(`list zone 'iot'`, then `/etc/init.d/clipboardbridge reload`); the service then opens the
+member port and mDNS from that zone while it runs, without changing
+`/etc/config/firewall`. After a boot it starts once NTP has set the clock. The keys live in
+`/etc/clipboardbridge`, which sysupgrade keeps; an attended sysupgrade (ASU, owut) leaves
+the program out, so run the command again after one.
+
 ## FreeBSD
 
 FreeBSD 15, amd64 or arm64, as root (with `sudo` or `doas`):

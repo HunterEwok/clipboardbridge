@@ -246,6 +246,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the state in `/etc/clipboardbridge/state` and the device's form is a router. Release
   archives for mips and mipsle (softfloat), whose tests a CI job runs under qemu-mips
   (big-endian).
+- OpenWrt 25.12 and later: `get.sh` installs the full member on a router (`uclient-fetch`,
+  mips or mipsle by the package architecture) with a procd service that runs as its own
+  user without capabilities, only on the devices of the zones in
+  `/etc/config/clipboardbridge` (`lan` by default), and starts once NTP has set the clock.
+  Its firewall rules are its own procd data, which fw4 loads while it runs, so
+  `/etc/config/firewall` is never changed; `cbb global hub` opens the hub's port on `wan`
+  this way. sysupgrade keeps the keys and the program. A CI job installs it on OpenWrt
+  booted in QEMU.
 
 ### Changed
 

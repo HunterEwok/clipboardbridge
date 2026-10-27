@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# Installs or updates clipboardbridge on a Linux machine, a Mac or FreeBSD
-# from a release (Windows has get.ps1):
+# Installs or updates clipboardbridge on a Linux machine, an OpenWrt router
+# (25.12 or later), a Mac or FreeBSD from a release (Windows has get.ps1):
 #
 #   curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
 #
@@ -93,8 +93,24 @@ Linux)
 	aarch64 | arm64) arch=arm64 ;;
 	armv7l | armv8l) arch=armv7 ;;
 	armv6l) arch=armv6 ;;
+	# uname says mips for either byte order; OpenWrt's package
+	# architecture tells them apart.
+	mips)
+		case $(sed -n "s/^DISTRIB_ARCH='\{0,1\}\([^_']*\).*/\1/p" /etc/openwrt_release 2>/dev/null) in
+		mipsel) arch=mipsle ;;
+		mips) arch=mips ;;
+		*) fail "no release for this MIPS system: it is not OpenWrt, which names its byte order" ;;
+		esac
+		;;
 	*) fail "no release for the architecture $(uname -m)" ;;
 	esac
+	if [ -f /etc/openwrt_release ]; then
+		os=openwrt
+		[ "$lite" = no ] || fail "the lite member does not install on OpenWrt yet; install the full member"
+		[ -z "$console" ] || fail "--console is not for a router"
+		[ -z "$uinput" ] || fail "--uinput is not for a router"
+		[ -z "$cgnat" ] || fail "--home-cgnat is not for a router"
+	fi
 	;;
 Darwin)
 	os=darwin
@@ -135,6 +151,10 @@ if [ -n "${CBB_RELEASE_DIR:-}" ]; then
 	fetch() { cp "$CBB_RELEASE_DIR/${1##*/}" "$2"; }
 elif command -v curl >/dev/null 2>&1; then
 	fetch() { curl -fsSL --proto '=https' --tlsv1.2 -o "$2" "$1"; }
+elif [ "$os" = openwrt ] && command -v uclient-fetch >/dev/null 2>&1; then
+	# OpenWrt's wget is often uclient-fetch, which does not take
+	# --https-only; it checks the server's certificate by itself.
+	fetch() { uclient-fetch -q -O "$2" "$1"; }
 elif command -v wget >/dev/null 2>&1; then
 	fetch() { wget -q --https-only -O "$2" "$1"; }
 elif [ "$os" = freebsd ]; then
@@ -150,7 +170,9 @@ latest) base=$repo/releases/latest/download ;;
 v*) base=$repo/releases/download/$version ;;
 *) fail "CBB_VERSION must look like v1.2.3" ;;
 esac
+# OpenWrt takes the Linux archive, which carries its installer too.
 archive=clipboardbridge-$os-$arch.tar.gz
+[ "$os" != openwrt ] || archive=clipboardbridge-linux-$arch.tar.gz
 dir=clipboardbridge
 if [ "$lite" = yes ]; then
 	# The lite member's ARMv6 build runs on ARMv7 too.
@@ -288,6 +310,9 @@ if [ "$os" = darwin ]; then
 elif [ "$os" = freebsd ]; then
 	# shellcheck disable=SC2086 # $port and $cgnat are words or none
 	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/freebsd/install.sh" $port $cgnat "$tmp/$dir/cbb"
+elif [ "$os" = openwrt ]; then
+	# shellcheck disable=SC2086 # $port is words or none
+	sh "$tmp/$dir/packaging/openwrt/install.sh" $port "$tmp/$dir/cbb"
 else
 	# shellcheck disable=SC2086 # $console, $uinput, $port and $cgnat are words or none
 	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $uinput $port $cgnat "$tmp/$dir/cbb"

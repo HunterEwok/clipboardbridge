@@ -275,10 +275,13 @@ One pull request each, smaller ones together:
    (`CBB_INTERFACES`), the paths of OpenWrt (the socket in `/var/run`, the state in
    `/etc/clipboardbridge/state`, `/usr/share` for the installer's files), release builds
    for mips and mipsle (softfloat), and a CI job that runs the tests under qemu-mips.
-2. `packaging/openwrt`: the procd script, the UCI file, install and uninstall through
-   `get.sh` (it recognises OpenWrt by `/etc/openwrt_release`), the fw4 rules, the state in
-   `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in an
-   OpenWrt root file system.
+2. Done. `packaging/openwrt`: the procd script (its own user, no capabilities,
+   `no_new_privs`, `GOMEMLIMIT`), the UCI file, install and uninstall through `get.sh` (it
+   recognises OpenWrt by `/etc/openwrt_release`, fetches with `uclient-fetch` and tells mips
+   from mipsle by the package architecture), the fw4 rules as procd service data, the state
+   in `/etc/clipboardbridge`, the wait for NTP; a CI job that runs the installer in
+   OpenWrt's root file system and on OpenWrt booted in QEMU. Still to check on the BPI-R4:
+   that fw4 loads changed service data by itself (`firewall.sh` reloads it anyway).
 3. The router as the hub: `cbb global hub` opens its UDP port on `wan` and `cbb global off`
    closes it; the bench gets the router as a device under test with cases for it in
    [testbench.md](testbench.md).
