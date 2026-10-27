@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The iPhone app asks iOS for background app refresh: now and then iOS runs it for a few
+  seconds, and it hears of the group's events then, without being opened. Push
+  notifications follow with the Apple developer account.
+- Hardened systemd units for the servers, `cbb-forward.service` and `cbb-relay.service`, in
+  the Linux archive; docs/reference/self-hosting.md installs them and says what the server
+  keeps, what its hosting provider sees, and what a system VPN on a device hides.
 - BRAND.md: which builds are official and how to check them, what belongs to the project
   (the icon, `cbb.tools`, the release keys), what anyone may do without asking, and what a
   build with changes should not do; it names the other projects called Clipboard Bridge.
@@ -28,17 +34,21 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The website for cbb.tools (`site/`, built by `tools/site`): the start page, download, and
   security and privacy, in English, Chinese, Hindi, Spanish, Russian, Arabic, Swahili and Hebrew
   (right to left for Arabic and Hebrew). It presents the two kinds of group, with a
-  computer at its heart and phones only, and says plainly why a computer is simpler. "/"
+  computer at its heart and phones only, and says why it recommends a computer. "/"
   picks the visitor's language by the language they picked before, their country (a local
   DB-IP database on the server, nothing logged) and their browser; English otherwise.
   The start page leads with "One clipboard to rule them all" and what it does, then the
   platforms, a comparison with sending yourself a message and one with Apple's Universal
-  Clipboard, Windows clipboard sync, KDE Connect and Pushbullet (from their makers' pages,
-  dated), three steps to start with a board each, uses and questions; every page ends with a
+  Clipboard, Windows clipboard sync, KDE Connect and Pushbullet, platform by platform (from
+  their makers' pages, dated), three steps to start with a board each, uses and questions; every page ends with a
   next step, and a phone keeps a "Download" button at the bottom of the screen. A dark and a
   light theme, following the system or the reader's choice in the header; the download page
   puts the reader's system first, and every command has a copy button. Short CSS-only
-  motion (the hero's chalk is drawn in), off for those who ask for less motion; one small
+  motion (the hero's chalk is drawn in on load, every other board's drawing, table or
+  commands as it first comes into view; then a little living chalk: a spark runs along the
+  main board's wire and back, the steps' arrow, command and camera move, the groups' links and
+  our row in the tables are gone over again, a cursor blinks after each command, and the
+  chalk's grain shifts as in a hand-drawn film), off for those who ask for less motion; one small
   script of its own, and every page works without it. A link's picture in each language; a
   print style. Error pages (404, 5xx) in the visitor's language, Open Graph, canonical and
   hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
@@ -50,11 +60,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   pre-compressed files, a long-cached stylesheet and script, preloaded fonts, `security.txt` and a web manifest.
   The design is art deco: gold lines and glass panes on dark wool felt, like the cloth of a
   billiard table. The pictures (a computer and a phone joined through the key, and each kind
-  of group as devices around its heart) and the tables are drawn in chalk on black school
+  of group as devices around its heart, a desktop with its system unit among them; the three
+  steps: the phone downloading the app, the computer's one command, the phone's camera
+  framing the computer's QR code) and the tables are drawn in chalk on black school
   boards with a faint grid, in frames of old walnut; rough.js draws the lines once
   (`site/chalk.js`) and `site/textures.py` makes the wood and the felt. On a phone: a
   sideways menu, the languages in a sheet from the bottom, a docked download button, and the
-  servers' table as a list. The fonts (Forum, Jost, IBM Plex Mono and Caveat, under the OFL)
+  servers' table as a list. The download page writes the commands for Linux, Mac and
+  Windows on one board, and the whole command for the lite member. The fonts (Forum, Jost, IBM Plex Mono and Caveat, under the OFL)
   are served by the site itself, so nginx allows `font-src 'self'`. The text under the
   centred headings spans the page's width.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
@@ -225,8 +238,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   The lite member's core and the phones' kits read and check the credentials with the same
   vectors. Both phone apps keep them, pass them on, and sign their server keys; a root phone
   signs a new period while the user's last Face ID or fingerprint lasts, and the lists with a
-  period key in the Secure Enclave or the Keystore. The phones still register with a relay
-  by their member certificate.
+  period key in the Secure Enclave or the Keystore. Once the members' credential lists a
+  phone's server key, the phone registers with a relay by the credentials too, under its
+  pseudonym (cbbtun's `Relay.SetCredentials`).
 - The hub takes a new WireGuard key for its clients with each period of the server
   credentials (docs/protocol.md, section 11, "The hub's key"): its offers give the next key
   three days ahead, then it serves with it and registers again with its forwarder, so the
@@ -243,6 +257,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the version of its newest credential and a hash of its period key (`-state`, `none` for
   memory only). It refuses an older credential or another period key, also after a restart;
   records from older hubs and from phones' groups stay in memory only.
+- `cbb forward` and `cbb relay` log no address and no WireGuard key: an error from the network
+  or from WireGuard, and with `CBB_DEBUG=1` WireGuard's own messages, are logged without
+  them.
 - The control socket asks for buffers of 1 MiB each way. On a Mac a Unix socket has 8 KiB,
   so `cbb copy` of large files and the connectors' images woke both sides a hundred times for
   each MiB.
@@ -265,6 +282,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   it was unlocked after starting, so that sync works in the background; the root and admin
   keys still sign only while it is unlocked, after Face ID. Keys made before keep the old
   setting.
+- `cbb status` away from home could show a peer at the relay by its pseudonym instead of
+  its device, when the credential that names it came after the relay reported it online:
+  the names are now mapped each time the status is asked for.
 
 ## [0.5.0] - 2026-10-26
 

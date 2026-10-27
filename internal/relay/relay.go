@@ -133,6 +133,9 @@ func Listen(cfg Config) (*Relay, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
+	// The relay keeps no logs about the devices: what it logs, wireguard-go's
+	// errors included, goes without the addresses in it.
+	logf = tunnel.Redacted(logf)
 	// The tunnel listens on the UDP port of the same number. Where any free
 	// port will do, one whose UDP twin is taken or reserved (Windows keeps
 	// ranges for Hyper-V) is given up for another.

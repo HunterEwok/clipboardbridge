@@ -32,8 +32,9 @@
   </div>
 
   <h2>{{t "Computers"}}</h2>
-  <div class="cards computers">
-    <div class="card" id="unix" data-os="linux mac">
+  <!-- One board for both: the reader's own system comes first. -->
+  <div class="frame install-board">{{template "rails"}}<div class="surface">
+    <section class="os" id="unix" data-os="linux mac">
       <p class="badge mine-badge">{{t "Your device"}}</p>
       <h3>{{t "Linux and Mac"}}</h3>
       <p>{{t "Any Linux with systemd (x86-64, ARM64, ARMv7, ARMv6) and any Mac. In a terminal:"}}</p>
@@ -41,20 +42,23 @@
       <p>{{t "Or on a Mac with Homebrew, which also updates it; run the second line again after each upgrade:"}}</p>
       <pre><code>brew install hunterewok/tap/clipboardbridge
 sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"</code></pre>
-    </div>
-    <div class="card" id="windows" data-os="windows">
+    </section>
+    <section class="os" id="windows" data-os="windows">
       <p class="badge mine-badge">{{t "Your device"}}</p>
       <h3>Windows</h3>
       <p>{{t "Windows 10 (1809 or later) or 11, x86-64 or ARM64. In a PowerShell opened with “Run as administrator”:"}}</p>
       <pre><code>irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex</code></pre>
-    </div>
+    </section>
+  </div></div>
+  <div class="cards computers">
     <div class="card">
       <h3>{{t "A NAS or a home server"}}</h3>
       <p>{{t "The Docker image %s runs as an ordinary member that is always on." (code "ghcr.io/hunterewok/clipboardbridge")}}</p>
     </div>
     <div class="card">
       <h3>{{t "Small devices"}}</h3>
-      <p>{{t "A router or a Raspberry Pi Zero that should only sync takes the lite member: add %s to the Linux command." (code "-s -- --lite")}}</p>
+      <p>{{t "A router or a Raspberry Pi Zero that should only sync takes the lite member. On Linux:"}}</p>
+      <pre><code>curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh -s -- --lite</code></pre>
     </div>
   </div>
   <p>{{t "The installer checks the download, starts Clipboard Bridge and asks before it opens the firewall for it. Then run %s and scan its QR code in the app." (code "sudo cbb pair")}}

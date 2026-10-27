@@ -684,6 +684,7 @@ final class LiveGroup: GroupController {
     private func forgetCredentials() {
         try? FileManager.default.removeItem(at: credentialsURL)
         periodKeys.clear()
+        blindRelay?.setCredentials(nil)
     }
 
     /// Brings the group's server credentials up to date as far as this
@@ -697,6 +698,7 @@ final class LiveGroup: GroupController {
         let root: (() -> CertificateSigner?)? = state?.isRoot == true ? { renewer?.signer() } : nil
         let signed = box.refresh(member: member, keys: periodKeys, rootSigner: root)
         if !signed.isEmpty { Task { await node.sendCredentials(signed) } }
+        blindRelay?.setCredentials(box.relayCredentials(keys: periodKeys))
     }
 
     /// Passes a changed group to the parts that run with it.
@@ -1091,6 +1093,7 @@ final class LiveGroup: GroupController {
         let sign: @Sendable (Data) throws -> Data = { try member.signature(digest: $0) }
         // The relay takes the member chain and the group's roots after it, as a forwarder (docs/protocol.md, section 14).
         r.start(.init(memberPort: port, chain: g.memberChain + g.trusted, sign: sign, records: g.records.authorityRecords))
+        r.setCredentials(credentialBox?.relayCredentials(keys: periodKeys))
     }
 
     private func stopRelay() {

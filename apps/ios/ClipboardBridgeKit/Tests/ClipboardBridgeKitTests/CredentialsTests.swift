@@ -146,6 +146,13 @@ final class CredentialsTests: XCTestCase {
         let tag = try XCTUnwrap(store.period(root: rootKey.publicKeyDER)).1.tag
         let mine = Data(SHA256.hash(data: try keys.get(PeriodKeyKind.serverKey, tag: tag).publicKeyDER))
         XCTAssertTrue(try XCTUnwrap(store.members).1.members.contains(mine))
+        // What it registers with at a relay.
+        let reg = try XCTUnwrap(store.registration(records: g.records, root: rootKey.publicKeyDER, mine: mine))
+        XCTAssertEqual(try reg.credentials.map { try $0.open().type }, ["hubs", "members", "period"])
+        XCTAssertEqual(reg.roots, [g.groupCA])
+        XCTAssertEqual(reg.names, [ServerCredentials.pseudonym(mine): try XCTUnwrap(g.records.devices.first).id])
+        XCTAssertNotNil(try ServerCredentials.checkPresented(reg.credentials, nowMS: now).period)
+        XCTAssertNil(store.registration(records: g.records, root: rootKey.publicKeyDER, mine: Data(SHA256.hash(data: SoftwareSigner().publicKeyDER))))
         // Nothing changed: nothing to sign, no Face ID.
         XCTAssertEqual(try CredentialRefresh.refresh(&store, records: g.records, groupCA: g.groupCA, root: g.currentRoot, member: member,
                                                      keys: keys, nowMS: now + 1000, rootSigner: root).count, 0)

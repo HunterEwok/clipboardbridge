@@ -181,9 +181,14 @@ The app notifies of the group's events (roadmap item 26, step 1), each kind with
 in Settings, all on by default: a device joined or was removed, became an admin, was frozen
 or unfrozen, the group was taken over, and the hub does not answer through the tunnel for
 two minutes while away from home. The app compares the devices with what it saw last time
-(`GroupEvent`, `Notifier`), so it hears of an event while it runs and syncs; an iPhone app
-has no background sync, so an event that happened while it was closed comes the next time
-it opens. iOS asks for notifications once, when the phone is first in a group.
+(`GroupEvent`, `Notifier`), so it hears of an event while it runs and syncs. An iPhone app
+has no background sync: until it has push notifications, which need the Apple developer
+account, it asks iOS for background app refresh (`BackgroundRefresh`), and iOS runs it for a
+few seconds now and then, at times it picks from how the phone is used. It then waits up to
+20 seconds for a computer, takes the records and notifies of what changed; it leaves the
+clipboard alone, which only the app in front may read. So an event may come within the
+hour, or only when the app next opens: iOS runs no refresh with Background App Refresh off
+or in Low Power Mode. iOS asks for notifications once, when the phone is first in a group.
 
 The Android app (`GroupEvents.kt`, the same events and the same order) looks whenever
 records arrive and at each refresh; its foreground service keeps the connections in the
