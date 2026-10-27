@@ -28,12 +28,13 @@ class ApkUpdateTest {
         assertEquals("https://dl.cbb.tools/v0.6.1/clipboardbridge-0.6.1.apk", ApkUpdate.url(mirror, "clipboardbridge-0.6.1.apk", "0.6.1"))
     }
 
-    /** The phone's APK, not the watch's. */
+    /** The phone's full APK, not the watch's or the F-Droid build's. */
     @Test
     fun picksTheApk() {
         val wear = asset(byteArrayOf(1), "clipboardbridge-wear-0.6.1.apk")
+        val fdroid = asset(byteArrayOf(3), "clipboardbridge-fdroid-0.6.1.apk")
         val apk = asset(byteArrayOf(2))
-        assertEquals(apk, ApkUpdate.asset(Releases.Release("0.6.1", "stable", "", listOf(wear, apk), null)))
+        assertEquals(apk, ApkUpdate.asset(Releases.Release("0.6.1", "stable", "", listOf(wear, fdroid, apk), null)))
         assertNull(ApkUpdate.asset(Releases.Release("0.6.1", "stable", "", listOf(wear), null)))
     }
 
