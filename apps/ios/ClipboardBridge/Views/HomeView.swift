@@ -64,6 +64,7 @@ struct HomeView: View {
                         } label: {
                             Label { Text("Send or fetch") } icon: { Image(systemName: "arrow.up.arrow.down") }
                         }
+                        .keyboardShortcut("r")
                         .disabled(model.busy)
                     }
                 }
@@ -72,6 +73,7 @@ struct HomeView: View {
                         Button { adding = true } label: {
                             Image(systemName: "plus").accessibilityLabel(Text("Add a device"))
                         }
+                        .keyboardShortcut("n")
                     }
                 }
             }
@@ -101,6 +103,8 @@ struct HomeView: View {
                     Text("Send or fetch")
                 }
                 .buttonStyle(AccentButtonStyle())
+                // Command-R on an iPad's keyboard, as in the toolbar of the big screen.
+                .keyboardShortcut("r")
                 .disabled(model.busy)
                 .sensoryFeedback(.success, trigger: model.message)
 
@@ -207,6 +211,7 @@ struct HomeView: View {
             Button { settings = true } label: {
                 Label { Text("Settings") } icon: { Image(systemName: "gearshape") }
             }
+            .keyboardShortcut(",")
         } label: {
             Image(systemName: "ellipsis").accessibilityLabel(Text("Menu"))
         }

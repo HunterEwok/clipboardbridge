@@ -367,4 +367,13 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(WatchState(s.data), s)
         XCTAssertNil(WatchState([:]))
     }
+
+    /// A phone stays upright, a foldable's inner screen turns but not upside
+    /// down, an iPad turns every way, split view and Stage Manager included.
+    func testOrientations() {
+        XCTAssertEqual(AppDelegate.mask(idiom: .phone, regular: false), .portrait)
+        XCTAssertEqual(AppDelegate.mask(idiom: .phone, regular: true), .allButUpsideDown)
+        XCTAssertEqual(AppDelegate.mask(idiom: .pad, regular: false), .all)
+        XCTAssertEqual(AppDelegate.mask(idiom: .pad, regular: true), .all)
+    }
 }

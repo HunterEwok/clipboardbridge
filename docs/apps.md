@@ -153,7 +153,10 @@ the group", not a status code), never a dialog that must be dismissed.
   admin, or makes its own group, and its root key lives in its Secure Enclave. Its Home
   shows the devices on **orbits** around it, or as tiles or a list (the "…" menu switches
   them). Its centre is the sync button, the toolbar holds the sync button too, and a device
-  opens its details in a pane beside the devices, which a cross closes.
+  opens its details in a pane beside the devices, which a cross closes. With a keyboard,
+  Command-R sends or fetches, Command-N adds a device, Command-comma opens Settings from
+  the "…" menu, and Escape closes the details. An iPad pairs with no Apple Watch, so its
+  Settings leave the watch out.
 - **A foldable iPhone** (the iPhone duo): the outer screen is the phone's page. The inner
   screen is a big screen like the iPad's: the orbits, the details beside them, and in
   landscape the system moves the toolbar (sync, "+", the menu) to the strip at the right
@@ -451,6 +454,54 @@ What the TV's system allows:
 **To check on a device before building on it:** the D-pad's order on each screen, the
 banner in the Google TV and Fire TV launchers, the accessibility service on Android TV 12 to
 14 and the restricted-settings path on a TV.
+
+## Android: the Bluetooth keyboard
+
+The Android app can be a Bluetooth keyboard (roadmap item 25, way 3) through the HID Device
+profile, `BluetoothHidDevice`. It types into a TV, a tablet, a console or a computer the
+phone is paired with, and nothing is installed there. Settings, Bluetooth keyboard:
+
+- **Act as a Bluetooth keyboard** registers the app as the phone's keyboard. Android allows
+  one such app at a time, and the Bluetooth stack forgets the registration when it restarts,
+  so the app registers again once and otherwise says another app may hold it.
+- **Type into** lists the paired devices. "Make this phone visible" lets a new device find
+  the phone for two minutes; the device then pairs from its own Bluetooth settings. A
+  device that connects by itself becomes the chosen one.
+- **The device's keyboard layout**: English (US) or Russian. A keyboard sends keys, not
+  characters, and the device's layout turns them into characters. The key tables are the
+  Nano ESP32's (`cbb_core::keyboard`), and the kit's `Keyboard` is checked against
+  `testdata/interop/keyboard.json`. A text with a character the layout has no key for is
+  not typed at all, and the app names the characters.
+- **Speed**: 10, 20 or 40 characters a second; slow devices drop keys typed too fast. A text
+  is at most 4096 characters.
+- **Type the clipboard** types the phone's clipboard on the connected device.
+- **Type remote pastes there** sends remote pastes from the group's admins to that device
+  instead of this phone's focused field. Remote paste must be on. Keys there go straight in,
+  so a line break presses Enter, and a text with one is refused unless Enter is allowed, as
+  for a typed paste on a computer. The phone answers `done` once typing has started.
+
+The phone needs Android's "Nearby devices" permission (`BLUETOOTH_CONNECT` and
+`BLUETOOTH_ADVERTISE`, Android 12 and later). Some makers leave the profile out of their
+builds: the Fairphone 6 and some Huawei, Honor, older Xiaomi phones and TV boxes. On these,
+the profile never connects, and the app says the phone cannot act as a keyboard. With error
+details on, it shows the call that failed. TVs leave this section out.
+
+Devices that take a Bluetooth keyboard include Android and Google TV, Fire TV, iPads and
+iPhones, Apple TV, Macs, Windows and Linux computers, the Steam Deck and the PlayStation 5.
+The Xbox and the Nintendo Switch take only USB keyboards, so use the Nano ESP32 for them.
+
+**To check on a device before building on it:** pairing and typing on a TV, an iPad, a Mac
+and a PC; the registration after the Bluetooth stack restarts; and a phone without the
+profile.
+
+A Linux computer does the same with `cbb keyboard` (docs/reference/cli.md). It is a Bluetooth
+LE keyboard: the service registers the HID over GATT service with BlueZ
+(`internal/blekeyboard`). Classic Bluetooth HID would need bluetoothd's input plugin off,
+which would cost the computer its own Bluetooth keyboards and mice. `cbb keyboard pair`
+makes it discoverable for two minutes, with its own pairing agent as the default
+meanwhile. The layouts are the same tables (`internal/keyboard`, checked against the same
+vectors). The tests run against a fake BlueZ on a private bus; a real adapter and host are
+not yet tried.
 
 ## Collections and the order of the tiles
 
