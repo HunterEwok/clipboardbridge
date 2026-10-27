@@ -72,8 +72,9 @@ jobs:
         # CodeQL sees only what is compiled while it watches, so no daemon, no build cache
         # and the Kotlin compiler inside Gradle's process. The runner image has the Android SDK.
         run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$(sed -n "s/^cbb.ndk=//p" gradle.properties)" >/dev/null </dev/null
           ./gradlew --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process \
-            :app:assembleDebug :app:compileDebugUnitTestKotlin :wear:assembleDebug
+            :app:assembleDebug :app:compileFullDebugUnitTestKotlin :app:compileFdroidDebugUnitTestKotlin :wear:assembleDebug
           ./gradlew --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process \
             -p kit testClasses
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4

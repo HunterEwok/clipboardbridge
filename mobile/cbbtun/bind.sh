@@ -31,6 +31,10 @@ go build -o "$bin/" golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gob
 PATH="$bin:$PATH"
 export PATH
 mkdir -p "$(dirname "$out")"
+# No VCS stamp: the same tag gives the same library from a checkout or a tarball, which
+# F-Droid's reproducible build needs (docs/apps.md, "F-Droid").
+GOFLAGS="${GOFLAGS:+$GOFLAGS }-buildvcs=false"
+export GOFLAGS
 case $target in
 android) gomobile bind -target=android -androidapi 29 -trimpath -ldflags=-s -o "$out" ./mobile/cbbtun ;;
 ios) gomobile bind -target=ios,iossimulator -iosversion 17.0 -trimpath -ldflags=-s -o "$out" ./mobile/cbbtun ;;

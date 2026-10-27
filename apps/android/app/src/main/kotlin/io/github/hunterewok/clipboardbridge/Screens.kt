@@ -439,7 +439,7 @@ internal fun SettingsScreen(model: AppModel, back: () -> Unit) {
         if (model.phase == AppModel.Phase.HOME) model.hub?.let { HubSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.away?.let { if (model.hub?.on != true) AwayFromHomeSection(model, it) }
         if (model.phase == AppModel.Phase.HOME) model.blindRelay?.let { BlindRelaySection(model, it) }
-        if (model.phase == AppModel.Phase.HOME && model.devices.any { it.isSelf && it.isRoot }) WatchSection(model)
+        if (WatchLink.available && model.phase == AppModel.Phase.HOME && model.devices.any { it.isSelf && it.isRoot }) WatchSection(model)
         if (model.phase == AppModel.Phase.HOME) Notifications(model.notifier)
         UpdateSection(model)
         Section(stringResource(R.string.about)) {

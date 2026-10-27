@@ -404,7 +404,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh mobile/cbbtun/bind.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh packaging/fdroid/reproduce.sh mobile/cbbtun/bind.sh
       - name: the OPNsense plugin hook
         run: php tools/e2e/opnsense-hook.php
       - name: systemd-analyze verify
@@ -1166,12 +1166,47 @@ jobs:
           CBB_SWIFT_INTEROP="$tool" go test ./internal/pair -run 'TestSwiftMemberAdmitsGoJoiner$' -v
           CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/pair -run 'TestSwiftMemberAdmitsGoJoinerTLS|TestSwiftHubAdmitsInvitedGoJoiner' -v
           CBB_SWIFT_INTEROP_TLS="$tool" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
-      - name: build the app and the Wear OS app, and run their unit tests
+      - name: the NDK the tunnel is built with
         working-directory: apps/android
-        # The runner image has the Android SDK; Gradle fetches a missing platform.
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$(sed -n "s/^cbb.ndk=//p" gradle.properties)" >/dev/null </dev/null'
+      - name: build both builds of the app and the Wear OS app, and run their unit tests
+        working-directory: apps/android
+        # The runner image has the Android SDK; Gradle fetches a missing platform. The app
+        # has two builds, full and fdroid (docs/apps.md, "F-Droid").
         run: |
-          ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug \
+          ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease \
+            :app:testFullDebugUnitTest :app:testFdroidDebugUnitTest :app:lintFullDebug :app:lintFdroidDebug \
             :shared:testDebugUnitTest :shared:lintDebug :wear:assembleDebug :wear:assembleRelease :wear:lintDebug
+      - name: the F-Droid build has no Google Play services
+        working-directory: apps/android
+        run: |
+          ./gradlew --no-daemon -q :app:dependencies --configuration fdroidReleaseRuntimeClasspath > fdroid-deps.txt
+          if grep -E 'com\.google\.(android\.gms|firebase|android\.play)|play-services' fdroid-deps.txt; then
+            echo "The F-Droid build must not carry these."
+            exit 1
+          fi
+
+  fdroid:
+    name: F-Droid build reproduces
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # F-Droid builds the fdroid APK from the tag and publishes ours only when its build is
+    # the same, byte for byte, apart from the signature (docs/apps.md, "F-Droid"). Two builds
+    # in different directories, users' time zones and umasks must give the same APK.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: one
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: one/go.mod
+          cache: false
+      - name: the NDK the tunnel is built with
+        working-directory: one/apps/android
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$(sed -n "s/^cbb.ndk=//p" gradle.properties)" >/dev/null </dev/null'
+      - name: build twice and compare
+        run: sh one/packaging/fdroid/reproduce.sh "$PWD/one" "$RUNNER_TEMP/elsewhere/clipboardbridge"
 
   litemips:
     name: lite member for MIPS (no tunnel)
@@ -1536,9 +1571,11 @@ jobs:
         run: |
           init="$GITHUB_WORKSPACE/.github/gradle/lock-all.init.gradle.kts"
           release="--configuration releaseRuntimeClasspath"
+          # The app's full build carries everything its fdroid build does, and more.
           # shellcheck disable=SC2086 # $release is two words on purpose
           ./gradlew --no-daemon -q --init-script "$init" --write-locks \
-            :app:dependencies $release :shared:dependencies $release :wear:dependencies $release > deps.txt
+            :app:dependencies --configuration fullReleaseRuntimeClasspath \
+            :shared:dependencies $release :wear:dependencies $release > deps.txt
           ./gradlew --no-daemon -q --init-script "$init" --write-locks \
             -p kit dependencies --configuration runtimeClasspath >> deps.txt
           if grep ' FAILED$' deps.txt; then
@@ -1631,7 +1668,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker]
+    needs: [check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, fdroid, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
