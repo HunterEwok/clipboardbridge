@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // pages are the site's pages, each site/templates/<page>.html inside
@@ -229,6 +230,18 @@ var funcs = template.FuncMap{
 		b, err := json.Marshal(v)
 		return template.JS(b), err
 	},
+	// fit is the class that sizes a chalk label to its place on a board: a
+	// long name is written smaller, so it stays on the board in every
+	// language.
+	"fit": func(v any) string {
+		switch n := utf8.RuneCountInString(fmt.Sprint(plain(v))); {
+		case n > 10:
+			return "longer"
+		case n > 9:
+			return "long"
+		}
+		return ""
+	},
 }
 
 // link returns a link to href that reads text.
@@ -329,8 +342,10 @@ func render(root string) (map[string][]byte, []*translator, error) {
 		}
 		soon = append(soon, line)
 		for _, name := range append(slices.Clone(pages), errorPages...) {
+			// chalk.html holds the chalk drawings, written by site/chalk.js.
 			tmpl, err := template.New("layout.html").Funcs(funcs).Funcs(perLang).Funcs(asset).ParseFiles(
 				filepath.Join(root, "templates", "layout.html"),
+				filepath.Join(root, "templates", "chalk.html"),
 				filepath.Join(root, "templates", name+".html"))
 			if err != nil {
 				return nil, nil, err

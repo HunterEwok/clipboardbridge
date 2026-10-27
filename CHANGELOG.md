@@ -43,15 +43,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the whole site in the owner's browsers. CI validates its HTML and runs Lighthouse on it;
   the download page takes the latest version from this changelog; TLS 1.2 and 1.3 only,
   pre-compressed files, a long-cached stylesheet, `security.txt` and a web manifest.
-  Devices on the start page are drawn in vector 3D (isometric SVG in the theme's colours):
-  a laptop and a phone passing a clip in the first screen, and each kind of group as
-  devices around its heart with flowing links; glass surfaces and soft glows; on a phone a
-  sideways menu, the languages in a sheet from the bottom and a floating glass dock.
-  Two designs to choose from, switched by a button in the header while the owner picks one:
-  "Slate drawing" (the icon's brass clipboard holding a slate or paper sheet with a line
-  drawing, light and dark) and "Art deco and neon" (a gold sunburst and neon devices). Its
-  fonts (Old Standard TT, IBM Plex Sans and Mono, Forum, Jost, under the OFL) are served by
-  the site itself, so nginx allows `font-src 'self'`.
+  The design is art deco: gold lines and glass panes on dark wool felt, like the cloth of a
+  billiard table. The pictures (a computer and a phone joined through the key, and each kind
+  of group as devices around its heart) and the tables are drawn in chalk on black school
+  boards with a faint grid, in frames of old walnut; rough.js draws the lines once
+  (`site/chalk.js`) and `site/textures.py` makes the wood and the felt. On a phone: a
+  sideways menu, the languages in a sheet from the bottom, a docked download button, and the
+  servers' table as a list. The fonts (Forum, Jost, IBM Plex Mono and Caveat, under the OFL)
+  are served by the site itself, so nginx allows `font-src 'self'`. The text under the
+  centred headings spans the page's width.
 - Proven keys: a phone sends the attestation of its member key in an `evidence` message,
   and the group's root checks the Android Key Attestation chain (both Google roots, the
   phone's verified boot) and records the device's keys as `proven`, which `cbb status`

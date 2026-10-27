@@ -23,9 +23,13 @@ other `<script>` elements are schema.org data for search engines). It also has e
 - Write for the reader: the benefit first, short sentences, buttons that say what happens
   ("Download for Android", not "More"), and a next step at the end of every page. State only
   what is true today: no invented reviews or numbers, and what is planned says so.
-- The colours are the apps' default palette from `apps/design/tokens.json`. Motion is CSS
-  only, 0.2 to 0.6 s, and off under `prefers-reduced-motion`. Buttons are at least 44 px
-  high.
+- The design is art deco on dark wool felt; its colours are tokens at the top of
+  `static/style.css`. Motion is CSS only, 0.2 to 0.6 s, and off under
+  `prefers-reduced-motion`. Buttons are at least 44 px high.
+- The pictures and the tables are chalk on boards in walnut frames. The chalk lines are drawn
+  once by rough.js: change `chalk.js` and run `npm run chalk`, which writes
+  `templates/chalk.html`; the labels stay in the pages, in each language. `textures.py`
+  (NumPy and Pillow) makes the wood and the felt in `static/`.
 - `static/og.png` (1200×630) is the picture links to the site show in chats and social
   networks.
 - Present both kinds of group as nearly equal: with a computer at its heart (simpler, and
