@@ -198,7 +198,7 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		devs = m.Devices
 	}
 	var out bytes.Buffer
-	writeStatus(&out, st, devs, time.Now())
+	writeStatus(&out, st, devs, benchtime.Now())
 	if _, err := stdout.Write(out.Bytes()); err != nil {
 		return fail(stderr, err)
 	}
@@ -229,7 +229,7 @@ func certLine(endsMS int64, now time.Time) string {
 	end := time.UnixMilli(endsMS)
 	switch {
 	case !now.Before(end):
-		return fmt.Sprintf("This device's certificate ended on %s, before an admin renewed it: the group's members refuse it. To join again, remove Clipboard Bridge with its keys (uninstall --purge), install it again and join.", end.Local().Format(time.DateOnly))
+		return fmt.Sprintf("This device's certificate ended on %s, before an admin renewed it: the group's members refuse it. If this device's date (%s) is wrong, set it right; otherwise, to join again, remove Clipboard Bridge with its keys (uninstall --purge), install it again and join.", end.Local().Format(time.DateOnly), now.Local().Format(time.DateOnly))
 	case end.Sub(now) < certWarning:
 		return fmt.Sprintf("This device's certificate ends on %s and no admin has renewed it: connect it to the group's root or an admin before then, or it must join again.", end.Local().Format(time.DateOnly))
 	}

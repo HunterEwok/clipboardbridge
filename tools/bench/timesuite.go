@@ -60,6 +60,7 @@ func TimeSuite(ctx context.Context, r *Report, cbb string, timeout time.Duration
 	if lapsed != nil {
 		lapse(ctx, r, f, lapsed, timeout)
 	}
+	clocks(ctx, r, f, timeout)
 }
 
 // exec1 runs a program on the controller.
@@ -69,17 +70,30 @@ func exec1(ctx context.Context, name string, args ...string) (string, error) {
 
 // memberCert reads a fleet member's member certificate from its state.
 func memberCert(ctx context.Context, d *Device) (*x509.Certificate, error) {
+	c, _, err := identityCerts(ctx, d)
+	return c, err
+}
+
+// identityCerts reads a fleet member's member certificate and its
+// clipboardbridge.local certificate, nil if it serves no phone, from its
+// state.
+func identityCerts(ctx context.Context, d *Device) (member, phone *x509.Certificate, err error) {
 	out, err := Run(ctx, d, "cat /var/lib/clipboardbridge/identity.json", "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var f struct {
-		Cert []byte `json:"cert"`
+		Cert  []byte `json:"cert"`
+		Phone []byte `json:"phone"`
 	}
 	if err := json.Unmarshal([]byte(out), &f); err != nil {
-		return nil, fmt.Errorf("%s: identity.json: %w", d.Name, err)
+		return nil, nil, fmt.Errorf("%s: identity.json: %w", d.Name, err)
 	}
-	return x509.ParseCertificate(f.Cert)
+	if member, err = x509.ParseCertificate(f.Cert); err != nil || f.Phone == nil {
+		return member, nil, err
+	}
+	phone, err = x509.ParseCertificate(f.Phone)
+	return member, phone, err
 }
 
 // renewal (K1, K7): the root renews the members' certificates in their
@@ -117,6 +131,24 @@ func renewal(ctx context.Context, r *Report, g *benchGroup, timeout time.Duratio
 			})
 		})
 	}
+	// K2: the root's clipboardbridge.local certificate lasts 397 scaled
+	// days and is renewed when less than 60 remain.
+	r.Do("time/K2-local-cert", func() error {
+		_, c, err := identityCerts(ctx, g.hub)
+		if err != nil {
+			return err
+		}
+		if c == nil {
+			return fmt.Errorf("%s, the root, serves no phone", g.hub.Name)
+		}
+		return eventually(ctx, scaled(400*24*time.Hour), func() error {
+			_, n, err := identityCerts(ctx, g.hub)
+			if err == nil && !n.NotAfter.After(c.NotAfter) {
+				err = fmt.Errorf("%s still has its clipboardbridge.local certificate until %s", g.hub.Name, n.NotAfter.Format(time.TimeOnly))
+			}
+			return err
+		})
+	})
 	r.Do(p+"K7-still-syncing", func() error {
 		text := "cbb-bench " + g.run + " after the renewal"
 		if err := Copy(ctx, g.members[1], text); err != nil {
@@ -231,5 +263,160 @@ func lapse(ctx context.Context, r *Report, f *Fleet, g *benchGroup, timeout time
 			return err
 		}
 		return arrives(ctx, m, text, timeout)
+	})
+}
+
+// clockFile is where a fleet member of the clock cases reads how far its
+// clock is off (CBB_TEST_CLOCK_FILE), when its service starts.
+const clockFile = "/etc/cbb-test-clock"
+
+// setClock moves a member's clock: a duration from the real time, an RFC
+// 3339 time, or "" for the real time; its service starts again with it.
+func setClock(ctx context.Context, d *Device, clock string) error {
+	cmd := "rm -f " + clockFile
+	if clock != "" {
+		cmd = "echo " + clock + " >" + clockFile
+	}
+	if _, err := Run(ctx, d, cmd+" && "+fleetKill, ""); err != nil {
+		return err
+	}
+	return eventually(ctx, 20*time.Second, func() error {
+		_, err := Run(ctx, d, "cbb status", "")
+		return err
+	})
+}
+
+// clocks (K6, Y13): members whose clocks are wrong. They run at the real
+// pace (CBB_TEST_SCALE=1), so that a clock hours or days off leaves the
+// certificates valid.
+func clocks(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
+	const p = "time/K6-clock/"
+	g := fleetGroup(ctx, r, f, "time/K6-clock", 4, "CBB_TEST_SCALE=1", "CBB_TEST_CLOCK_FILE="+clockFile)
+	if g == nil || len(g.members) < 4 {
+		return
+	}
+	a, b, c, d := g.members[0], g.members[1], g.members[2], g.members[3]
+	n := 0
+	text := func(what string) string {
+		n++
+		return fmt.Sprintf("cbb-bench %s %d %s", g.run, n, what)
+	}
+	// both copies a text on from and waits for it on every other member.
+	both := func(from *Device, what string) error {
+		t := text(what)
+		if err := Copy(ctx, from, t); err != nil {
+			return err
+		}
+		for _, m := range g.members {
+			if m != from {
+				if err := arrives(ctx, m, t, timeout); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	// skewShown waits until a's devices list shows c's clock off by want.
+	skewShown := func(want string) error {
+		return eventually(ctx, timeout, func() error {
+			out, err := Run(ctx, a, "cbb status", "")
+			if err == nil && !strings.Contains(out, "off by "+want) {
+				err = fmt.Errorf("%s does not show a clock off by %s: %q", a.Name, want, out)
+			}
+			return err
+		})
+	}
+
+	// A board that boots with its clock in 1970 still takes and sends.
+	r.Do(p+"behind-1970", func() error {
+		if err := setClock(ctx, b, "1970-01-01T00:00:00Z"); err != nil {
+			return err
+		}
+		if err := both(a, "to a clock in 1970"); err != nil {
+			return err
+		}
+		return both(b, "from a clock in 1970")
+	})
+	r.Do(p+"behind-back", func() error { return setClock(ctx, b, "") })
+
+	// Clocks an hour and three hours ahead: the group works, and the
+	// devices list says the clock is off.
+	for _, ahead := range []time.Duration{time.Hour, 3 * time.Hour} {
+		r.Do(p+"ahead-"+ahead.String(), func() error {
+			if err := setClock(ctx, c, ahead.String()); err != nil {
+				return err
+			}
+			if err := both(c, "from a clock ahead"); err != nil {
+				return err
+			}
+			if err := both(a, "to a clock ahead"); err != nil {
+				return err
+			}
+			return skewShown(ahead.String())
+		})
+	}
+
+	// Y13: a clock two days ahead moves the others' hybrid clocks with
+	// its copy; a copy made later elsewhere still wins everywhere.
+	r.Do("time/Y13-ahead/later-wins", func() error {
+		if err := setClock(ctx, c, "48h"); err != nil {
+			return err
+		}
+		if err := both(c, "two days ahead"); err != nil {
+			return err
+		}
+		return both(d, "after the copy from two days ahead")
+	})
+	// An event more than 7 days ahead of the others' clocks is refused,
+	// and both sides show the clock off.
+	r.Do("time/Y13-ahead/refused", func() error {
+		if err := setClock(ctx, c, "240h"); err != nil {
+			return err
+		}
+		t := text("ten days ahead")
+		if err := Copy(ctx, c, t); err != nil {
+			return err
+		}
+		for _, m := range []*Device{a, b, d} {
+			if err := staysAway(ctx, m, t); err != nil {
+				return fmt.Errorf("an event 10 days ahead: %w", err)
+			}
+		}
+		if err := skewShown("240h0m0s"); err != nil {
+			return err
+		}
+		return eventually(ctx, timeout, func() error {
+			out, err := Run(ctx, c, "cbb status", "")
+			if err == nil && !strings.Contains(out, "off by -240h0m0s; check its time") {
+				err = fmt.Errorf("%s does not show the others' clocks off: %q", c.Name, out)
+			}
+			return err
+		})
+	})
+
+	// A clock past the end of the certificates (2 years): the member
+	// refuses the group and says when its certificate ended by its clock.
+	r.Do(p+"ahead-3y", func() error {
+		if err := setClock(ctx, c, fmt.Sprint(3*365*24*time.Hour)); err != nil {
+			return err
+		}
+		return eventually(ctx, timeout, func() error {
+			out, err := Run(ctx, c, "cbb status", "")
+			if err == nil && !strings.Contains(out, "certificate ended on") {
+				err = fmt.Errorf("%s does not say that its certificate ended: %q", c.Name, out)
+			}
+			return err
+		})
+	})
+
+	// Its clock set right, the member is back in the group both ways.
+	r.Do(p+"set-right", func() error {
+		if err := setClock(ctx, c, ""); err != nil {
+			return err
+		}
+		if err := both(a, "to a clock set right"); err != nil {
+			return err
+		}
+		return both(c, "from a clock set right")
 	})
 }

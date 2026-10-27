@@ -514,7 +514,11 @@ its time yet, refuses nothing.
   `w == r.wall`, `last = r` then `logical + 1`; else `last = (w, 0)`.
 - Persistence: before the clock reaches the last saved mark, the service saves a new mark
   10 000 ms ahead (file `hlc.mark` in the state directory, text form) and uses it as the
-  floor after a restart, so it never issues a timestamp below one it issued before.
+  floor after a restart, so it never issues a timestamp below one it issued before. A
+  saved mark more than MaxAhead ahead of a wall clock that reads 2026 or later is dropped
+  at the restart, and the clock starts from the wall clock: the device's clock was ahead and
+  has been set right, every member with a right clock refused those timestamps, and keeping
+  the mark would leave its copies refused until real time caught up (Go and the lite member).
 
 ### Ordering and the current event (wire)
 

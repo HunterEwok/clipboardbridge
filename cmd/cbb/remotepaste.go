@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -92,17 +93,25 @@ func cmdPasteReceive(args []string, stdout, stderr io.Writer) int {
 	console := fs.Bool("console", false, "with on: let pastes reach text consoles and root's tmux")
 	on := fs.String("on", "", "with off, on an admin: the device, by name or ID, to turn remote paste off on")
 	all := fs.Bool("all", false, "with off, on an admin: turn remote paste off on every device of the group")
+	// on or off comes first, as the usage shows; before the flags, it
+	// would end them.
+	name := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		name, args = args[0], args[1:]
+	}
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	usage := "usage: cbb paste-receive [on [-enter] [-console] | off [-on DEVICE | -all]]"
-	if fs.NArg() > 1 {
+	if name == "" && fs.NArg() == 1 {
+		name = fs.Arg(0)
+	} else if fs.NArg() > 0 {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
 	h := control.Header{Op: control.OpStatus}
-	if fs.NArg() == 1 {
-		h = control.Header{Op: control.OpReceive, Name: fs.Arg(0), Enter: *enter, Console: *console, Device: *on, All: *all}
+	if name != "" {
+		h = control.Header{Op: control.OpReceive, Name: name, Enter: *enter, Console: *console, Device: *on, All: *all}
 	} else if *enter || *console || *on != "" || *all {
 		fmt.Fprintln(stderr, usage)
 		return 2

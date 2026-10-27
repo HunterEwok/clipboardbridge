@@ -41,16 +41,17 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 	junk(ctx, r, f, timeout)
 	localClients(ctx, r, f)
 	restarts(ctx, r, f, timeout)
+	tmuxPaste(ctx, r, f, timeout)
 	manyMembers(ctx, r, f, size, timeout)
 }
 
 // fleetGroup starts n new members and forms a group of them, the first as
 // its root, every one in the sync mode shared (R2).
-func fleetGroup(ctx context.Context, r *Report, f *Fleet, suite string, n int) *benchGroup {
+func fleetGroup(ctx context.Context, r *Report, f *Fleet, suite string, n int, env ...string) *benchGroup {
 	var ds []*Device
 	if r.Do(suite+"/start", func() error {
 		var err error
-		ds, err = f.AddN(ctx, n)
+		ds, err = f.AddN(ctx, n, env...)
 		return err
 	}) != nil {
 		return nil

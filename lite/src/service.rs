@@ -20,7 +20,7 @@ use crate::control::{self, Device, Header, Message, Status};
 use crate::discovery;
 use crate::error::{Context, Error, Result};
 use crate::files;
-use crate::hlc::{Clock, Timestamp};
+use crate::hlc::{self, Clock, Timestamp};
 use crate::identity::Identity;
 use crate::identity::Stored as _;
 use crate::node::{Node, WriteReq};
@@ -307,7 +307,13 @@ pub fn new_device_mode(dir: &Path) -> Result<()> {
 /// The hybrid clock, which never goes back before the mark it saved.
 fn clock(dir: &Path) -> Clock {
     let path = dir.join(MARK_FILE);
-    let floor = std::fs::read_to_string(&path).ok().and_then(|s| Timestamp::parse(s.trim())).unwrap_or_default();
+    let mark = std::fs::read_to_string(&path).ok().and_then(|s| Timestamp::parse(s.trim())).unwrap_or_default();
+    let (floor, reset) = hlc::floor(mark, uptime::wall_ms());
+    if reset {
+        log_line(&format!(
+            "cbb: the clock's saved mark ({mark}) is more than 7 days ahead of this device's clock; this device's clock was ahead and is right now, so it starts from it"
+        ));
+    }
     let log_path = path.display().to_string();
     Clock::new(
         Box::new(uptime::wall_ms),

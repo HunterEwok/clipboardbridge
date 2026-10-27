@@ -39,8 +39,10 @@ var automated = map[string][]string{
 	"G22": {"fleet"}, "G26": {"fleet"}, "G30": {"fleet"}, "G42": {"fleet"}, "G43": {"fleet"},
 	"Y12": {"fleet"}, "Y16": {"fleet"}, "M3": {"fleet"}, "M6": {"fleet"}, "D15": {"fleet"},
 	"E3": {"fleet"}, "E5": {"fleet"}, "E9": {"fleet"}, "S13": {"fleet"}, "S14": {"fleet"},
+	"T1": {"fleet"}, "T2": {"fleet"}, "T6": {"fleet"}, "T7": {"fleet"}, "T9": {"fleet"},
 	// The time-scaled build.
-	"K1": {"time"}, "K4": {"time"}, "K7": {"time"}, "W39": {"time"},
+	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"},
+	"Y13": {"time"}, "W39": {"time"},
 }
 
 // suites lists every suite `testbench` runs, in the order `all` runs them.
