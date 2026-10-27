@@ -30,8 +30,8 @@
 {{define "content"}}
 <section class="hero">
   <div class="wrap">
-    <h1>{{t "Copy on one device. Paste on another."}}</h1>
-    <p class="lead">{{t "One clipboard for your phone and your computers. It works on your own network, with no cloud and no accounts."}}</p>
+    <h1>{{t "One clipboard"}} <span>{{t "to rule them all."}}</span></h1>
+    <p class="lead">{{t "Copy on a phone or a computer, paste on any other: iPhone, Android, Mac, Windows or Linux. Devices talk directly over your home network, TLS-encrypted, with no cloud and no accounts. Away from home it works through your own WireGuard tunnel."}}</p>
     <!-- A school board in a walnut frame, the picture drawn on it in chalk:
          the computer and the phone joined through the key. -->
     <div class="frame hero-board">{{template "rails"}}<div class="surface">
@@ -79,12 +79,34 @@
   </div></div>
 </section>
 
+<section class="wrap reveal" id="compare">
+  <h2>{{t "Compared with popular apps"}}</h2>
+  <p>{{t "Each of these does part of the job well. Clipboard Bridge is the one that does all of it."}}</p>
+  <div class="frame board-table">{{template "rails"}}<div class="surface">
+  <table class="chalk-table compare apps">
+    <thead><tr><td></td><th scope="col">{{t "iPhone, Android, Windows, Mac and Linux"}}</th><th scope="col">{{t "No cloud, no account"}}</th><th scope="col">{{t "Away from home"}}</th><th scope="col">{{t "Open source"}}</th><th scope="col">{{t "Free"}}</th></tr></thead>
+    <tbody>
+    <tr class="us"><th scope="row">Clipboard Bridge</th><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "Apple Universal Clipboard"}}</th><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">{{t "Windows clipboard sync"}}</th><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">KDE Connect</th><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark part" aria-hidden="true"><use href="#part"/></svg><span class="sr">{{t "partly"}}</span><sup>1</sup></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td></tr>
+    <tr><th scope="row">Pushbullet</th><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td><svg class="mark yes" aria-hidden="true"><use href="#yes"/></svg><span class="sr">{{t "yes"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td><td class="no"><svg class="mark no" aria-hidden="true"><use href="#no"/></svg><span class="sr">{{t "no"}}</span></td></tr>
+    </tbody>
+  </table>
+  <p class="sources"><sup>1</sup> {{t "Only over a VPN you set up yourself: KDE Connect finds and joins devices on one local network."}}</p>
+  </div></div>
+  <p class="dim">{{t "As of October 2026, from each maker's own pages. Universal Clipboard joins Apple devices near each other, signed in to one Apple Account. Windows syncs the clipboard through a Microsoft account, with other Windows PCs and, with SwiftKey, Android phones. Pushbullet's universal copy and paste, between Android and Windows, is part of Pushbullet Pro. The names are trademarks of their owners."}}</p>
+</section>
+
 <section class="wrap reveal" id="how">
   <h2>{{t "Set up in three steps"}}</h2>
-  <ol class="steps">
-    <li><strong>{{t "Install the app on your phone."}}</strong> {{t "Android: the APK from the latest release. iPhone: the app comes with TestFlight; until then a shortcut and a computer do the job."}}</li>
-    <li><strong>{{t "Install Clipboard Bridge on a computer."}}</strong> {{t "One command on Linux, Mac or Windows: see %s." (link "download.html" (t "Download"))}}</li>
-    <li><strong>{{t "Add the computer."}}</strong> {{t "Run %s on the computer and scan its QR code in the app. That's your group." (code "sudo cbb pair")}}</li>
+  <ol class="steps boards">
+    <li><div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 200 150" aria-hidden="true"><g class="chalk">{{template "chalk-step1"}}</g></svg></div></div>
+      <strong>{{t "Install the app on your phone."}}</strong> {{t "Android: the APK from the latest release. iPhone: the app comes with TestFlight; until then a shortcut and a computer do the job."}}</li>
+    <li><div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 200 150" aria-hidden="true"><g class="chalk">{{template "chalk-step2"}}</g></svg></div></div>
+      <strong>{{t "Install Clipboard Bridge on a computer."}}</strong> {{t "One command on Linux, Mac or Windows: see %s." (link "download.html" (t "Download"))}}</li>
+    <li><div class="frame">{{template "rails"}}<div class="surface"><svg viewBox="0 0 200 150" aria-hidden="true"><g class="chalk">{{template "chalk-step3"}}</g></svg></div></div>
+      <strong>{{t "Add the computer."}}</strong> {{t "Run %s on the computer and scan its QR code in the app. That's your group." (code "sudo cbb pair")}}</li>
   </ol>
   <p>{{t "No computer? Make the group in the app, then open the app on each other phone and join from its start screen."}}
      {{t "Step by step: the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/quickstart.md" (t "quick start"))}}</p>
@@ -138,6 +160,7 @@
     <div class="card"><h3>{{t "Small"}}</h3><p>{{t "One file per platform and no dependencies. It runs even on a Raspberry Pi Zero."}}</p></div>
     <div class="card"><h3>{{t "Open"}}</h3><p>{{t "Free software: every line is on GitHub, and every release is built there in the open."}}</p></div>
   </div>
+  <p class="note">{{t "What each server along the way can and cannot see: %s. How we test the security from the outside, as an attacker would: %s." (link "privacy.html" (t "Security and privacy")) (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/security-audit.md" (t "the security audit"))}}</p>
 </section>
 
 <section class="wrap reveal" id="faq">

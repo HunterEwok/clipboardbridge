@@ -65,16 +65,44 @@ function group(hub, scale, others) {
     links: draw([["line", 168, 126, 114, 90], ["line", 252, 126, 304, 90], ["line", 168, 182, 114, 220], ["line", 252, 182, 304, 220]]),
   };
 }
+// The three steps of setting up, each in a box of 200 by 150: the app
+// comes to the phone; the computer runs one command; the phone scans the
+// computer's QR code.
+seed = 61;
+const step1 = {
+  white: draw(device("phone", 100, 76, 1.5)),
+  yellow: draw([["line", 100, 52, 100, 92], ["path", "M88 81 L100 94 L112 81"], ["line", 86, 104, 114, 104]]),
+  links: "",
+};
+const step2 = {
+  white: draw([["rect", 40, 22, 120, 82, 6], ["line", 100, 104, 100, 120], ["line", 74, 124, 126, 124]]),
+  yellow: draw([["path", "M58 50 L70 60 L58 70"], ["line", 78, 72, 100, 72]]),
+  links: "",
+};
+const step3 = {
+  white: draw([
+    ["rect", 14, 30, 96, 70, 6], ["line", 62, 100, 62, 114], ["line", 40, 118, 84, 118],
+    ["rect", 40, 44, 14, 14, 2], ["rect", 70, 44, 14, 14, 2], ["rect", 40, 74, 14, 14, 2], ["line", 72, 78, 84, 78], ["line", 72, 86, 78, 86],
+    ...device("phone", 160, 82, 1.05),
+  ]),
+  yellow: draw([["path", "M140 70 L118 64"], ["path", "M140 94 L118 100"]]),
+  links: "",
+};
 seed = 38;
 const computer = group("computer", 1.3, ["phone", "laptop", "phone", "mac"]);
 const phones = group("phone", 1.35, ["phone", "tv", "tablet", "phone"]);
 
-const lines = (d) => `<path class="y" d="${d.links}"/><path class="w" d="${d.white}"/><path class="y" d="${d.yellow}"/>`;
+// pathLength lets the stylesheet draw each line in, as a hand would.
+const line = (cls, d) => (d ? `<path class="${cls}" pathLength="1" d="${d}"/>` : "");
+const lines = (d) => line("y link", d.links) + line("w", d.white) + line("y", d.yellow);
 const out = `<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!-- Written by chalk.js: the lines of the chalk drawings, without their
      labels, which the pages add in their own language. -->
 {{define "chalk-hero"}}${lines(hero)}{{end}}
 {{define "chalk-computer"}}${lines(computer)}{{end}}
 {{define "chalk-phones"}}${lines(phones)}{{end}}
+{{define "chalk-step1"}}${lines(step1)}{{end}}
+{{define "chalk-step2"}}${lines(step2)}{{end}}
+{{define "chalk-step3"}}${lines(step3)}{{end}}
 `;
 fs.writeFileSync(path.join(__dirname, "templates", "chalk.html"), out);

@@ -15,12 +15,16 @@
 <meta property="og:title" content="{{template "title" .}}">
 <meta property="og:description" content="{{template "description" .}}">
 <meta property="og:url" content="{{.URL .Lang}}">
-<meta property="og:image" content="https://cbb.tools/static/og.png">
+<meta property="og:image" content="https://cbb.tools/static/og/{{.Lang.Code}}.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="{{t "Clipboard Bridge: copy on one device, paste on another."}}">
 <meta name="twitter:card" content="summary_large_image">
-{{end}}<meta name="theme-color" content="#0A7A3E">
+{{end}}<meta name="theme-color" content="#0B1A20" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#DCD3C1" media="(prefers-color-scheme: light)">
+<script src="{{asset "site.js"}}"></script>
+<link rel="preload" href="/static/fonts/forum-400-{{if eq .Lang.Code "ru"}}cyrillic{{else}}latin{{end}}.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/jost-400-{{if eq .Lang.Code "ru"}}cyrillic{{else}}latin{{end}}.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{{asset "style.css"}}">
 <link rel="icon" href="/static/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -52,12 +56,13 @@
 </filter>
 <symbol id="yes" viewBox="0 0 28 28"><path d="M5 15.5 11.5 21.5 23 6.5"/></symbol>
 <symbol id="no" viewBox="0 0 28 28"><path d="M7 7 21 21M21 7 7 21"/></symbol>
+<symbol id="part" viewBox="0 0 28 28"><path d="M6 14h16"/></symbol>
 </svg>
 <a class="skip" href="#main">{{t "Skip to content"}}</a>
 <header class="top">
   <div class="wrap bar">
     <a class="brand" href="/{{.Lang.Code}}/">
-      <picture><source srcset="/static/icon-dark.png" media="(prefers-color-scheme: dark)"><img src="/static/icon.png" alt="" width="32" height="32"></picture>
+      <img class="on-dark" src="/static/icon-dark.png" alt="" width="32" height="32"><img class="on-light" src="/static/icon.png" alt="" width="32" height="32">
       <span>Clipboard Bridge</span>
     </a>
     <nav aria-label="{{t "Main"}}">
@@ -73,11 +78,14 @@
         {{end}}
       </ul>
     </details>
+    <button class="theme" type="button" hidden data-auto="{{t "Theme: as on this device"}}" data-light="{{t "Theme: light"}}" data-dark="{{t "Theme: dark"}}">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><g class="t-auto"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z"/></g><g class="t-light"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></g><g class="t-dark"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></g></svg>
+    </button>
   </div>
 </header>
 {{/* The four walnut rails of a board's frame, meeting in mitred corners. */}}
 {{define "rails"}}<i class="rail t"></i><i class="rail b"></i><i class="rail l"></i><i class="rail r"></i>{{end}}
-<main id="main">
+<main id="main" data-copy="{{t "Copy"}}" data-copied="{{t "Copied"}}">
 {{template "content" .}}
 </main>
 <footer class="foot">

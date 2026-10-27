@@ -47,6 +47,9 @@ var faq = []struct{ Q, A string }{
 	{"Why does the iPhone need a gesture?", "iOS does not let apps read the clipboard in the background. You send a copy with the Action button or a double tap on the back of the phone."},
 	{"Are my passwords synced?", "What password managers mark as secret is not synced automatically."},
 	{"Where is the iPhone app?", "It comes with TestFlight, which is not open yet. Until then an iPhone joins with a shortcut, and a computer holds the group."},
+	{"Does it need the internet?", "No. At home your devices need only your own network, with or without the internet."},
+	{"What if I lose my phone?", "Remove it from the group on another device that can admit devices. If the lost phone made the group, another phone of yours that is an admin takes the group over."},
+	{"How is it different from Universal Clipboard or KDE Connect?", "Universal Clipboard joins only Apple devices near each other, signed in to one Apple Account. KDE Connect works on one local network. Clipboard Bridge joins iPhone, Android, Windows, Mac and Linux, at home and away, with no account."},
 }
 
 // Language is one language of the site.
@@ -135,17 +138,23 @@ func latestRelease(root string) (Release, error) {
 	return Release{Version: string(m[1]), Date: string(m[2])}, nil
 }
 
-// assets maps a file of site/static to the name it is published under:
-// the stylesheet's carries a hash of its contents, so browsers may keep it
-// for good and still get each new version.
+// assets maps the files of site/static that pages link by name to the
+// names they are published under: each carries a hash of its contents, so
+// browsers may keep it for good and still get each new version.
 func assets(root string) (map[string]string, map[string][]byte, error) {
-	css, err := os.ReadFile(filepath.Join(root, "static", "style.css"))
-	if err != nil {
-		return nil, nil, err
+	names, out := map[string]string{}, map[string][]byte{}
+	for _, file := range []string{"style.css", "site.js"} {
+		data, err := os.ReadFile(filepath.Join(root, "static", file))
+		if err != nil {
+			return nil, nil, err
+		}
+		sum := sha256.Sum256(data)
+		ext := filepath.Ext(file)
+		name := "static/" + strings.TrimSuffix(file, ext) + "." + hex.EncodeToString(sum[:4]) + ext
+		names[file] = "/" + name
+		out[name] = data
 	}
-	sum := sha256.Sum256(css)
-	name := "static/style." + hex.EncodeToString(sum[:4]) + ".css"
-	return map[string]string{"style.css": "/" + name}, map[string][]byte{name: css}, nil
+	return names, out, nil
 }
 
 // URL returns the absolute address of this page in lang.
@@ -414,7 +423,7 @@ func manifest() ([]byte, error) {
 
 // compressible are the files build also writes gzipped, for nginx's
 // gzip_static.
-var compressible = []string{".html", ".css", ".xml", ".txt", ".webmanifest"}
+var compressible = []string{".html", ".css", ".js", ".xml", ".txt", ".webmanifest"}
 
 // gzipped returns data compressed as well as gzip can, with no name or time
 // in its header, so a build is the same each time.
