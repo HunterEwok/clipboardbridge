@@ -1,0 +1,3361 @@
+{
+ "comment": "The arrangement of the device tiles (docs/apps.md, \"Collections and the order of the tiles\"). Each case starts from stored (fresh when null, for another group or version), prunes with devices when prune is set, applies ops in turn (the last one failing when error is set, leaving the items as they were), then has items stored and shows view. devices are listed in the app's order; self is this device.",
+ "cases": [
+  {
+   "name": "nothing stored: the order given, without this device",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [],
+   "error": false,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "another group starts fresh",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "old",
+    "items": [
+     {
+      "device": "d"
+     },
+     {
+      "device": "c"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [],
+   "error": false,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "another version starts fresh",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 2,
+    "group": "G",
+    "items": [
+     {
+      "device": "d"
+     },
+     {
+      "device": "c"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [],
+   "error": false,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "unlisted devices are skipped, new ones come last",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "x"
+     },
+     {
+      "device": "c"
+     },
+     {
+      "device": "a"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [],
+   "error": false,
+   "items": [
+    {
+     "device": "x"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "a"
+    }
+   ],
+   "view": [
+    {
+     "device": "c"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a collection of unlisted devices is not shown",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "x"
+       ]
+      }
+     },
+     {
+      "device": "a"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "x"
+      ]
+     }
+    },
+    {
+     "device": "a"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a collection just made with no devices is shown",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": []
+      }
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": []
+     }
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": []
+     }
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "prune drops unlisted devices and the collections they empty",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "x"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Old",
+       "devices": [
+        "x"
+       ]
+      }
+     },
+     {
+      "collection": {
+       "id": "c2",
+       "name": "New",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c3",
+       "name": "Pis",
+       "devices": [
+        "a",
+        "x"
+       ]
+      }
+     },
+     {
+      "device": "b"
+     }
+    ]
+   },
+   "prune": true,
+   "ops": [],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c2",
+      "name": "New",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c3",
+      "name": "Pis",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c2",
+      "name": "New",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c3",
+      "name": "Pis",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "this device stays hidden where it is",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "s"
+     },
+     {
+      "device": "a"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "b"
+     },
+     "before": {
+      "device": "a"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "s"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "move before a device",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "a"
+     },
+     "before": {
+      "device": "c"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "move to the end",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "a"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "device": "a"
+    }
+   ],
+   "view": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "device": "a"
+    }
+   ]
+  },
+  {
+   "name": "move before itself changes nothing",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "b"
+     },
+     "before": {
+      "device": "b"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a hidden device keeps its place",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "x"
+     },
+     {
+      "device": "a"
+     },
+     {
+      "device": "b"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "b"
+     },
+     "before": {
+      "device": "a"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "x"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "new collection where its first device was",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": " Office ",
+     "devices": [
+      "b",
+      "c"
+     ]
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "new collection with no devices goes last",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": "Later"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Later",
+      "devices": []
+     }
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Later",
+      "devices": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "into a collection",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "into",
+     "device": "d",
+     "collection": "c1"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c",
+       "d"
+      ]
+     }
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c",
+       "d"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "into its own collection changes nothing",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "into",
+     "device": "b",
+     "collection": "c1"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "out of a collection, after it",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "out",
+     "device": "b"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "out of a collection with one device: it goes away",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b"
+       ]
+      }
+     },
+     {
+      "device": "c"
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "out",
+     "device": "b"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "reorder inside a collection",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "c"
+     },
+     "before": {
+      "device": "b"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c",
+       "b"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c",
+       "b"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "to the end of its own collection",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "b"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c",
+       "b"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c",
+       "b"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "before a device in a collection joins it",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "a"
+     },
+     "before": {
+      "device": "b"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "before a top-level device leaves the collection",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "b"
+     },
+     "before": {
+      "device": "a"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "before its own collection, as its last device",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b"
+       ]
+      }
+     },
+     {
+      "device": "c"
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "b"
+     },
+     "before": {
+      "collection": "c1"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a collection before a device",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "collection": "c1"
+     },
+     "before": {
+      "device": "a"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a collection to the end",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "collection": "c1"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "a collection before a device in another goes before that one",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "collection": {
+       "id": "c1",
+       "name": "One",
+       "devices": [
+        "a"
+       ]
+      }
+     },
+     {
+      "collection": {
+       "id": "c2",
+       "name": "Two",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "collection": "c1"
+     },
+     "before": {
+      "device": "c"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "One",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "collection": {
+      "id": "c2",
+      "name": "Two",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "One",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "collection": {
+      "id": "c2",
+      "name": "Two",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "rename, trimmed",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "rename",
+     "collection": "c1",
+     "name": "  Pis "
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Pis",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Pis",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "an empty name is refused",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "rename",
+     "collection": "c1",
+     "name": "   "
+    }
+   ],
+   "error": true,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "b",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a name of 65 bytes is refused",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     "devices": [
+      "a"
+     ]
+    }
+   ],
+   "error": true,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a name of 64 bytes is taken",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": "éééééééééééééééééééééééééééééééé",
+     "devices": [
+      "a"
+     ]
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "éééééééééééééééééééééééééééééééé",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "éééééééééééééééééééééééééééééééé",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "ungroup puts the devices where it was",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "a"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "b",
+        "c"
+       ]
+      }
+     },
+     {
+      "device": "d"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "ungroup",
+     "collection": "c1"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "reset keeps the collections where their first device comes",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "device": "d"
+     },
+     {
+      "collection": {
+       "id": "c1",
+       "name": "Office",
+       "devices": [
+        "c",
+        "a"
+       ]
+      }
+     },
+     {
+      "device": "b"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "reset"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "a",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "a",
+       "c"
+      ]
+     }
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "reset puts empty collections last",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "collection": {
+       "id": "c2",
+       "name": "Later",
+       "devices": []
+      }
+     },
+     {
+      "device": "b"
+     },
+     {
+      "device": "a"
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "reset"
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "collection": {
+      "id": "c2",
+      "name": "Later",
+      "devices": []
+     }
+    }
+   ],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    },
+    {
+     "collection": {
+      "id": "c2",
+      "name": "Later",
+      "devices": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "new ids take the smallest free number",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "collection": {
+       "id": "c2",
+       "name": "Two",
+       "devices": [
+        "a"
+       ]
+      }
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": "One",
+     "devices": [
+      "b"
+     ]
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "collection": {
+      "id": "c2",
+      "name": "Two",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "One",
+      "devices": [
+       "b"
+      ]
+     }
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c2",
+      "name": "Two",
+      "devices": [
+       "a"
+      ]
+     }
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "One",
+      "devices": [
+       "b"
+      ]
+     }
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "an unknown device is refused",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "x"
+     },
+     "before": {
+      "device": "a"
+     }
+    }
+   ],
+   "error": true,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "this device cannot be moved",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "move",
+     "item": {
+      "device": "s"
+     },
+     "before": {
+      "device": "a"
+     }
+    }
+   ],
+   "error": true,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "a device twice in a new collection is refused",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": "Two",
+     "devices": [
+      "a",
+      "a"
+     ]
+    }
+   ],
+   "error": true,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "an unknown collection is refused",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "into",
+     "device": "a",
+     "collection": "c9"
+    }
+   ],
+   "error": true,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "an unknown operation is refused",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "shuffle"
+    }
+   ],
+   "error": true,
+   "items": [],
+   "view": [
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "at most 32 collections",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": {
+    "v": 1,
+    "group": "G",
+    "items": [
+     {
+      "collection": {
+       "id": "c1",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c2",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c3",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c4",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c5",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c6",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c7",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c8",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c9",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c10",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c11",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c12",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c13",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c14",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c15",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c16",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c17",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c18",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c19",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c20",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c21",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c22",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c23",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c24",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c25",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c26",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c27",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c28",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c29",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c30",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c31",
+       "name": "C",
+       "devices": []
+      }
+     },
+     {
+      "collection": {
+       "id": "c32",
+       "name": "C",
+       "devices": []
+      }
+     }
+    ]
+   },
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": "More"
+    }
+   ],
+   "error": true,
+   "items": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c2",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c3",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c4",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c5",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c6",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c7",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c8",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c9",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c10",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c11",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c12",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c13",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c14",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c15",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c16",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c17",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c18",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c19",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c20",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c21",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c22",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c23",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c24",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c25",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c26",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c27",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c28",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c29",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c30",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c31",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c32",
+      "name": "C",
+      "devices": []
+     }
+    }
+   ],
+   "view": [
+    {
+     "collection": {
+      "id": "c1",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c2",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c3",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c4",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c5",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c6",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c7",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c8",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c9",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c10",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c11",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c12",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c13",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c14",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c15",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c16",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c17",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c18",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c19",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c20",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c21",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c22",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c23",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c24",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c25",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c26",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c27",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c28",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c29",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c30",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c31",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "collection": {
+      "id": "c32",
+      "name": "C",
+      "devices": []
+     }
+    },
+    {
+     "device": "a"
+    },
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "device": "d"
+    }
+   ]
+  },
+  {
+   "name": "several operations in a row",
+   "group": "G",
+   "self": "s",
+   "devices": [
+    "s",
+    "a",
+    "b",
+    "c",
+    "d"
+   ],
+   "stored": null,
+   "prune": false,
+   "ops": [
+    {
+     "op": "new",
+     "name": "Office",
+     "devices": [
+      "c",
+      "a"
+     ]
+    },
+    {
+     "op": "move",
+     "item": {
+      "device": "d"
+     },
+     "before": {
+      "device": "c"
+     }
+    },
+    {
+     "op": "out",
+     "device": "c"
+    },
+    {
+     "op": "move",
+     "item": {
+      "collection": "c1"
+     }
+    }
+   ],
+   "error": false,
+   "items": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "d",
+       "a"
+      ]
+     }
+    }
+   ],
+   "view": [
+    {
+     "device": "b"
+    },
+    {
+     "device": "c"
+    },
+    {
+     "collection": {
+      "id": "c1",
+      "name": "Office",
+      "devices": [
+       "d",
+       "a"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
