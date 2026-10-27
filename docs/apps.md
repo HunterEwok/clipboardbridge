@@ -644,6 +644,11 @@ iPhone, with **Arrange devices** and **Back to the group's order** in the toolba
 tile's menu on a right click, and Option with the arrow keys, Home or End moving the
 focused tile in Arrange mode.
 
+**On the watches**: the phone sends its devices in the user's order, each with the name
+of its collection (`collection` in WatchState, absent from a phone before 0.6), and the
+watch lists the devices in no collection under **Devices**, then a section for each
+collection. The watch does not change the arrangement.
+
 ## Releasing the Android app
 
 Each release carries `clipboardbridge-X.Y.Z.apk` and the Wear OS app,
