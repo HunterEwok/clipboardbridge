@@ -15,6 +15,9 @@ const Group = "clipboardbridge"
 // permissionHint tells a user without access to the socket what to do.
 const permissionHint = "add your user to the " + Group + " group and log in again"
 
+// startHint tells a user whose service is not running how to start it.
+const startHint = "start it with: sudo systemctl start clipboardbridge"
+
 // adminSocketName is the admin socket's name next to the control socket.
 const adminSocketName = "admin.sock"
 

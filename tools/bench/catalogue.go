@@ -1,0 +1,337 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// automated names the suites that run each case of
+// docs/testbench-catalogue.md, in part or in full. A test checks that every
+// ID here is in the catalogue and that the suites exist.
+var automated = map[string][]string{
+	// Sync of text.
+	"Y1": {"full"}, "Y2": {"full"}, "Y3": {"full"}, "Y4": {"full"}, "Y5": {"full"},
+	"Y10": {"full"}, "Y11": {"full"}, "Y30": {"full"},
+	// Groups and pairing.
+	"G1": {"full"}, "G3": {"smoke", "full"}, "G12": {"away"}, "G23": {"smoke", "full"},
+	// Modes, installs, the command line.
+	"M1": {"full"}, "M5": {"full"}, "I16": {"full"},
+	"U1": {"check", "smoke"}, "U3": {"full"}, "U4": {"full", "away", "relay", "faults"},
+	"U5": {"faults"}, "U6": {"faults"}, "U7": {"faults"}, "U10": {"full"},
+	"H6": {"full"}, "K8": {"full"},
+	// Away from home.
+	"W1": {"away"}, "W10": {"away"}, "W13": {"away"}, "W14": {"away"}, "W15": {"away"},
+	"W31": {"away"}, "W36": {"relay"},
+	// Security.
+	"S10": {"full"}, "S11": {"full"}, "S15": {"full"}, "S16": {"full"},
+	// Load and faults.
+	"E7": {"faults"}, "E8": {"faults"}, "E11": {"faults"},
+}
+
+// suites lists every suite `testbench` runs, in the order `all` runs them.
+var suites = []string{"check", "smoke", "full", "faults", "away", "relay"}
+
+// catCase is one case of the catalogue.
+type catCase struct {
+	ID, Text string
+	How      []string // the kinds of section 0.1: real, fleet, time, feed, ui, helper, person
+	Needs    []string // what is missing for it, empty when nothing is
+	Old      []string // the IDs of testbench-cases.md it replaces
+}
+
+// automatic tells whether the case can run without a person.
+func (c catCase) automatic() bool {
+	for _, h := range c.How {
+		if h != "person" {
+			return true
+		}
+	}
+	return false
+}
+
+// function is one line of docs/testbench-functions.md.
+type function struct {
+	ID, What string
+	Cases    []string
+}
+
+var (
+	catRowRE  = regexp.MustCompile(`(?m)^\| ([A-Z][0-9]+) \| (.+) \| ([a-z, ]+) \|([^|]*)\|$`)
+	funcRowRE = regexp.MustCompile(`(?m)^\| ([A-Z]\.[0-9]+) \| (.+) \| ([^|]*) \|$`)
+	oldRE     = regexp.MustCompile(`\[([A-Z][a-z]*[0-9]*(?:, [A-Z][a-z]*[0-9]*)*)\]$`)
+	kinds     = map[string]bool{"real": true, "fleet": true, "time": true, "feed": true, "ui": true, "helper": true, "person": true}
+)
+
+func splitList(s string) []string {
+	var out []string
+	for _, f := range strings.Split(s, ",") {
+		if f = strings.TrimSpace(f); f != "" && f != "-" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// readCatalogue reads the cases of the catalogue's tables.
+func readCatalogue(text string) ([]catCase, error) {
+	var out []catCase
+	seen := map[string]bool{}
+	for _, m := range catRowRE.FindAllStringSubmatch(text, -1) {
+		c := catCase{ID: m[1], Text: strings.TrimSpace(m[2]), How: splitList(m[3]), Needs: splitList(m[4])}
+		if seen[c.ID] {
+			return nil, fmt.Errorf("case %s is listed twice", c.ID)
+		}
+		seen[c.ID] = true
+		for _, h := range c.How {
+			if !kinds[h] {
+				return nil, fmt.Errorf("case %s: unknown kind %q", c.ID, h)
+			}
+		}
+		if len(c.How) == 0 {
+			return nil, fmt.Errorf("case %s says nothing of how it runs", c.ID)
+		}
+		if o := oldRE.FindStringSubmatch(c.Text); o != nil {
+			c.Old = splitList(o[1])
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// readFunctions reads the functions list's tables.
+func readFunctions(text string) ([]function, error) {
+	var out []function
+	seen := map[string]bool{}
+	for _, m := range funcRowRE.FindAllStringSubmatch(text, -1) {
+		f := function{ID: m[1], What: strings.TrimSpace(m[2]), Cases: splitList(m[3])}
+		if seen[f.ID] {
+			return nil, fmt.Errorf("function %s is listed twice", f.ID)
+		}
+		seen[f.ID] = true
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+// loadCatalogue reads both documents from the repository's docs.
+func loadCatalogue(docs string) ([]catCase, []function, error) {
+	read := func(name string) (string, error) {
+		b, err := os.ReadFile(filepath.Join(docs, name))
+		if err != nil {
+			return "", fmt.Errorf("cannot read the catalogue: %w (run from the repository's root, or give -docs)", err)
+		}
+		return string(b), nil
+	}
+	ct, err := read("testbench-catalogue.md")
+	if err != nil {
+		return nil, nil, err
+	}
+	ft, err := read("testbench-functions.md")
+	if err != nil {
+		return nil, nil, err
+	}
+	cases, err := readCatalogue(ct)
+	if err == nil && len(cases) == 0 {
+		err = fmt.Errorf("testbench-catalogue.md has no cases")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	funcs, err := readFunctions(ft)
+	if err == nil && len(funcs) == 0 {
+		err = fmt.Errorf("testbench-functions.md has no functions")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return cases, funcs, nil
+}
+
+// checkCatalogue finds what the two documents and the harness disagree on:
+// a function naming a case that is not there, a case no function names, an
+// automated case that is missing or claimed by an unknown suite.
+func checkCatalogue(cases []catCase, funcs []function) []string {
+	byID := map[string]catCase{}
+	for _, c := range cases {
+		byID[c.ID] = c
+	}
+	named := map[string]bool{}
+	var bad []string
+	for _, f := range funcs {
+		for _, id := range f.Cases {
+			if _, ok := byID[id]; !ok {
+				bad = append(bad, fmt.Sprintf("function %s names case %s, which the catalogue does not have", f.ID, id))
+			}
+			named[id] = true
+		}
+	}
+	for _, c := range cases {
+		if !named[c.ID] {
+			bad = append(bad, fmt.Sprintf("no function names case %s", c.ID))
+		}
+	}
+	known := map[string]bool{}
+	for _, s := range suites {
+		known[s] = true
+	}
+	for id, ss := range automated {
+		if _, ok := byID[id]; !ok {
+			bad = append(bad, fmt.Sprintf("the harness runs case %s, which the catalogue does not have", id))
+		}
+		for _, s := range ss {
+			if !known[s] {
+				bad = append(bad, fmt.Sprintf("case %s: unknown suite %q", id, s))
+			}
+		}
+	}
+	sort.Strings(bad)
+	return bad
+}
+
+// tally counts one area's functions or cases.
+type tally struct{ all, covered, auto, run int }
+
+func (t *tally) add(o tally) {
+	t.all += o.all
+	t.covered += o.covered
+	t.auto += o.auto
+	t.run += o.run
+}
+
+// Coverage prints, by area, how many functions have a case, how many of them
+// a case that runs without a person, and how many a case the harness runs
+// today; then the same for the cases, and what is left.
+func Coverage(w io.Writer, docs string) error {
+	cases, funcs, err := loadCatalogue(docs)
+	if err != nil {
+		return err
+	}
+	if bad := checkCatalogue(cases, funcs); len(bad) > 0 {
+		return fmt.Errorf("the catalogue does not hold together:\n  %s", strings.Join(bad, "\n  "))
+	}
+	byID := map[string]catCase{}
+	for _, c := range cases {
+		byID[c.ID] = c
+	}
+	area := func(id string) string { return id[:1] }
+	var order []string
+	fa, ca := map[string]*tally{}, map[string]*tally{}
+	for _, f := range funcs {
+		a := area(f.ID)
+		if fa[a] == nil {
+			fa[a], ca[a] = &tally{}, &tally{}
+			order = append(order, a)
+		}
+		t := tally{all: 1}
+		for _, id := range f.Cases {
+			c := byID[id]
+			t.covered = 1
+			if c.automatic() {
+				t.auto = 1
+			}
+			if automated[id] != nil {
+				t.run = 1
+			}
+		}
+		fa[a].add(t)
+	}
+	var uncovered []string
+	for _, f := range funcs {
+		if len(f.Cases) == 0 {
+			uncovered = append(uncovered, f.ID+" "+f.What)
+		}
+	}
+	needs := map[string][]string{}
+	var person []string
+	for _, c := range cases {
+		a := area(c.ID)
+		if ca[a] == nil {
+			ca[a], fa[a] = &tally{}, &tally{}
+			order = append(order, a)
+		}
+		t := tally{all: 1, covered: 1}
+		if c.automatic() {
+			t.auto = 1
+		} else {
+			person = append(person, c.ID)
+		}
+		if automated[c.ID] != nil {
+			t.run = 1
+		}
+		ca[a].add(t)
+		for _, n := range c.Needs {
+			needs[n] = append(needs[n], c.ID)
+		}
+	}
+	fmt.Fprintf(w, "%-4s %28s   %s\n", "", "functions", "cases")
+	fmt.Fprintf(w, "%-4s %6s %7s %6s %6s   %5s %6s %5s\n", "area", "all", "a case", "auto", "run", "all", "auto", "run")
+	var ft, ct tally
+	for _, a := range order {
+		f, c := fa[a], ca[a]
+		ft.add(*f)
+		ct.add(*c)
+		fmt.Fprintf(w, "%-4s %6d %7d %6d %6d   %5d %6d %5d\n", a, f.all, f.covered, f.auto, f.run, c.all, c.auto, c.run)
+	}
+	fmt.Fprintf(w, "%-4s %6d %7d %6d %6d   %5d %6d %5d\n", "all", ft.all, ft.covered, ft.auto, ft.run, ct.all, ct.auto, ct.run)
+	fmt.Fprintf(w, "\nfunctions with a case %.1f%%, with a case that runs by itself %.1f%%, run by the harness today %.1f%%\n",
+		pct(ft.covered, ft.all), pct(ft.auto, ft.all), pct(ft.run, ft.all))
+	fmt.Fprintf(w, "cases that run by themselves %.1f%%, run by the harness today %.1f%%\n", pct(ct.auto, ct.all), pct(ct.run, ct.all))
+	if len(uncovered) > 0 {
+		fmt.Fprintf(w, "\nfunctions without a case:\n  %s\n", strings.Join(uncovered, "\n  "))
+	}
+	if len(person) > 0 {
+		fmt.Fprintf(w, "\nneed a person: %s\n", strings.Join(person, ", "))
+	}
+	if len(needs) > 0 {
+		fmt.Fprintln(w, "\nwaiting for:")
+		var ns []string
+		for n := range needs {
+			ns = append(ns, n)
+		}
+		sort.Strings(ns)
+		for _, n := range ns {
+			fmt.Fprintf(w, "  %s: %s\n", n, strings.Join(needs[n], ", "))
+		}
+	}
+	var todo []string
+	for _, c := range cases {
+		if c.automatic() && len(c.Needs) == 0 && automated[c.ID] == nil {
+			todo = append(todo, c.ID)
+		}
+	}
+	if len(todo) > 0 {
+		fmt.Fprintf(w, "\nready to automate (%d): %s\n", len(todo), strings.Join(todo, ", "))
+	}
+	return nil
+}
+
+func pct(a, b int) float64 {
+	if b == 0 {
+		return 0
+	}
+	return 100 * float64(a) / float64(b)
+}
+
+// allCoverage prints the coverage after "all", and keeps it beside the
+// report.
+func allCoverage(stdout, stderr io.Writer, docs, reportDir string) {
+	var b strings.Builder
+	if err := Coverage(&b, docs); err != nil {
+		fmt.Fprintf(stderr, "bench: coverage: %v\n", err)
+		return
+	}
+	fmt.Fprintf(stdout, "\n%s", b.String())
+	if reportDir != "" {
+		if err := os.WriteFile(filepath.Join(reportDir, "coverage.txt"), []byte(b.String()), 0o600); err != nil {
+			fmt.Fprintf(stderr, "bench: %v\n", err)
+		}
+	}
+}

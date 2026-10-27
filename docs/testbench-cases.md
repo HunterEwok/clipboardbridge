@@ -1,9 +1,11 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # The bench's test cases, step by step
 
-Every case of the hardware test bench ([testbench.md](testbench.md)) written out in full: the
+Cases of the hardware test bench ([testbench.md](testbench.md)) written out in full: the
 rule it checks, the devices, what must be true before it starts, each step, and how to tell
-pass from fail. The IDs are the ones of testbench.md (C content classes, sections 6 and 7; P
+pass from fail. The list of every case of release 0.6 is
+[testbench-catalogue.md](testbench-catalogue.md), with its own IDs; a case there names the
+IDs of this document it replaces in brackets. The IDs are the ones of testbench.md (C content classes, sections 6 and 7; P
 features and platforms; F failures; S security). Devices are named by their role on the bench
 (section 3 there); their addresses and logins are in the controller's inventory only, never
 here.

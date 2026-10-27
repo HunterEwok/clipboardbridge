@@ -38,6 +38,8 @@
 | [App specification](apps.md) | what the apps do and how they look |
 | [Contributing](../CONTRIBUTING.md) | conventions, building and testing every part |
 | [Test bench](testbench.md) | testing on real devices before a release: the cases, the bench, the criteria |
-| [Test bench cases](testbench-cases.md) | every bench case step by step: the rule, the devices, the steps, pass and fail |
+| [Test bench catalogue](testbench-catalogue.md) | every bench case of 0.6 in one line, with how it runs and what it still needs |
+| [Test bench functions](testbench-functions.md) | every function of the product with the cases that check it, for the coverage report |
+| [Test bench cases](testbench-cases.md) | bench cases step by step: the rule, the devices, the steps, pass and fail |
 | [Security audit](security-audit.md) | the plan of the security audit |
 | [Maintaining](maintaining.md) | repository settings, CI, releases, signing keys, Homebrew |

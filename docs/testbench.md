@@ -107,8 +107,11 @@ The observation is always end to end, at the user's clipboard where one exists:
 | `win` | `Set-Clipboard` inside the signed-in session (a small bench helper started at sign-in; an SSH session cannot reach the desktop clipboard) | `Get-Clipboard` through the same helper |
 | `phone` | the app's UI through UI Automator over `adb` (bench only; users never need `adb`) | the app's UI / the system clipboard as the app sees it |
 
-Every case is written out step by step, with its preconditions and how to tell pass from
-fail, in [testbench-cases.md](testbench-cases.md).
+Every case of release 0.6 is in [testbench-catalogue.md](testbench-catalogue.md), one line
+each, with how it runs and what it still needs; every function of the product, with the
+cases that check it, is in [testbench-functions.md](testbench-functions.md), and
+`testbench coverage` counts from both. The cases that have a step-by-step form, with their
+preconditions and how to tell pass from fail, are in [testbench-cases.md](testbench-cases.md).
 
 Each run writes a unique marker into every text (run ID, case ID, sender, time) so a stale
 clipboard can never pass a test.
@@ -289,9 +292,11 @@ relay over SSH.
 **Starting a run**:
 
 - by hand on the controller (`go run ./tools/bench check`, `-build DIR reset` or `-quick
-  reset` before each suite (section 13, "A test cycle"), `smoke`, `full`, `away`, `relay`,
-  later `security` and `soak`; `-report DIR` writes `report.xml` and `report.txt`, `-only
-  a,b` limits the run to some devices);
+  reset` before each suite (section 13, "A test cycle"), `smoke`, `full`, `faults`, `away`,
+  `relay`, later `security` and `soak`; `all` runs check and then each suite after a quick
+  reset, and ends with the coverage table (`coverage.txt` beside the report); `coverage`
+  prints that table alone and needs no devices; `-report DIR` writes `report.xml` and
+  `report.txt`, `-only a,b` limits the run to some devices);
 - from GitHub: a self-hosted runner on the controller, started **only** by
   `workflow_dispatch` and by release tags, never by pull requests (a pull request from a
   stranger must never run code on the home network). The runner gets no repository
@@ -314,6 +319,7 @@ suite. Reports stay on the controller, never in the public repository: they show
 | full | sections 6 to 9; so far C1 to C5, C7 and C8 between every pair of members, F1, P35 for a member in a container, P34 (sync modes), C6 and S10 (a secret copy), S11 (local access), S15 (logs) and S16 (files at rest) | ~2 h | before each release candidate |
 | away | P11 (the away devices join by invitation through the hub and its forwarder, sync both ways, `cbb global off` and `on`), F6 (the hub's service stopped), P37 (the hub moved to an admin computer) and P36 (the root and the admin as several hubs); F7 (the forwarder stopped) only with `-stop-forwarder`, since other groups use it | ~15 min | before each release, after each change to the tunnel |
 | relay | P12: the members meet at the blind relay, sync, and a wrong key is refused | ~5 min | before each release, after each change to the relay |
+| faults | E7 (30% loss, 300 ms delay and reordering at the hub), E8 (a member's port blocked for a minute), E11 and U6 (a hung service), U5 (a stopped service: every command's message, in both modes), U7 (a damaged `identity.json`); each change has a timer on the device that takes it back | ~15 min | before each release |
 | security | section 9 with captures | ~30 min | before each release, after each change to the tunnel or relay |
 | soak | section 10 | 24 h | before each release |
 

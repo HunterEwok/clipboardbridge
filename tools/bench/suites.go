@@ -496,3 +496,38 @@ func noSudo(d *Device, err error) error {
 	}
 	return err
 }
+
+// All runs every suite of the harness in turn: check, then each of the
+// others after a quick reset (R1 without the install), and a last quick
+// reset, so the devices end in no group. One report holds them all.
+func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, timeout time.Duration, stopForwarder bool) {
+	Check(ctx, r, devices)
+	if r.Failed() > 0 {
+		r.Skip("all", "check failed; the other suites need a healthy bench")
+		return
+	}
+	reset := func(name string) {
+		r.within(name + "/")
+		Reset(ctx, r, devices, nil, true)
+		r.within("")
+	}
+	for _, s := range suites[1:] {
+		if ctx.Err() != nil {
+			return
+		}
+		reset("before-" + s)
+		switch s {
+		case "smoke":
+			Smoke(ctx, r, inv, devices, timeout)
+		case "full":
+			Full(ctx, r, devices, timeout)
+		case "faults":
+			Faults(ctx, r, devices, timeout)
+		case "away":
+			Away(ctx, r, inv, devices, timeout, stopForwarder)
+		case "relay":
+			Relay(ctx, r, inv, devices, timeout)
+		}
+	}
+	reset("after")
+}
