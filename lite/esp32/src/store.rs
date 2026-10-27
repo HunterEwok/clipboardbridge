@@ -42,6 +42,68 @@ pub mod tag {
     pub const LAYOUT: u8 = 6;
     /// The characters the keyboard types a second; unset is RATE.
     pub const RATE: u8 = 7;
+    /// The board is a Bluetooth LE keyboard (1), or not (0 or unset).
+    pub const BLE_KEYBOARD: u8 = 8;
+    /// The hosts the Bluetooth keyboard is paired with (Bond::encode_all).
+    pub const BONDS: u8 = 9;
+}
+
+/// The most hosts the Bluetooth keyboard stays paired with; a new one
+/// pushes out the oldest.
+#[cfg_attr(feature = "qemu", allow(dead_code))]
+pub const MAX_BONDS: usize = 4;
+
+/// A host the Bluetooth keyboard is paired with: its identity address
+/// (the address type and six bytes, least significant first), its identity
+/// resolving key if it gave one, and the long-term key of the link.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Bond {
+    pub kind: u8,
+    pub addr: [u8; 6],
+    pub irk: Option<[u8; 16]>,
+    pub ltk: [u8; 16],
+    /// Whether the pairing was authenticated (MITM protected).
+    pub authenticated: bool,
+}
+
+impl Bond {
+    const LEN: usize = 1 + 6 + 1 + 16 + 16 + 1;
+
+    /// The bonds one after another, the oldest first.
+    pub fn encode_all(bonds: &[Bond]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(bonds.len() * Self::LEN);
+        for b in bonds {
+            out.push(b.kind);
+            out.extend_from_slice(&b.addr);
+            out.push(b.irk.is_some() as u8);
+            out.extend_from_slice(&b.irk.unwrap_or_default());
+            out.extend_from_slice(&b.ltk);
+            out.push(b.authenticated as u8);
+        }
+        out
+    }
+
+    /// The saved bonds; damaged ones are left out.
+    pub fn decode_all(data: &[u8]) -> Vec<Bond> {
+        data.as_chunks::<{ Self::LEN }>()
+            .0
+            .iter()
+            .filter_map(|c| {
+                let irk = match c[7] {
+                    0 => None,
+                    1 => Some(c[8..24].try_into().ok()?),
+                    _ => return None,
+                };
+                Some(Bond {
+                    kind: c[0],
+                    addr: c[1..7].try_into().ok()?,
+                    irk,
+                    ltk: c[24..40].try_into().ok()?,
+                    authenticated: c[40] == 1,
+                })
+            })
+            .collect()
+    }
 }
 
 /// The keyboard's characters a second unless the user sets another: some
@@ -117,6 +179,17 @@ impl Store {
             Some(&[r]) if RATES.contains(&r) => r,
             _ => RATE,
         }
+    }
+
+    /// Whether the board is a Bluetooth LE keyboard.
+    #[cfg_attr(feature = "qemu", allow(dead_code))]
+    pub fn ble_keyboard(&self) -> bool {
+        self.fields.get(tag::BLE_KEYBOARD) == Some(&[1])
+    }
+
+    /// The hosts the Bluetooth keyboard is paired with, the oldest first.
+    pub fn bonds(&self) -> Vec<Bond> {
+        self.fields.get(tag::BONDS).map(Bond::decode_all).unwrap_or_default()
     }
 
     /// The identity in the group, if the board joined one.

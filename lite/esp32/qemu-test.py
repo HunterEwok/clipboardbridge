@@ -99,7 +99,8 @@ b.type("selftest", "self-test passed")
 b.type("layout ru", "The keyboard types for the layout ru now")
 # "Wi-Fi: dom" (house), and "Privet, mir!" (hello, world) in Cyrillic.
 b.type("type Wi-Fi: \u0434\u043e\u043c", "The layout ru has no keys for: WiF")
-b.type("type \u041f\u0440\u0438\u0432\u0435\u0442, \u043c\u0438\u0440!", "the QEMU build has no USB keyboard")
+b.type("type \u041f\u0440\u0438\u0432\u0435\u0442, \u043c\u0438\u0440!", "the QEMU build has no keyboard")
+b.type("ble pair", "the QEMU build has no Bluetooth")
 b.type("rate 30", "The keyboard types 30 characters a second now.")
 b.type("rate 100", "A rate is 5 to 60 characters a second.")
 b.stop()
@@ -109,6 +110,7 @@ b = Board(2)
 b.type("status", "Wi-Fi network: Test Net")
 assert "error details: on" in transcript[-1], "debug mode was not kept"
 assert "USB port: console; layout ru, 30 characters a second" in transcript[-1], "the keyboard's settings were not kept"
+assert "Bluetooth keyboard: not in the QEMU build; paired with 0 host(s)" in transcript[-1], "status lacks the Bluetooth keyboard"
 b.type("wifi forget", "Forgot the Wi-Fi network.")
 b.stop()
 
