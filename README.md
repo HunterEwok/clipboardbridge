@@ -90,13 +90,17 @@ through tmux and `cbb copy` and `cbb paste`.
 | Android app | built, CI; APK in every release | not yet |
 | Apple Watch and Wear OS apps (devices, events, away switch) | built, CI | not yet |
 | Lite member on Linux | built, CI e2e with Go members | joined a group on a Pi Zero W |
-| Lite member on the ESP32 | protocol core and TLS build for the chip; no firmware | no |
+| Lite member on the Arduino Nano ESP32 | firmware: Wi-Fi, joining by the phone, the USB port as a keyboard; CI in QEMU; syncing next | not yet |
 | Sync away from home between computers (`cbb global`, `cbb invite`) | built | not yet |
 | Sync away from home for the phones and the lite member | built | not yet |
 | The phone as the hub, several hubs, your own blind relay | built | not yet |
+| Images, files and formatted text | built | not yet |
+| Remote paste and quick actions | built | not yet |
+| Keys in the TPM on Linux, proven Android keys | built; CI against a software TPM | not yet |
+| Releases signed with the project's own keys | built; waits for the project's root keys | |
 | The project's forwarder and relay at `cbb.tools`, open to everyone | being tested | |
 | Console paste on a key press | planned | |
-| Homebrew | set up; the tap gets its first formula with the next release | not yet |
+| Homebrew (`hunterewok/tap`) | a formula with each release | |
 | Signed macOS `.pkg`, TestFlight, app stores | planned (needs an Apple developer account) | |
 
 The order of what comes next is the [roadmap](docs/roadmap.md).
