@@ -22,10 +22,12 @@
 @font-face { font-family: "Caveat"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/caveat-600-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 @font-face { font-family: "Caveat"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/caveat-600-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 
-/* Art deco: gold lines and glass panes on dark wool felt, like the cloth of
-   a billiard table; the pictures and the tables are chalk on school boards
-   in old walnut frames. Every colour is a token, and the components take
-   them from the tokens. */
+/* Art deco: gold lines and glass panes on wool felt, like the cloth of a
+   billiard table; the pictures and the tables are chalk on school boards
+   in polished wooden frames. Every colour is a token, and the components
+   take them from the tokens. The dark theme is the default; the light one
+   follows the system, or the reader's choice in the header (site.js sets
+   data-theme on <html>). */
 
 :root {
   --f-display: "Forum", "Didot", Georgia, serif;
@@ -33,6 +35,9 @@
   --f-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --f-hand: "Caveat", "Segoe Print", "Bradley Hand", cursive;
   --bg: #0B1A20;
+  --felt: url(felt.jpg);
+  --glow: rgba(60, 110, 120, .16);
+  --vignette: rgba(0, 0, 0, .45);
   --raised: rgba(241, 234, 216, .045);
   --menu: #0C1E25;
   --text: #F1EAD8;
@@ -44,14 +49,87 @@
   --code: #0F252D;
   --shadow: 0 18px 40px -20px rgba(0, 0, 0, .8);
   --gold: linear-gradient(180deg, #F6DC9C, #D2A552 55%, #B4863A);
-  /* The board: black slate, a faint grid, and chalk in white and yellow. */
+  --gold-text: linear-gradient(180deg, #F6DC9C, #C99A45 60%, #F1D48A);
+  /* The board: black slate, a faint grid, and chalk in white and yellow,
+     in a frame of old walnut. */
+  --wood-h: url(wood-h.jpg);
+  --wood-v: url(wood-v.jpg);
+  --frame-shadow: 0 28px 46px -22px rgba(0, 0, 0, .95), 0 4px 10px rgba(0, 0, 0, .55);
   --slate: #141514;
   --slate-grid: rgba(255, 255, 255, .045);
+  --slate-shadow: inset 0 3px 6px rgba(0, 0, 0, .8), inset 0 0 0 1px rgba(0, 0, 0, .7);
   --chalk: #F2F0EA;
   --chalk-words: #ECE9E1;
   --chalk-yellow: #EFD38E;
   --chalk-rule: rgba(242, 240, 234, .45);
+  --chalk-strong: rgba(242, 240, 234, .85);
+  --chalk-faint: rgba(242, 240, 234, .6);
   color-scheme: dark;
+}
+
+/* The light theme: sand-coloured cloth, pale oak frames, and boards of
+   light grey slate written on in graphite and red-brown chalk. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #DCD3C1;
+    --felt: url(felt-light.jpg);
+    --glow: rgba(255, 252, 240, .55);
+    --vignette: rgba(110, 85, 45, .2);
+    --raised: rgba(255, 251, 242, .5);
+    --menu: #EFE8DA;
+    --text: #2A251E;
+    --dim: #574F43;
+    --accent: #6E4D10;
+    --on-accent: #1A1206;
+    --line: rgba(110, 77, 16, .32);
+    --grid: rgba(110, 77, 16, .08);
+    --code: #ECE4D4;
+    --shadow: 0 18px 40px -22px rgba(70, 50, 20, .45);
+    --gold-text: linear-gradient(180deg, #A67A26, #7D5814 60%, #9C7022);
+    --wood-h: url(oak-h.jpg);
+    --wood-v: url(oak-v.jpg);
+    --frame-shadow: 0 24px 40px -22px rgba(70, 50, 20, .55), 0 3px 8px rgba(70, 50, 20, .25);
+    --slate: #ECE8DF;
+    --slate-grid: rgba(60, 52, 40, .07);
+    --slate-shadow: inset 0 2px 5px rgba(70, 50, 20, .25), inset 0 0 0 1px rgba(70, 50, 20, .2);
+    --chalk: #3A3530;
+    --chalk-words: #3A3530;
+    --chalk-yellow: #94491A;
+    --chalk-rule: rgba(58, 53, 48, .4);
+    --chalk-strong: rgba(58, 53, 48, .75);
+    --chalk-faint: rgba(58, 53, 48, .5);
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #DCD3C1;
+  --felt: url(felt-light.jpg);
+  --glow: rgba(255, 252, 240, .55);
+  --vignette: rgba(110, 85, 45, .2);
+  --raised: rgba(255, 251, 242, .5);
+  --menu: #EFE8DA;
+  --text: #2A251E;
+  --dim: #574F43;
+  --accent: #6E4D10;
+  --on-accent: #1A1206;
+  --line: rgba(110, 77, 16, .32);
+  --grid: rgba(110, 77, 16, .08);
+  --code: #ECE4D4;
+  --shadow: 0 18px 40px -22px rgba(70, 50, 20, .45);
+  --gold-text: linear-gradient(180deg, #A67A26, #7D5814 60%, #9C7022);
+  --wood-h: url(oak-h.jpg);
+  --wood-v: url(oak-v.jpg);
+  --frame-shadow: 0 24px 40px -22px rgba(70, 50, 20, .55), 0 3px 8px rgba(70, 50, 20, .25);
+  --slate: #ECE8DF;
+  --slate-grid: rgba(60, 52, 40, .07);
+  --slate-shadow: inset 0 2px 5px rgba(70, 50, 20, .25), inset 0 0 0 1px rgba(70, 50, 20, .2);
+  --chalk: #3A3530;
+  --chalk-words: #3A3530;
+  --chalk-yellow: #94491A;
+  --chalk-rule: rgba(58, 53, 48, .4);
+  --chalk-strong: rgba(58, 53, 48, .75);
+  --chalk-faint: rgba(58, 53, 48, .5);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -64,7 +142,7 @@ body {
   font: 17px/1.6 var(--f-body);
   overflow-x: clip;
   background-color: var(--bg);
-  background-image: radial-gradient(60rem 40rem at 50% 8%, rgba(60, 110, 120, .16), transparent 70%), radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0, 0, 0, .45)), url(felt.jpg);
+  background-image: radial-gradient(60rem 40rem at 50% 8%, var(--glow), transparent 70%), radial-gradient(120% 90% at 50% 40%, transparent 55%, var(--vignette)), var(--felt);
   background-size: auto, auto, 256px 256px;
 }
 a { color: var(--accent); text-underline-offset: 3px; }
@@ -72,6 +150,13 @@ code, pre { font-family: var(--f-mono); font-size: .88em; }
 code { background: var(--code); padding: .1em .4em; border-radius: 5px; direction: ltr; unicode-bidi: isolate; white-space: nowrap; display: inline-block; max-width: 100%; overflow-x: auto; vertical-align: bottom; }
 pre { background: var(--code); padding: 12px 14px; border-radius: 8px; overflow-x: auto; direction: ltr; text-align: left; white-space: pre; }
 pre code { background: none; padding: 0; white-space: pre; display: block; max-width: none; overflow: visible; } /* keeps the lines of a command */
+/* A command is shown whole: a long one wraps on the screen, and is still
+   one line when copied. */
+.card pre, .card pre code { white-space: pre-wrap; overflow-wrap: anywhere; }
+pre { position: relative; }
+pre:has(.copy) { padding-inline-end: 84px; }
+.copy { position: absolute; top: 8px; inset-inline-end: 8px; min-height: 32px; padding: 4px 10px; font: 500 12px/1 var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.copy:hover { border-color: var(--accent); }
 h1, h2, h3 { font-family: var(--f-display); line-height: 1.1; text-wrap: balance; font-weight: 400; text-transform: uppercase; letter-spacing: .05em; }
 h1 { font-size: clamp(34px, 4.4vw, 60px); margin: 0 0 20px; letter-spacing: .04em; }
 h2 { font-size: clamp(28px, 3.2vw, 38px); margin: 88px 0 18px; text-align: center; color: var(--accent); }
@@ -81,6 +166,13 @@ h3 { font-size: 20px; margin: 0 0 8px; }
 .wrap { max-width: 1160px; margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
 .dim { color: var(--dim); }
 .lead { font-size: clamp(18px, 1.7vw, 20px); color: var(--dim); }
+/* No word left alone on the last line of centred text: it is balanced
+   across its lines. Text set to the left fills each line as usual. */
+/* In the narrow columns of the cards long words break with a hyphen, so
+   no line ends far short of the edge. */
+.card p, .card li, .steps li { hyphens: auto; -webkit-hyphens: auto; hyphenate-limit-chars: 10 4 4; }
+.lead, .intro, .final p, .hero .platforms, .facts span, .steps.boards li { text-wrap: balance; }
+[hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .sprites { position: absolute; width: 0; height: 0; overflow: hidden; }
 
@@ -109,14 +201,32 @@ nav a[aria-current] { color: var(--accent); }
 .langs li a:hover { background: var(--grid); }
 .langs li a[aria-current] { color: var(--accent); font-weight: 600; }
 
+/* The theme button: it shows the theme chosen now, and each press moves to
+   the next of "as the system", light and dark. site.js shows it. */
+.theme { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; color: var(--dim); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.theme[hidden] { display: none; }
+.theme:hover { color: var(--text); }
+.theme svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.theme .t-auto path { fill: currentColor; }
+.theme g { display: none; }
+.theme[data-choice="auto"] .t-auto, .theme[data-choice="light"] .t-light, .theme[data-choice="dark"] .t-dark { display: inline; }
+/* The icon in the header: the light one on a light page. */
+.brand .on-light { display: none; }
+:root[data-theme="light"] .brand .on-light { display: block; }
+:root[data-theme="light"] .brand .on-dark { display: none; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .brand .on-light { display: block; }
+  :root:not([data-theme="dark"]) .brand .on-dark { display: none; }
+}
+
 /* A school board: black slate with a faint grid, in a frame of old,
    well-kept walnut whose four rails meet in mitred corners; a rounded,
    waxed moulding catches the light from the upper left. */
-.frame { --f: 26px; position: relative; padding: var(--f); border-radius: 4px; box-shadow: 0 28px 46px -22px rgba(0, 0, 0, .95), 0 4px 10px rgba(0, 0, 0, .55); }
+.frame { --f: 26px; position: relative; padding: var(--f); border-radius: 4px; box-shadow: var(--frame-shadow); }
 .rail { position: absolute; display: block; background-repeat: repeat; }
 .rail::after { content: ""; position: absolute; inset: 0; }
-.rail.t, .rail.b { left: 0; right: 0; height: var(--f); background-image: url(wood-h.jpg); background-size: auto 150px; }
-.rail.l, .rail.r { top: 0; bottom: 0; width: var(--f); background-image: url(wood-v.jpg); background-size: 150px auto; }
+.rail.t, .rail.b { left: 0; right: 0; height: var(--f); background-image: var(--wood-h); background-size: auto 150px; }
+.rail.l, .rail.r { top: 0; bottom: 0; width: var(--f); background-image: var(--wood-v); background-size: 150px auto; }
 .rail.t { top: 0; clip-path: polygon(0 0, 100% 0, calc(100% - var(--f)) 100%, var(--f) 100%); background-position: -120px -20px; }
 .rail.b { bottom: 0; clip-path: polygon(var(--f) 0, calc(100% - var(--f)) 0, 100% 100%, 0 100%); background-position: -640px -70px; }
 .rail.l { left: 0; clip-path: polygon(0 0, 100% var(--f), 100% calc(100% - var(--f)), 0 100%); background-position: -40px -300px; }
@@ -129,7 +239,7 @@ nav a[aria-current] { color: var(--accent); }
   position: relative; background-color: var(--slate);
   background-image: linear-gradient(var(--slate-grid) 1px, transparent 1px), linear-gradient(90deg, var(--slate-grid) 1px, transparent 1px);
   background-size: 28px 28px; background-position: -1px -1px;
-  box-shadow: inset 0 3px 6px rgba(0, 0, 0, .8), inset 0 0 0 1px rgba(0, 0, 0, .7);
+  box-shadow: var(--slate-shadow);
 }
 .surface > svg { display: block; width: 100%; height: auto; }
 
@@ -150,20 +260,23 @@ nav a[aria-current] { color: var(--accent); }
 .board-table .surface { padding: 22px 26px 26px; overflow-x: auto; }
 .chalk-table { width: 100%; border-collapse: collapse; filter: url(#chalk-words); font: 600 24px/1.25 var(--f-hand); color: var(--chalk-words); }
 .chalk-table th, .chalk-table td { padding: 12px 16px; text-align: start; vertical-align: middle; }
-.chalk-table thead th { color: var(--chalk-yellow); border-bottom: 2.5px solid rgba(242, 240, 234, .85); font-weight: 600; }
+.chalk-table thead th { color: var(--chalk-yellow); border-bottom: 2.5px solid var(--chalk-strong); font-weight: 600; }
 .chalk-table tbody tr + tr > * { border-top: 2px solid var(--chalk-rule); }
 .chalk-table tr > * + * { border-inline-start: 2px solid var(--chalk-rule); }
 .chalk-table thead td { border: 0; }
 .chalk-table tbody th { font-size: 26px; font-weight: 600; }
 .compare td, .compare thead th { text-align: center; }
+.chalk-table td.one { text-align: center; } /* a cell of one word */
 .compare tr.us th { color: var(--chalk-yellow); }
 .mark { display: inline-block; width: 30px; height: 30px; vertical-align: middle; fill: none; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
 .mark.yes { stroke: var(--chalk-yellow); }
-.mark.no { stroke: rgba(242, 240, 234, .6); }
+.mark.no { stroke: var(--chalk-faint); }
 
 /* The hero: the title, then the board with the picture. */
 .hero { padding: 48px 0 24px; text-align: center; }
-.hero .lead { margin: 0 auto; }
+.hero h1 { font-size: clamp(36px, 5vw, 64px); }
+.hero h1 span { background: var(--gold-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero .lead { margin: 0 auto; font-size: clamp(17px, 1.6vw, 20px); line-height: 1.65; }
 .hero-board { max-width: 880px; margin: 34px auto 0; }
 .platforms { color: var(--dim); font: 500 13px/1.4 var(--f-mono); letter-spacing: .22em; text-transform: uppercase; margin: 26px 0 0; }
 .hero .actions { justify-content: center; }
@@ -226,6 +339,12 @@ nav a[aria-current] { color: var(--accent); }
    download page, which hold commands, two by two: never three and one. */
 .cards.four { grid-template-columns: repeat(4, 1fr); }
 .cards.pairs { grid-template-columns: repeat(2, 1fr); }
+/* The computers of the download page: the two with commands across the
+   whole width, so each command shows whole, then two small ones side by
+   side. */
+.cards.computers { grid-template-columns: repeat(2, 1fr); }
+.cards.computers > :nth-child(-n + 2) { grid-column: 1 / -1; }
+@media (max-width: 960px) { .cards.computers { grid-template-columns: 1fr; } }
 @media (max-width: 960px) { .cards.four, .facts { grid-template-columns: repeat(2, 1fr); } }
 .cards.two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .card { padding: 24px; min-width: 0; }
@@ -255,6 +374,25 @@ nav a[aria-current] { color: var(--accent); }
   display: grid; place-items: center; font: 400 18px/1 var(--f-display); color: var(--on-accent);
   background: var(--gold); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }
+/* The steps with a small board each: three in a row, one under another on
+   a phone. */
+.steps.boards { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.steps.boards li { padding: 18px 20px 20px; text-align: center; }
+.steps.boards li::before { position: static; margin: 0 auto 12px; }
+[dir="rtl"] .steps.boards li { padding: 18px 20px 20px; }
+.steps.boards .frame { --f: 12px; margin: 0 0 14px; }
+.steps.boards strong { display: block; margin-bottom: 4px; }
+@media (max-width: 860px) { .steps.boards { grid-template-columns: 1fr; } }
+/* A mark between yes and no, with what it means in a note under the table. */
+.mark.part { stroke: var(--chalk-faint); }
+.board-table .sources { margin: 12px 4px 0; font: 15px/1.5 var(--f-body); color: var(--dim); }
+.chalk-table sup { font-size: .6em; color: var(--chalk-yellow); }
+/* The download page: the reader's own system first, marked. */
+.pick { justify-content: center; }
+.card.mine { border-color: var(--accent); outline: 1px solid var(--line); outline-offset: 4px; }
+.card .mine-badge { display: none; }
+.card.mine .mine-badge { display: inline-block; }
+
 /* A page's title, its lead and its closing block are centred with the
    headings, and the text under them spans the width. */
 .page { padding-top: 48px; }
@@ -283,7 +421,7 @@ nav a[aria-current] { color: var(--accent); }
   .servers tbody tr + tr { border-top: 2px solid var(--chalk-rule); }
   .chalk-table.servers tbody tr + tr > *, .chalk-table.servers tr > * + * { border: 0; }
   .servers tbody th { padding-top: 12px; color: var(--chalk-yellow); font-size: 22px; }
-  .servers td { padding: 2px 5px 8px; }
+  .servers td, .servers td.one { padding: 2px 5px 8px; text-align: start; }
   .servers td::before { content: attr(data-label); display: block; font-size: 15px; color: var(--dim); }
 }
 
@@ -342,13 +480,33 @@ nav a[aria-current] { color: var(--accent); }
   .button.go::after { transition: transform .2s ease-out; }
   .button.go:hover::after { transform: translateX(4px); }
   [dir="rtl"] .button.go:hover::after { transform: translateX(-4px); }
+  /* The hero's chalk is drawn in: the devices, then the key, then the
+     line that joins them, then the words. */
+  .hero-board .chalk path { stroke-dasharray: 1; animation: draw 1.4s cubic-bezier(.4, .1, .3, 1) .3s both; }
+  .hero-board .chalk .y { animation-delay: .9s; }
+  .hero-board .chalk .link { animation-delay: 1.6s; animation-duration: .8s; }
+  .hero-board .words { animation: chalk-in .6s ease-out 2.1s both; }
   @supports (animation-timeline: view()) {
     .reveal { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 35%; }
   }
 }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes chalk-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 
 .soon { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding-block: 40px; }
 .soon img { display: block; }
 .soon h1 { margin-top: 20px; }
 .soon p { margin: 6px 0; }
+
+/* Paper: the text in black on white, the boards kept, nothing to press. */
+@media print {
+  :root { --bg: #FFF; --felt: none; --glow: transparent; --vignette: transparent; --raised: transparent; --text: #000; --dim: #333; --accent: #6B4A10; --line: #999; --code: #F2F2F2; }
+  body { background: #FFF; padding: 0; }
+  .top, .skip, .dock, .theme, .actions, .foot { display: none; }
+  .card, .facts div, .note, .steps li { -webkit-backdrop-filter: none; backdrop-filter: none; break-inside: avoid; }
+  .frame { box-shadow: none; break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .reveal, .hero .wrap > * { animation: none; }
+  h2 { margin-top: 36px; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: .8em; color: var(--dim); word-break: break-all; }
+}

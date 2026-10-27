@@ -4,8 +4,11 @@
 The project's website at <https://cbb.tools>: three pages (the start page, download, and
 security and privacy) in English and every language of `l10n/` (Chinese, Hindi, Spanish, Russian, Arabic, Swahili, Hebrew), built by
 [`tools/site`](../tools/site/main.go) into plain HTML and CSS. It loads nothing from other
-sites. Its one script is the visit counter, GoatCounter, served by the same server (the
-other `<script>` elements are schema.org data for search engines). It also has error pages (`404`, `50x`) in every language, which nginx shows.
+sites. It has two scripts, both served by the same server: its own `static/site.js`, which
+keeps the reader's light or dark theme and, on the download page, puts the reader's system
+first, and the visit counter, GoatCounter (the other `<script>` elements are schema.org data
+for search engines). Without scripts every page works: the theme follows the system and
+every way to download is shown. It also has error pages (`404`, `50x`) in every language, which nginx shows.
 
 ## Editing
 
@@ -23,15 +26,22 @@ other `<script>` elements are schema.org data for search engines). It also has e
 - Write for the reader: the benefit first, short sentences, buttons that say what happens
   ("Download for Android", not "More"), and a next step at the end of every page. State only
   what is true today: no invented reviews or numbers, and what is planned says so.
-- The design is art deco on dark wool felt; its colours are tokens at the top of
-  `static/style.css`. Motion is CSS only, 0.2 to 0.6 s, and off under
+- The design is art deco on wool felt, in a dark theme and a light one; its colours are
+  tokens at the top of `static/style.css`, the light theme's in a block of its own. The
+  theme follows the system until the reader picks one with the button in the header. Motion is CSS only, 0.2 to 0.6 s, and off under
   `prefers-reduced-motion`. Buttons are at least 44 px high.
 - The pictures and the tables are chalk on boards in walnut frames. The chalk lines are drawn
   once by rough.js: change `chalk.js` and run `npm run chalk`, which writes
   `templates/chalk.html`; the labels stay in the pages, in each language. `textures.py`
-  (NumPy and Pillow) makes the wood and the felt in `static/`.
-- `static/og.png` (1200×630) is the picture links to the site show in chats and social
-  networks.
+  (NumPy and Pillow) makes the wood and the felt of both themes in `static/`.
+- `static/og/<language>.jpg` (1200×630) is the picture links to the site show in chats and
+  social networks: the home page's title beside its board. After changing either, run
+  `npm run og` (Playwright's Chromium, and Noto fonts for Chinese, Arabic, Hebrew and Hindi;
+  see `og.js`).
+- Name every phone and computer the same way: "a phone or a computer", "iPhone, Android,
+  Mac, Windows or Linux". Name the iPhone alone only where only the iPhone is meant.
+- A comparison with other apps states only what their makers' own pages say, with the
+  date, and marks what is partly true as such.
 - Present both kinds of group as nearly equal: with a computer at its heart (simpler, and
   said so) and phones only (fully supported).
 
