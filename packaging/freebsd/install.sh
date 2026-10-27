@@ -10,7 +10,8 @@
 # clipboardbridge (pw), the rc.d script, which runs the service through
 # daemon(8), and enables it in rc.conf, adds the user who ran sudo or doas
 # to the group, and starts or restarts the service. The keys live in
-# /var/db/clipboardbridge, the settings in /usr/local/etc/clipboardbridge.
+# /var/db/clipboardbridge, the settings in /usr/local/etc/clipboardbridge;
+# desktop sessions start the clipboard agent from XDG autostart.
 # --port, --home-cgnat, --express and --no-firewall work as in the Linux
 # installer; the firewall is pf or ipfw (firewall.sh). uninstall.sh removes
 # it all again.
@@ -144,6 +145,10 @@ fi
 
 install -m 0644 "$here/firewall.sh" /usr/local/share/clipboardbridge/firewall.sh
 install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
+# Desktop sessions (KDE, GNOME, Xfce and others that read XDG autostart)
+# start the clipboard agent, cbb agent, at login.
+install -d -m 0755 /usr/local/etc/xdg/autostart
+install -m 0644 "$here/clipboardbridge-desktop.desktop" /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
 sh /usr/local/share/clipboardbridge/firewall.sh setup "$firewall" "$port"
 if [ "$port" != 8764 ]; then
 	echo "Clipboard Bridge uses TCP port $port instead of 8764. The iPhone shortcut works only"

@@ -386,7 +386,11 @@ Steps:
 2. Done. The rc.d script, `get.sh` (with FreeBSD's own `fetch`), the pf anchor and the ipfw
    rule set with the consent prompt; the CI job installs it, opens and closes the ports in pf
    and removes it all.
-3. The desktop connector on FreeBSD.
+3. Done. The desktop connector on FreeBSD: X11 and Wayland's data control and remote paste
+   through XTEST and the virtual keyboard, started from XDG autostart; the lock check reads
+   the processes with ps, since FreeBSD has no logind, and refuses keys on GNOME, whose lock
+   screen nothing else tells. The RemoteDesktop portal, the ei protocol and uinput stay on
+   Linux. The CI job runs the X11 tests under Xvfb in the virtual machine.
 4. OPNsense and pfSense as the hub, after the OpenWrt steps: an OPNsense `plugins.inc.d` hook
    in our own package, from our own pkg repository on `cbb.tools` and kept in this
    repository under the AGPL; printed rules only, unsupported, on pfSense; the port in the

@@ -262,6 +262,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   mDNS, the member port and the QR code's addresses, and its defaults on OpenWrt are
   `/etc/clipboardbridge/state` and `/var/run/clipboardbridge/control.sock`.
 - The test bench takes OpenWrt routers and FreeBSD computers as devices under test.
+- The desktop connector on FreeBSD: the clipboard of X11 and Wayland desktops, and remote
+  paste through XTEST or the virtual keyboard, from `cbb agent`, which XDG autostart starts
+  at login. The lock check reads the processes with ps there and knows KDE's lock screen;
+  GNOME's takes no keys without logind.
 
 ### Changed
 

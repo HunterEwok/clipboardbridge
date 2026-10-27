@@ -102,6 +102,11 @@ fetch -qo - https://github.com/HunterEwok/clipboardbridge/releases/latest/downlo
 
 It installs `cbb`, an rc.d script that runs the service through daemon(8), and adds the
 line `clipboardbridge_enable="YES"` to rc.conf. The keys live in `/var/db/clipboardbridge`.
+On a desktop (X11, or Wayland with the data control protocol, as in KDE, sway and
+Hyprland), the session starts `cbb agent` from XDG autostart and the clipboard joins the
+group; log in again after the install. Remote paste types through XTEST on X11 and the
+virtual keyboard on wlroots desktops; GNOME takes no remote paste on FreeBSD, since without
+logind nothing tells whether its screen is locked.
 
 ## Docker
 

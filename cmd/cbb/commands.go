@@ -560,8 +560,8 @@ func readLine(r io.Reader) (string, error) {
 
 // cmdAgent links the desktop's clipboard to the service: the Mac's
 // pasteboard, where launchd starts it in the user's session; the Windows
-// clipboard, started at sign-in; a Linux desktop's clipboard, started with
-// the desktop session.
+// clipboard, started at sign-in; a Linux or FreeBSD desktop's clipboard,
+// started with the desktop session.
 func cmdAgent(args []string, stderr io.Writer) int {
 	if len(args) != 0 {
 		fmt.Fprintln(stderr, "cbb: agent takes no arguments")
@@ -569,7 +569,7 @@ func cmdAgent(args []string, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" || runtime.GOOS == "freebsd" {
 		logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
 		return runDesktop(ctx, logf, stderr)
 	}

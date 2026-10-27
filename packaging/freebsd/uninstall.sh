@@ -49,7 +49,7 @@ if [ -f "$share/firewall.sh" ]; then
 	sh "$share/firewall.sh" close
 	sh "$share/firewall.sh" hub-close
 fi
-rm -f /usr/local/etc/rc.d/clipboardbridge /usr/local/bin/cbb
+rm -f /usr/local/etc/rc.d/clipboardbridge /usr/local/bin/cbb /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
 rm -rf "$share" /usr/local/etc/clipboardbridge /var/run/clipboardbridge
 if [ "$purge" = yes ]; then
 	rm -rf /var/db/clipboardbridge

@@ -208,17 +208,24 @@ jobs:
         with:
           release: "15.1"
           usesh: true
-          # FreeBSD's go fetches the toolchain go.mod names.
-          prepare: pkg install -y go
+          # FreeBSD's go fetches the toolchain go.mod names; Xvfb, xclip
+          # and xterm are for the desktop connector's X11 tests.
+          prepare: pkg install -y go xorg-vfbserver xclip xterm
           run: |
             set -e
             export GOTOOLCHAIN=auto GOFLAGS=-buildvcs=false
             go version
             go test ./... </dev/null
+            # The desktop connector against X11 under Xvfb, as on Linux.
+            go test -c -o /tmp/desktop.test ./internal/desktop
+            Xvfb :5 -screen 0 640x480x24 >/tmp/xvfb.log 2>&1 &
+            for _ in $(seq 1 100); do [ -e /tmp/.X11-unix/X5 ] && break; sleep 0.1; done
+            DISPLAY=:5 CBB_TEST_X11=1 /tmp/desktop.test -test.v
             # The installer, the rc.d script and pf's anchor on the real system.
             go build -trimpath -o /tmp/cbb ./cmd/cbb
             sh packaging/freebsd/install.sh --no-firewall /tmp/cbb
             service clipboardbridge status
+            test -f /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop
             if ! cbb status 2>&1 | grep -Eq 'in a group|no group'; then
               ps -axo user,pid,ppid,command | grep '[c]bb'
               grep clipboardbridge /var/log/messages | tail -n 40
@@ -236,6 +243,7 @@ jobs:
             if grep -q clipboardbridge /etc/pf.conf; then exit 1; fi
             if pfctl -a clipboardbridge -s rules 2>/dev/null | grep -q pass; then exit 1; fi
             if [ -e /usr/local/bin/cbb ] || [ -e /var/db/clipboardbridge ]; then exit 1; fi
+            if [ -e /usr/local/etc/xdg/autostart/clipboardbridge-desktop.desktop ]; then exit 1; fi
 
   openwrt:
     name: OpenWrt
