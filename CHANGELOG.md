@@ -18,6 +18,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   is a tile with its devices' icons and how many are online, a section in the list, and
   a page of its own. With more than 12 devices Home has a search and the filters Online
   and Needs attention.
+- The Android app's F-Droid build, `clipboardbridge-fdroid-X.Y.Z.apk` in each release: the
+  same app without Google Play services, so without the Wear OS watch, and without its own
+  update, which F-Droid does. It builds reproducibly, as F-Droid needs to publish our signed
+  APK, and CI checks it; the recipe for fdroiddata and the store texts are in the repository
+  (docs/apps.md, "F-Droid"). The Android apps' version is now in
+  `apps/android/version.properties`.
 - `cbb update` installs the newest signed release on a computer installed with `get.sh`,
   `get.ps1` or a release archive (Linux, OpenWrt, FreeBSD, macOS, Windows): it checks
   `keys.json`, `stable.json` and `release.json`, the archive and the programs in it, runs the

@@ -7,14 +7,18 @@
 //   - every tracked text file is in English: no Cyrillic letters, except the
 //     translations of the apps (String Catalogs, *.xcstrings, Android's
 //     res/values-<language>/strings.xml, the tray app's
-//     frontend/l10n/<language>.json and the website's site/l10n/<language>.json);
+//     frontend/l10n/<language>.json, the website's site/l10n/<language>.json
+//     and the Android app's store texts, fastlane/metadata/android/<locale>/
+//     for a language other than English);
 //   - every Go and Rust file, except generated Go code, starts with the
 //     license header;
 //   - code copied from other projects lives in a directory below a
 //     third_party directory, with its LICENSE file next to it, and each of
 //     its Go and Rust files keeps its own copyright notice instead of the
 //     header;
-//   - the documentation's links, names and command reference hold (docs.go).
+//   - the documentation's links, names and command reference hold (docs.go);
+//   - the Android apps' version is the last release in CHANGELOG.md
+//     (version.go).
 //
 // Run it anywhere inside the repository:
 //
@@ -100,6 +104,7 @@ func checkRepo() (problems []string, checked int, err error) {
 		problems = append(problems, checkDocs(f.name, f.data, contents)...)
 	}
 	problems = append(problems, checkCommands(contents)...)
+	problems = append(problems, checkAndroidVersion(contents)...)
 	return problems, len(files), nil
 }
 
@@ -150,9 +155,16 @@ var desktopTranslation = regexp.MustCompile(`^apps/desktop/frontend/l10n/[a-z]{2
 // the website.
 var siteTranslation = regexp.MustCompile(`^site/l10n/[a-z]{2,3}\.json$`)
 
+// storeTranslation matches the store texts of a locale in an Android
+// project (F-Droid's fastlane layout); the first group is its language.
+var storeTranslation = regexp.MustCompile(`(^|/)fastlane/metadata/android/([a-z]{2,3})(-[A-Za-z0-9]+)?/`)
+
 // isTranslation reports whether a file holds the apps' translations, which
 // are the one place for other languages.
 func isTranslation(name string) bool {
+	if m := storeTranslation.FindStringSubmatch(name); m != nil && m[2] != "en" {
+		return true
+	}
 	return strings.HasSuffix(name, ".xcstrings") || androidTranslation.MatchString(name) || desktopTranslation.MatchString(name) || siteTranslation.MatchString(name)
 }
 

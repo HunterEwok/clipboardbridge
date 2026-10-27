@@ -7,6 +7,7 @@ the desktop apps are a window onto the service that already runs on the computer
 | App | Where to get it | State |
 |---|---|---|
 | Android | `clipboardbridge-X.Y.Z.apk` in each [release](https://github.com/HunterEwok/clipboardbridge/releases) | built and tested in CI, not yet on a real phone |
+| Android without Google | `clipboardbridge-fdroid-X.Y.Z.apk`, and F-Droid once it is accepted: the same app without the Wear OS watch | built and tested in CI |
 | iPhone and iPad | TestFlight, when it opens | built and tested in CI, not yet on a real phone |
 | Wear OS | `clipboardbridge-wear-X.Y.Z.apk`, through the Android phone | built |
 | Apple Watch | with the iPhone app | built |
