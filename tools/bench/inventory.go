@@ -98,7 +98,7 @@ func LoadInventory(path string) (*Inventory, error) {
 				d.Container = "clipboardbridge"
 			}
 			// The hub makes the group with cbb new and so holds its CA
-			// keys, which never go into a container (docs/roadmap.md,
+			// keys, which never go into a container (docs/design.md,
 			// "Docker"): it joins as an ordinary member.
 			if d.Has("hub") {
 				return nil, fmt.Errorf("device %s: a container joins as an ordinary member and never holds the group's keys; give the role hub to another device", name)

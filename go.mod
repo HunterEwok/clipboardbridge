@@ -20,6 +20,7 @@ require (
 	github.com/jezek/xgb v1.3.1
 	github.com/xtls/reality v0.0.0-20261014101318-83f621788ca8
 	github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
+	github.com/yuin/goldmark v1.7.17
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0
 	golang.org/x/sys v0.49.0

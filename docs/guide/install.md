@@ -205,6 +205,14 @@ gh attestation verify clipboardbridge-linux-amd64.tar.gz --repo HunterEwok/clipb
 `get.sh` checks it by itself when `gh` is installed and signed in for root
 (`sudo gh auth login`); `CBB_ATTESTATION=require` refuses to install without it.
 
+Releases are also signed with the project's own keys, which never touch CI (the root keys
+sit on offline hardware keys, the release key in the maintainer's Secure Enclave):
+`keys.json` names the release keys under the project's root keys, `release.json` lists every
+file of the release with its hash, and `stable.json` says which release is current. Once the
+root keys are built into the installers, `get.sh` (with `openssl`) and `get.ps1` check these
+before they install, and refuse a release that is not signed; until then they check
+`SHA256SUMS` and the attestation only. `CBB_VERIFY=skip` installs without the check.
+
 ## Removing it
 
 On Linux and a Mac:

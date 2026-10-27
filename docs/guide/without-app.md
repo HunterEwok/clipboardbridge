@@ -9,8 +9,8 @@ TestFlight.
 
 ## 1. Make the group on a computer
 
-[Install](install.md) Clipboard Bridge on a computer that is often on; a Linux machine if
-you want the iPhone shortcut, since only Linux computers serve it. Then:
+[Install](install.md) Clipboard Bridge on a computer that is often on: Linux, Windows, a
+Mac or FreeBSD. It holds the group and serves the iPhone shortcut. Then:
 
 ```sh
 sudo cbb new
@@ -61,11 +61,13 @@ comes to the iPhone; otherwise a new copy on the iPhone goes to the computers.
 Make a second computer an admin, so it can add and remove devices too:
 
 ```sh
-sudo cbb admin -allow-file-key NAME   # on the root; NAME as cbb status shows it, and it must be on
+sudo cbb admin NAME   # on the root; NAME as cbb status shows it, and it must be on
 ```
 
-The computer keeps its keys in a file, so whoever copies that file acts as an admin until another
-admin removes the computer: make an admin only of a computer you keep safe.
+A Linux computer with a TPM keeps its admin key there. A Mac, a Windows PC or a Linux
+computer without a TPM keeps it in a file, so `cbb admin` asks for `-allow-file-key` first:
+whoever copies that file acts as an admin until another admin removes the computer, so make
+an admin only of a computer you keep safe.
 
 If the root is lost or broken, the admin takes the group over, and every other device stays:
 
@@ -73,7 +75,7 @@ If the root is lost or broken, the admin takes the group over, and every other d
 sudo cbb takeover NAME       # on the admin; NAME is the lost root
 ```
 
-iPhones with the shortcut pair again after a takeover.
+iPhones with the shortcut pair again after a takeover. More in [if a device is lost or stolen](lost-device.md).
 
 ## Joining from another network
 

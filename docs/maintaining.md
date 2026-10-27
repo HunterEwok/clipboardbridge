@@ -73,7 +73,8 @@ Tag ruleset **releases**, active, targeting `refs/tags/v*`:
   `govulncheck`, `actionlint` for the workflows,
   [the repository rules](../tools/repocheck/main.go) (English only, apart from the apps'
   translations; license headers in Go and Rust files; copied code with its license; the documentation's
-  links, the old name and the command reference), and the design
+  links, the old name, the command reference with every flag, the environment variables,
+  the ports, the index of the documentation), and the design
   tokens (`go run ./tools/tokens -check`);
 - **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every Linux and Windows target, static

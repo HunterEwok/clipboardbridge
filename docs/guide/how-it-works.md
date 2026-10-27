@@ -33,12 +33,12 @@ often on, for the reason below the table.
 | Who holds the group's key | the phone (in its security chip), or the computer [without the app](without-app.md) | the phone, in its security chip |
 | Sync at home | every device directly | every device directly |
 | Sync away from home | through the computer as the hub, at any time | through the phone as the hub while its app is open (on Android also in the background), or a blind relay |
-| What you need | a Linux or Windows computer that is often on | nothing more |
+| What you need | a computer that is often on | nothing more |
 
 Why we recommend a computer: it is on far more often than an app is open on a phone, and the
-iPhone gives an app little time in the background, so sync away from home just works. A Mac
-can be a member of either kind but cannot be the hub yet. When a computer that is always on
-joins a group of phones, the phone app offers to make it the hub.
+iPhone gives an app little time in the background, so sync away from home just works.
+When a computer that is always on joins a group of phones, the phone app offers to make it
+the hub.
 
 ## At home: no hub needed
 
@@ -62,8 +62,8 @@ encrypted tunnel (WireGuard), and it passes the clipboard on to everyone at home
 
 ![Away from home, the laptop and the phone reach the hub at home through the group's WireGuard tunnel](../images/hub.svg)
 
-- The hub is your own computer, a Linux machine or a Windows PC, and it must be an admin. A
-  Mac cannot be the hub yet. The hub is a full member of the group: it reads the clipboard
+- The hub is your own computer, and it must be an admin: Linux, Windows, a Mac, FreeBSD or
+  a router. The hub is a full member of the group: it reads the clipboard
   like any of your devices, which is why it must be yours.
 - Your router forwards one UDP port (8764) to the hub, so the internet can reach it.
 - The hub does not have to stay on. While it is off, nothing syncs away from home, and the
@@ -86,7 +86,7 @@ The forwarder holds no keys and cannot read anything: it only sees encrypted pac
 to your hub. Two kinds:
 
 - **Your own**: `cbb forward` on any server with a public address, a cheap virtual server
-  for example ([running your own servers](../reference/self-hosting.md)).
+  for example ([running your own servers](../admin/self-hosting.md)).
 - **The Clipboard Bridge forwarder** at `cbb.tools`, run by the project for everyone. It
   is being tested and not open to everyone yet; its address and key will be on this page
   when it opens.
@@ -136,7 +136,7 @@ yourself.
 |---|---|---|---|
 | Hub | yes, it is your device | yes | yours |
 | Forwarder | no | no: it sees the addresses encrypted packets come from and go to your hub | yours, or the project's at `cbb.tools` |
-| Blind relay | no | yes | yours (the project's at `cbb.tools` in 0.5) |
+| Blind relay | no | yes | yours (one at `cbb.tools` is planned) |
 
 Nothing else is involved: no accounts, no cloud, no telemetry. With sync away from home on,
 a computer may reach only the home network and the group's own hub, forwarder and relay.
