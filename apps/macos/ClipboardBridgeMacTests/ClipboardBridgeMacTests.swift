@@ -107,7 +107,8 @@ final class ClipboardBridgeMacTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "cbb-mac-arrange-test"))
         defaults.removePersistentDomain(forName: "cbb-mac-arrange-test")
         let model = MacModel(defaults: defaults)
-        func device(_ id: String, me: Bool = false) -> Control.Device {
+        // CBB's Control, not Carbon's.
+        func device(_ id: String, me: Bool = false) -> CBB.Control.Device {
             var d = Control.Device(id: id, name: id, role: "full")
             d.isSelf = me
             return d

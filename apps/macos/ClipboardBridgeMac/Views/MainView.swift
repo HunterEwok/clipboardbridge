@@ -92,8 +92,8 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $adding) { AddDeviceSheet().modifier(Themed()) }
-        .environmentObject(arrange)
         .modifier(ArrangePrompts())
+        .environmentObject(arrange)
         // Arrange mode is off while a search or a filter is on.
         .onChange(of: searching) { _, on in if on { arrange.on = false } }
         .task { model.start() }
