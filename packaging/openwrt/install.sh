@@ -80,12 +80,15 @@ if ! "$bin" version >/dev/null 2>&1; then
 	exit 1
 fi
 
+# OpenWrt's functions.sh reads unset variables, such as IPKG_INSTROOT.
+set +u
 # shellcheck disable=SC1091
 . /lib/functions.sh
 gid=$(group_add_next clipboardbridge)
 if ! user_exists clipboardbridge; then
 	user_add clipboardbridge "" "$gid" "Clipboard Bridge" /var/run/clipboardbridge /bin/false
 fi
+set -u
 
 # put MODE SOURCE TARGET; OpenWrt's busybox may have no install.
 put() {
