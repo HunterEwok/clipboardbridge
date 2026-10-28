@@ -241,7 +241,7 @@ func (s *Service) serveGuest(ctx context.Context, raw net.Conn, from netip.Addr,
 			// Once the invitation was used its window is closed, and
 			// says so to a second device, which a failed handshake would
 			// not.
-			return pair.ServerTLS(id), nil
+			return g.w.ServerTLS(), nil
 		}
 		return nd.ServerTLS(), nil
 	}}

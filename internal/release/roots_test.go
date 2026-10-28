@@ -56,50 +56,85 @@ func extension(c *x509.Certificate, oid asn1.ObjectIdentifier) []byte {
 	return nil
 }
 
+// attestPool gives the chain from a YubiKey's attestation to Yubico's root.
+func attestPool(t *testing.T) (roots, inter *x509.CertPool) {
+	roots, inter = x509.NewCertPool(), x509.NewCertPool()
+	for _, c := range readCerts(t, "yubico-root.pem") {
+		roots.AddCert(c)
+	}
+	for _, c := range append(readCerts(t, "yubico-intermediates.pem"), readCerts(t, "yubikey-f9.pem")...) {
+		inter.AddCert(c)
+	}
+	return roots, inter
+}
+
+// checkAttested checks that the attestation in name, under
+// roots/attestation, proves that spki was made in the PIV slot on the
+// YubiKey with serial, with the PIN and a touch for every signature.
+func checkAttested(t *testing.T, name string, spki []byte, slot string, serial int64) {
+	t.Helper()
+	pub, err := x509.ParsePKIXPublicKey(spki)
+	if k, ok := pub.(*ecdsa.PublicKey); err != nil || !ok || k.Curve != elliptic.P256() {
+		t.Fatalf("%s: not a P-256 key: %v", name, err)
+	}
+	certs := readCerts(t, name)
+	if len(certs) != 1 {
+		t.Fatalf("%s holds %d certificates", name, len(certs))
+	}
+	c := certs[0]
+	if !bytes.Equal(c.RawSubjectPublicKeyInfo, spki) {
+		t.Errorf("%s attests another key", name)
+	}
+	if want := "YubiKey PIV Attestation " + slot; c.Subject.CommonName != want {
+		t.Errorf("%s: %q, want %q", name, c.Subject.CommonName, want)
+	}
+	roots, inter := attestPool(t)
+	_, err = c.Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter,
+		CurrentTime: time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}})
+	if err != nil {
+		t.Errorf("%s does not lead to Yubico's root: %v", name, err)
+	}
+	if p := extension(c, oidPolicy); !bytes.Equal(p, []byte{3, 2}) {
+		t.Errorf("%s: PIN and touch policies %x, want always (3) and always (2)", name, p)
+	}
+	var got int64
+	if _, err := asn1.Unmarshal(extension(c, oidSerial), &got); err != nil || got != serial {
+		t.Errorf("%s: serial %d (%v), want %d", name, got, err, serial)
+	}
+	if fw := extension(c, oidFirmware); !bytes.Equal(fw, []byte{5, 7, 4}) {
+		t.Errorf("%s: firmware %v", name, fw)
+	}
+}
+
+// The YubiKeys' serial numbers: the first holds root-1 and release key 1.
+var yubikeys = []int64{36667388, 36667392}
+
 // TestRootsAttested checks that each root key was made on a YubiKey,
-// with the PIN and a touch for every signature (roots/README.md).
+// in slot 82, with the PIN and a touch for every signature
+// (roots/README.md).
 func TestRootsAttested(t *testing.T) {
 	if len(Roots) != 2 {
 		t.Fatalf("%d roots, want 2", len(Roots))
 	}
-	pool := x509.NewCertPool()
-	for _, c := range readCerts(t, "yubico-root.pem") {
-		pool.AddCert(c)
-	}
-	inter := x509.NewCertPool()
-	for _, c := range append(readCerts(t, "yubico-intermediates.pem"), readCerts(t, "yubikey-f9.pem")...) {
-		inter.AddCert(c)
-	}
-	serials := []int64{36667388, 36667392}
 	for i, spki := range Roots {
-		pub, err := x509.ParsePKIXPublicKey(spki)
-		if k, ok := pub.(*ecdsa.PublicKey); err != nil || !ok || k.Curve != elliptic.P256() {
-			t.Fatalf("root %d is not a P-256 key: %v", i+1, err)
-		}
-		name := "root-" + strconv.Itoa(i+1) + ".pem"
-		certs := readCerts(t, name)
-		if len(certs) != 1 {
-			t.Fatalf("%s holds %d certificates", name, len(certs))
-		}
-		c := certs[0]
-		if !bytes.Equal(c.RawSubjectPublicKeyInfo, spki) {
-			t.Errorf("%s attests another key than root %d", name, i+1)
-		}
-		_, err = c.Verify(x509.VerifyOptions{Roots: pool, Intermediates: inter,
-			CurrentTime: time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}})
-		if err != nil {
-			t.Errorf("%s does not lead to Yubico's root: %v", name, err)
-		}
-		if p := extension(c, oidPolicy); !bytes.Equal(p, []byte{3, 2}) {
-			t.Errorf("%s: PIN and touch policies %x, want always (3) and always (2)", name, p)
-		}
-		var serial int64
-		if _, err := asn1.Unmarshal(extension(c, oidSerial), &serial); err != nil || serial != serials[i] {
-			t.Errorf("%s: serial %d (%v), want %d", name, serial, err, serials[i])
-		}
-		if fw := extension(c, oidFirmware); !bytes.Equal(fw, []byte{5, 7, 4}) {
-			t.Errorf("%s: firmware %v", name, fw)
-		}
+		checkAttested(t, "root-"+strconv.Itoa(i+1)+".pem", spki, "82", yubikeys[i])
+	}
+}
+
+// TestReleaseKeysAttested checks the release keys in slot 83 of the same
+// YubiKeys the same way. They are not pinned: keys.json certifies them,
+// and roots/release-keys.pem only records them with their proof.
+func TestReleaseKeysAttested(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("roots", "release-keys.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := parseRoots(data)
+	if len(keys) != 2 {
+		t.Fatalf("%d release keys, want 2", len(keys))
+	}
+	for i, spki := range keys {
+		checkAttested(t, "release-yubikey-"+strconv.Itoa(i+1)+".pem", spki, "83", yubikeys[i])
 	}
 }
 
