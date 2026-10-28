@@ -183,12 +183,14 @@ the maintainer's Mac; the keys never reach CI. The roots were made on 2026-10-28
   (docs/protocol.md, section 16, "Where the files are"), since a published release takes no
   new files. `release-sign publish` makes it with the first signed release, and only
   `release-sign` and the `channel` workflow write to it.
-- **The channel key**, once, on cbb.tools beside the status key, readable only by its user:
+- **The channel key**, once, on cbb.tools beside the status key, readable only by root:
   `openssl ecparam -name prime256v1 -genkey -noout -out /etc/cbb-channel/channel-key.pem`
   and its public key `openssl ec -in channel-key.pem -pubout -out channel.pem`, copied to the
   Mac. The first `release-sign publish` certifies it with `-channel cbb.tools=channel.pem`;
-  later ones keep it. A weekly systemd timer on cbb.tools runs `release-sign extend -key
-  file:/etc/cbb-channel/channel-key.pem -out /srv/cbb.tools/www/channel`, which reads the
+  later ones keep it. A weekly systemd timer on cbb.tools
+  (`site/deploy/cbb-channel.service` and `.timer`, as the user `cbb-channel`, which gets the
+  root-only key as a credential for the run) runs `release-sign extend -key
+  file:channel-key.pem -out /srv/cbb.tools/channel`, which reads the
   branch, checks it, signs `stable.json` again for 30 days with the same release and a
   higher number, and serves it with `keys.json` at `https://cbb.tools/channel/` (build it
   with `GOOS=linux GOARCH=amd64 go build ./tools/release-sign`). The daily `channel`
@@ -222,7 +224,7 @@ the maintainer's Mac; the keys never reach CI. The roots were made on 2026-10-28
   a revoked phone proven until it is replaced): `openssl ecparam -name prime256v1 -genkey
   -noout -out status-key.pem`. `keys.json` certifies it with `-status mirror=status.pem`. A
   daily timer runs `attest-status -key status-key.pem -out /srv/cbb.tools/attest` and copies
-  `keys.json` beside it from `/srv/cbb.tools/www/channel`. When it stops on a list that drops a serial number, check Google's
+  `keys.json` beside it from `/srv/cbb.tools/channel`. When it stops on a list that drops a serial number, check Google's
   list and run it once with `-allow-drop`; a stolen status key is dropped from the next
   `keys.json` like a release key.
 - **The TPM makers' certificates** in `internal/attest/tpmroots/roots.pem`, which decide
