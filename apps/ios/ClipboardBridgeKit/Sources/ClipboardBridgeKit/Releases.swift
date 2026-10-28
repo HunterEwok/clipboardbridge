@@ -27,6 +27,7 @@ public enum Releases {
 
     public static let useRelease = "release"
     public static let useStatus = "status"
+    public static let useChannel = "channel"
 
     public struct Refused: Error, CustomStringConvertible {
         public let description: String
@@ -261,16 +262,17 @@ public enum Releases {
     }
 
     /// Checks a channel file and the release.json it names: keys.json under
-    /// the pinned roots (SubjectPublicKeyInfos, DER), the channel file and
-    /// release.json under its release keys, the channel's name, both
-    /// expiries, and that nothing is older than seen. Returns the release
-    /// and the Seen to keep.
+    /// the pinned roots (SubjectPublicKeyInfos, DER), the channel file under
+    /// its release or channel keys and release.json under its release keys,
+    /// the channel's name, both expiries, and that nothing is older than
+    /// seen. Returns the release and the Seen to keep.
     public static func check(keys: File, channel: File, release: File, roots: [Data], name: String, nowMS: Int64,
                              seen: Seen) throws -> (Release, Seen) {
         let k = try verifyKeys(keys, roots: roots, nowMS: nowMS, seen: seen)
         let spkis = k.spkis(useRelease)
         let c = try within("\(name).json") {
-            try channel.verify(spkis)
+            // A channel key signs channel files and nothing else.
+            try channel.verify(spkis + k.spkis(useChannel))
             let c = try decodeChannel(channel.body)
             guard c.channel == name else { throw Refused("the file is for the channel \"\(c.channel)\"") }
             guard nowMS < c.expires_ms else { throw Refused("the file has expired") }

@@ -20,7 +20,7 @@ class ReleasesTest {
         val roots = v.getValue("roots").jsonArray.map { b64(it.jsonPrimitive.content) }
         val now = v.getValue("now_ms").jsonPrimitive.long
         val cases = v.getValue("vectors").jsonArray.map { it.jsonObject }
-        assertEquals(27, cases.size)
+        assertEquals(30, cases.size)
         for (c in cases) {
             val name = c.str("name")
             val file = { k: String -> Releases.File.fromJson(c.getValue(k).jsonObject) }
@@ -44,7 +44,7 @@ class ReleasesTest {
         val roots = v.getValue("roots").jsonArray.map { b64(it.jsonPrimitive.content) }
         val now = v.getValue("now_ms").jsonPrimitive.long
         val cases = v.getValue("status").jsonArray.map { it.jsonObject }
-        assertEquals(14, cases.size)
+        assertEquals(15, cases.size)
         for (c in cases) {
             val name = c.str("name")
             val file = { k: String -> Releases.File.fromJson(c.getValue(k).jsonObject) }
