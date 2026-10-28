@@ -263,6 +263,11 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 		}},
 		{"restart", 3, func() bool { return true }, func(int) (string, error) {
 			w := pick(live)
+			// Without a desktop clipboard the text lives in the service
+			// alone: a member with no one to sync with comes back empty.
+			if w.d.Clipboard == "none" && !slices.ContainsFunc(syncing(), func(x *walker) bool { return x != w }) {
+				w.text = ""
+			}
 			return w.name, signalService(ctx, w.d, "KILL")
 		}},
 		{"sleep", 2, func() bool { return len(syncing()) > 1 }, func(step int) (string, error) {
