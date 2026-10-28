@@ -134,8 +134,9 @@ Rules for workflows:
   (`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`), and
   `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and,
   once the iPhone app's CodeQL analysis passes on the tag (about 45 minutes),
-  publishes the release, with notes generated from the merged pull requests. A tag with a
-  hyphen (`v0.2.0-rc.1`) makes a pre-release, which `releases/latest` and so `get.sh` skip.
+  makes a draft release, with notes generated from the merged pull requests. The maintainer
+  signs and publishes it on their Mac with `release-sign publish` ("Signed releases" below).
+  A tag `vX.Y.Z-rc.N` makes a pre-release, which `releases/latest` and so `get.sh` skip.
 - The archives are `clipboardbridge-<os>-<arch>.tar.gz` without the version, so that
   `releases/latest/download/` has fixed names for `get.sh`; each holds `clipboardbridge/` with the
   binary, `LICENSE`, `THIRD_PARTY_NOTICES` (the licenses of the Go modules, the copied code
@@ -151,7 +152,7 @@ Rules for workflows:
   check the result by importing it on an iPhone, and commit the signed file.
 - Published with `SHA256SUMS` and a build provenance attestation
   (`actions/attest-build-provenance`), which users can check with `gh attestation verify`.
-- After the release, the `docker` job builds the image of `packaging/docker` from the
+- After the draft, the `docker` job builds the image of `packaging/docker` from the
   release's own Linux archives for amd64, arm64 and armv7, pushes it to
   `ghcr.io/hunterewok/clipboardbridge` as `X.Y.Z` (and `latest`, but not for a pre-release),
   attests it in the registry and adds its digest to the release notes. The first push makes
@@ -180,15 +181,22 @@ the maintainer's Mac; the keys never reach CI. The roots were made on 2026-10-28
   certifies it in `keys.json`, signed again at least every 90 days with a higher `-seq`:
   `release-sign keys -seq N release=release.pem >keys.body` and
   `release-sign sign -key piv:82 keys.body >keys.json`.
-- **Each release**: download the draft's files, check their attestations against the tag's
-  commit (`gh attestation verify FILE --repo HunterEwok/clipboardbridge`), then
-  `release-sign manifest -version X.Y.Z -min-from ... DIR >release.body`,
-  `release-sign sign -key se:$HOME/.config/cbb-release/release.se release.body >release.json`,
-  `release-sign channel -seq N release.json >stable.body`, sign it the same way into
-  `stable.json`, run `release-sign verify -roots root-1.pem,root-2.pem DIR`, upload
-  `keys.json`, `release.json` and `stable.json` to the release and publish it.
-- `stable.json` expires after 30 days: sign it again before then, with a higher `-seq`, even
-  without a new release.
+- **Each release**: once the release workflow has made the draft (its `docker` job adds the
+  image's digest to the notes), `release-sign publish -version X.Y.Z [-min-from X.Y.Z]` on
+  the Mac, with `gh` signed in. It downloads the draft's files, checks each one's build
+  attestation against the tag (`gh attestation verify --source-ref refs/tags/vX.Y.Z`), takes
+  `keys.json` from the latest release when it is valid for 45 more days and certifies the
+  release key (otherwise a root signs a new one, numbered above it, with the same keys:
+  the YubiKey's PIN and a touch), signs `release.json` and `stable.json` (numbered above the
+  latest) with the release key (Touch ID for each), checks all of it under the pinned roots
+  as a device would, uploads the three files to the draft and, after a yes, publishes it.
+  `-no-publish` stops before that, `-docker none` signs a release without the image; a
+  pre-release gets no `stable.json`. `published.yml` then checks what GitHub serves and
+  updates the Homebrew tap. The steps by hand: `release-sign manifest`, `sign`, `channel`,
+  `keys` and `verify` (the comment in `tools/release-sign/main.go`).
+- `stable.json` expires after 30 days: every three weeks, with or without a new release,
+  `release-sign renew` signs it again with a higher number (and `keys.json` when it has less
+  than 45 days left) and replaces both in the latest release.
 - A lost or stolen Mac: a root signs a `keys.json` with a new release key and without the
   old one. A lost YubiKey: the other root signs, and the next release ships a new second root.
 - **The status key** of the revocation mirror, on cbb.tools in a file readable only by the
@@ -213,7 +221,7 @@ The tap is the repository
 [HunterEwok/homebrew-tap](https://github.com/HunterEwok/homebrew-tap),
 the one tap for all of the owner's formulae; Clipboard Bridge's is `Formula/clipboardbridge.rb`, and users install with
 `brew install hunterewok/tap/clipboardbridge`. After each release (not a
-pre-release) the `homebrew` job of `.github/workflows/release.yml` writes the formula with
+pre-release) is published, `.github/workflows/published.yml` checks its signed files and writes the formula with
 `packaging/homebrew/formula.sh` from the release's `SHA256SUMS` and pushes it to the tap's
 `main`. The formula installs the release archives as they are, so it needs no Apple signing,
 and CI's `homebrew` job installs one with it on macOS on every pull request.
@@ -230,8 +238,8 @@ Setting it up, once:
   secret** `CBB_HOMEBREW_TAP_KEY`: the contents of `homebrew-tap`, the private key. Then
   delete both files.
 
-To check the key without a release, run the release workflow from a branch (**Actions →
-release → Run workflow**): its `homebrew` job pushes to the tap with `--dry-run`, which
+To check the key without a release, run the published workflow from a branch (**Actions →
+published → Run workflow**): its `homebrew` job pushes to the tap with `--dry-run`, which
 fails unless the key may write there.
 
 Without the secret the release still succeeds and warns that the tap kept its formula. To

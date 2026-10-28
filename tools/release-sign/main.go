@@ -4,12 +4,14 @@
 // Command release-sign makes and signs the files that describe a release
 // (docs/protocol.md, section 16), on the maintainer's Mac:
 //
+//	release-sign publish -version 0.6.0 [-min-from 0.5.0] [-docker none] [-no-publish]
+//	release-sign renew
 //	release-sign manifest -version 0.6.0 -channel stable [-min-from 0.5.0] [-docker IMAGE@sha256:...] DIR >release.body
 //	release-sign keys -seq 2 [-days 90] [-status NAME=status-key.pem] NAME=release-key.pem... >keys.body
 //	release-sign channel -seq 7 [-days 30] release.json >stable.body
 //	release-sign sign -key SIGNER BODY >FILE.json
 //	release-sign public -key SIGNER >key.pem
-//	release-sign verify -roots root-1.pem,root-2.pem [-channel stable] DIR
+//	release-sign verify [-roots ROOTS.pem,...] [-channel stable] DIR
 //	release-sign drill -version 0.6.0 DIR ROOTS.pem
 //
 // A SIGNER is file:KEY.pem (a P-256 key in a file, for tests and drills),
@@ -30,6 +32,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/x509"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -53,6 +56,7 @@ func main() {
 	cmds := map[string]func([]string) error{
 		"manifest": manifest, "keys": keys, "channel": channel,
 		"sign": sign, "public": public, "verify": verify, "drill": drill,
+		"publish": publish, "renew": renew,
 	}
 	cmd, ok := cmds[os.Args[1]]
 	if !ok {
@@ -65,7 +69,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: release-sign manifest|keys|channel|sign|public|verify|drill ... (see the comment in tools/release-sign/main.go)")
+	fmt.Fprintln(os.Stderr, "usage: release-sign publish|renew|manifest|keys|channel|sign|public|verify|drill ... (see the comment in tools/release-sign/main.go)")
 	os.Exit(2)
 }
 
@@ -288,18 +292,41 @@ func readFile(path string) (release.File, error) {
 }
 
 func readPublic(path string) ([]byte, error) {
+	keys, err := readPublics(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) != 1 {
+		return nil, fmt.Errorf("%s holds %d keys, not one", path, len(keys))
+	}
+	return keys[0], nil
+}
+
+// readPublics reads the PUBLIC KEY blocks of a PEM file, one or more.
+func readPublics(path string) ([][]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	b, _ := pem.Decode(data)
-	if b == nil || b.Type != "PUBLIC KEY" {
+	var keys [][]byte
+	for {
+		var b *pem.Block
+		b, data = pem.Decode(data)
+		if b == nil {
+			break
+		}
+		if b.Type != "PUBLIC KEY" {
+			return nil, fmt.Errorf("%s holds a %s, not a PUBLIC KEY", path, b.Type)
+		}
+		if _, err := x509.ParsePKIXPublicKey(b.Bytes); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		keys = append(keys, b.Bytes)
+	}
+	if len(keys) == 0 {
 		return nil, fmt.Errorf("%s holds no PUBLIC KEY", path)
 	}
-	if _, err := x509.ParsePKIXPublicKey(b.Bytes); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	return b.Bytes, nil
+	return keys, nil
 }
 
 // sign signs a body with a signer and writes the file.
@@ -352,20 +379,23 @@ func public(args []string) error {
 // release.json and the files, as a device would.
 func verify(args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
-	rootsFlag := fs.String("roots", "", "the root keys' PEM files, comma-separated")
+	rootsFlag := fs.String("roots", "", "the root keys' PEM files, comma-separated; the pinned roots by default")
 	ch := fs.String("channel", "stable", "the channel")
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		return errors.New("verify needs the directory")
 	}
 	dir := fs.Arg(0)
-	var roots [][]byte
-	for _, p := range strings.Split(*rootsFlag, ",") {
-		spki, err := readPublic(p)
-		if err != nil {
-			return err
+	roots := pinnedRoots()
+	if *rootsFlag != "" {
+		roots = nil
+		for _, p := range strings.Split(*rootsFlag, ",") {
+			keys, err := readPublics(p)
+			if err != nil {
+				return err
+			}
+			roots = append(roots, keys...)
 		}
-		roots = append(roots, spki)
 	}
 	var files [3]release.File
 	for i, name := range []string{"keys.json", *ch + ".json", "release.json"} {
@@ -421,17 +451,36 @@ func signer(spec string) (crypto.Signer, error) {
 		return newTool([]string{"yubico-piv-tool", "-a", "read-certificate", "-s", arg, "-K", "PEM"},
 			[]string{"yubico-piv-tool", "-a", "verify-pin", "--sign", "-s", arg, "-A", "ECCP256", "-H", "SHA256"})
 	case "se":
-		helper := filepath.Join(sourceDir(), "se.swift")
+		helper, err := seHelper()
+		if err != nil {
+			return nil, err
+		}
 		return newTool([]string{"swift", helper, "public", arg}, []string{"swift", helper, "sign", arg})
 	}
 	return nil, fmt.Errorf("unknown signer %q: file:KEY.pem, piv:SLOT or se:KEY", spec)
 }
 
-func sourceDir() string {
-	if d := os.Getenv("CBB_RELEASE_SIGN_DIR"); d != "" {
-		return d
+//go:embed se.swift
+var seSwift []byte
+
+// seHelper returns the path of se.swift: beside the sources when
+// CBB_RELEASE_SIGN_DIR names them or the working directory is the
+// repository's, otherwise the copy built into this program, written to a
+// temporary file, so that release-sign runs from anywhere.
+func seHelper() (string, error) {
+	dir := os.Getenv("CBB_RELEASE_SIGN_DIR")
+	if dir == "" {
+		dir = filepath.Join("tools", "release-sign")
 	}
-	return filepath.Join("tools", "release-sign")
+	path := filepath.Join(dir, "se.swift")
+	if _, err := os.Stat(path); err == nil || os.Getenv("CBB_RELEASE_SIGN_DIR") != "" {
+		return path, nil
+	}
+	path = filepath.Join(os.TempDir(), "cbb-se-"+hexSum(seSwift)[:16]+".swift")
+	if err := os.WriteFile(path, seSwift, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // drill signs the files in dir as a release with new keys in files: two

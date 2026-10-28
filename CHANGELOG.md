@@ -14,6 +14,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `cbb update` and the Android app's own update now check releases against them; a release
   before 0.6 has no signed files, so a new `get.sh` or `get.ps1` installs one only with
   `CBB_VERIFY=skip`.
+- `release-sign publish`: one command on the maintainer's Mac signs a release and publishes
+  it (the draft's attestations checked, `keys.json` carried on or signed again by a root,
+  `release.json` and `stable.json` signed, all of it checked under the pinned roots), and
+  `release-sign renew` signs `stable.json` again before it expires. The release workflow now
+  leaves a draft, and the new `published` workflow updates the Homebrew tap once the
+  release is published.
 - SteamOS: `install.sh` (and so `get.sh`) puts Clipboard Bridge in `/opt/clipboardbridge`
   on a Steam Deck, whose system files each update replaces, and lists its files in `/etc`
   in SteamOS's keep list, so the install and the device's group survive SteamOS updates;

@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Runs when the maintainer publishes a release that release.yml left as a
+# draft and release-sign publish signed (docs/maintaining.md, "Signed
+# releases"): checks the signed files GitHub serves and updates the Homebrew
+# tap. A draft cannot reach the tap, so nothing unsigned does.
+name: published
+
+on:
+  release:
+    types: [published]
+  # Run from a branch, it only checks that the tap's key in the secrets works.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: published-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  homebrew:
+    # A pre-release stays out of the tap, as it stays out of releases/latest.
+    # The formula comes from the published release's SHA256SUMS.
+    # Run from a branch, it only checks that the key in the secrets may push
+    # to the tap, with git push --dry-run.
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.ref_type == 'tag'
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the signed release, checked under the pinned roots
+        # release-sign publish checked it before publishing; this checks
+        # what GitHub serves, before the tap takes its sums.
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rel="$RUNNER_TEMP/release"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir "$rel"
+          go run ./tools/release-sign verify "$rel"
+          sh packaging/homebrew/formula.sh "$GITHUB_REF_NAME" "$rel/SHA256SUMS" >"$RUNNER_TEMP/clipboardbridge.rb"
+          cat "$RUNNER_TEMP/clipboardbridge.rb"
+      - name: push it to the tap
+        # A deploy key with write access to the tap repository only
+        # (docs/maintaining.md, "Homebrew"); without it the tap keeps its formula.
+        env:
+          TAP_KEY: ${{ secrets.CBB_HOMEBREW_TAP_KEY }}
+        run: |
+          if [ -z "$TAP_KEY" ]; then
+            if [ "$GITHUB_REF_TYPE" != tag ]; then
+              echo "::error::no CBB_HOMEBREW_TAP_KEY in the secrets"
+              exit 1
+            fi
+            echo "::warning::no CBB_HOMEBREW_TAP_KEY in the secrets; the Homebrew tap keeps its formula"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/tap-key"
+          (umask 077 && printf '%s\n' "$TAP_KEY" >"$key")
+          trap 'rm -f "$key"' EXIT
+          # GitHub's host keys, from its API over TLS.
+          curl -fsS https://api.github.com/meta | jq -r '.ssh_keys[] | "github.com " + .' >"$RUNNER_TEMP/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+          tap="$RUNNER_TEMP/tap"
+          git clone --depth 1 git@github.com:HunterEwok/homebrew-tap.git "$tap"
+          mkdir -p "$tap/Formula"
+          dry=
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            # A stand-in that never leaves the runner.
+            echo "# a check of the deploy key" >"$tap/Formula/clipboardbridge.rb"
+            dry=--dry-run
+          else
+            cp "$RUNNER_TEMP/clipboardbridge.rb" "$tap/Formula/clipboardbridge.rb"
+          fi
+          cd "$tap"
+          git add Formula/clipboardbridge.rb
+          if git diff --cached --quiet; then
+            echo "The tap has this formula already."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "clipboardbridge $GITHUB_REF_NAME"
+          # shellcheck disable=SC2086 # $dry is one word or none
+          git push $dry origin HEAD:main
