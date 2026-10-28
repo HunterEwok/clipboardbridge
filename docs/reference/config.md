@@ -56,6 +56,7 @@ A variable set in the environment wins over the same name in the settings file.
 | `CBB_VERIFY` | `get.sh`, `get.ps1` | `skip` installs without checking the release's signature (`keys.json`, `stable.json`, `release.json`). Without it the installer stops when it cannot check the signature, for example without `openssl`, once the project's root keys are built into it. |
 | `CBB_ATTESTATION` | `get.sh`, `get.ps1` | `require` refuses to install unless GitHub's build attestation of the archive checks out (it needs `gh`, signed in); `skip` does not check it. Unset, it is checked when `gh` is signed in. |
 | `CBB_ERROR_DETAILS` | Linux, macOS and FreeBSD `install.sh` and `uninstall.sh`, `get.sh`, Windows `get.ps1`, `install.ps1` and `uninstall.ps1` | `1` shows every command the shell scripts run, so the output shows where and why one failed, and adds the full error record to the Windows scripts' messages (as `-Details` does). Without it a failed shell script names its exit status. |
+| `CBB_OS_RELEASE` | the Linux `install.sh` | For tests: another `/etc/os-release`, whose `ID=steamos` makes it install as on SteamOS. |
 | `CBB_PF_CONF` | the FreeBSD firewall script | Another `pf.conf` than `/etc/pf.conf`, for tests. |
 | `CBB_RELEASE_DIR` | `get.sh`, `get.ps1` | For tests: takes the release's files from this directory instead of downloading them. |
 | `CBB_RELEASE_ROOTS` | `get.sh`, `get.ps1` | For tests, with `CBB_RELEASE_DIR`: a file with the root keys to check the release against instead of the project's own. |

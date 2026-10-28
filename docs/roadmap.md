@@ -45,8 +45,9 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 ### Partly done
 
 - **7.** Installers: the Linux, macOS, FreeBSD, OpenWrt and Windows installers, Homebrew, winget
-   and releases with checksums and attestations are done; the signed `.pkg` for macOS waits
-   for the Apple developer account.
+   and releases with checksums and attestations are done; on SteamOS the Linux installer
+   uses `/opt` and SteamOS's keep list (not yet run on a real Steam Deck); the signed
+   `.pkg` for macOS waits for the Apple developer account.
 - **11.** The lite member in Rust: done on Linux and OpenWrt. On the Arduino Nano ESP32 see item
     15; other ESP32 boards follow on the same `lite/core`.
 - **13.** Device keys in hardware: done for Linux with a TPM; the Mac and Windows follow. See
@@ -158,6 +159,23 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       Uploading with the release key itself keeps one key for both. The decision is the
       owner's, with the Wear OS app (which must share its key with the phone's) and the
       F-Droid build, planned at the end of 0.6 or in 0.7.
+- **39.** **Rootless installs** (D-79): a full member on Linux installed and run without root,
+    for a computer whose user has no `sudo` or does not want to give it. The service runs as
+    the user's systemd user unit, with its files under the user's home; its hello and device
+    record say `rootless`, and such a device is never the root, an admin or a hub, not even
+    after a warning. It loses what the system install has: its own account, which keeps its
+    keys from the user's other programs, systemd's sandbox and address limits, the TPM, the
+    uinput and console helpers, and the firewall rules. The lite member may follow.
+- **40.** **Planned, after the Apple developer account.** Apple Vision Pro (visionOS):
+    1. The iPad app on Vision Pro, in its compatibility mode, through TestFlight and the App
+       Store; nothing to build.
+    2. A visionOS build of the app: the kit and the app with visionOS among their platforms,
+       without what visionOS lacks: the QR code scanner (the six digits instead), the watch
+       link and the Live Activities. The clipboard, the Secure Enclave and Optic ID work as on
+       the iPhone; like the iPhone, it syncs only while the app is open.
+    3. Sync away from home there: gomobile builds no visionOS framework
+       ([golang/go#65251](https://github.com/golang/go/issues/65251)), so the phones' tunnel
+       needs another build of the same Go code or the lite member's tunnel in Rust.
 
 ## Devices that are hard to type into
 
@@ -273,8 +291,9 @@ separate permission (D-59), never on sync.
 
 ### Other devices
 
-- **SteamOS in Game Mode** has no clipboard the desktop connector can use; remote paste
-  types there through uinput (item 18, step 2).
+- **SteamOS**: in Desktop Mode the Steam Deck syncs as any KDE Plasma desktop, installed
+  under `/opt` (item 7). Game Mode has no clipboard the desktop connector can use; remote
+  paste types there through uinput (item 18, step 2).
 - **iPad**: the iPhone app on iPad, built as a universal app.
 - **Keenetic and other routers with Entware**: after OpenWrt, the same service with
   Entware's init scripts.

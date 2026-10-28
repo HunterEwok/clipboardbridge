@@ -16,11 +16,22 @@ each other, always encrypted (TLS). Each device has a role:
 | **Admin** | a second phone, or a computer the root chose | adds and removes devices, like the root |
 | **Member** | every computer and phone | syncs the clipboard |
 | **Lite member** | a small Linux device: a router, a Raspberry Pi Zero | syncs, never adds anyone ([lite member](../../lite/README.md)) |
+| **Rootless member** (planned) | a Linux computer installed without `sudo` | syncs like a member, never the root, an admin or a hub ([below](#rootless-members)) |
 | **Hub** | an admin computer at home, or a phone while its app is open, if you want one | lets your devices sync when they are away from home |
 
 The phone's key is made in its security chip (the Secure Enclave, Android's Keystore) and
 never leaves it; each use asks for your face, fingerprint or passcode. A computer keeps its
 keys in files that only Clipboard Bridge reads.
+
+### Rootless members
+
+Planned. Normally the installer needs `sudo` once, so that Clipboard Bridge runs under an
+account of its own: your browser, your games and every other program you run cannot read
+its keys, and the system keeps the service in a tight sandbox. A rootless install skips
+that, for a computer where you have no `sudo`, at work for example. It syncs like any
+member, but any of your programs could copy its key and pose as it, so it can never be the
+root, an admin or the hub, even if you ask. The device list marks it "rootless". A Steam
+Deck does not need it: it takes the normal install ([installing](install.md#steamos-steam-deck)).
 
 ## Two kinds of group
 

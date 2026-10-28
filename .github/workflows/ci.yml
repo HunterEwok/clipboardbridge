@@ -634,6 +634,43 @@ jobs:
             echo "uninstall.sh left the tmux line" >&2
             exit 1
           fi
+      - name: install.sh on SteamOS puts it in /opt with a keep list, and uninstall.sh removes it all
+        run: |
+          printf 'NAME="SteamOS"\nID=steamos\n' >"$RUNNER_TEMP/os-release"
+          sudo CBB_OS_RELEASE="$RUNNER_TEMP/os-release" CBB_FIREWALL=no sh packaging/linux/install.sh --auto-update off "$RUNNER_TEMP/cbb" | tee "$RUNNER_TEMP/out"
+          grep -q 'sudo /opt/clipboardbridge/bin/cbb pair' "$RUNNER_TEMP/out"
+          test -x /opt/clipboardbridge/bin/cbb
+          test ! -e /usr/local/bin/cbb
+          test ! -e /usr/lib/sysusers.d/clipboardbridge.conf
+          grep -qx "m $USER clipboardbridge" /etc/sysusers.d/clipboardbridge.conf
+          systemctl is-active -q clipboardbridge.service
+          systemctl cat clipboardbridge.service | grep -qx 'ExecStart=/opt/clipboardbridge/bin/cbb service'
+          grep -qx 'ExecStart=/opt/clipboardbridge/bin/cbb agent' /etc/systemd/user/clipboardbridge-agent.service
+          grep -qx 'Exec=/opt/clipboardbridge/bin/cbb agent' /etc/xdg/autostart/clipboardbridge-desktop.desktop
+          grep -qxF 'source-file -q /opt/clipboardbridge/share/tmux.conf' /etc/tmux.conf
+          grep -qx '/etc/sysusers.d/clipboardbridge.conf' /etc/atomic-update.conf.d/clipboardbridge.conf
+          sudo /opt/clipboardbridge/bin/cbb status | grep -q 'Not in a group'
+          # cbb update's folder and timer follow the program to /opt.
+          sudo /opt/clipboardbridge/bin/cbb update -auto on
+          systemctl cat clipboardbridge-update.service | grep -qx 'ExecStart=/opt/clipboardbridge/bin/cbb update -timer'
+          sudo test -d /opt/clipboardbridge-update
+          test ! -e /var/lib/clipboardbridge-update
+          # A second run keeps the group's members.
+          sudo CBB_OS_RELEASE="$RUNNER_TEMP/os-release" CBB_FIREWALL=no sh packaging/linux/install.sh "$RUNNER_TEMP/cbb" >/dev/null
+          test "$(grep -c "^m $USER clipboardbridge$" /etc/sysusers.d/clipboardbridge.conf)" = 1
+          sudo sh /opt/clipboardbridge/share/uninstall.sh --purge
+          for f in /opt/clipboardbridge /opt/clipboardbridge-update /etc/sysusers.d/clipboardbridge.conf /etc/atomic-update.conf.d/clipboardbridge.conf \
+            /etc/profile.d/clipboardbridge-path.sh /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardbridge-update.timer \
+            /etc/systemd/user/clipboardbridge-agent.service /etc/xdg/autostart/clipboardbridge-desktop.desktop /etc/clipboardbridge /var/lib/clipboardbridge; do
+            if [ -e "$f" ]; then
+              echo "uninstall.sh left $f" >&2
+              exit 1
+            fi
+          done
+          if grep -q clipboardbridge /etc/tmux.conf; then
+            echo "uninstall.sh left the tmux line" >&2
+            exit 1
+          fi
 
   homebrew:
     name: homebrew

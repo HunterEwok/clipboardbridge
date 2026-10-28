@@ -8,6 +8,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- SteamOS: `install.sh` (and so `get.sh`) puts Clipboard Bridge in `/opt/clipboardbridge`
+  on a Steam Deck, whose system files each update replaces, and lists its files in `/etc`
+  in SteamOS's keep list, so the install and the device's group survive SteamOS updates;
+  cbb update keeps its folder in `/opt/clipboardbridge-update` there. Not yet run on a real
+  Steam Deck.
+- The roadmap plans rootless installs on Linux (D-79, item 39), which are never the root,
+  an admin or a hub, and Apple Vision Pro (item 40).
 - The model of the device tiles' own order and collections, for the apps' Arrange mode
   that follows: the same rules in the tray app (Go), the Android kit (Kotlin) and the
   Swift kit, checked against shared vectors in `testdata/arrangement`. It is kept on each

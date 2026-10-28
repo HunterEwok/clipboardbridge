@@ -17,6 +17,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
+	"github.com/HunterEwok/clipboardbridge/internal/steamos"
 )
 
 // ArchiveName returns the release's archive for this system, as
@@ -175,6 +176,10 @@ func Paths() (dir, work string) {
 		if openwrt.Is() {
 			// /etc survives a sysupgrade; the downloads go to RAM.
 			return "/etc/clipboardbridge-update", "/tmp/clipboardbridge-update"
+		}
+		if steamos.Is() {
+			// /var is small on SteamOS; /opt lives in /home.
+			return steamos.Dir + "-update", steamos.Dir + "-update"
 		}
 		dir = "/var/lib/clipboardbridge-update"
 	}
