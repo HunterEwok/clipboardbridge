@@ -153,10 +153,22 @@ func (id *Identity) checkPeer(cs tls.ConnectionState, opt TLSOptions) (DeviceID,
 // memberTLSCert is the member certificate for member connections, with its
 // admin CA when one issued it, so that the peer can build the chain to the
 // group CA.
+//
+// On the admin that took the group over it is the certificate from before
+// the takeover (PrevCert) while that lasts: a member that missed the
+// takeover knows only the old root, and takes the root record over a
+// connection it can verify; the others take it too, since the takeover
+// keeps the admin CA that issued it (docs/protocol.md, section 10). It
+// stops before the certificate is due for renewal, so that no admin renews
+// the root's certificate from its admin CA.
 func (id *Identity) memberTLSCert() tls.Certificate {
-	cert := id.tlsCert(id.Cert)
-	if id.Issuer != nil {
-		cert.Certificate = append(cert.Certificate, id.Issuer.Raw)
+	leaf, issuer := id.Cert, id.Issuer
+	if id.PrevCert != nil && benchtime.Now().Before(id.PrevCert.NotAfter.Add(-memberRenewBefore)) && SameKey(id.Key, id.PrevCert.PublicKey) {
+		leaf, issuer = id.PrevCert, id.PrevIssuer
+	}
+	cert := id.tlsCert(leaf)
+	if issuer != nil {
+		cert.Certificate = append(cert.Certificate, issuer.Raw)
 	}
 	return cert
 }

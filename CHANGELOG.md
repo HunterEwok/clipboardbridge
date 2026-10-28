@@ -540,6 +540,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   same key and records it under itself. Before, the second takeover split the group's roots
   and the records of the root in between, such as a new name, stopped counting. `cbb
   takeover` refuses on an admin that has not met the current root since.
+- A member that was off or cut off while an admin took the group over follows the new root
+  when it meets only that root afterwards: the new root presents the member certificate it
+  had before the takeover, which the member still trusts, until that certificate is due for
+  renewal. Before, such a member could not verify the new root and stayed apart.
 - `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
   left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
   the hub's addresses.

@@ -1464,8 +1464,13 @@ an admin phone, never a computer; in a group a computer created an admin compute
 3. It signs a `device` record for itself under the new root (by = itself), which marks it
    as the root in the list, and from then on renews certificates from the new root. A
    computer that takes over keeps the new root's key in the identity file (`root_key`,
-   PKCS #8) and drops its admin key and admin CA; it keeps the member certificate it has,
-   which the old root or its own admin CA issued and the `keep` above still covers.
+   PKCS #8), drops its admin key and admin CA, and issues itself a member certificate from
+   the new root. It keeps the member certificate it had, which the old root or its own admin
+   CA issued and the `keep` above still covers, with that admin CA (`prev_cert` and
+   `prev_issuer`), and presents that chain on member connections until the certificate is
+   due for renewal: a member that was away during the takeover knows only the old root, and
+   meets the new one, verifies it and takes the `root` record from it. Pairing uses the
+   certificate from the new root.
 4. Each other admin computer still holds an admin CA from the old root, and a root record it
    signed would hang under that root, not under the new one, and split the group's roots
    (rule 7). So when such an admin is connected, its admin CA in its chain or its key in its

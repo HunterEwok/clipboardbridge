@@ -1696,6 +1696,34 @@ func TestSecondTakeover(t *testing.T) {
 	waitFor(t, "b has it", func() bool { return b.paste(t) == "after the second takeover" })
 }
 
+func TestAwayDuringTakeover(t *testing.T) {
+	// A member that was away during the takeover knows only the old root,
+	// and meets only the new one: the new root presents its member
+	// certificate from before the takeover, which the member verifies, and
+	// the member takes the root record from it.
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	c := startService(t, &h, "c")
+	pairWith(t, pi, a)
+	pairWith(t, pi, c)
+	makeAdmin(t, pi, a)
+	c.stop()
+	pi.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	c = restartService(t, &h, c)
+	waitFor(t, "c follows the new root", func() bool {
+		id, err := group.Load(c.dir)
+		return err == nil && len(id.Roots) == 1
+	})
+	if _, err := c.do(t, control.Header{Op: control.OpCopy}, "after the takeover"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a has it", func() bool { return a.paste(t) == "after the takeover" })
+}
+
 func TestTakeoverUndone(t *testing.T) {
 	// The old root comes back after an admin took the group over: the
 	// others take its records only, it learns of the takeover, keeps its

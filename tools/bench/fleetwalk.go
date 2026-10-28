@@ -243,10 +243,7 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 			w.mark, w.frozenBy = "admin", nil
 			return w.name, nil
 		}},
-		// Not while an admin is frozen: a member that misses a takeover
-		// cannot reach a new root that is alone, whose certificate it
-		// does not know yet (docs/roadmap.md).
-		{"takeover", 1, func() bool { return len(with("admin")) > 0 && len(with("frozen")) == 0 }, func(int) (string, error) {
+		{"takeover", 1, func() bool { return len(with("admin")) > 0 }, func(int) (string, error) {
 			// The root is lost: cut off, then gone for good once an admin
 			// took the group over. Back, it would undo the takeover (G27).
 			old, w := root(), pick(with("admin"))

@@ -67,6 +67,13 @@ type Identity struct {
 	// root and in a legacy group.
 	AdminKey crypto.Signer // as Key
 	AdminCA  *x509.Certificate
+	// PrevCert and PrevIssuer are the member certificate for Key, and its
+	// admin CA, that this device held before it took the group over: its
+	// member connections present them while they last, so that a member
+	// that missed the takeover, which knows only the old root, can verify
+	// them and take the root record (docs/protocol.md, section 10). Nil
+	// elsewhere.
+	PrevCert, PrevIssuer *x509.Certificate
 }
 
 // Create creates a new group on this device, its root: a device ID, a key,
@@ -237,6 +244,7 @@ func (id *Identity) TakenOver(root *CA, roots []*x509.Certificate, now time.Time
 	next := *id
 	next.Roots, next.RootKey = roots, root.Key
 	next.AdminKey, next.AdminCA = nil, nil
+	next.PrevCert, next.PrevIssuer = id.Cert, id.Issuer
 	var err error
 	if next.Cert, err = root.IssueMember(id.ID, PublicKey(id.Key), now); err != nil {
 		return nil, err
@@ -624,6 +632,8 @@ type identityFile struct {
 	Phone      []byte   `json:"phone,omitempty"`
 	AdminKey   []byte   `json:"admin_key,omitempty"`
 	AdminCA    []byte   `json:"admin_ca,omitempty"`
+	PrevCert   []byte   `json:"prev_cert,omitempty"`
+	PrevIssuer []byte   `json:"prev_issuer,omitempty"`
 	// KeyTPM and AdminKeyTPM stand for Key and AdminKey when those live
 	// in the TPM: the blob that only this machine's TPM loads.
 	KeyTPM      *tpmkey.Blob `json:"key_tpm,omitempty"`
@@ -684,6 +694,12 @@ func (id *Identity) Save(dir string) error {
 	}
 	if id.AdminCA != nil {
 		f.AdminCA = id.AdminCA.Raw
+	}
+	if id.PrevCert != nil {
+		f.PrevCert = id.PrevCert.Raw
+	}
+	if id.PrevIssuer != nil {
+		f.PrevIssuer = id.PrevIssuer.Raw
 	}
 	data, err := json.MarshalIndent(f, "", "\t")
 	if err != nil {
@@ -772,6 +788,16 @@ func parseIdentity(data []byte) (*Identity, error) {
 	}
 	if f.AdminCA != nil {
 		if id.AdminCA, err = x509.ParseCertificate(f.AdminCA); err != nil {
+			return nil, err
+		}
+	}
+	if f.PrevCert != nil {
+		if id.PrevCert, err = x509.ParseCertificate(f.PrevCert); err != nil {
+			return nil, err
+		}
+	}
+	if f.PrevIssuer != nil {
+		if id.PrevIssuer, err = x509.ParseCertificate(f.PrevIssuer); err != nil {
 			return nil, err
 		}
 	}
