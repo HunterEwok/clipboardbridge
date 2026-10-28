@@ -192,6 +192,10 @@ type Status struct {
 	// Removed says that the group's records revoke this device: its
 	// members refuse it until it pairs again.
 	Removed bool `json:"removed,omitempty"`
+	// Frozen says that the records freeze this admin computer's admin key:
+	// the others refuse it until the group's root or an admin phone
+	// unfreezes it. Removed is false then.
+	Frozen bool `json:"frozen,omitempty"`
 	// TakenOverBy names the admin that took the group over from this
 	// device, the group's root computer, while it was away; removing that
 	// admin here undoes it. Removed is false then.

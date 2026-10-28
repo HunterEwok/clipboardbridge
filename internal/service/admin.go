@@ -90,6 +90,14 @@ func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 	if !nd.SendAdmin(peer.ID, adminCA) {
 		return "", fmt.Errorf("%s left before it got its admin CA; it is listed as an admin, so run cbb admin again when it is back", d.Name)
 	}
+	// Its connection still shows no admin CA, and its hello the admin
+	// key: renewAdminCAs must not give it a second one.
+	s.mu.Lock()
+	if s.adminCAsUnder == nil {
+		s.adminCAsUnder = map[group.DeviceID]group.KeyHash{}
+	}
+	s.adminCAsUnder[peer.ID] = group.KeyHashOf(id.Root())
+	s.mu.Unlock()
 	s.logf("cbb: made %s (%s) an admin of the group", d.Name, d.ID)
 	return d.Name, nil
 }

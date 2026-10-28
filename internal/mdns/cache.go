@@ -233,12 +233,20 @@ func (c *cache) refresh(now time.Time, peers []Peer) []dnsmessage.Question {
 
 // knownServices returns the service's PTR records with more than half of
 // their lifetime left, with their remaining TTL, to list as known answers
-// in a browse query (RFC 6762 section 7.1).
-func (c *cache) knownServices(now time.Time) []dnsmessage.Resource {
+// in a browse query (RFC 6762 section 7.1). The PTR record of another
+// member that is not among the members found is left out: its other
+// records expired, as when it was off the network for a while, and it must
+// answer again.
+func (c *cache) knownServices(now time.Time, self string, peers []Peer) []dnsmessage.Resource {
+	names := map[string]bool{strings.ToLower(self) + "." + ServiceName: true}
+	for _, p := range peers {
+		names[strings.ToLower(p.ID)+"."+ServiceName] = true
+	}
 	var out []dnsmessage.Resource
 	for _, e := range c.byName[ServiceName] {
 		left := e.expires.Sub(now)
-		if left <= e.expires.Sub(e.received)/2 {
+		ptr, ok := e.res.Body.(*dnsmessage.PTRResource)
+		if left <= e.expires.Sub(e.received)/2 || !ok || !names[strings.ToLower(ptr.PTR.String())] {
 			continue
 		}
 		r := e.res

@@ -208,6 +208,7 @@ type Service struct {
 	mediaWait      *node.Write                      // a copy of images or files the watchers that take them get once it has arrived
 	seen           map[group.DeviceID]time.Time     // when each peer was last seen connected
 	adminCAsUnder  map[group.DeviceID]group.KeyHash // the root this root last sent each admin a new admin CA under
+	pendingAdminCA []byte                           // an admin CA that came before the records that make it valid
 	// commands holds the IDs of the commands carried out, until they
 	// expire, so that none is carried out twice.
 	commands map[string]time.Time

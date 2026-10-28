@@ -199,7 +199,8 @@ type testService struct {
 	memberAddr string // where the member port listens
 
 	logMu   sync.Mutex
-	stopped bool // the test may have ended: the log goes nowhere
+	stopped bool     // the test may have ended: the log goes nowhere
+	lines   []string // what it logged
 }
 
 // logf logs to the test until the service stopped: the tunnel's
@@ -208,9 +209,17 @@ type testService struct {
 func (s *testService) logf(t *testing.T, f string, a ...any) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
+	s.lines = append(s.lines, fmt.Sprintf(f, a...))
 	if !s.stopped {
 		t.Logf(time.Now().Format("15:04:05.000")+" "+s.name+": "+f, a...)
 	}
+}
+
+// logged reports whether the service logged a line that contains part.
+func (s *testService) logged(part string) bool {
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	return slices.ContainsFunc(s.lines, func(l string) bool { return strings.Contains(l, part) })
 }
 
 // addrs returns where the shortcut's HTTPS and the profile are: both on the
@@ -452,14 +461,23 @@ func TestThreeMembers(t *testing.T) {
 	}
 	makeAdmin(t, a, b)
 	pairWith(t, b, c) // an admin admits too
-	group := a.status(t).Group
+	tag := a.status(t).Group
 	for _, s := range []*testService{b, c} {
-		if g := s.status(t).Group; g != group {
-			t.Fatalf("%s is in group %q, want %q", s.name, g, group)
+		if g := s.status(t).Group; g != tag {
+			t.Fatalf("%s is in group %q, want %q", s.name, g, tag)
 		}
 	}
 	for _, s := range []*testService{a, b, c} {
 		waitFor(t, s.name+" connected to both others", func() bool { return len(s.status(t).Peers) == 2 })
+		// Its certificate is from an admin CA, which the check of its
+		// status takes into account.
+		if st := s.status(t); st.Removed || st.Frozen {
+			t.Errorf("%s says it was removed (%v) or frozen (%v)", s.name, st.Removed, st.Frozen)
+		}
+	}
+	// The root made b an admin once, not again for the same root.
+	if a.logged("a new admin CA from this root") {
+		t.Error("the root gave b a second admin CA")
 	}
 	// One copy reaches every member's own clipboard.
 	if _, err := a.do(t, control.Header{Op: control.OpCopy}, "from alpha"); err != nil {
@@ -1694,6 +1712,83 @@ func TestSecondTakeover(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "b has it", func() bool { return b.paste(t) == "after the second takeover" })
+}
+
+func TestUnfrozenAfterTakeover(t *testing.T) {
+	// The lost root froze b, and its freeze stays after a takes over; a
+	// unfreezes b, which gets an admin CA from a's root and can take the
+	// group over from a in turn.
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	b := startService(t, &h, "b")
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	makeAdmin(t, pi, a)
+	makeAdmin(t, pi, b)
+	waitFor(t, "a serves the shortcut", func() bool {
+		id, err := group.Load(a.dir)
+		return err == nil && id.ServesPhone()
+	})
+	if _, err := pi.do(t, control.Header{Op: control.OpFreeze, Name: "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a knows b is frozen", func() bool {
+		for _, d := range a.devices(t) {
+			if d.Name == "b" && d.Frozen {
+				return true
+			}
+		}
+		return false
+	})
+	waitFor(t, "b says it is frozen, not removed", func() bool {
+		st := b.status(t)
+		return st.Frozen && !st.Removed
+	})
+	pi.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpThaw, Name: "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	ra, _ := group.Load(a.dir)
+	waitFor(t, "b gets an admin CA from a's root", func() bool {
+		id, err := group.Load(b.dir)
+		return err == nil && id.AdminCA != nil && id.AdminCA.CheckSignatureFrom(ra.Root()) == nil
+	})
+	a.stop()
+	if _, err := b.do(t, control.Header{Op: control.OpTakeover, Name: "a"}, ""); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAwayDuringTakeover(t *testing.T) {
+	// A member that was away during the takeover knows only the old root,
+	// and meets only the new one: the new root presents its member
+	// certificate from before the takeover, which the member verifies, and
+	// the member takes the root record from it.
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	c := startService(t, &h, "c")
+	pairWith(t, pi, a)
+	pairWith(t, pi, c)
+	makeAdmin(t, pi, a)
+	c.stop()
+	pi.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	c = restartService(t, &h, c)
+	waitFor(t, "c follows the new root", func() bool {
+		id, err := group.Load(c.dir)
+		return err == nil && len(id.Roots) == 1
+	})
+	if _, err := c.do(t, control.Header{Op: control.OpCopy}, "after the takeover"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a has it", func() bool { return a.paste(t) == "after the takeover" })
 }
 
 func TestTakeoverUndone(t *testing.T) {
