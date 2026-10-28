@@ -42,6 +42,10 @@ a checked box means the setting is in place.
 - [x] **Allow GitHub Actions to create and approve pull requests** off.
 - [x] Fork pull request workflows: **Require approval for all external contributors**.
 
+**Settings → Environments**
+
+- [ ] Environment **release**, which holds every release secret (below, "Release secrets").
+
 **Settings → Rules → Rulesets**
 
 Branch ruleset **Production Branch Protection** (made from the GitHub template), active,
@@ -61,8 +65,37 @@ targeting the default branch:
 Tag ruleset **releases**, active, targeting `refs/tags/v*`:
 
 - [x] Restrict updates and deletions, and block force pushes, so a release tag cannot be
-  moved. Creation stays allowed: with an empty bypass list, restricting it would block every
-  release.
+  moved. Its bypass list stays empty.
+
+Tag ruleset **release tags: create**, active, targeting `refs/tags/v*`:
+
+- [ ] Restrict creations, with the role **Repository admin** in the bypass list (always
+  allow): only the maintainer starts a release; an app or a token with write access cannot.
+  It is a ruleset of its own so that the one above keeps an empty bypass list.
+
+### Release secrets
+
+The keys that sign release files are Actions secrets of the environment **release**
+(**Settings → Environments → release**), never repository secrets: a repository secret
+reaches any workflow on any branch, so anyone who may push a branch could read it. The
+environment's **Deployment branches and tags** are *Selected branches and tags*: the tag
+pattern `v*` and the branch `main`. The jobs that sign (`build`, `android` and
+`openwrt-feed` in the release workflow, `homebrew` in the published workflow) name the
+environment; a run by hand to check a key therefore starts from `main`. No required
+reviewers: the release tag is the maintainer's decision already.
+
+| Secret | What it is | Section |
+| --- | --- | --- |
+| `CBB_ANDROID_KEYSTORE_BASE64`, `CBB_ANDROID_KEYSTORE_PASSWORD`, `CBB_ANDROID_KEY_ALIAS`, `CBB_ANDROID_KEY_PASSWORD` | the Android release key | [Android signing key](#android-signing-key) |
+| `CBB_WINDOWS_CERT_BASE64`, `CBB_WINDOWS_CERT_PASSWORD` | the Windows code signing certificate | [Signing for Windows](#signing-for-windows) |
+| `CBB_OPENWRT_FEED_KEY` | the OpenWrt feed's key | [The OpenWrt feed](#the-openwrt-feed) |
+| `CBB_HOMEBREW_TAP_KEY` | the tap's deploy key | [Homebrew](#homebrew) |
+
+GitHub never shows a secret again, so each key is made on the maintainer's Mac and kept
+there with an offline backup (an encrypted drive or a password manager) before it goes into
+the environment; a key that exists only in GitHub is lost with it. To put one in:
+`gh secret set NAME --env release < file`, or **Settings → Environments → release → Add
+environment secret**.
 
 ## CI
 
@@ -254,11 +287,11 @@ Setting it up, once:
   `ssh-keygen -t ed25519 -N '' -C homebrew-tap -f homebrew-tap`.
 - [x] In the tap, **Settings → Deploy keys → Add deploy key**: the contents of
   `homebrew-tap.pub`, with **Allow write access**. It can write to the tap and nothing else.
-- [x] In this repository, **Settings → Secrets and variables → Actions → New repository
-  secret** `CBB_HOMEBREW_TAP_KEY`: the contents of `homebrew-tap`, the private key. Then
-  delete both files.
+- [ ] In the environment **release** ("Release secrets" above), the secret
+  `CBB_HOMEBREW_TAP_KEY`: the contents of `homebrew-tap`, the private key. Then delete both
+  files: a lost tap key is replaced by making a new one the same way.
 
-To check the key without a release, run the published workflow from a branch (**Actions →
+To check the key without a release, run the published workflow from `main` (**Actions →
 published → Run workflow**): its `homebrew` job pushes to the tap with `--dry-run`, which
 fails unless the key may write there.
 
@@ -294,7 +327,7 @@ every pull request and installs and removes the package from it. Setting it up, 
 
 - [ ] Make the key on any computer: `openssl ecparam -name prime256v1 -genkey -noout -out
   feed.pem`.
-- [ ] In this repository's Actions secrets: `CBB_OPENWRT_FEED_KEY`, the contents of
+- [ ] In the environment **release**: `CBB_OPENWRT_FEED_KEY`, the contents of
   `feed.pem`. Keep a copy offline; a new key means every router fetches the new public key.
 
 For each release, unpack `openwrt-feed.tar.gz` into the site's `openwrt/` directory on
@@ -309,10 +342,10 @@ stay unsigned and SmartScreen warns on the first start. Setting it up, once:
 
 - [ ] Buy a code signing certificate whose key can be exported as a PKCS#12 file (an OV
   certificate; an EV one lives on a hardware token and needs a signing service instead).
-- [ ] In this repository's Actions secrets: `CBB_WINDOWS_CERT_BASE64`, the `.pfx` file in
+- [ ] In the environment **release**: `CBB_WINDOWS_CERT_BASE64`, the `.pfx` file in
   base64 (`base64 -w0 cert.pfx`), and `CBB_WINDOWS_CERT_PASSWORD`, its password.
 
-To check it without a release, run the release workflow from a branch: its Windows builds
+To check it without a release, run the release workflow from `main`: its Windows builds
 sign the programs.
 
 ### SignPath Foundation
@@ -351,8 +384,8 @@ is signed with a Developer ID and notarized, it updates with [Sparkle](https://s
 
 The release workflow builds `clipboardbridge-X.Y.Z.apk` and `clipboardbridge-fdroid-X.Y.Z.apk`
 from the tag (version code `X*10000 + Y*100 + Z`, from `apps/android/version.properties`)
-and signs them with the project's release key, which lives only in the
-repository's Actions secrets. Android installs an update only when it is signed with the same
+and signs them with the project's release key, which lives in the environment **release**
+("Release secrets" above) and, with a backup, on the maintainer's Mac. Android installs an update only when it is signed with the same
 key, so the key is made once and kept, with a backup, for good:
 
 ```sh
@@ -367,7 +400,7 @@ The secrets: `CBB_ANDROID_KEYSTORE_BASE64` (the keystore, in base64),
 the release has no APK. F-Droid publishes our signed `clipboardbridge-fdroid-X.Y.Z.apk` once
 its own build of the tag matches it (below).
 
-To check the key without a release, run the release workflow by hand from a branch (Actions,
+To check the key without a release, run the release workflow by hand from `main` (Actions,
 "release", "Run workflow"): it builds everything, checks the APK's signature and keeps the
 files as the run's artifacts, and publishes nothing.
 
