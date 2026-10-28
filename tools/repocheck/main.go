@@ -18,7 +18,10 @@
 //     header;
 //   - the documentation's links, names and command reference hold (docs.go);
 //   - the Android apps' version is the last release in CHANGELOG.md
-//     (version.go).
+//     (version.go);
+//   - no compiled program (ELF, Mach-O, PE) and no file over 1 MiB is
+//     committed: build output belongs outside the repository, and a large
+//     file stays in git's history for good.
 //
 // Run it anywhere inside the repository:
 //
@@ -178,6 +181,12 @@ func isTranslation(name string) bool {
 // check returns the rule violations in one file; listed holds the paths of
 // all files checked, which exist in the working tree.
 func check(name string, data []byte, listed map[string]bool) []string {
+	if kind := programKind(data); kind != "" {
+		return []string{fmt.Sprintf("%s:1: a compiled program (%s); build output must not be committed, build into a directory outside the repository or one .gitignore lists", name, kind)}
+	}
+	if len(data) > maxFileSize {
+		return []string{fmt.Sprintf("%s:1: %d bytes, over the limit of %d; large files stay in git's history for good", name, len(data), maxFileSize)}
+	}
 	if bytes.IndexByte(data, 0) >= 0 {
 		return nil // a binary file
 	}
@@ -207,6 +216,34 @@ func check(name string, data []byte, listed map[string]bool) []string {
 		problems = append(problems, fmt.Sprintf("%s:1: missing license header; start the file with\n\t%s\n\t// Copyright (C) <year> HunterEwok", name, spdxLine))
 	}
 	return problems
+}
+
+// maxFileSize is the largest file the repository takes; the largest ones
+// today are the app icons, under half of it.
+const maxFileSize = 1 << 20
+
+// programKind names the executable format that data starts with, or returns
+// "" for any other file.
+func programKind(data []byte) string {
+	switch {
+	case bytes.HasPrefix(data, []byte("\x7fELF")):
+		return "ELF"
+	case bytes.HasPrefix(data, []byte{0xcf, 0xfa, 0xed, 0xfe}), bytes.HasPrefix(data, []byte{0xce, 0xfa, 0xed, 0xfe}),
+		bytes.HasPrefix(data, []byte{0xca, 0xfe, 0xba, 0xbe}) && len(data) >= 8 && data[4] == 0 && data[5] == 0 && data[6] == 0 && data[7] < 0x20:
+		// Mach-O, 64 and 32 bits, and a universal binary, whose header
+		// counts its architectures where a Java class has its version.
+		return "Mach-O"
+	case bytes.HasPrefix(data, []byte("MZ")) && len(data) >= 0x40 && isPE(data):
+		return "PE"
+	}
+	return ""
+}
+
+// isPE reports whether an MZ file carries a PE header where its DOS header
+// points.
+func isPE(data []byte) bool {
+	off := int(data[0x3c]) | int(data[0x3d])<<8 | int(data[0x3e])<<16 | int(data[0x3f])<<24
+	return off >= 0x40 && off+4 <= len(data) && string(data[off:off+4]) == "PE\x00\x00"
 }
 
 // thirdPartyDir returns the directory of the copied package that the file
