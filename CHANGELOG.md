@@ -549,6 +549,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   lost another asks for the service again from 1 s, doubling, and no longer lists the lost
   member's PTR record as a known answer, which kept it from answering. Before, they could stay
   apart for up to an hour. The bench's random walk (G40) found it.
+- An admin computer that the lost root had frozen, and the new root unfroze, gets its admin
+  CA from the new root and can take the group over in turn: an admin CA that comes before
+  the records that make it valid is kept and taken once they are in. Before, it was dropped,
+  and `cbb takeover` on that admin refused. `cbb status` on a frozen admin says it is
+  frozen, not removed.
 - `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
   left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
   the hub's addresses.

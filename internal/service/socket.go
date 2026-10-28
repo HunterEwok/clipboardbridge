@@ -394,6 +394,8 @@ func (s *Service) statusWithRemoved() *control.Status {
 	switch err := s.allow(id.ID, []*x509.Certificate{id.Cert}); {
 	case errors.Is(err, group.ErrRecordsOnly):
 		st.TakenOverBy = s.takenOverBy(id)
+	case err != nil && s.frozen(id):
+		st.Frozen = true
 	case err != nil:
 		st.Removed = true
 	}

@@ -1696,6 +1696,55 @@ func TestSecondTakeover(t *testing.T) {
 	waitFor(t, "b has it", func() bool { return b.paste(t) == "after the second takeover" })
 }
 
+func TestUnfrozenAfterTakeover(t *testing.T) {
+	// The lost root froze b, and its freeze stays after a takes over; a
+	// unfreezes b, which gets an admin CA from a's root and can take the
+	// group over from a in turn.
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	b := startService(t, &h, "b")
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	makeAdmin(t, pi, a)
+	makeAdmin(t, pi, b)
+	waitFor(t, "a serves the shortcut", func() bool {
+		id, err := group.Load(a.dir)
+		return err == nil && id.ServesPhone()
+	})
+	if _, err := pi.do(t, control.Header{Op: control.OpFreeze, Name: "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a knows b is frozen", func() bool {
+		for _, d := range a.devices(t) {
+			if d.Name == "b" && d.Frozen {
+				return true
+			}
+		}
+		return false
+	})
+	waitFor(t, "b says it is frozen, not removed", func() bool {
+		st := b.status(t)
+		return st.Frozen && !st.Removed
+	})
+	pi.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.do(t, control.Header{Op: control.OpThaw, Name: "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	ra, _ := group.Load(a.dir)
+	waitFor(t, "b gets an admin CA from a's root", func() bool {
+		id, err := group.Load(b.dir)
+		return err == nil && id.AdminCA != nil && id.AdminCA.CheckSignatureFrom(ra.Root()) == nil
+	})
+	a.stop()
+	if _, err := b.do(t, control.Header{Op: control.OpTakeover, Name: "a"}, ""); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAwayDuringTakeover(t *testing.T) {
 	// A member that was away during the takeover knows only the old root,
 	// and meets only the new one: the new root presents its member

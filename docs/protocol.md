@@ -1479,8 +1479,11 @@ an admin phone, never a computer; in a group a computer created an admin compute
    (rule 7). So when such an admin is connected, its admin CA in its chain or its key in its
    hello, the new root signs a `device` record for it under its own key that names the same
    admin key, and sends it a new admin CA for that key, as when it makes an admin; the records
-   name the key, not the certificate, so nothing else changes. An admin whose admin CA is from
-   a root before the current one does not take the group over (`cbb takeover` refuses).
+   name the key, not the certificate, so nothing else changes. A frozen admin gets it once it
+   is unfrozen. The admin CA may come before the records that make it valid (the `root`
+   record, a thaw); the admin keeps it and takes it once they are in. An admin whose admin CA
+   is from a root before the current one does not take the group over (`cbb takeover`
+   refuses).
 
 A computer that gets the `root` record starts trusting the new root and saves it with its
 identity; a computer that held the root it replaces is no longer the root, and gives up its
@@ -1546,8 +1549,9 @@ identity (mode 0600) and the path in the identity file's `roots`.
   every connection whose peer certificate is now refused (rule 6), after what is queued for
   it and a `bye`, and the TLS check refuses it from then on. So a revoked member that is
   connected gets the record that revokes it. A member that learns that its own key is
-  revoked logs that it was removed from the group, and its status says so (`removed`); the
-  others refuse it. A member MUST close a connection, and refuse new ones, whose peer
+  revoked logs that it was removed from the group, and its status says so (`removed`); an
+  admin computer whose admin key is frozen says that instead (`frozen`); the others refuse
+  it. A member MUST close a connection, and refuse new ones, whose peer
   certificate the records refuse, as soon as it holds the record.
 - A member that holds the group CA key (the root, or a key holder of a legacy group) records
   every device it admits (its name and `os`
