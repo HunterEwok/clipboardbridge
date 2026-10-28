@@ -29,7 +29,7 @@ object Records {
         val os: String? = null,
         val key: ByteArray? = null,
         val admin: ByteArray? = null,
-        /** Where the device's keys live: "file", "hardware" or "proven" (storeOf). */
+        /** Where the device's keys live: "file", "hardware", "proven" or "rootless" (storeOf). */
         val store: String? = null,
         /** With a checked attestation: the kind of hardware and the hex SHA-256 of the attestation's leaf. */
         val kind: String? = null,
@@ -146,13 +146,19 @@ object Records {
     const val PROVEN = "proven"
 
     /**
+     * A rootless install's keys: in a file every program of its user may
+     * read, so the device is never the root, an admin or a hub (D-79).
+     */
+    const val ROOTLESS = "rootless"
+
+    /**
      * Where a device's keys live, as its record's store field says
-     * (docs/protocol.md, section 17): FILE, HARDWARE or PROVEN. Without
+     * (docs/protocol.md, section 17): FILE, HARDWARE, PROVEN or ROOTLESS. Without
      * one, as before 0.6, or with one this version does not know, a phone's
      * and a watch's keys are in hardware and any other device's in a file.
      */
     fun storeOf(store: String?, role: String): String = when (store) {
-        FILE, HARDWARE, PROVEN -> store
+        FILE, HARDWARE, PROVEN, ROOTLESS -> store
         else -> if (role == "phone" || role == "watch") HARDWARE else FILE
     }
 

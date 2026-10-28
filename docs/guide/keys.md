@@ -66,6 +66,9 @@ the root, an admin or the hub.
 Level 2 is the default because it keeps keys out of files wherever the hardware allows,
 without telling any outside service which devices you have.
 
+A computer installed without `sudo` ([rootless](install.md#without-sudo-rootless)) is never
+the root, an admin or the hub, at any level: every program of its user can read its keys.
+
 ## If a device is lost
 
 Remove it from the group as soon as you can: see [if a device is lost or stolen](lost-device.md).

@@ -17,6 +17,8 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
+	"github.com/HunterEwok/clipboardbridge/internal/rootless"
+	"github.com/HunterEwok/clipboardbridge/internal/steamos"
 )
 
 // ArchiveName returns the release's archive for this system, as
@@ -176,6 +178,13 @@ func Paths() (dir, work string) {
 			// /etc survives a sysupgrade; the downloads go to RAM.
 			return "/etc/clipboardbridge-update", "/tmp/clipboardbridge-update"
 		}
+		if rootless.Is() {
+			return rootless.UpdateDir(), rootless.UpdateDir()
+		}
+		if steamos.Is() {
+			// /var is small on SteamOS; /opt lives in /home.
+			return steamos.Dir + "-update", steamos.Dir + "-update"
+		}
 		dir = "/var/lib/clipboardbridge-update"
 	}
 	return dir, dir
@@ -207,7 +216,11 @@ func Install(ctx context.Context, root, bin string) error {
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Bin", bin)
 	} else {
-		cmd = exec.CommandContext(ctx, "sh", script, bin)
+		args := []string{script, bin}
+		if rootless.Is() {
+			args = []string{script, "--rootless", bin}
+		}
+		cmd = exec.CommandContext(ctx, "sh", args...)
 	}
 	cmd.Env = append(os.Environ(), "CBB_UPDATING=1")
 	out, err := cmd.CombinedOutput()

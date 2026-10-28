@@ -48,11 +48,13 @@ func pkexecArgs(cbb string, args []string, details bool) []string {
 	return append(append(a, cbb), args...)
 }
 
-// cbbPath is where the installer puts cbb, or else cbb on PATH; pkexec
-// needs the full path.
+// cbbPath is where the installer puts cbb (/opt/clipboardbridge on
+// SteamOS), or else cbb on PATH; pkexec needs the full path.
 func cbbPath() string {
-	if p, err := exec.LookPath("/usr/local/bin/cbb"); err == nil {
-		return p
+	for _, p := range []string{"/usr/local/bin/cbb", "/opt/clipboardbridge/bin/cbb"} {
+		if p, err := exec.LookPath(p); err == nil {
+			return p
+		}
 	}
 	if p, err := exec.LookPath("cbb"); err == nil {
 		return p

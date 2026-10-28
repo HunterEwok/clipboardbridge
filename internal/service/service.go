@@ -89,6 +89,10 @@ type Config struct {
 	// there it makes no group and takes no admin key unless KeysInFile
 	// (KeysInFileAllowed).
 	Container, KeysInFile bool
+	// Rootless says that this is a rootless install (rootless.Is): it
+	// makes no group and takes no admin key at all, and its hello says
+	// group.StoreRootless (D-79).
+	Rootless bool
 
 	// runner carries out the quick actions' presets; actions.System if
 	// nil.
@@ -467,7 +471,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.tunMu.Unlock()
 	tunKey, tunPSK := tunnelKey(tun)
 	nd := node.New(node.Config{
-		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: group.KeyStoreOf(id.Key), Actions: s.actionsOn,
+		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: s.keyStore(id), Actions: s.actionsOn,
 		OnWrite: s.write, OnRelay: s.relayed, Serves: s.serves, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Credentials: credentialStore{s}, Releases: releaseStore{s}, Allow: s.allow,

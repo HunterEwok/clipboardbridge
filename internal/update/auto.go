@@ -17,6 +17,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
+	"github.com/HunterEwok/clipboardbridge/internal/rootless"
 )
 
 // The timers that run cbb update -timer once a day, at a time of their
@@ -67,13 +68,24 @@ func removeAll(paths ...string) error {
 	return nil
 }
 
+// systemdTimers writes the system's units, or for a rootless install the
+// user's own.
 func systemdTimers(on bool, exe string) error {
+	unit, timerUnit, systemctl := systemdService, systemdTimer, []string{}
+	if rootless.Is() {
+		unit = filepath.Join(rootless.UnitDir(), filepath.Base(systemdService))
+		timerUnit = filepath.Join(rootless.UnitDir(), filepath.Base(systemdTimer))
+		systemctl = []string{"--user"}
+	}
+	ctl := func(args ...string) error {
+		return run("systemctl", append(append([]string{}, systemctl...), args...)...)
+	}
 	if !on {
-		exec.Command("systemctl", "disable", "--now", filepath.Base(systemdTimer)).Run()
-		if err := removeAll(systemdTimer, systemdService); err != nil {
+		ctl("disable", "--now", filepath.Base(timerUnit))
+		if err := removeAll(timerUnit, unit); err != nil {
 			return err
 		}
-		return run("systemctl", "daemon-reload")
+		return ctl("daemon-reload")
 	}
 	service := `# Written by cbb update -auto on; cbb update -auto off removes it.
 [Unit]
@@ -100,16 +112,19 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 `
-	if err := atomicfile.Write(systemdService, []byte(service), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Dir(unit), 0o755); err != nil {
 		return err
 	}
-	if err := atomicfile.Write(systemdTimer, []byte(timer), 0o644); err != nil {
+	if err := atomicfile.Write(unit, []byte(service), 0o644); err != nil {
 		return err
 	}
-	if err := run("systemctl", "daemon-reload"); err != nil {
+	if err := atomicfile.Write(timerUnit, []byte(timer), 0o644); err != nil {
 		return err
 	}
-	return run("systemctl", "enable", "--now", filepath.Base(systemdTimer))
+	if err := ctl("daemon-reload"); err != nil {
+		return err
+	}
+	return ctl("enable", "--now", filepath.Base(timerUnit))
 }
 
 // at returns a time of day of this device's own for cron and launchd, which

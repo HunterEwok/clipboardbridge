@@ -73,6 +73,12 @@ final class ComputerAdminTests: XCTestCase {
                 XCTAssertEqual($0 as? PhoneGroup.Failure, .fileKey)
             }
         }
+        // A rootless install never, even with the consent (D-79).
+        XCTAssertThrowsError(try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1,
+                                             keyStore: Records.rootless, allowFileKey: true)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .rootless)
+        }
+        XCTAssertEqual(Records.store(Records.rootless, role: "full"), Records.rootless)
         let (ca, r) = try g.makeAdmin(device: pi, adminKey: adminKey.publicKeyDER, rootSigner: root, now: t1, allowFileKey: true)
         XCTAssertEqual(try CertificateInfo(der: ca).publicKey, adminKey.publicKeyDER)
         let d = try XCTUnwrap(g.devices.first { $0.id == pi })

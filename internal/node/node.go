@@ -54,7 +54,8 @@ type Config struct {
 	Name     string // this device's name, sent in the hello
 	OS       string // this device's operating system (group.OSLinux...), sent in the hello
 	// KeyStore is where this device's keys live (group.StoreFile or
-	// group.StoreHardware), sent in the hello; "" sends group.StoreFile.
+	// group.StoreHardware or group.StoreRootless), sent in the hello; ""
+	// sends group.StoreFile.
 	KeyStore string
 	// Actions, if set, lists this device's quick actions that are on,
 	// sent in the hello.
@@ -246,7 +247,8 @@ type Peer struct {
 	// Mode is the sync mode its hello reports; "" when it reports none.
 	Mode string
 	// KeyStore is where its hello says its keys live: group.StoreFile or
-	// group.StoreHardware; "" when it says neither, as before 0.6.
+	// group.StoreHardware or group.StoreRootless; "" when it says none of
+	// them, as before 0.6.
 	KeyStore string
 	// Actions are the quick actions its hello says are on.
 	Actions []string
@@ -1532,7 +1534,7 @@ func (c *conn) reader() error {
 			}
 			c.peerAdminKey, c.peerPhoneCA, c.peerOldKeys = extra.AdminKey, extra.PhoneCA, extra.OldKeys
 			c.peerKeyStore = ""
-			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware {
+			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware || extra.KeyStore == group.StoreRootless {
 				c.peerKeyStore = extra.KeyStore
 			}
 			c.peerActions = nil

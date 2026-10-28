@@ -13,6 +13,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
+	"github.com/HunterEwok/clipboardbridge/internal/steamos"
 )
 
 // A hub reached at its own address takes its clients on a UDP port from the
@@ -37,10 +38,13 @@ type hubFirewall struct {
 var hubFW = map[string]*hubFirewall{"linux": &linuxHubFW, "freebsd": &linuxHubFW, "windows": &windowsHubFW}[runtime.GOOS]
 
 // firewallScript is the installer's firewall.sh: under /usr/local/share,
-// or /usr/share on OpenWrt, which has no /usr/local.
+// /usr/share on OpenWrt, which has no /usr/local, or /opt on SteamOS.
 var firewallScript = func() string {
 	if openwrt.Is() {
 		return "/usr/share/clipboardbridge/firewall.sh"
+	}
+	if steamos.Is() {
+		return steamos.Share + "/firewall.sh"
 	}
 	return "/usr/local/share/clipboardbridge/firewall.sh"
 }()

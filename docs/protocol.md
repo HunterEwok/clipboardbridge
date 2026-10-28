@@ -422,7 +422,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `tunnel_psk` | string or absent | with `tunnel_key`: the WireGuard preshared key the sender chose for its tunnels, 32 bytes in base64, which every hub of the group uses for it (section 11, "Several hubs"); absent from a version before 0.5 |
 | `mode` | string or absent | the sender's sync mode: `own`, `shared`, `receive` or `send` (design.md, "Sync modes"); shown, never trusted; a receiver ignores an unknown one. It changes only what the sender itself does with its clipboard, so a receiver handles the sender's events the same in every mode. Absent from a member before 0.5, which shares |
 | `device` | object or absent | what the sender says about its device: Device (below); shown, never trusted |
-| `key_store` | string or absent | where the sender's keys live: `file` or `hardware` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
+| `key_store` | string or absent | where the sender's keys live: `file`, `hardware` or `rootless` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
 | `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
 | `release_seq` | integer or absent | the `seq` of the channel file of the newest signed release the sender holds (section 16, "In the group"); absent when it holds none, and from a member before 0.6 |
 | `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
@@ -2459,8 +2459,17 @@ far.
 
 - A **hello** says where the sender's keys live in `key_store` (section 4); a receiver MUST
   NOT trust it for anything but what the root records, below: the phones send
-  `hardware`, a Linux computer whose member key is in its TPM `hardware`, the other
-  computers and the lite member `file`. A device that cannot tell sends `file`.
+  `hardware`, a Linux computer whose member key is in its TPM `hardware`, a rootless
+  install (below) `rootless`, the other computers and the lite member `file`. A device that
+  cannot tell sends `file`.
+- **Rootless installs** (D-79). A full member installed and run without root, as its
+  user's own service, keeps its keys in a file that every program of that user may read. Its
+  hello says `rootless`; a computer that is the group's root records such a
+  member with `store` `rootless`, without `admin`, `kind` or `proof`, also over a record that
+  said otherwise, and the phones go by its hello. Such a device MUST NOT be made the group's root, an admin or a hub, whatever
+  the key level and the user's consent; it makes no group, offers no admin key and takes no
+  admin CA itself. A reader that does not know the value takes it as `file` (below), so an
+  older member keeps it from being an admin unless its user allowed keys in files.
 - **Keys in a TPM.** A full member on Linux makes its member key and its admin key in the
   TPM 2.0 at `/dev/tpmrm0` when it may open it (the installer lets the service do so):
   an ECC P-256 signing key under the TPM's ECC storage root key (the TCG template, made
@@ -2475,7 +2484,7 @@ far.
   it, so it never shows on the chip's bus. A key in the file moves into the TPM when the
   service next reads the state; WireGuard itself still uses it in memory.
   `CBB_TPM_SIMULATOR=host:port` points the service at a software TPM (swtpm), for tests.
-- A **device record** says it in `store`: `file`, `hardware`, or `proven` once the group's
+- A **device record** says it in `store`: `file`, `hardware`, `rootless`, or `proven` once the group's
   root checked a proof of hardware (an attestation, "Evidence" below), with `kind`, the kind
   of hardware (`android-tee`, `android-strongbox`, or `tpm` for a TPM's proof), and `proof`, the hex SHA-256 of the
   attestation's leaf certificate. The signer writes what the device's hello said when it
@@ -2789,7 +2798,7 @@ frames (section 4, "Content"); `records`, `admin`, `phone_ca` (section 10); `tun
 | Event `via` | `copy`, `phone`, `universal-clipboard`; read as legacy: `iphone` (`phone`) | 4 |
 | Media part `type` | `image/png`, `image/jpeg`, `text/html` | 4 |
 | Sync mode | `own`, `shared`, `receive`, `send` | 4, 15 |
-| Key store | `file`, `hardware`, `proven` (records only); proof kinds `android-tee`, `android-strongbox`, `tpm` | 17 |
+| Key store | `file`, `hardware`, `rootless`, `proven` (records only); proof kinds `android-tee`, `android-strongbox`, `tpm` | 17 |
 | mDNS TXT keys | `v`, `g`, `p`, `r` (`lite`, `phone`), `h` (`1`, `2`) | 3 |
 | Record `type` | `device`, `revoke`, `root`, `freeze`, `thaw` | 10 |
 | Command `type` | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off`, `away-off` | 15 |

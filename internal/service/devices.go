@@ -370,14 +370,20 @@ func (s *Service) ensureListed() {
 			// A computer whose record names no system or another one, as a
 			// Windows PC that joined as a Linux member, or that its record
 			// has in a file while its hello says hardware, as a computer
-			// with its keys in a TPM recorded when it was admitted: record
-			// what its hello says, keeping the rest of its record.
+			// with its keys in a TPM recorded when it was admitted, or
+			// whose hello says it is a rootless install (D-79): record
+			// what its hello says, keeping the rest of its record. A
+			// rootless device is no admin, and its keys prove nothing.
 			newOS := os != "" && d.OS != os
-			newStore := d.Store == group.StoreFile && store == group.StoreHardware
+			rootless := store == group.StoreRootless && d.Store != group.StoreRootless
+			newStore := d.Store == group.StoreFile && store == group.StoreHardware || rootless
 			if d.Role != group.RoleFull || !newOS && !newStore {
 				return
 			}
 			body.Name, body.Admin, body.Kind, body.Proof = d.Name, d.AdminKey, d.Kind, d.Proof
+			if rootless {
+				body.Admin, body.Kind, body.Proof = nil, "", ""
+			}
 			if !newOS {
 				body.OS = d.OS
 			}
@@ -395,7 +401,7 @@ func (s *Service) ensureListed() {
 		}
 		rs = append(rs, r)
 	}
-	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyHashOf(id.Cert), group.KeyStoreOf(id.Key))
+	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyHashOf(id.Cert), s.keyStore(id))
 	for _, p := range nd.Peers() {
 		add(p.ID, p.Name, roleOf(p.Role), p.OS, p.Key, p.KeyStore)
 	}
@@ -494,7 +500,7 @@ func (s *Service) devices() ([]control.Device, error) {
 		entry(d.ID, d.Name, d.Role, os, d.Store, d.Admin, true)
 	}
 	if !shown[id.ID] {
-		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyStoreOf(id.Key), false, false)
+		entry(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, s.keyStore(id), false, false)
 	}
 	for _, p := range nd.Peers() {
 		if !shown[p.ID] {

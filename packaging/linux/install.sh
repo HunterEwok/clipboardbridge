@@ -31,7 +31,13 @@
 # The full member only. --auto-update on|off (or CBB_AUTO_UPDATE) answers
 # whether the full member updates itself once a day to a signed release,
 # which it asks otherwise and keeps (packaging/update.sh, cbb update -auto).
-# uninstall.sh removes it all again.
+# uninstall.sh removes it all again. --rootless installs the full member for
+# the user who runs it, without sudo (install-rootless.sh, D-79).
+#
+# On SteamOS, whose / is read-only and replaced by each system update, the
+# binary and the shared files go to /opt/clipboardbridge instead, which
+# SteamOS keeps in /home, and a keep list in /etc/atomic-update.conf.d names
+# the files it writes in /etc, which SteamOS otherwise drops on an update.
 set -eu
 
 # A failure says so with its exit status; CBB_ERROR_DETAILS=1 shows every
@@ -49,8 +55,20 @@ trap 'failed $?' EXIT
 # The firewall tools answer in the user's language; what this reads is English.
 export LC_ALL=C
 
+# --rootless installs for the user who runs it, without sudo.
+for a in "$@"; do
+	if [ "$a" = --rootless ]; then
+		if [ ! -f "$(dirname "$0")/install-rootless.sh" ]; then
+			echo "install.sh: --rootless is for the full member; install the lite member with sudo" >&2
+			exit 2
+		fi
+		exec sh "$(dirname "$0")/install-rootless.sh" "$@"
+	fi
+done
+
 usage() {
 	echo "usage: sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb" >&2
+	echo "   or: sh install.sh --rootless [--port N] [--home-cgnat on|off] [--auto-update on|off] path/to/cbb" >&2
 	exit 2
 }
 console=no
@@ -122,6 +140,27 @@ if ! command -v systemctl >/dev/null 2>&1; then
 	echo "install.sh: systemd is required" >&2
 	exit 1
 fi
+# CBB_OS_RELEASE names another os-release file, for the tests.
+steamos=no
+if [ "$(sed -n 's/^ID=//p' "${CBB_OS_RELEASE:-/etc/os-release}" 2>/dev/null | tr -d '"')" = steamos ]; then
+	steamos=yes
+fi
+if [ "$steamos" = yes ]; then
+	cbb=/opt/clipboardbridge/bin/cbb
+	share=/opt/clipboardbridge/share
+	sysusers=/etc/sysusers.d/clipboardbridge.conf
+else
+	cbb=/usr/local/bin/cbb
+	share=/usr/local/share/clipboardbridge
+	sysusers=/usr/lib/sysusers.d/clipboardbridge.conf
+fi
+# place MODE FILE DEST installs FILE, a unit or the autostart entry, with
+# the binary's path of this system.
+place() {
+	sed "s|/usr/local/bin/cbb|$cbb|g" "$2" >"$3.new"
+	chmod "$1" "$3.new"
+	mv "$3.new" "$3"
+}
 if ! "$bin" version >/dev/null 2>&1; then
 	echo "install.sh: $bin does not run on this machine; is it built for $(uname -m)?" >&2
 	exit 1
@@ -133,9 +172,9 @@ kind_of() {
 	if "$1" version 2>/dev/null | grep -q 'lite member'; then echo lite; else echo full; fi
 }
 kind=$(kind_of "$bin")
-if [ -x /usr/local/bin/cbb ] && [ "$(kind_of /usr/local/bin/cbb)" != "$kind" ]; then
-	echo "install.sh: the $(kind_of /usr/local/bin/cbb) member is installed here, and the $kind member cannot use its keys;" >&2
-	echo "remove it first: sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge" >&2
+if [ -x "$cbb" ] && [ "$(kind_of "$cbb")" != "$kind" ]; then
+	echo "install.sh: the $(kind_of "$cbb") member is installed here, and the $kind member cannot use its keys;" >&2
+	echo "remove it first: sudo sh $share/uninstall.sh --purge" >&2
 	exit 1
 fi
 if [ "$kind" = lite ] && [ "$cgnat" = 1 ]; then
@@ -195,34 +234,54 @@ if [ -e /usr/local/bin/cbb-lite ] || [ -e /etc/systemd/system/cbb-lite.service ]
 	fi
 fi
 
-install -m 0755 "$bin" /usr/local/bin/cbb
-install -m 0644 "$here/clipboardbridge.sysusers" /usr/lib/sysusers.d/clipboardbridge.conf
-systemd-sysusers /usr/lib/sysusers.d/clipboardbridge.conf
+install -d -m 0755 "${cbb%/*}"
+install -m 0755 "$bin" "$cbb"
+install -d -m 0755 "${sysusers%/*}"
+# SteamOS may drop /etc/group's changes with an update, so the sysusers
+# file says who is in the group too: the user who ran sudo, and those it
+# named before. systemd-sysusers adds them again after an update.
+members=
+if [ "$steamos" = yes ]; then
+	members=$(sed -n 's/^m \([^ ]*\) clipboardbridge$/\1/p' "$sysusers" 2>/dev/null || true)
+	if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+		members="$members $SUDO_USER"
+	fi
+fi
+{
+	cat "$here/clipboardbridge.sysusers"
+	# shellcheck disable=SC2086 # one name per word
+	for m in $(printf '%s\n' $members | sort -u); do
+		echo "m $m clipboardbridge"
+	done
+} >"$sysusers.new"
+chmod 0644 "$sysusers.new"
+mv "$sysusers.new" "$sysusers"
+systemd-sysusers "$sysusers"
 if [ "$moved" = yes ]; then
 	chown -R clipboardbridge:clipboardbridge /var/lib/clipboardbridge
 fi
-install -m 0644 "$here/clipboardbridge.service" /etc/systemd/system/clipboardbridge.service
+place 0644 "$here/clipboardbridge.service" /etc/systemd/system/clipboardbridge.service
 # Desktop sessions start the connector with the session; the lite member has
 # none.
 # Desktops with graphical-session.target start it as a user unit, which the
 # installer restarts after an update (below); others from the autostart entry.
 if [ "$kind" = full ]; then
 	install -d -m 0755 /etc/xdg/autostart /etc/systemd/user
-	install -m 0644 "$here/clipboardbridge-desktop.desktop" /etc/xdg/autostart/clipboardbridge-desktop.desktop
-	install -m 0644 "$here/clipboardbridge-agent.service" /etc/systemd/user/clipboardbridge-agent.service
+	place 0644 "$here/clipboardbridge-desktop.desktop" /etc/xdg/autostart/clipboardbridge-desktop.desktop
+	place 0644 "$here/clipboardbridge-agent.service" /etc/systemd/user/clipboardbridge-agent.service
 	systemctl --global enable clipboardbridge-agent.service >/dev/null 2>&1 || true
 fi
 
 # tmux reads /etc/tmux.conf; source the clipboardbridge part from there once.
-install -d -m 0755 /usr/local/share/clipboardbridge
-install -m 0644 "$here/../tmux/clipboardbridge.conf" /usr/local/share/clipboardbridge/tmux.conf
-line='source-file -q /usr/local/share/clipboardbridge/tmux.conf'
+install -d -m 0755 "$share"
+install -m 0644 "$here/../tmux/clipboardbridge.conf" "$share/tmux.conf"
+line="source-file -q $share/tmux.conf"
 if ! grep -qsF "$line" /etc/tmux.conf; then
 	echo "$line" >>/etc/tmux.conf
 fi
 if [ "$console" = yes ]; then
 	install -m 0644 "$here/../tmux/clipboardbridge-console.sh" /etc/profile.d/clipboardbridge-console.sh
-	install -m 0644 "$here/clipboardbridge-console.service" /etc/systemd/system/clipboardbridge-console.service
+	place 0644 "$here/clipboardbridge-console.service" /etc/systemd/system/clipboardbridge-console.service
 fi
 if [ "$uinput" = yes ]; then
 	if [ "$kind" != full ]; then
@@ -231,12 +290,44 @@ if [ "$uinput" = yes ]; then
 	fi
 	echo uinput >/etc/modules-load.d/clipboardbridge-uinput.conf
 	modprobe uinput 2>/dev/null || echo "install.sh: could not load the uinput module now; it loads at the next boot" >&2
-	install -m 0644 "$here/clipboardbridge-uinput.service" /etc/systemd/system/clipboardbridge-uinput.service
+	place 0644 "$here/clipboardbridge-uinput.service" /etc/systemd/system/clipboardbridge-uinput.service
 fi
 
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
 	usermod -a -G clipboardbridge "$SUDO_USER"
 	echo "Added $SUDO_USER to the clipboardbridge group; log in again to use cbb copy and paste."
+fi
+
+if [ "$steamos" = yes ]; then
+	# Login shells find cbb in /opt; sudo does not, so the messages name
+	# its whole path.
+	install -d -m 0755 /etc/profile.d
+	# shellcheck disable=SC2016 # expanded by the login shell
+	echo 'case ":$PATH:" in *:/opt/clipboardbridge/bin:*) ;; *) PATH=$PATH:/opt/clipboardbridge/bin ;; esac' >/etc/profile.d/clipboardbridge-path.sh
+	chmod 0644 /etc/profile.d/clipboardbridge-path.sh
+	# What SteamOS keeps of /etc across an update: its own list (the units
+	# in /etc/systemd/system and their links among them) and the drop-ins
+	# in /etc/atomic-update.conf.d, this one among them.
+	install -d -m 0755 /etc/atomic-update.conf.d
+	cat >/etc/atomic-update.conf.d/clipboardbridge.conf.new <<'EOF'
+# Written by clipboardbridge's install.sh: Clipboard Bridge's files in /etc,
+# which SteamOS keeps across its updates. uninstall.sh removes it.
+/etc/clipboardbridge/**
+/etc/sysusers.d/clipboardbridge.conf
+/etc/systemd/system/clipboardbridge.service.d/**
+/etc/systemd/system/clipboardbridge-update.timer
+/etc/systemd/user/clipboardbridge-agent.service
+/etc/systemd/user/graphical-session.target.wants/clipboardbridge-agent.service
+/etc/xdg/autostart/clipboardbridge-desktop.desktop
+/etc/profile.d/clipboardbridge-path.sh
+/etc/profile.d/clipboardbridge-console.sh
+/etc/modules-load.d/clipboardbridge-uinput.conf
+/etc/polkit-1/rules.d/60-clipboardbridge.rules
+/etc/firewalld/services/clipboardbridge.xml
+/etc/tmux.conf
+EOF
+	chmod 0644 /etc/atomic-update.conf.d/clipboardbridge.conf.new
+	mv /etc/atomic-update.conf.d/clipboardbridge.conf.new /etc/atomic-update.conf.d/clipboardbridge.conf
 fi
 
 # The settings: the ones given, else the ones kept from before, else the
@@ -313,8 +404,8 @@ fi
 # port from the other devices at home: firewall.sh adds them with the user's
 # consent, after taking away what it opened before, so a changed port leaves
 # nothing open behind it.
-install -m 0644 "$here/firewall.sh" /usr/local/share/clipboardbridge/firewall.sh
-install -m 0644 "$here/uninstall.sh" /usr/local/share/clipboardbridge/uninstall.sh
+install -m 0644 "$here/firewall.sh" "$share/firewall.sh"
+install -m 0644 "$here/uninstall.sh" "$share/uninstall.sh"
 case $firewall in
 ask | express | no) ;;
 yes) firewall=ask ;; # what get.sh passed before --express
@@ -323,7 +414,7 @@ yes) firewall=ask ;; # what get.sh passed before --express
 	exit 2
 	;;
 esac
-sh /usr/local/share/clipboardbridge/firewall.sh setup "$firewall" "$port"
+sh "$share/firewall.sh" setup "$firewall" "$port"
 if [ "$port" != 8764 ]; then
 	echo "Clipboard Bridge uses TCP port $port instead of 8764. If a firewall on the network"
 	echo "limits incoming connections, allow TCP $port from the home network. The iPhone shortcut"
@@ -358,7 +449,7 @@ answers() { # cbb
 	echo "install.sh: the service did not answer within 10 s: $out" >&2
 	return 1
 }
-answers /usr/local/bin/cbb || true
+answers "$cbb" || true
 
 # The agents running in desktop sessions still run the old binary: stop
 # them, and start the user unit again in each session that has one, so the
@@ -366,7 +457,7 @@ answers /usr/local/bin/cbb || true
 # graphical-session.target starts the agent again at its next login.
 if [ "$kind" = full ]; then
 	if command -v pkill >/dev/null 2>&1; then
-		pkill -x -f '/usr/local/bin/cbb agent' >/dev/null 2>&1 || true
+		pkill -x -f "$cbb agent" >/dev/null 2>&1 || true
 	fi
 	for dir in /run/user/*/systemd; do
 		[ -d "$dir" ] || continue
@@ -382,17 +473,22 @@ fi
 # the service reach every address), is brought in line with what the
 # service asks for now, once it answers.
 if [ "$kind" = full ] && [ -f /etc/systemd/system/clipboardbridge.service.d/away.conf ]; then
-	if ! /usr/local/bin/cbb global allow; then
+	if ! "$cbb" global allow; then
 		echo "install.sh: cbb global allow failed; run sudo cbb global allow once the service runs." >&2
 	fi
 fi
 # How this copy came, and automatic updates.
 # shellcheck source=packaging/update.sh
 . "$here/../update.sh"
-update_setup /usr/local/bin/cbb "$bin" "$auto"
-echo "Clipboard Bridge is running on TCP port $port. To remove it: sudo sh /usr/local/share/clipboardbridge/uninstall.sh"
+update_setup "$cbb" "$bin" "$auto"
+echo "Clipboard Bridge is running on TCP port $port. To remove it: sudo sh $share/uninstall.sh"
+# sudo looks for commands in its own PATH, without /opt/clipboardbridge/bin.
+run=cbb
+if [ "$steamos" = yes ]; then
+	run=$cbb
+fi
 if [ "$kind" = lite ]; then
-	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge cbb join here, and scan its QR code with the phone app."
+	echo "Next: see lite/README.md; in short, sudo -u clipboardbridge $run join here, and scan its QR code with the phone app."
 else
-	echo "Next: run sudo cbb pair and scan its QR code with the Clipboard Bridge app on your phone; without the app, see docs/guide/without-app.md."
+	echo "Next: run sudo $run pair and scan its QR code with the Clipboard Bridge app on your phone; without the app, see docs/guide/without-app.md."
 fi

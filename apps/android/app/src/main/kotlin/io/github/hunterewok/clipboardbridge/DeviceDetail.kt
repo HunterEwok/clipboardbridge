@@ -110,7 +110,7 @@ private fun Summary(d: LiveGroup.Device) {
         } else if (d.kind == DeviceKind.PHONE || d.kind == DeviceKind.TABLET) {
             add(Line(stringResource(R.string.mac_address), stringResource(R.string.hidden_by_system), dim = true))
         }
-        add(Line(stringResource(R.string.role), stringResource(roleTitle(d.role))))
+        add(Line(stringResource(R.string.role), stringResource(roleTitle(d.role, d.rootless))))
         d.standing?.let { add(Line(stringResource(R.string.in_the_group), stringResource(it))) }
         d.mode?.let { m -> modeTitle(m)?.let { add(Line(stringResource(R.string.sync_mode), stringResource(it))) } }
     }
@@ -134,12 +134,13 @@ private fun Summary(d: LiveGroup.Device) {
     }
 }
 
-private fun roleTitle(role: String) = when (role) {
+/** A rootless install is never an admin or a hub (D-79), so its role says so. */
+private fun roleTitle(role: String, rootless: Boolean) = when (role) {
     "phone" -> R.string.role_phone
     "lite" -> R.string.role_lite
     "shortcut" -> R.string.role_shortcut
     "watch" -> R.string.kind_watch
-    else -> R.string.role_full
+    else -> if (rootless) R.string.role_full_rootless else R.string.role_full
 }
 
 /** The sync modes, in the order the apps show them (docs/design.md, Sync modes). */

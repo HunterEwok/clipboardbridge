@@ -86,6 +86,9 @@ class PhoneGroup internal constructor(
      */
     class FileKey : Exception("its keys sit in a file")
 
+    /** The computer is a rootless install, which is never an admin (D-79). */
+    class Rootless : Exception("it is installed without root")
+
     /** Whether this phone may admit devices, renew certificates and remove devices: the root and the admins. */
     val isAdmin: Boolean get() = isRoot || adminCA != null
 
@@ -329,7 +332,8 @@ class PhoneGroup internal constructor(
      * CA. It returns the admin CA, for the admin message, and the record to
      * send. Only the root makes admins. keyStore is where the computer's
      * hello says its keys live; one that keeps them in a file becomes an
-     * admin only with allowFileKey, else it throws FileKey.
+     * admin only with allowFileKey, else it throws FileKey, and a rootless
+     * install never (Rootless).
      */
     fun makeAdmin(
         device: String,
@@ -345,6 +349,7 @@ class PhoneGroup internal constructor(
         if (d.frozen) throw Failure("frozen: unfreeze it or remove it")
         val proven = d.store == Records.PROVEN
         val store = if (proven) d.store else Records.storeOf(keyStore, d.role)
+        if (store == Records.ROOTLESS || d.store == Records.ROOTLESS) throw Rootless()
         if (store == Records.FILE && !allowFileKey) throw FileKey()
         val ca = GroupCertificates.adminCA(device, adminKey, currentRoot, rootSigner)
         val r = record(

@@ -25,6 +25,39 @@ login or lock screen.
 Small devices that should only sync, such as a router or a Raspberry Pi Zero, can take the
 lighter [lite member](../../lite/README.md) instead: `... | sudo sh -s -- --lite`.
 
+### Without sudo (rootless)
+
+On a Linux computer where you cannot or do not want to use `sudo`, install it for your own
+user, without `sudo`:
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh -s -- --rootless
+```
+
+It runs as your own background service while you are logged in, and syncs as any member.
+Use it only when the normal install is not possible: every program you run could copy its
+keys, so it can never be the group's root, an admin or the hub
+([how it works](how-it-works.md#rootless-members)), and it has no firewall rules, no TPM and
+no `--console` or `--uinput`. To keep it running after you log out, an administrator runs
+`sudo loginctl enable-linger YOUR-USER` once. To remove it:
+`sh ~/.local/share/clipboardbridge/uninstall.sh`.
+
+### SteamOS (Steam Deck)
+
+Switch to Desktop Mode, open Konsole, give the `deck` user a password once if it has none
+(`passwd`), and run the same command. SteamOS replaces its system files with each update, so
+the installer puts Clipboard Bridge in `/opt/clipboardbridge` instead of `/usr/local`, and
+tells SteamOS which of its files in `/etc` to keep (`/etc/atomic-update.conf.d/clipboardbridge.conf`).
+It stays installed and in its group across SteamOS updates.
+
+- `cbb` is in the path of a new Konsole after you log out and in again. `sudo` does not
+  look there, so commands that need it take the whole path:
+  `sudo /opt/clipboardbridge/bin/cbb pair`.
+- In Desktop Mode the clipboard syncs as on any KDE Plasma desktop.
+- In Game Mode there is no desktop clipboard, so nothing syncs there; the service keeps
+  running and catches up in Desktop Mode.
+- To remove it: `sudo sh /opt/clipboardbridge/share/uninstall.sh`.
+
 ## Mac
 
 Apple silicon or Intel, in Terminal, the same command as on Linux:
@@ -215,7 +248,8 @@ On Linux and a Mac:
 sudo sh /usr/local/share/clipboardbridge/uninstall.sh
 ```
 
-With Homebrew, run `brew uninstall clipboardbridge` after it.
+On SteamOS it is `sudo sh /opt/clipboardbridge/share/uninstall.sh`. With Homebrew, run
+`brew uninstall clipboardbridge` after it.
 
 On Windows: Settings, Apps, "Clipboard Bridge", Uninstall.
 

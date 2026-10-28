@@ -268,7 +268,7 @@ type helloBody struct {
 	// group, which it deletes once the group is upgraded.
 	OldKeys bool `json:"old_keys,omitempty"`
 	// KeyStore is where the sender says its keys live (group.StoreFile or
-	// group.StoreHardware); "" from a member before 0.6.
+	// group.StoreHardware or group.StoreRootless); "" from a member before 0.6.
 	KeyStore string `json:"key_store,omitempty"`
 	// Actions are the sender's quick actions that are on, for the
 	// buttons; absent from a member before 0.6.

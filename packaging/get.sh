@@ -15,6 +15,8 @@
 # member, --console also starts tmux after a login on the text console, and
 # --uinput adds the full member's uinput helper for remote paste on desktops
 # without another way to press keys.
+# --rootless, run without sudo (curl ... | sh -s -- --rootless), installs the
+# full member for the user who runs it, on Linux only (D-79).
 # CBB_ATTESTATION=require refuses to install unless GitHub's build
 # provenance attestation of the archive checks out (it needs gh, signed in);
 # CBB_ATTESTATION=skip does not check it. CBB_VERSION=v1.2.3 picks a
@@ -49,6 +51,7 @@ cgnat=
 auto=
 firewall=${CBB_FIREWALL:-ask}
 lite=no
+rootless=
 while [ $# -gt 0 ]; do
 	case $1 in
 	--console) console=--console ;;
@@ -82,8 +85,9 @@ while [ $# -gt 0 ]; do
 	--express) firewall=express ;;
 	--no-firewall) firewall=no ;;
 	--lite) lite=yes ;;
+	--rootless) rootless=--rootless ;;
 	*)
-		echo "get.sh: unknown option $1 (known: --lite, --console, --uinput, --port N, --home-cgnat on|off, --auto-update on|off, --express, --no-firewall)" >&2
+		echo "get.sh: unknown option $1 (known: --lite, --rootless, --console, --uinput, --port N, --home-cgnat on|off, --auto-update on|off, --express, --no-firewall)" >&2
 		exit 2
 		;;
 	esac
@@ -95,7 +99,15 @@ fail() {
 	exit 1
 }
 
-[ "$(id -u)" -eq 0 ] || fail "run it with sudo: curl -fsSL $repo/releases/latest/download/get.sh | sudo sh"
+if [ -n "$rootless" ]; then
+	[ "$(id -u)" -ne 0 ] || fail "--rootless installs for your own user: run it without sudo: curl -fsSL $repo/releases/latest/download/get.sh | sh -s -- --rootless"
+	if [ "$(uname -s)" != Linux ] || [ -f /etc/openwrt_release ]; then
+		fail "--rootless is for Linux computers"
+	fi
+	[ "$lite" = no ] || fail "--rootless is for the full member; install the lite member with sudo"
+else
+	[ "$(id -u)" -eq 0 ] || fail "run it with sudo: curl -fsSL $repo/releases/latest/download/get.sh | sudo sh"
+fi
 case $(uname -s) in
 Linux)
 	os=linux
@@ -327,7 +339,7 @@ elif [ "$os" = openwrt ]; then
 	# shellcheck disable=SC2086 # $port and $auto are words or none
 	sh "$tmp/$dir/packaging/openwrt/install.sh" $port $auto "$tmp/$dir/cbb"
 else
-	# shellcheck disable=SC2086 # $console, $uinput, $port, $cgnat and $auto are words or none
-	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $console $uinput $port $cgnat $auto "$tmp/$dir/cbb"
+	# shellcheck disable=SC2086 # $rootless, $console, $uinput, $port, $cgnat and $auto are words or none
+	CBB_FIREWALL=$firewall sh "$tmp/$dir/packaging/linux/install.sh" $rootless $console $uinput $port $cgnat $auto "$tmp/$dir/cbb"
 fi
 

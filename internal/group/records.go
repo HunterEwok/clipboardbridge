@@ -69,11 +69,13 @@ const (
 // section 17): in a file, which a thief with the device can copy, or in
 // hardware that never lets them out (the Secure Enclave, the Android
 // Keystore, a TPM), and proven there when the root checked an attestation
-// of the key.
+// of the key; rootless for a rootless install, whose keys are in a file
+// that every program of its user may read (D-79).
 const (
 	StoreFile     = "file"
 	StoreHardware = "hardware"
 	StoreProven   = "proven"
+	StoreRootless = "rootless"
 )
 
 // StoreOf reads the store field of a device record of role. A record
@@ -82,7 +84,7 @@ const (
 // as those versions kept them.
 func StoreOf(store, role string) string {
 	switch store {
-	case StoreFile, StoreHardware, StoreProven:
+	case StoreFile, StoreHardware, StoreProven, StoreRootless:
 		return store
 	}
 	if role == RolePhone || role == RoleWatch {

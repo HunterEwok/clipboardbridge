@@ -2,7 +2,7 @@
 # Architecture decisions
 
 For engineers. Every decision that shapes Clipboard Bridge, numbered once and never
-renumbered: the code, the changelog and the other documents cite them as D-1 to D-78. The
+renumbered: the code, the changelog and the other documents cite them as D-1 to D-79. The
 reasons and the details of each are in the [design](design.md) and the
 [protocol](protocol.md); this page is the register.
 
@@ -14,8 +14,8 @@ it would cost a migration. The pull request that makes it:
 1. adds a row below with the next free number and the status `accepted`, in one or two
    sentences: what was decided, and the main reason or the option it rules out;
 2. explains it where the work is described: a section of the design or the protocol, which
-   names the decision (`(D-79)`), with the options considered and the consequences;
-3. when it replaces an earlier one, sets that row's status to `replaced by D-79` and keeps
+   names the decision (`(D-80)`), with the options considered and the consequences;
+3. when it replaces an earlier one, sets that row's status to `replaced by D-80` and keeps
    its text, so that old references still make sense.
 
 A decision is never deleted. The statuses are `accepted`, `replaced by D-N` and
@@ -103,3 +103,4 @@ A decision is never deleted. The statuses are `accepted`, `replaced by D-N` and
 | D-76 | accepted | Official builds are told apart by the release signatures and the provenance attestation, not by the name: "Clipboard Bridge" is used by other, unrelated projects, so the project claims no exclusive right to it. BRAND.md asks builds with changes not to use the icon, `cbb.tools` as their default or an official look, and to take their own name and app identifiers. |
 | D-77 | accepted | The text of docs/protocol.md is under CC BY 4.0, so compatible implementations may use any license; the code stays under AGPL-3.0-only. |
 | D-78 | accepted | No additional permission for app stores for now: one can be added at any time but not taken back from released versions; whoever needs a store asks for a commercial license. |
+| D-79 | accepted | A full member on Linux may be installed without root (`rootless`), as the user's own systemd service with its files in the user's home: it says so in its hello and its device record, and it is never the root, an admin or a hub, not even after a warning, since every program of the user can read its keys. The system install stays the default and the advice; on SteamOS it is kept across updates under `/opt` rather than made rootless. |

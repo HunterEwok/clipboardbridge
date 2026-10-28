@@ -104,6 +104,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val canMakeAdmin: Boolean = false,
         /** Its keys sit in a file, as its hello or else its record says: a thief with it can copy them. */
         val keysInFile: Boolean = false,
+        /** It is a rootless install, as its hello or else its record says: never an admin or a hub (D-79). */
+        val rootless: Boolean = false,
         /** An admin computer another admin froze: the root or an admin phone unfreezes or removes it. */
         val frozen: Boolean = false,
         /** What its hello says about its device, while it is connected; this phone's own for itself. */
@@ -233,6 +235,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                     admin = it.admin || it.id == root, isRoot = it.id == root,
                     canMakeAdmin = g.isRoot && !it.admin && !it.frozen && it.role == "full" && offers[it.id] != null,
                     keysInFile = KitRecords.storeOf(stores[it.id] ?: it.store, it.role) == KitRecords.FILE,
+                    rootless = KitRecords.storeOf(stores[it.id] ?: it.store, it.role) == KitRecords.ROOTLESS,
                     frozen = it.frozen,
                     device = if (it.id == g.device) ownDevice.cleaned else infos[it.id],
                     mode = if (it.id == g.device) syncMode else modes[it.id],
@@ -1051,12 +1054,14 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      * as admin"): the root key certifies the admin key the computer offers;
      * the computer gets its admin CA and every member the new record. A
      * computer whose keys sit in a file becomes one only with allowFileKey,
-     * after the user read the warning; else PhoneGroup.FileKey.
+     * after the user read the warning; else PhoneGroup.FileKey. A rootless
+     * install never (PhoneGroup.Rootless).
      */
     suspend fun makeAdmin(id: String, allowFileKey: Boolean = false) {
         val n = synchronized(lock) { if (state?.isRoot == true) node else null }
         val key = n?.offeredAdminKeys?.get(id) ?: throw Failure(Failure.Kind.NOT_ADMIN)
         val store = n.keyStores[id]
+        if (KitRecords.storeOf(store, "full") == KitRecords.ROOTLESS) throw PhoneGroup.Rootless()
         if (KitRecords.storeOf(store, "full") == KitRecords.FILE && !allowFileKey) throw PhoneGroup.FileKey()
         val root = caSigner(R.string.reason_make_admin)
         val g = copyOfState() ?: return

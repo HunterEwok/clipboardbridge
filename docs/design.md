@@ -2380,6 +2380,71 @@ Steps, one pull request each, smaller ones together:
    never makes the group, with the case P35 in [testbench.md](testbench.md); as the hub it
    is a manual step, by the owner's choice.
 
+### SteamOS
+
+Built in 0.6; not yet run on a real Steam Deck.
+
+SteamOS has systemd, and in Desktop Mode it is KDE Plasma on Wayland, so the service and the
+desktop connector are the Linux ones (data-control for the clipboard, the RemoteDesktop
+portal for remote paste). What differs is the file system: `/` is read-only and replaced by
+each system update, `/var` is copied to the new image, `/opt` lives in `/home`, and of `/etc`
+an update keeps only what a keep list names (Valve's own and the drop-ins in
+`/etc/atomic-update.conf.d`). `packaging/linux/install.sh` therefore, when `/etc/os-release`
+says `ID=steamos`:
+
+- puts the binary in `/opt/clipboardbridge/bin` and its own files in
+  `/opt/clipboardbridge/share`, and writes that path into the units and the autostart entry;
+- writes the service's sysusers file to `/etc/sysusers.d`, with the users of the
+  `clipboardbridge` group as `m` lines, so that `systemd-sysusers` makes the account and the
+  memberships again after an update even if `/etc/group` was not kept;
+- names every file it writes in `/etc` in `/etc/atomic-update.conf.d/clipboardbridge.conf`
+  (the units in `/etc/systemd/system` and their links are on Valve's list already);
+- adds `/opt/clipboardbridge/bin` to the login shells' path (`sudo` keeps its own, so its
+  messages name the whole path).
+
+The program knows this layout by its own path (`internal/steamos`): run from
+`/opt/clipboardbridge/bin/cbb`, it keeps cbb update's folder in `/opt/clipboardbridge-update`,
+since `/var` is small there, and finds `firewall.sh` in `/opt`. Game Mode runs gamescope,
+which has no clipboard that a client can read or write, so the Steam Deck syncs only in
+Desktop Mode.
+
+### Rootless installs
+
+Built in 0.6 (D-79, roadmap item 39): `sh install.sh --rootless`
+(`packaging/linux/install-rootless.sh`) and `internal/rootless`; CI installs and removes one.
+Not yet run on a desktop session.
+
+Every install so far needs root once: for the service's own account, the system unit, its
+sandbox and the firewall. Some users cannot or will not give it, on a computer at work for
+example. A rootless install runs the same full member as the user's systemd user unit, with
+the binary, the state and the settings in the user's home, and the control socket in the
+user's runtime directory.
+
+What it costs is what root bought: a separate account that keeps the device's keys from
+every other program the user runs, systemd's sandbox and its address limit (D-61 is then the
+program's own limit only), the TPM (whose device only the `tss` group opens), the uinput and
+console helpers, the firewall rules, and running before the user logs in (unless the user
+has lingering). So a rootless device:
+
+- says `rootless` in its hello's `key_store` and gets it as `store` in its device record
+  (docs/protocol.md, section 17); a reader that does not know the value takes it as `file`;
+- is never the group's root, an admin or a hub, not even after the warning that lets a
+  device with keys in a file be one (D-66): any program of the user can copy its keys;
+- has quick actions and remote paste off, as every device until its own user turns them on
+  (D-71);
+- is shown as rootless in `cbb status` and on the phones' device pages.
+
+The program knows it is one by `CBB_ROOTLESS=1`, which its user units set, or else by its
+own path, `~/.local/bin/cbb`, so the user's own commands find the user's service: the
+control socket in `$XDG_RUNTIME_DIR/clipboardbridge`, the state in
+`~/.local/state/clipboardbridge`, the settings in `~/.config/clipboardbridge`, cbb update's
+folder in `~/.local/state/clipboardbridge-update` and its timer among the user units. The
+admin socket is the user's too, so `cbb pair` needs no `sudo`; it can do little, since the
+device holds no key that admits or removes others.
+
+The system install stays the default and the advice. A Steam Deck takes the system install
+(above), since its user has `sudo`.
+
 ### FreeBSD
 
 Built in 0.6.
