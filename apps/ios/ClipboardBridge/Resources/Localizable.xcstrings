@@ -1044,6 +1044,16 @@
         }
       }
     },
+    "Lite member, rootless": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Лёгкий участник, rootless"
+          }
+        }
+      }
+    },
     "Lost a phone? Make a second phone an admin: on it, tap I already use Clipboard Bridge on another phone, then scan its code here with +.": {
       "localizations": {
         "ru": {

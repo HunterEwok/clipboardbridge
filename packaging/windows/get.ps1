@@ -38,9 +38,12 @@
 	$details = $env:CBB_ERROR_DETAILS -eq '1'
 
 	# The project's release root keys (docs/protocol.md, section 16), base64
-	# SubjectPublicKeyInfos, which sign keys.json. None yet: until they are
-	# made, releases carry no signed files and nothing is checked.
-	$releaseRoots = @()
+	# SubjectPublicKeyInfos, which sign keys.json: two YubiKeys, as
+	# internal/release/roots/roots.pem.
+	$releaseRoots = @(
+		'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9sLfrcGBi23XveQN8dK8Z+lbEuxTLOgnQ9s/gzp/k7xx88IFvkdMuyoL2K7j1necQGYLmq3ifie9wDrF69AO/A==',
+		'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExGbAq55XGXip3Dtq6jsM2bOYUeoYfDxsggXLisjwoCQoDM28pCYkIoZAfcjwR3aAGOAUWZX+L53og7/TLLpnfg=='
+	)
 
 	# Invoke-Quietly runs a program without its output and returns its exit
 	# code. Windows PowerShell 5.1 turns a program's redirected stderr into

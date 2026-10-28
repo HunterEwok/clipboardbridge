@@ -2070,7 +2070,7 @@ docs/protocol.md, section 16.
 #### The signed manifest
 
 - **Two tiers of keys.** Two **root keys**, each on its own hardware key (YubiKey) kept
-  offline and apart, certify the **release key** in `keys.json`. The release key lives in
+  apart, in a spare PIV slot with the PIN and a touch for every signature, certify the **release key** in `keys.json`. The release key lives in
   the Secure Enclave of the owner's Mac and asks for Touch ID at each signature; `keys.json`
   expires and is signed again every 90 days. The programs pin the root keys, so a lost or
   stolen Mac is replaced by a new release key certified by a root, with no reinstall, and a
@@ -2411,12 +2411,13 @@ Desktop Mode.
 ### Rootless installs
 
 Built in 0.6 (D-79, roadmap item 39): `sh install.sh --rootless`
-(`packaging/linux/install-rootless.sh`) and `internal/rootless`; CI installs and removes one.
+(`packaging/linux/install-rootless.sh`), `internal/rootless` and the lite member's
+`lite/src/rootless.rs`; CI installs and removes a full member and a lite member this way.
 Not yet run on a desktop session.
 
 Every install so far needs root once: for the service's own account, the system unit, its
 sandbox and the firewall. Some users cannot or will not give it, on a computer at work for
-example. A rootless install runs the same full member as the user's systemd user unit, with
+example. A rootless install runs the same full member, or the lite member, as the user's systemd user unit, with
 the binary, the state and the settings in the user's home, and the control socket in the
 user's runtime directory.
 
@@ -2433,6 +2434,14 @@ has lingering). So a rootless device:
 - has quick actions and remote paste off, as every device until its own user turns them on
   (D-71);
 - is shown as rootless in `cbb status` and on the phones' device pages.
+
+A rootless lite member loses little more than its own account, since it never holds CA keys
+and is never an admin or a hub anyway: its text console target (the console helper needs
+`CAP_SYS_ADMIN`, so `cbb paste-receive on -console` refuses) and the quick actions that need
+a polkit rule (`reboot` and `cancel-shutdown`; `restart` stays). Remote paste into tmux, sync
+away from home and updates work as in a system install. It is not the advice for a router or
+a board without a screen: OpenWrt has no user services, and a user service starts at boot
+only when an administrator lets the user linger.
 
 The program knows it is one by `CBB_ROOTLESS=1`, which its user units set, or else by its
 own path, `~/.local/bin/cbb`, so the user's own commands find the user's service: the

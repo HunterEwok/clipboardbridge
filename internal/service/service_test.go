@@ -37,6 +37,12 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 )
 
+func init() {
+	// The tests never fetch the revocation list from cbb.tools: a test
+	// that needs it serves its own (admin_test.go).
+	statusRoots = func() [][]byte { return nil }
+}
+
 // hub is a fake network for discovery: every member sees the others on the
 // loopback address. Like the mdns responder, each member gets its lists on
 // its own Run goroutine, in order, and none after Run returned.

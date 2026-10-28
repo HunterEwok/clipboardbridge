@@ -25,9 +25,25 @@ use crate::error::{Context, Error, Result};
 use crate::files::write_atomic;
 
 /// The release root keys, SubjectPublicKeyInfos in DER, as Go's
-/// release.Roots: none until the project's hardware keys exist, and
-/// cbb update says so.
-pub const ROOTS: &[&[u8]] = &[];
+/// release.Roots (internal/release/roots/roots.pem): two YubiKeys.
+pub const ROOTS: &[&[u8]] = &[
+    &[
+        0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48,
+        0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00, 0x04, 0xf6, 0xc2, 0xdf, 0xad, 0xc1, 0x81, 0x8b, 0x6d, 0xd7,
+        0xbd, 0xe4, 0x0d, 0xf1, 0xd2, 0xbc, 0x67, 0xe9, 0x5b, 0x12, 0xec, 0x53, 0x2c, 0xe8, 0x27, 0x43, 0xdb, 0x3f,
+        0x83, 0x3a, 0x7f, 0x93, 0xbc, 0x71, 0xf3, 0xc2, 0x05, 0xbe, 0x47, 0x4c, 0xbb, 0x2a, 0x0b, 0xd8, 0xae, 0xe3,
+        0xd6, 0x77, 0x9c, 0x40, 0x66, 0x0b, 0x9a, 0xad, 0xe2, 0x7e, 0x27, 0xbd, 0xc0, 0x3a, 0xc5, 0xeb, 0xd0, 0x0e,
+        0xfc,
+    ],
+    &[
+        0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48,
+        0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00, 0x04, 0xc4, 0x66, 0xc0, 0xab, 0x9e, 0x57, 0x19, 0x78, 0xa9,
+        0xdc, 0x3b, 0x6a, 0xea, 0x3b, 0x0c, 0xd9, 0xb3, 0x98, 0x51, 0xea, 0x18, 0x7c, 0x3c, 0x6c, 0x82, 0x05, 0xcb,
+        0x8a, 0xc8, 0xf0, 0xa0, 0x24, 0x28, 0x0c, 0xcd, 0xbc, 0xa4, 0x26, 0x24, 0x22, 0x86, 0x40, 0x7d, 0xc8, 0xf0,
+        0x47, 0x76, 0x80, 0x18, 0xe0, 0x14, 0x59, 0x95, 0xfe, 0x2f, 0x9d, 0xe8, 0x83, 0xbf, 0xd3, 0x2c, 0xba, 0x67,
+        0x7e,
+    ],
+];
 pub const CHANNEL: &str = "stable";
 const GITHUB: &str = "https://github.com/HunterEwok/clipboardbridge/releases";
 pub const MIRROR: &str = "https://dl.cbb.tools";
@@ -67,7 +83,10 @@ fn is_zero(n: &i64) -> bool {
 /// The updater's folder, which only root may change, and where it
 /// downloads: on OpenWrt /etc, which survives a sysupgrade, and RAM.
 pub fn paths() -> (PathBuf, PathBuf) {
-    if crate::openwrt() {
+    if crate::rootless::is() {
+        let d = crate::rootless::update_dir();
+        (d.clone(), d)
+    } else if crate::openwrt() {
         (PathBuf::from("/etc/clipboardbridge-update"), PathBuf::from("/tmp/clipboardbridge-update"))
     } else {
         (PathBuf::from("/var/lib/clipboardbridge-update"), PathBuf::from("/var/lib/clipboardbridge-update"))
@@ -417,12 +436,12 @@ pub fn prefixed(e: Error, p: &str) -> Error {
 /// nothing and keeps the settings.
 pub fn install(root: &Path, bin: &Path) -> Result<()> {
     let script = if crate::openwrt() { "packaging/openwrt/install.sh" } else { "packaging/linux/install.sh" };
-    let out = Command::new("sh")
-        .arg(root.join(script))
-        .arg(bin)
-        .env("CBB_UPDATING", "1")
-        .output()
-        .context("cannot run install.sh")?;
+    let mut cmd = Command::new("sh");
+    cmd.arg(root.join(script));
+    if crate::rootless::is() {
+        cmd.arg("--rootless");
+    }
+    let out = cmd.arg(bin).env("CBB_UPDATING", "1").output().context("cannot run install.sh")?;
     if out.status.success() {
         return Ok(());
     }
@@ -448,7 +467,10 @@ pub fn wait_healthy(status: &dyn Fn() -> Result<String>, version: &str, within: 
             Ok(v) => Error::msg(format!("it runs {v}")),
             // Not the hint to start the service: the previous version goes
             // back in and starts. The cause stays for -debug.
-            Err(e) => e.context("it does not answer; journalctl -u clipboardbridge (logread on OpenWrt) tells why"),
+            Err(e) => e.context(format!(
+                "it does not answer; {} -u clipboardbridge (logread on OpenWrt) tells why",
+                crate::rootless::journalctl()
+            )),
         };
         if start.elapsed() >= within {
             return Err(last);
@@ -497,8 +519,24 @@ pub fn set_timer(on: bool, exe: &Path) -> Result<()> {
     if crate::openwrt() {
         return cron_timer(on, exe);
     }
+    // A rootless install's timer is one of the user's own units.
+    let user = crate::rootless::is();
+    let (service_file, timer_file) = if user {
+        let d = crate::rootless::unit_dir();
+        (d.join("clipboardbridge-update.service"), d.join("clipboardbridge-update.timer"))
+    } else {
+        (PathBuf::from(SYSTEMD_SERVICE), PathBuf::from(SYSTEMD_TIMER))
+    };
+    let systemctl = |args: &[&str]| {
+        let mut c = Command::new("systemctl");
+        if user {
+            c.arg("--user");
+        }
+        c.args(args);
+        c
+    };
     let run = |args: &[&str]| -> Result<()> {
-        let o = Command::new("systemctl").args(args).output().context("cannot run systemctl")?;
+        let o = systemctl(args).output().context("cannot run systemctl")?;
         if o.status.success() {
             Ok(())
         } else {
@@ -506,10 +544,12 @@ pub fn set_timer(on: bool, exe: &Path) -> Result<()> {
         }
     };
     if !on {
-        let _ = Command::new("systemctl").args(["disable", "--now", "clipboardbridge-update.timer"]).output();
-        for p in [SYSTEMD_TIMER, SYSTEMD_SERVICE] {
+        let _ = systemctl(&["disable", "--now", "clipboardbridge-update.timer"]).output();
+        for p in [&timer_file, &service_file] {
             match fs::remove_file(p) {
-                Err(e) if e.kind() != ErrorKind::NotFound => return Err(Error::with(format!("cannot remove {p}"), e)),
+                Err(e) if e.kind() != ErrorKind::NotFound => {
+                    return Err(Error::with(format!("cannot remove {}", p.display()), e));
+                }
                 _ => {}
             }
         }
@@ -524,8 +564,11 @@ pub fn set_timer(on: bool, exe: &Path) -> Result<()> {
     );
     let timer = "# Written by cbb update -auto on; cbb update -auto off removes it.\n[Unit]\nDescription=Check for a Clipboard Bridge update once a day\n\n\
                  [Timer]\nOnCalendar=daily\nRandomizedDelaySec=6h\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n";
-    write_atomic(Path::new(SYSTEMD_SERVICE), service.as_bytes(), 0o644)?;
-    write_atomic(Path::new(SYSTEMD_TIMER), timer.as_bytes(), 0o644)?;
+    if user {
+        fs::create_dir_all(timer_file.parent().unwrap()).context("cannot make the user's unit folder")?;
+    }
+    write_atomic(&service_file, service.as_bytes(), 0o644)?;
+    write_atomic(&timer_file, timer.as_bytes(), 0o644)?;
     run(&["daemon-reload"])?;
     run(&["enable", "--now", "clipboardbridge-update.timer"])
 }

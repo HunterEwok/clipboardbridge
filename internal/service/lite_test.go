@@ -77,8 +77,18 @@ func TestLiteNotDialed(t *testing.T) {
 // dir; it is stopped by stop or at the end of the test.
 func startLite(t *testing.T, bin, dir string, args ...string) *testService {
 	t.Helper()
+	return startLiteEnv(t, bin, dir, nil, args...)
+}
+
+// startLiteEnv is startLite with env added to the lite member's
+// environment.
+func startLiteEnv(t *testing.T, bin, dir string, env []string, args ...string) *testService {
+	t.Helper()
 	s := &testService{name: "lite", dir: dir, socket: filepath.Join(dir, "c.sock")}
 	cmd := exec.Command(bin, append([]string{"-state", dir, "-socket", s.socket, "-debug", "run"}, args...)...)
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.Stdout, cmd.Stderr = testWriter{t, "lite: "}, testWriter{t, "lite: "}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -678,5 +688,52 @@ func TestLiteMemberAway(t *testing.T) {
 	})
 	if _, err := away.do(t, control.Header{Op: control.OpAway, Name: "off"}, ""); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestLiteRootless runs the lite member as a rootless install (D-79): its
+// hello says so, the root records it as rootless, and it refuses the
+// console and the reboot, which need root. CBB_LITE names the binary.
+func TestLiteRootless(t *testing.T) {
+	bin := os.Getenv("CBB_LITE")
+	if bin == "" {
+		t.Skip("CBB_LITE is not set")
+	}
+	var h hub
+	pi := startService(t, &h, "pi")
+	if _, err := pi.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
+		t.Fatal(err)
+	}
+	dir := joinLite(t, bin, pi)
+	pa, _ := pi.addrs()
+	free, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := free.Addr().(*net.TCPAddr).Port
+	free.Close()
+	lite := startLiteEnv(t, bin, dir, []string{"CBB_ROOTLESS=1"}, "-no-mdns", "-port", strconv.Itoa(port), "-peer", pa)
+	waitFor(t, "lite recorded as rootless", func() bool {
+		for _, d := range pi.devices(t) {
+			if d.Name == "lite" {
+				return d.Store == group.StoreRootless && d.Role == group.RoleLite
+			}
+		}
+		return false
+	})
+	run := func(args ...string) (string, error) {
+		cmd := exec.Command(bin, append([]string{"-socket", lite.socket}, args...)...)
+		cmd.Env = append(os.Environ(), "CBB_ROOTLESS=1")
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := run("paste-receive", "on", "-console"); err == nil || !strings.Contains(out, "without root") {
+		t.Fatalf("paste-receive -console, rootless: %v; %s", err, out)
+	}
+	if out, err := run("action", "enable", "reboot", "-yes"); err == nil || !strings.Contains(out, "without root") {
+		t.Fatalf("action enable reboot, rootless: %v; %s", err, out)
+	}
+	if out, err := run("action", "enable", "restart", "-yes"); err != nil {
+		t.Fatalf("action enable restart, rootless: %v; %s", err, out)
 	}
 }

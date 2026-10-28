@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The project's release root keys: two P-256 keys made on two YubiKeys, with the PIN and a
+  touch for every signature, in `internal/release/roots` with Yubico's attestation that
+  they were made on the keys. `get.sh`, `get.ps1`, `cbb update`, the lite member's
+  `cbb update` and the Android app's own update now check releases against them; a release
+  before 0.6 has no signed files, so a new `get.sh` or `get.ps1` installs one only with
+  `CBB_VERIFY=skip`.
 - SteamOS: `install.sh` (and so `get.sh`) puts Clipboard Bridge in `/opt/clipboardbridge`
   on a Steam Deck, whose system files each update replaces, and lists its files in `/etc`
   in SteamOS's keep list, so the install and the device's group survive SteamOS updates;
@@ -18,7 +24,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   files in the user's home. Its hello and device record say `rootless`, and it is never the
   group's root, an admin or a hub, not even after a warning: the service refuses the keys,
   the root and the phones refuse to make it an admin, and `cbb status` and the phones'
-  device pages show it.
+  device pages show it. The lite member installs this way too (`get.sh --lite --rootless`),
+  without the text console target and the reboot action, which need root.
 - The roadmap plans Apple Vision Pro (item 40).
 - The model of the device tiles' own order and collections, for the apps' Arrange mode
   that follows: the same rules in the tray app (Go), the Android kit (Kotlin) and the

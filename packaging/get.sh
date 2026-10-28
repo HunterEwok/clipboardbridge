@@ -16,7 +16,8 @@
 # --uinput adds the full member's uinput helper for remote paste on desktops
 # without another way to press keys.
 # --rootless, run without sudo (curl ... | sh -s -- --rootless), installs the
-# full member for the user who runs it, on Linux only (D-79).
+# full member, or with --lite the lite member, for the user who runs it, on
+# Linux only (D-79).
 # CBB_ATTESTATION=require refuses to install unless GitHub's build
 # provenance attestation of the archive checks out (it needs gh, signed in);
 # CBB_ATTESTATION=skip does not check it. CBB_VERSION=v1.2.3 picks a
@@ -104,7 +105,6 @@ if [ -n "$rootless" ]; then
 	if [ "$(uname -s)" != Linux ] || [ -f /etc/openwrt_release ]; then
 		fail "--rootless is for Linux computers"
 	fi
-	[ "$lite" = no ] || fail "--rootless is for the full member; install the lite member with sudo"
 else
 	[ "$(id -u)" -eq 0 ] || fail "run it with sudo: curl -fsSL $repo/releases/latest/download/get.sh | sudo sh"
 fi
@@ -214,9 +214,15 @@ if [ "$lite" = yes ]; then
 fi
 
 # The project's release root keys (docs/protocol.md, section 16), which sign
-# keys.json. None yet: until they are made, releases carry no signed files
-# and verify_release only says so.
-release_roots=''
+# keys.json: two YubiKeys, as internal/release/roots/roots.pem.
+release_roots='-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9sLfrcGBi23XveQN8dK8Z+lbEuxT
+LOgnQ9s/gzp/k7xx88IFvkdMuyoL2K7j1necQGYLmq3ifie9wDrF69AO/A==
+-----END PUBLIC KEY-----
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExGbAq55XGXip3Dtq6jsM2bOYUeoY
+fDxsggXLisjwoCQoDM28pCYkIoZAfcjwR3aAGOAUWZX+L53og7/TLLpnfg==
+-----END PUBLIC KEY-----'
 
 # field NAME FILE prints the string field NAME of the compact JSON in FILE,
 # number NAME FILE a number field: enough for the files Go's encoding/json

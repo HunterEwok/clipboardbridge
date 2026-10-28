@@ -2470,7 +2470,7 @@ far.
   `hardware`, a Linux computer whose member key is in its TPM `hardware`, a rootless
   install (below) `rootless`, the other computers and the lite member `file`. A device that
   cannot tell sends `file`.
-- **Rootless installs** (D-79). A full member installed and run without root, as its
+- **Rootless installs** (D-79). A full member or a lite member installed and run without root, as its
   user's own service, keeps its keys in a file that every program of that user may read. Its
   hello says `rootless`; a computer that is the group's root records such a
   member with `store` `rootless`, without `admin`, `kind` or `proof`, also over a record that
