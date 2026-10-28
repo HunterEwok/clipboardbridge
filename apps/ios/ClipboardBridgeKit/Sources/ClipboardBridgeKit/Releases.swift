@@ -18,9 +18,12 @@ public enum Releases {
     public static let maxLifetimeMS: Int64 = 100 * 24 * 3600 * 1000
     /// The longest attest-status.json stays valid after it was signed.
     public static let maxStatusLifetimeMS: Int64 = 8 * 24 * 3600 * 1000
-    /// The pinned root keys (SubjectPublicKeyInfos, DER); empty until the
-    /// project's root keys exist.
-    public static let roots: [Data] = []
+    /// The pinned root keys (SubjectPublicKeyInfos, DER), two YubiKeys, as
+    /// internal/release/roots/roots.pem.
+    public static let roots: [Data] = [
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9sLfrcGBi23XveQN8dK8Z+lbEuxTLOgnQ9s/gzp/k7xx88IFvkdMuyoL2K7j1necQGYLmq3ifie9wDrF69AO/A==",
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExGbAq55XGXip3Dtq6jsM2bOYUeoYfDxsggXLisjwoCQoDM28pCYkIoZAfcjwR3aAGOAUWZX+L53og7/TLLpnfg==",
+    ].map { Data(base64Encoded: $0)! }
 
     public static let useRelease = "release"
     public static let useStatus = "status"

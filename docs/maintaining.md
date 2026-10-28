@@ -160,8 +160,8 @@ Rules for workflows:
 ## Signed releases
 
 The release files of docs/protocol.md, section 16, are made with `tools/release-sign` on
-the maintainer's Mac; the keys never reach CI. The roots are not made yet, so releases are
-not signed and the installers check nothing; the steps below are the plan.
+the maintainer's Mac; the keys never reach CI. The roots were made on 2026-10-28
+(`internal/release/roots`, with their attestations); releases from 0.6 on are signed.
 
 - **The root keys**, once: one on each of two YubiKeys, kept apart, with a PIN and touch
   for every signature. The YubiKeys may be in daily use for other things: the root goes
