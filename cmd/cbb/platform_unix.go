@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/HunterEwok/clipboardbridge/internal/openwrt"
+	"github.com/HunterEwok/clipboardbridge/internal/rootless"
 )
 
 // runService runs the service until a signal stops it; systemd and launchd
@@ -40,6 +41,8 @@ func defaultStateDir() string {
 		return d
 	}
 	switch {
+	case rootless.Is():
+		return rootless.StateDir()
 	case runtime.GOOS == "darwin":
 		return "/Library/Application Support/clipboardbridge/state"
 	case runtime.GOOS == "freebsd":

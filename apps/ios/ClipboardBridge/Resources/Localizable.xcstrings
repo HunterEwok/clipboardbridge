@@ -804,6 +804,26 @@
         }
       }
     },
+    "This computer is installed without root, so any of its programs can read its keys. It can never be an admin.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот компьютер установлен без root, поэтому его ключи может прочитать любая его программа. Он никогда не станет админом."
+          }
+        }
+      }
+    },
+    "Full member, rootless": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Полный участник, rootless"
+          }
+        }
+      }
+    },
     "Game console": {
       "localizations": {
         "ru": {

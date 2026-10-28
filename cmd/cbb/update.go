@@ -21,6 +21,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/release"
+	"github.com/HunterEwok/clipboardbridge/internal/rootless"
 	"github.com/HunterEwok/clipboardbridge/internal/update"
 	"github.com/HunterEwok/clipboardbridge/internal/version"
 )
@@ -91,7 +92,8 @@ func cmdUpdate(args []string, stdout, stderr io.Writer) int {
 			return fail(stderr, err)
 		}
 	}
-	elevated := isElevated()
+	// A rootless install updates itself as its own user.
+	elevated := isElevated() || rootless.Is()
 	needAdmin := func() int {
 		if runtime.GOOS == "windows" {
 			fmt.Fprintln(stderr, "cbb: run it in a terminal opened as administrator")

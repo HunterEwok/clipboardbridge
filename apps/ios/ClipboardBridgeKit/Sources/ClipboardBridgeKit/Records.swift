@@ -55,15 +55,18 @@ public enum Records {
     public static let hardware = "hardware"
     /// A key in hardware whose attestation a signer checked.
     public static let proven = "proven"
+    /// A rootless install's keys: in a file every program of its user may
+    /// read, so the device is never the root, an admin or a hub (D-79).
+    public static let rootless = "rootless"
 
     /// Where a device's keys live, as its record's store field says
-    /// (docs/protocol.md, section 17): file, hardware or proven. Without
+    /// (docs/protocol.md, section 17): file, hardware, proven or rootless. Without
     /// one, as before 0.6, or with one this version does not know, a
     /// phone's and a watch's keys are in hardware and any other device's in
     /// a file.
     public static func store(_ store: String?, role: String) -> String {
         switch store {
-        case let s? where s == file || s == hardware || s == proven: s
+        case let s? where s == file || s == hardware || s == proven || s == rootless: s
         default: role == "phone" || role == "watch" ? hardware : file
         }
     }
@@ -231,7 +234,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// Every key that a counting device record names for it and that is
         /// not revoked, key among them: what removing it revokes.
         public var keys: [Data] = []
-        /// Where its keys live: Records.file, Records.hardware or Records.proven.
+        /// Where its keys live: Records.file, Records.hardware, Records.proven
+        /// or Records.rootless.
         public var store = Records.file
         /// The kind of hardware and the hash of the attestation the root
         /// checked, if any.

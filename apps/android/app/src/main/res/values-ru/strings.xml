@@ -73,6 +73,7 @@
     <string name="error_image_unavailable">Не удалось получить картинку с компьютеров. Скопируйте её там ещё раз и повторите.</string>
     <string name="error_not_admin">Это может только телефон-админ.</string>
     <string name="error_file_key">Этот компьютер хранит ключи в файле. Сначала сделайте его админом на его странице: там сказано, что это значит.</string>
+    <string name="error_rootless">Этот компьютер установлен без root, поэтому его ключи может прочитать любая его программа. Он никогда не станет админом.</string>
     <string name="error_unreachable">Не удалось связаться с компьютером. Он в той же сети, что и телефон, и пропускает ли его файрвол Clipboard Bridge?</string>
     <string name="error_wrong_code">Код не совпал. Запустите cbb pair на компьютере ещё раз и отсканируйте новый код.</string>
     <string name="error_refused">Компьютер отказал. Запустите на нём cbb pair ещё раз.</string>
@@ -201,6 +202,7 @@
     <string name="error_command_refused">Компьютер отказался.</string>
     <string name="error_no_answer">Компьютер не ответил. Возможно, он не в сети или на нём старая версия Clipboard Bridge.</string>
     <string name="role_full">Полный участник</string>
+    <string name="role_full_rootless">Полный участник, rootless</string>
     <string name="role_lite">Лёгкий участник</string>
     <string name="role_phone">Приложение на телефоне</string>
     <string name="role_shortcut">Быстрая команда</string>

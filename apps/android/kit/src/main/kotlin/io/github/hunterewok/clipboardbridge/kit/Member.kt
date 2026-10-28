@@ -694,7 +694,7 @@ object Member {
                             tunnelPSK = h.optBytes("tunnel_psk"),
                             device = DeviceInfo.fromJson(h.opt("device")),
                             mode = h.optString("mode")?.takeIf { it in MODES },
-                            keyStore = h.optString("key_store")?.takeIf { it == Records.FILE || it == Records.HARDWARE },
+                            keyStore = h.optString("key_store")?.takeIf { it == Records.FILE || it == Records.HARDWARE || it == Records.ROOTLESS },
                             actions = (h.opt("actions") as? JsonArray).orEmpty()
                                 .mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
                                 .filter { Commands.validActionName(it) }

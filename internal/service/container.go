@@ -6,6 +6,8 @@ package service
 import (
 	"errors"
 	"os"
+
+	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
 // The image sets CBB_CONTAINER (packaging/docker/Dockerfile). A container
@@ -32,11 +34,29 @@ var errKeysInContainer = errors.New("this device runs in a container, whose keys
 	"the group's root and admins belong on the devices you hold, so make the group or the admin there. " +
 	"To allow it here anyway, set " + keysInFileEnv + "=yes in the container's environment")
 
-// keysAllowed returns errKeysInContainer in a container whose user did not
-// allow it to hold the group's keys, and nil anywhere else.
+// errKeysRootless refuses the group's keys to a rootless install.
+var errKeysRootless = errors.New("this device is installed without root, so every program of its user can read its keys; " +
+	"it is never the group's root or an admin, so make the group or the admin on another device, " +
+	"or install it with sudo (docs/guide/install.md)")
+
+// keysAllowed returns errKeysRootless for a rootless install,
+// errKeysInContainer in a container whose user did not allow it to hold
+// the group's keys, and nil anywhere else.
 func (s *Service) keysAllowed() error {
+	if s.cfg.Rootless {
+		return errKeysRootless
+	}
 	if s.cfg.Container && !s.cfg.KeysInFile {
 		return errKeysInContainer
 	}
 	return nil
+}
+
+// keyStore is where this device says its keys live: group.StoreRootless
+// for a rootless install, else where id's member key is.
+func (s *Service) keyStore(id *group.Identity) string {
+	if s.cfg.Rootless {
+		return group.StoreRootless
+	}
+	return group.KeyStoreOf(id.Key)
 }

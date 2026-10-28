@@ -25,6 +25,9 @@ update_setup() {
 	upd_cbb=$1
 	upd_method=$(update_method "$2")
 	upd_auto=${3:-${CBB_AUTO_UPDATE:-}}
+	# A rootless install (install-rootless.sh) changes its timer itself.
+	upd_sudo='sudo '
+	[ "${CBB_ROOTLESS:-}" != 1 ] || upd_sudo=
 	if ! "$upd_cbb" update -installed-by "$upd_method"; then
 		echo "install.sh: could not record how Clipboard Bridge was installed; cbb update takes it as get.sh" >&2
 	fi
@@ -52,11 +55,11 @@ update_setup() {
 		else
 			# Not an answer: the next run with a terminal asks again.
 			echo
-			echo "No terminal to answer on; not now. Later: sudo cbb update -auto on"
+			echo "No terminal to answer on; not now. Later: ${upd_sudo}cbb update -auto on"
 			return 0
 		fi
 	fi
 	if ! "$upd_cbb" update -auto "$upd_auto"; then
-		echo "install.sh: could not turn automatic updates $upd_auto; run sudo cbb update -auto $upd_auto" >&2
+		echo "install.sh: could not turn automatic updates $upd_auto; run ${upd_sudo}cbb update -auto $upd_auto" >&2
 	fi
 }

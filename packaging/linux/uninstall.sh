@@ -6,6 +6,11 @@
 #
 #   sudo sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
 #
+# (on SteamOS /opt/clipboardbridge/share/uninstall.sh). A rootless install
+# is removed by its own user, without sudo:
+#
+#   sh ~/.local/share/clipboardbridge/uninstall.sh [--purge]
+#
 # It stops the service and the desktop agents and removes the binary, the
 # unit, the agent's user unit and autostart entry, the tmux and console
 # configuration, the update timer and cbb update's folder, the settings in
@@ -39,6 +44,26 @@ case ${1:-} in
 	exit 2
 	;;
 esac
+# A rootless install (install.sh --rootless) is removed by its own user.
+if [ "$(id -u)" -ne 0 ] && [ -n "${HOME:-}" ] && [ -e "$HOME/.local/bin/cbb" ]; then
+	config=${XDG_CONFIG_HOME:-$HOME/.config}
+	state=${XDG_STATE_HOME:-$HOME/.local/state}
+	for u in clipboardbridge-update.timer clipboardbridge-agent.service clipboardbridge.service; do
+		systemctl --user disable --now "$u" >/dev/null 2>&1 || true
+	done
+	rm -f "$config/systemd/user/clipboardbridge.service" "$config/systemd/user/clipboardbridge-agent.service" \
+		"$config/systemd/user/clipboardbridge-update.service" "$config/systemd/user/clipboardbridge-update.timer" \
+		"$config/autostart/clipboardbridge-desktop.desktop" "$HOME/.local/bin/cbb"
+	systemctl --user daemon-reload >/dev/null 2>&1 || true
+	rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/clipboardbridge" "$config/clipboardbridge" "$state/clipboardbridge-update"
+	if [ "$purge" = yes ]; then
+		rm -rf "$state/clipboardbridge"
+		echo "Clipboard Bridge is removed, with this device's keys; it left its group."
+	else
+		echo "Clipboard Bridge is removed. Its keys stay in $state/clipboardbridge for a reinstall; --purge removes them."
+	fi
+	exit 0
+fi
 if [ "$(id -u)" -ne 0 ]; then
 	echo "uninstall.sh: run it with sudo" >&2
 	exit 1
@@ -61,10 +86,16 @@ if command -v systemctl >/dev/null 2>&1; then
 		systemctl --user -M "$user@" stop clipboardbridge-agent.service >/dev/null 2>&1 || true
 	done
 fi
-if command -v pkill >/dev/null 2>&1; then
-	pkill -x -f '/usr/local/bin/cbb agent' >/dev/null 2>&1 || true
-fi
+# install.sh puts it in /usr/local, or on SteamOS in /opt/clipboardbridge.
+cbb=/usr/local/bin/cbb
 share=/usr/local/share/clipboardbridge
+if [ -e /opt/clipboardbridge/bin/cbb ]; then
+	cbb=/opt/clipboardbridge/bin/cbb
+	share=/opt/clipboardbridge/share
+fi
+if command -v pkill >/dev/null 2>&1; then
+	pkill -x -f "$cbb agent" >/dev/null 2>&1 || true
+fi
 if [ -f "$share/firewall.sh" ]; then
 	sh "$share/firewall.sh" close
 	sh "$share/firewall.sh" hub-close
@@ -77,19 +108,20 @@ rm -f /etc/systemd/system/clipboardbridge.service /etc/systemd/system/clipboardb
 	/etc/systemd/system/clipboardbridge-update.service /etc/systemd/system/clipboardbridge-update.timer \
 	/etc/xdg/autostart/clipboardbridge-desktop.desktop \
 	/etc/systemd/user/clipboardbridge-agent.service \
-	/etc/profile.d/clipboardbridge-console.sh /usr/lib/sysusers.d/clipboardbridge.conf /usr/local/bin/cbb
+	/etc/profile.d/clipboardbridge-console.sh /usr/lib/sysusers.d/clipboardbridge.conf /usr/local/bin/cbb \
+	/etc/profile.d/clipboardbridge-path.sh /etc/sysusers.d/clipboardbridge.conf /etc/atomic-update.conf.d/clipboardbridge.conf
 if command -v systemctl >/dev/null 2>&1; then
 	systemctl daemon-reload || true
 fi
 if [ -f /etc/tmux.conf ]; then
-	line='source-file -q /usr/local/share/clipboardbridge/tmux.conf'
+	line="source-file -q $share/tmux.conf"
 	grep -vxF "$line" /etc/tmux.conf >/etc/tmux.conf.clipboardbridge || true
 	cat /etc/tmux.conf.clipboardbridge >/etc/tmux.conf
 	rm -f /etc/tmux.conf.clipboardbridge
 fi
 # cbb update's folder: the answer about automatic updates, what it has
 # seen and the previous programs.
-rm -rf "$share" /etc/clipboardbridge /var/lib/clipboardbridge-update
+rm -rf "$share" /etc/clipboardbridge /var/lib/clipboardbridge-update /opt/clipboardbridge /opt/clipboardbridge-update
 if [ "$purge" = yes ]; then
 	rm -rf /var/lib/clipboardbridge
 	echo "Clipboard Bridge is removed, with this device's keys; it left its group."

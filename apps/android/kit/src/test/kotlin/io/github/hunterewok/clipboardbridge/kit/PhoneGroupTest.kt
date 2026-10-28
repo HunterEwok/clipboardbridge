@@ -326,6 +326,11 @@ class PhoneGroupTest {
         // the user's consent; one with hardware keys does not.
         assertFailsWith<PhoneGroup.FileKey> { g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1)) }
         assertFailsWith<PhoneGroup.FileKey> { g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1), keyStore = Records.FILE) }
+        // A rootless install never, even with the consent (D-79).
+        assertFailsWith<PhoneGroup.Rootless> {
+            g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1), keyStore = Records.ROOTLESS, allowFileKey = true)
+        }
+        assertEquals(Records.ROOTLESS, Records.storeOf(Records.ROOTLESS, "full"))
         assertEquals(Records.FILE, g.devices.first { it.id == pi }.store)
         val (ca, r) = g.makeAdmin(pi, adminKey.publicKeyDER, root, t0.plusSeconds(1), allowFileKey = true)
         assertContentEquals(adminKey.publicKeyDER, CertificateInfo(ca).publicKey)

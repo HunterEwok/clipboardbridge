@@ -124,6 +124,10 @@ func (s *Service) withAdminKey(id *group.Identity) *group.Identity {
 	if !id.NeedsAdminKey() {
 		return id
 	}
+	if s.cfg.Rootless {
+		s.logf("cbb: this device is installed without root, so it offers no admin key and cannot be made an admin")
+		return id
+	}
 	if s.keysAllowed() != nil {
 		s.logf("cbb: this device runs in a container, so it offers no admin key and cannot be made an admin; set %s=yes in its environment to allow it", keysInFileEnv)
 		return id

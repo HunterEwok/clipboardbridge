@@ -209,8 +209,8 @@ public enum Member {
         /// The sender's sync mode: "own", "shared", "receive" or "send";
         /// nil from a member without one, which shares.
         public var mode: String?
-        /// Where the sender says its keys live: Records.file or
-        /// Records.hardware; nil from a member before 0.6.
+        /// Where the sender says its keys live: Records.file,
+        /// Records.hardware or Records.rootless; nil from a member before 0.6.
         public var keyStore: String?
         /// The sender's quick actions that are on, for the buttons
         /// (section 15); empty from a member before 0.6.
@@ -636,7 +636,7 @@ public enum Member {
             return .hello(role, Hello(wallMS: h.wall_ms ?? 0, current: h.current?.value, records: h.records, name: h.name,
                                       os: h.os, adminKey: h.admin_key, tunnelKey: h.tunnel_key, tunnelPSK: h.tunnel_psk, device: h.device?.value,
                                       mode: h.mode.flatMap { modes.contains($0) ? $0 : nil },
-                                      keyStore: h.key_store.flatMap { $0 == Records.file || $0 == Records.hardware ? $0 : nil },
+                                      keyStore: h.key_store.flatMap { $0 == Records.file || $0 == Records.hardware || $0 == Records.rootless ? $0 : nil },
                                       actions: Array((h.actions?.value ?? []).filter(Commands.validActionName).prefix(Commands.maxHelloActions)),
                                       media: h.media ?? false))
         case "event": return .event(w.event?.value)

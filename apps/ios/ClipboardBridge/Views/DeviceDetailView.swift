@@ -178,7 +178,8 @@ struct DeviceDetailView: View {
         case "lite": Text("Lite member")
         case "shortcut": Text("Shortcut")
         case "watch": Text("Watch")
-        default: Text("Full member")
+        // A rootless install is never an admin or a hub (D-79).
+        default: d.rootless ? Text("Full member, rootless") : Text("Full member")
         }
     }
 
