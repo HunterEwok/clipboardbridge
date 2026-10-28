@@ -101,7 +101,9 @@ fail() {
 
 if [ -n "$rootless" ]; then
 	[ "$(id -u)" -ne 0 ] || fail "--rootless installs for your own user: run it without sudo: curl -fsSL $repo/releases/latest/download/get.sh | sh -s -- --rootless"
-	[ "$(uname -s)" = Linux ] && [ ! -f /etc/openwrt_release ] || fail "--rootless is for Linux computers"
+	if [ "$(uname -s)" != Linux ] || [ -f /etc/openwrt_release ]; then
+		fail "--rootless is for Linux computers"
+	fi
 	[ "$lite" = no ] || fail "--rootless is for the full member; install the lite member with sudo"
 else
 	[ "$(id -u)" -eq 0 ] || fail "run it with sudo: curl -fsSL $repo/releases/latest/download/get.sh | sudo sh"
