@@ -155,9 +155,10 @@
 		if ([long]$keys.Value.expires_ms -le $nowMS) { throw 'keys.json has expired; check the clock, or try again later' }
 		# A release key (no use) signs release.json and stable.json, a channel
 		# key only stable.json, a key of another use neither.
-		$releaseKeys = @($keys.Value.keys | Where-Object { -not $_.use -or $_.use -eq 'release' } |
+		# Under strict mode a key without use has no such property to read.
+		$releaseKeys = @($keys.Value.keys | Where-Object { $u = $_.PSObject.Properties['use']; -not $u -or $u.Value -eq 'release' } |
 			ForEach-Object { , [Convert]::FromBase64String($_.key) })
-		$channelKeys = @($keys.Value.keys | Where-Object { $_.use -eq 'channel' } |
+		$channelKeys = @($keys.Value.keys | Where-Object { $u = $_.PSObject.Properties['use']; $u -and $u.Value -eq 'channel' } |
 			ForEach-Object { , [Convert]::FromBase64String($_.key) })
 		$rel = Open-ReleaseFile -path (Join-Path $tmp 'release.json') -type 'release' -keys $releaseKeys
 		if ($named) {
