@@ -3,6 +3,7 @@
 
 package io.github.hunterewok.clipboardbridge.kit
 
+import java.util.Base64
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -26,8 +27,11 @@ object Releases {
     /** The longest attest-status.json stays valid after it was signed. */
     const val MAX_STATUS_LIFETIME_MS = 8L * 24 * 3600 * 1000
 
-    /** The pinned root keys (SubjectPublicKeyInfos, DER); empty until the project's root keys exist. */
-    val roots: List<ByteArray> = emptyList()
+    /** The pinned root keys (SubjectPublicKeyInfos, DER), two YubiKeys, as internal/release/roots/roots.pem. */
+    val roots: List<ByteArray> = listOf(
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9sLfrcGBi23XveQN8dK8Z+lbEuxTLOgnQ9s/gzp/k7xx88IFvkdMuyoL2K7j1necQGYLmq3ifie9wDrF69AO/A==",
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExGbAq55XGXip3Dtq6jsM2bOYUeoYfDxsggXLisjwoCQoDM28pCYkIoZAfcjwR3aAGOAUWZX+L53og7/TLLpnfg==",
+    ).map { Base64.getDecoder().decode(it) }
 
     const val USE_RELEASE = "release"
     const val USE_STATUS = "status"

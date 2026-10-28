@@ -70,12 +70,12 @@ rootfs)
 	docker run --rm -v "$rel:/rel:ro" "$image" /bin/sh -c "
 		set -e
 		mkdir -p /var/lock /var/run /tmp
-		CBB_RELEASE_DIR=/rel sh /rel/get.sh --port 9000
+		CBB_VERIFY=skip CBB_RELEASE_DIR=/rel sh /rel/get.sh --port 9000
 		$installed
 		sh /usr/share/clipboardbridge/uninstall.sh --purge
 		$removed
 		echo 'rootfs: installed and removed'
-		CBB_RELEASE_DIR=/rel sh /rel/get.sh --lite --port 9000
+		CBB_VERIFY=skip CBB_RELEASE_DIR=/rel sh /rel/get.sh --lite --port 9000
 		$installed
 		cbb version | grep -q 'lite member'
 		sh /usr/share/clipboardbridge/uninstall.sh --purge
@@ -151,7 +151,7 @@ vm)
 	done
 	# Dropbear has no SFTP server, so the files go through tar.
 	tar -C "$rel" -cf - . | run 'mkdir -p /tmp/rel && tar -C /tmp/rel -xf -'
-	run 'CBB_RELEASE_DIR=/tmp/rel sh /tmp/rel/get.sh --port 9000'
+	run 'CBB_VERIFY=skip CBB_RELEASE_DIR=/tmp/rel sh /tmp/rel/get.sh --port 9000'
 	run "$installed"
 	run '
 		set -ex
@@ -205,7 +205,7 @@ vm)
 	echo "vm: installed, checked and removed"
 
 	# The lite member, from the same init script.
-	run 'CBB_RELEASE_DIR=/tmp/rel sh /tmp/rel/get.sh --lite --port 9000'
+	run 'CBB_VERIFY=skip CBB_RELEASE_DIR=/tmp/rel sh /tmp/rel/get.sh --lite --port 9000'
 	run "$installed"
 	run '
 		set -ex

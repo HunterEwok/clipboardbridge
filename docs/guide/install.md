@@ -188,8 +188,8 @@ All installer options are in the [command reference](../reference/cli.md#install
 
 ## Updating
 
-Until the project's release keys exist, releases are not signed and `cbb update` says it
-has nothing to check them against; run the install command again instead.
+Releases are signed from 0.6 on. To move to 0.6 from an earlier version, run the install
+command again; from then on `cbb update` does it.
 
 `sudo cbb update` (on Windows `cbb update` in a terminal opened as administrator) installs
 the newest release on a computer or a lite member installed with `get.sh`, `get.ps1` or a

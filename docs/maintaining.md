@@ -160,12 +160,17 @@ Rules for workflows:
 ## Signed releases
 
 The release files of docs/protocol.md, section 16, are made with `tools/release-sign` on
-the maintainer's Mac; the keys never reach CI. The roots are not made yet, so releases are
-not signed and the installers check nothing; the steps below are the plan.
+the maintainer's Mac; the keys never reach CI. The roots were made on 2026-10-28
+(`internal/release/roots`, with their attestations); releases from 0.6 on are signed.
 
-- **The root keys**, once: one on each of two YubiKeys, kept offline and apart, with a PIN
-  and touch for every signature (`yubico-piv-tool -a generate -s 9c -A ECCP256 --pin-policy=always
-  --touch-policy=always`, then a self-signed certificate in the slot so the key can be read).
+- **The root keys**, once: one on each of two YubiKeys, kept apart, with a PIN and touch
+  for every signature. The YubiKeys may be in daily use for other things: the root goes
+  into a free retired PIV slot (82 when `ykman piv keys info 82` finds no key), and nothing
+  else on the key is reset or changed. `ykman piv keys generate --algorithm ECCP256
+  --pin-policy ALWAYS --touch-policy ALWAYS 82 root-N.pem`, then `ykman piv certificates
+  generate --subject "CN=Clipboard Bridge release signing root N (2026)" 82 root-N.pem` so
+  the key can be read from the slot, and `ykman piv keys attest 82` with the `f9`
+  certificate as proof that the key was made on the YubiKey.
   Their public keys go into `packaging/get.sh` (`release_roots`), `packaging/windows/get.ps1`
   (`$releaseRoots`) and the programs (`internal/release.Roots`, the lite member's
   `update::ROOTS` in `lite/src/update.rs`, and the phone kits' `Releases.roots`, which
@@ -174,7 +179,7 @@ not signed and the installers check nothing; the steps below are the plan.
   `swift tools/release-sign/se.swift create ~/.config/cbb-release/release.se`. A root
   certifies it in `keys.json`, signed again at least every 90 days with a higher `-seq`:
   `release-sign keys -seq N release=release.pem >keys.body` and
-  `release-sign sign -key piv:9c keys.body >keys.json`.
+  `release-sign sign -key piv:82 keys.body >keys.json`.
 - **Each release**: download the draft's files, check their attestations against the tag's
   commit (`gh attestation verify FILE --repo HunterEwok/clipboardbridge`), then
   `release-sign manifest -version X.Y.Z -min-from ... DIR >release.body`,
