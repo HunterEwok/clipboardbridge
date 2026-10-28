@@ -239,8 +239,11 @@ type Peer struct {
 	Device group.DeviceInfo
 	Key    group.KeyHash
 	// AdminKey is the admin key its hello offers, a SubjectPublicKeyInfo
-	// in DER; nil when it offers none.
+	// in DER, as a member that is no admin yet or whose admin CA is from an
+	// earlier root does; nil when it offers none.
 	AdminKey []byte
+	// Chain is the certificate chain its handshake verified, leaf first.
+	Chain []*x509.Certificate
 	// OldKeys tells that its hello says it holds the group CA key of a
 	// legacy group.
 	OldKeys bool
@@ -666,7 +669,7 @@ func (n *Node) Peers() []Peer {
 			adminKey, oldKeys, device, mode, store, acts, media := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
-			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
+			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), Chain: c.peerChain, AdminKey: adminKey,
 				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
@@ -819,6 +822,19 @@ func (n *Node) SendCert(dev group.DeviceID, cert, issuer *x509.Certificate) bool
 	for _, c := range n.helloed() {
 		if c.id == dev {
 			c.enqueue(outgoing{cert: cert, issuer: issuer})
+			return true
+		}
+	}
+	return false
+}
+
+// SendEvent sends the connected member dev the event ev as it is, as a
+// member passing on one it received; the bench sends one again to check
+// that it is written once. It reports whether dev is connected.
+func (n *Node) SendEvent(dev group.DeviceID, ev clip.Event) bool {
+	for _, c := range n.helloed() {
+		if c.id == dev {
+			c.enqueue(outgoing{event: &ev})
 			return true
 		}
 	}
@@ -1327,7 +1343,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 			out.Device = &d
 		}
 		id := c.n.identity()
-		if id.AdminKey != nil && id.AdminCA == nil {
+		if id.AdminKey != nil && (id.AdminCA == nil || id.StaleAdminCA()) {
 			spki, err := x509.MarshalPKIXPublicKey(group.PublicKey(id.AdminKey))
 			if err != nil {
 				return nil, err

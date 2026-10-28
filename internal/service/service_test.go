@@ -1635,6 +1635,67 @@ func TestTakeover(t *testing.T) {
 	}
 }
 
+// TestSecondTakeover checks that an admin the first root made takes the
+// group over from the second, lost too: the second root gave it a new
+// admin CA for the same key, so its new root follows the second, and what
+// the second root signed, as a name, counts on.
+func TestSecondTakeover(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	a := startService(t, &h, "a")
+	b := startService(t, &h, "b")
+	c := startService(t, &h, "c")
+	pairWith(t, pi, a)
+	pairWith(t, pi, b)
+	pairWith(t, pi, c)
+	makeAdmin(t, pi, a)
+	makeAdmin(t, pi, b)
+	waitFor(t, "b serves the shortcut", func() bool {
+		id, err := group.Load(b.dir)
+		return err == nil && id.ServesPhone()
+	})
+	pi.stop()
+	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	ra, _ := group.Load(a.dir)
+	waitFor(t, "b gets an admin CA from a's root", func() bool {
+		id, err := group.Load(b.dir)
+		return err == nil && len(id.Roots) == 1 && id.AdminCA != nil && id.AdminCA.CheckSignatureFrom(ra.Root()) == nil && id.ServesPhone()
+	})
+	if _, err := a.do(t, control.Header{Op: control.OpRename, Name: "c", NewName: "named by a"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	named := func(s *testService) bool {
+		for _, d := range s.devices(t) {
+			if d.Name == "named by a" {
+				return true
+			}
+		}
+		return false
+	}
+	waitFor(t, "b has c's new name", func() bool { return named(b) })
+	a.stop()
+	if _, err := b.do(t, control.Header{Op: control.OpTakeover, Name: "a"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := group.Load(b.dir)
+	if !id.IsRoot() || len(id.Roots) != 2 || !id.Roots[0].Equal(ra.Root()) {
+		t.Fatalf("after the second takeover b is root %v with %d roots, the first of them a's: %v", id.IsRoot(), len(id.Roots), len(id.Roots) > 0 && id.Roots[0].Equal(ra.Root()))
+	}
+	waitFor(t, "c follows the second root", func() bool {
+		cid, err := group.Load(c.dir)
+		return err == nil && len(cid.Roots) == 2
+	})
+	if !named(b) || !named(c) {
+		t.Error("the name a's root gave c is gone after b's takeover")
+	}
+	if _, err := c.do(t, control.Header{Op: control.OpCopy}, "after the second takeover"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "b has it", func() bool { return b.paste(t) == "after the second takeover" })
+}
+
 func TestTakeoverUndone(t *testing.T) {
 	// The old root comes back after an admin took the group over: the
 	// others take its records only, it learns of the takeover, keeps its

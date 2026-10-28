@@ -838,13 +838,19 @@ class RecordSet {
     /**
      * The keys a revocation of the CA with key hash admin keeps: those of
      * the devices it admitted, and those of every listed device, whose
-     * certificate it may have renewed (section 10), as Go's
+     * certificate it may have renewed; and the keys of the admin CAs
+     * removed earlier whose removals keep one of those devices, since their
+     * certificates for it hold only while their admin CA stands under its
+     * root, which a takeover removes (section 10), as Go's
      * Records.Staying. The caller drops the keys the revocation names.
      */
     fun staying(admin: ByteArray): List<ByteArray> {
         val keys = admitted(admin).toMutableList()
         for (d in devices) for (k in d.keys) if (keys.none { it.contentEquals(k) }) keys.add(k)
-        return keys
+        val ev = Eval(this)
+        val listed = keys.map { Key(it) }
+        val removed = ev.revokers.keys.filter { r -> r !in listed && listed.any { ev.kept(r, it) } }.sortedBy { it.hex }
+        return keys + removed.map { r -> r.hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray() }
     }
 
     /** Whether a valid device record names the device ID, with any key and whether or not it counts: an ID a new device may not take (section 6). */

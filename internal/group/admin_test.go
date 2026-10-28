@@ -388,6 +388,60 @@ func TestComputerTakeover(t *testing.T) {
 	}
 }
 
+// TestStayingTakeover checks that a takeover keeps a device that a removed
+// admin admitted: its certificate holds through the removed admin's CA,
+// which must stay under the old root, so Staying names that CA's key too.
+func TestStayingTakeover(t *testing.T) {
+	pg := newPhoneGroup(t)
+	g, pc, pc2 := pg.root.Cert, pg.a, pg.b
+	pcKey, pc2Key, rootKey := KeyHashOf(pc.Cert), KeyHashOf(pc2.Cert), KeyHashOf(g)
+	holder, pcCert, pc2Cert, laptop := member(t, pg.root), member(t, pc), member(t, pc2), member(t, pc2)
+	laptopChain := []*x509.Certificate{laptop, pc2.Cert}
+	base := []Record{
+		ownRecord(t, pg.root, holder, "root", RoleFull),
+		computerAdminRecord(t, pg, pcCert, "pc", pcKey),
+		computerAdminRecord(t, pg, pc2Cert, "pc2", pc2Key),
+		deviceRecord(t, g, pc2, []*x509.Certificate{pc2.Cert}, laptop, "laptop", 2),
+	}
+	next := newRoot(t)
+	for _, c := range []struct {
+		name  string
+		keep  func(*Records) []KeyHash
+		taken bool
+	}{
+		{"listed only", func(s *Records) []KeyHash {
+			return slices.DeleteFunc(s.Staying(rootKey), func(k KeyHash) bool { return k == pc2Key })
+		}, false},
+		{"staying", func(s *Records) []KeyHash { return s.Staying(rootKey) }, true},
+	} {
+		s := NewRecords(g)
+		for _, r := range base {
+			mustAdd(t, s, r)
+		}
+		// The root removes pc2 and keeps the laptop it admitted.
+		removed := []KeyHash{pc2Key, KeyHashOf(pc2Cert)}
+		keep := slices.DeleteFunc(s.Staying(pc2Key), func(k KeyHash) bool { return slices.Contains(removed, k) })
+		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, removed, keep))
+		if err := s.Refused(laptopChain); err != nil {
+			t.Fatalf("%s: the laptop is refused once pc2 is removed: %v", c.name, err)
+		}
+		// pc takes the group over from the lost root.
+		mustAdd(t, s, rootRecord(t, g, pc, []*x509.Certificate{pc.Cert}, next.Cert))
+		lost := []KeyHash{rootKey, KeyHashOf(holder)}
+		keep = append(slices.DeleteFunc(c.keep(s), func(k KeyHash) bool { return slices.Contains(lost, k) }), pcKey)
+		mustAdd(t, s, revokeRecord(t, g, next, nil, lost, keep))
+		if len(s.Roots()) != 1 {
+			t.Fatalf("%s: the takeover does not count", c.name)
+		}
+		if err := s.Refused(laptopChain); (err == nil) != c.taken {
+			t.Errorf("%s: the laptop after the takeover refused: %v, want taken %v", c.name, err, c.taken)
+		}
+		if s.Refused([]*x509.Certificate{member(t, pc2), pc2.Cert}) == nil {
+			t.Errorf("%s: a certificate of the removed admin for a key no record lists is taken", c.name)
+		}
+	}
+}
+
 // recordTime gives each freeze and thaw record of a test its own time, so
 // two signers' records with the same content still differ.
 var recordTime = t0.UnixMilli()

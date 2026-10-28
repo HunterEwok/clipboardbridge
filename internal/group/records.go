@@ -819,6 +819,18 @@ func (s *Records) mayHandOver(r *signedRecord) bool {
 	return ev.rootSigned(r) || ev.phoneAdmin[r.signer] && ev.roots[r.anchor] || ev.roots[r.anchor] && s.computerHandOver(r)
 }
 
+// AdminUnder reports whether a device record that the root key signed
+// with its own key names the admin CA key admin: what lets that admin
+// computer take the group over from that root (computerHandOver).
+func (s *Records) AdminUnder(root, admin KeyHash) bool {
+	for _, r := range s.byID {
+		if r.body.Type == RecordDevice && r.signer == root && r.anchor == root && r.body.Admin != nil && *r.body.Admin == admin {
+			return true
+		}
+	}
+	return false
+}
+
 // computerHandOver reports whether r, a root record, was signed by the
 // admin CA of a computer under its anchor, a root that is a computer
 // itself: the root's own key signed a device record that names that admin
@@ -1341,8 +1353,11 @@ func (s *Records) Admitted(admin KeyHash) []KeyHash {
 
 // Staying returns the keys that a record removing the admin CA with key
 // admin keeps: those of the devices it admitted, and those of every listed
-// device, whose certificate it may have renewed (docs/protocol.md,
-// section 10). The caller drops the keys the record revokes.
+// device, whose certificate it may have renewed; and the keys of the admin
+// CAs removed earlier whose removals keep one of those devices, since
+// their certificates for it hold only while their admin CA stands under its
+// root, which a takeover removes (docs/protocol.md, section 10). The
+// caller drops the keys the record revokes.
 func (s *Records) Staying(admin KeyHash) []KeyHash {
 	out := s.Admitted(admin)
 	for _, d := range s.Devices() {
@@ -1352,7 +1367,14 @@ func (s *Records) Staying(admin KeyHash) []KeyHash {
 			}
 		}
 	}
-	return out
+	var removed []KeyHash
+	for k := range s.eval().revokers {
+		if !slices.Contains(out, k) && slices.ContainsFunc(out, func(d KeyHash) bool { return s.kept(k, d) }) {
+			removed = append(removed, k)
+		}
+	}
+	slices.SortFunc(removed, func(a, b KeyHash) int { return bytes.Compare(a[:], b[:]) })
+	return append(out, removed...)
 }
 
 // RevokedBy returns the keys that revocations signed by the admin CA with
