@@ -408,6 +408,7 @@ func (s *Service) peersChanged() {
 	s.trackSeen(peers)
 	s.noteOldKeys(peers)
 	s.ensureListed()
+	s.renewAdminCAs(peers)
 }
 
 // electLocked elects the holder of clipboardbridge.local among this member

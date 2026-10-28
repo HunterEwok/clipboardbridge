@@ -204,9 +204,10 @@ type Service struct {
 	actionLimit    remotepaste.Limiter // quick actions per sender, as remote pastes
 	restart        chan struct{}       // an admin had the service restart (actions.Restart)
 	lastSeq        uint64
-	pending        *node.Write                  // a write that no watcher got, for the next one
-	mediaWait      *node.Write                  // a copy of images or files the watchers that take them get once it has arrived
-	seen           map[group.DeviceID]time.Time // when each peer was last seen connected
+	pending        *node.Write                      // a write that no watcher got, for the next one
+	mediaWait      *node.Write                      // a copy of images or files the watchers that take them get once it has arrived
+	seen           map[group.DeviceID]time.Time     // when each peer was last seen connected
+	adminCAsUnder  map[group.DeviceID]group.KeyHash // the root this root last sent each admin a new admin CA under
 	// commands holds the IDs of the commands carried out, until they
 	// expire, so that none is carried out twice.
 	commands map[string]time.Time

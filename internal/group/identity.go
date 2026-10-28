@@ -164,6 +164,15 @@ func (id *Identity) Signer() (*CA, []*x509.Certificate) {
 	return nil, nil
 }
 
+// StaleAdminCA reports whether this admin's CA is from a root before the
+// group's current one, as after another admin took the group over: a root
+// record it signed would hang under that earlier root and split the
+// group's roots, so its hello offers its admin key again, and the current
+// root certifies the same key anew (docs/protocol.md, section 10).
+func (id *Identity) StaleAdminCA() bool {
+	return id.AdminCA != nil && id.AdminCA.CheckSignatureFrom(id.Root()) != nil
+}
+
 // NeedsAdminKey reports whether this device should make an admin key for
 // the root to certify: it is in a group with a root, is not the root, and
 // has none yet.

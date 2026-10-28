@@ -415,7 +415,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `records` | string or absent | the digest of the sender's records (section 10) |
 | `name` | string or absent | the sender's device name, 1-64 bytes; a receiver ignores an invalid one |
 | `os` | string or absent | the sender's operating system: `linux`, `windows`, `macos`, `ios`, `android` or `none` (firmware without one); shown, never trusted; a receiver ignores an unknown one. A watch's device record says `watchos` or `wearos` (section 10) |
-| `admin_key` | string or absent | from a full member that is neither the root nor an admin yet, outside a legacy group: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "Admins") |
+| `admin_key` | string or absent | from a full member that is neither the root nor an admin yet, or an admin whose admin CA is from a root before the current one, outside a legacy group: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "Admins") |
 | `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
 | `old_keys` | bool or absent | `true` from a member that holds the group CA key of a legacy group, which it deletes once the group is upgraded (section 10, "Upgrading a legacy group") |
 | `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hubs (section 11) |
@@ -1231,7 +1231,8 @@ admin removes it.
 
 - Every full member that is not the root makes a P-256 admin key when it starts in a group
   with a root (not in a legacy group) and keeps it in the identity file (`admin_key`,
-  PKCS #8, or `admin_key_tpm`, section 17). Until it holds an admin CA, its hello carries `admin_key`: the key's
+  PKCS #8, or `admin_key_tpm`, section 17). Until it holds an admin CA, and while the admin CA
+  it holds is from a root before the current one, its hello carries `admin_key`: the key's
   SubjectPublicKeyInfo.
 - The root makes it an admin, the root phone with "Make it an admin" and the root computer
   with `cbb admin NAME`, after the user allows a computer whose keys sit in a file (section
@@ -1243,7 +1244,7 @@ admin removes it.
   under one of the group's roots, and that the records do not refuse it; it keeps it in the
   identity file (`admin_ca`) and issues itself a new member certificate from it, so the
   `issuer` of its Welcome also issued its own certificate. Its hello no longer carries
-  `admin_key`.
+  `admin_key`. An admin CA that replaces the one it holds MUST be from the current root.
 - From then on it acts as an admin phone does, with its admin CA: it opens pairing windows
   (`cbb pair`) and admits computers and lite members, never phones, with a Welcome that
   carries `issuer` and `roots` and no CA keys; it signs the `device` record of each device it
@@ -1452,8 +1453,10 @@ an admin phone, never a computer; in a group a computer created an admin compute
 2. As the new root, it signs a `revoke` record whose `keys` are the old root's key and the
    lost root's member and admin keys, and whose `keep` names every other key the old root
    certified: the member keys of every listed device, which it admitted or whose certificates
-   it may have renewed, and the admin CA keys of the
-   other admins, its own included. By rule 6 nothing the old root's key signs from then on
+   it may have renewed, the admin CA keys of the
+   other admins, its own included, and those of removed admins whose removals keep one of
+   those devices, whose certificates from them hold only while their admin CA stands under
+   the old root. By rule 6 nothing the old root's key signs from then on
    counts: neither new certificates nor new admin CAs, `device` records nor `root` records.
    In a group a computer created the lost root held the iPhone CA, so the record also names
    the iPhone CA's key and the key of every `shortcut` device, and the new root makes a new
@@ -1463,6 +1466,13 @@ an admin phone, never a computer; in a group a computer created an admin compute
    computer that takes over keeps the new root's key in the identity file (`root_key`,
    PKCS #8) and drops its admin key and admin CA; it keeps the member certificate it has,
    which the old root or its own admin CA issued and the `keep` above still covers.
+4. Each other admin computer still holds an admin CA from the old root, and a root record it
+   signed would hang under that root, not under the new one, and split the group's roots
+   (rule 7). So when such an admin is connected, its admin CA in its chain or its key in its
+   hello, the new root signs a `device` record for it under its own key that names the same
+   admin key, and sends it a new admin CA for that key, as when it makes an admin; the records
+   name the key, not the certificate, so nothing else changes. An admin whose admin CA is from
+   a root before the current one does not take the group over (`cbb takeover` refuses).
 
 A computer that gets the `root` record starts trusting the new root and saves it with its
 identity; a computer that held the root it replaces is no longer the root, and gives up its

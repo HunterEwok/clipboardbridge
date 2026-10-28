@@ -6,6 +6,7 @@ package service
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -91,6 +92,76 @@ func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 	}
 	s.logf("cbb: made %s (%s) an admin of the group", d.Name, d.ID)
 	return d.Name, nil
+}
+
+// renewAdminCAs, on the group's root, gives each connected admin computer
+// whose admin CA is from an earlier root, as after a takeover, a new admin
+// CA for the same key from this root: the records name the key, so they
+// stay as they are, and a takeover by that admin later hangs under this
+// root, not under the earlier one (docs/protocol.md, section 10). The key
+// comes from the admin CA in its chain, or from its hello, which offers it
+// again then.
+func (s *Service) renewAdminCAs(peers []node.Peer) {
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil || nd == nil || !id.IsRoot() {
+		return
+	}
+	root := group.KeyHashOf(id.Root())
+	for _, p := range peers {
+		admin := s.adminKeyOf(p.ID)
+		if admin == nil {
+			continue
+		}
+		var pub *ecdsa.PublicKey
+		if len(p.Chain) > 1 && p.Chain[1].IsCA && group.KeyHashOf(p.Chain[1]) == *admin {
+			if p.Chain[1].CheckSignatureFrom(id.Root()) == nil {
+				continue // from this root already
+			}
+			pub, _ = p.Chain[1].PublicKey.(*ecdsa.PublicKey)
+		} else if p.AdminKey != nil && group.KeyHash(sha256.Sum256(p.AdminKey)) == *admin {
+			k, _ := x509.ParsePKIXPublicKey(p.AdminKey)
+			pub, _ = k.(*ecdsa.PublicKey)
+		}
+		s.recMu.Lock()
+		gone := s.records.Revoked(*admin) || s.records.Frozen(*admin)
+		s.recMu.Unlock()
+		s.mu.Lock()
+		sent := s.adminCAsUnder[p.ID] == root
+		s.mu.Unlock()
+		if pub == nil || gone || sent {
+			continue
+		}
+		ca, err := id.RootCA().IssueAdmin(p.ID, pub, s.cfg.now())
+		if err != nil {
+			s.logf("cbb: a new admin CA for %s: %v", p.ID, err)
+			continue
+		}
+		// This root's own record of the admin lets it take the group over
+		// from this root in turn.
+		s.recMu.Lock()
+		listed := s.records.AdminUnder(root, *admin)
+		s.recMu.Unlock()
+		if d := s.deviceRecord(p.ID); !listed && d != nil {
+			r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: d.ID, Name: d.Name, Role: group.RoleFull,
+				OS: d.OS, Key: &d.Key, Admin: admin, Store: d.Store, Kind: d.Kind, Proof: d.Proof})
+			if err != nil {
+				s.logf("cbb: recording the admin %s under this root: %v", p.ID, err)
+				continue
+			}
+			s.publish(nd, r)
+		}
+		if nd.SendAdmin(p.ID, ca) {
+			s.mu.Lock()
+			if s.adminCAsUnder == nil {
+				s.adminCAsUnder = map[group.DeviceID]group.KeyHash{}
+			}
+			s.adminCAsUnder[p.ID] = root
+			s.mu.Unlock()
+			s.logf("cbb: gave the admin %s (%s) a new admin CA from this root, for the same key", p.Name, p.ID)
+		}
+	}
 }
 
 // adminPeer reports whether the peer dev, whose verified chain is chain, is the
@@ -345,6 +416,8 @@ func (s *Service) takeOver(target string) (string, error) {
 		return "", fmt.Errorf("%s is not the group's root; cbb status shows which device is", d.Name)
 	case !id.ServesPhone():
 		return "", errors.New("this admin does not hold the iPhone CA yet, which the new root replaces; connect it to another admin first, or take the group over on another admin")
+	case id.StaleAdminCA():
+		return "", errors.New("this admin's CA is from a root before the current one, so a new root from it would split the group; the current root renews it when they next meet, so take the group over on an admin that met it since")
 	}
 	lostKeys := s.keysOf(group.DeviceID(d.ID), nd)
 	if len(lostKeys) == 0 {
@@ -423,6 +496,9 @@ func (s *Service) takeOver(target string) (string, error) {
 	}
 	s.publish(nd, rs...)
 	nd.SharePhoneCA()
+	// The other admins' CAs are from the old root: each gets one from the
+	// new root, so that a takeover by it later stays on this root.
+	s.renewAdminCAs(nd.Peers())
 	s.logf("cbb: took the group over from %s (%s); this device is the group's root now", d.Name, d.ID)
 	s.logf("cbb: replaced the group's iPhone CA; the iPhones that use the shortcut must pair again (cbb pair -phone)")
 	return d.Name, nil
