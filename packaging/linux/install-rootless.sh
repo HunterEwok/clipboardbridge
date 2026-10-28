@@ -2,19 +2,22 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 HunterEwok
 
-# Installs clipboardbridge's full member for the user who runs it, without
-# root (a rootless install, D-79; docs/design.md, "Rootless installs"):
+# Installs clipboardbridge's full member or lite member for the user who
+# runs it, without root (a rootless install, D-79; docs/design.md,
+# "Rootless installs"):
 #
 #   sh install.sh --rootless [--port N] [--home-cgnat on|off] [--auto-update on|off] path/to/cbb
 #
 # install.sh runs this script for --rootless. It puts the binary in
-# ~/.local/bin, the service and the desktop agent in the user's systemd
-# user units, the settings in ~/.config/clipboardbridge and the state in
-# ~/.local/state/clipboardbridge, and starts the service. Every program of
-# the user can read the device's keys, so the device is never the group's
-# root, an admin or a hub. It has no firewall rules, no TPM and no uinput
-# or console helper, and it runs while the user is logged in unless the
-# user may linger. uninstall.sh, run as the same user, removes it again.
+# ~/.local/bin, the service (and the full member's desktop agent) in the
+# user's systemd user units, the tmux configuration in
+# ~/.local/share/clipboardbridge, the settings in ~/.config/clipboardbridge
+# and the state in ~/.local/state/clipboardbridge, and starts the service.
+# Every program of the user can read the device's keys, so the device is
+# never the group's root, an admin or a hub. It has no firewall rules, no
+# TPM, no uinput or console helper and no polkit rule, and it runs while
+# the user is logged in unless the user may linger. uninstall.sh, run as
+# the same user, removes it again.
 set -eu
 
 if [ "${CBB_ERROR_DETAILS:-}" = 1 ]; then
@@ -103,8 +106,12 @@ if ! "$bin" version >/dev/null 2>&1; then
 	echo "install.sh: $bin does not run on this machine; is it built for $(uname -m)?" >&2
 	exit 1
 fi
+kind=full
 if "$bin" version 2>/dev/null | grep -q 'lite member'; then
-	echo "install.sh: --rootless is for the full member; install the lite member with sudo" >&2
+	kind=lite
+fi
+if [ "$kind" = lite ] && [ "$cgnat" = 1 ]; then
+	echo "install.sh: --home-cgnat is for the full member" >&2
 	exit 2
 fi
 for f in /usr/local/bin/cbb /opt/clipboardbridge/bin/cbb /etc/systemd/system/clipboardbridge.service; do
@@ -131,14 +138,19 @@ place() {
 	chmod 0644 "$2.new"
 	mv "$2.new" "$2"
 }
-install -d -m 0755 "${cbb%/*}" "$share" "$units" "$config/autostart"
+install -d -m 0755 "${cbb%/*}" "$share" "$units"
 install -d -m 0700 "$state" "${env%/*}"
 install -m 0755 "$bin" "$cbb.new"
 mv "$cbb.new" "$cbb"
 install -m 0644 "$here/uninstall.sh" "$share/uninstall.sh"
+install -m 0644 "$here/../tmux/clipboardbridge.conf" "$share/tmux.conf"
 place "$here/clipboardbridge-rootless.service" "$units/clipboardbridge.service"
-place "$here/clipboardbridge-agent.service" "$units/clipboardbridge-agent.service"
-place "$here/clipboardbridge-desktop.desktop" "$config/autostart/clipboardbridge-desktop.desktop"
+# The lite member has no desktop clipboard, so no agent.
+if [ "$kind" = full ]; then
+	install -d -m 0755 "$config/autostart"
+	place "$here/clipboardbridge-agent.service" "$units/clipboardbridge-agent.service"
+	place "$here/clipboardbridge-desktop.desktop" "$config/autostart/clipboardbridge-desktop.desktop"
+fi
 
 # The settings: the ones given, else the ones kept from before, else the
 # defaults.
@@ -169,10 +181,12 @@ systemctl --user daemon-reload
 systemctl --user enable clipboardbridge.service
 systemctl --user reset-failed clipboardbridge.service >/dev/null 2>&1 || true
 systemctl --user restart clipboardbridge.service
-systemctl --user enable clipboardbridge-agent.service >/dev/null 2>&1 || true
-if systemctl --user is-active -q graphical-session.target 2>/dev/null; then
-	systemctl --user restart clipboardbridge-agent.service >/dev/null 2>&1 ||
-		echo "install.sh: the desktop agent did not start; it starts at your next login" >&2
+if [ "$kind" = full ]; then
+	systemctl --user enable clipboardbridge-agent.service >/dev/null 2>&1 || true
+	if systemctl --user is-active -q graphical-session.target 2>/dev/null; then
+		systemctl --user restart clipboardbridge-agent.service >/dev/null 2>&1 ||
+			echo "install.sh: the desktop agent did not start; it starts at your next login" >&2
+	fi
 fi
 # Without lingering the user's services stop at the last logout.
 if [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" != yes ]; then
@@ -206,4 +220,9 @@ case ":$PATH:" in
 *":${cbb%/*}:"*) ;;
 *) run=$cbb ;;
 esac
-echo "Next: run $run pair and scan its QR code with the Clipboard Bridge app on your phone."
+echo "For copy and paste in tmux, add this line to ~/.tmux.conf: source-file -q $share/tmux.conf"
+if [ "$kind" = lite ]; then
+	echo "Next: see lite/README.md; in short, $run join here, and scan its QR code with the phone app."
+else
+	echo "Next: run $run pair and scan its QR code with the Clipboard Bridge app on your phone."
+fi

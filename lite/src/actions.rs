@@ -165,7 +165,8 @@ pub fn check(a: &Action, s: &Signer) -> Option<String> {
     let n = &a.name;
     if !a.on {
         return Some(format!(
-            "the action {n} is off on this device; its user turns it on there with sudo cbb action enable {n}"
+            "the action {n} is off on this device; its user turns it on there with {}cbb action enable {n}",
+            crate::rootless::sudo()
         ));
     }
     if !a.by.is_empty() && !s.kinds().iter().any(|k| a.by.iter().any(|b| b == k)) {
@@ -173,7 +174,8 @@ pub fn check(a: &Action, s: &Signer) -> Option<String> {
     }
     if hardware_by_default(n) && !a.any_key && !s.in_hardware() {
         return Some(format!(
-            "this device runs {n} only for admins whose keys are in hardware, and the sender's key is in a file; its user allows that with sudo cbb action enable {n} -any-key"
+            "this device runs {n} only for admins whose keys are in hardware, and the sender's key is in a file; its user allows that with {}cbb action enable {n} -any-key",
+            crate::rootless::sudo()
         ));
     }
     None

@@ -16,7 +16,8 @@
 # --uinput adds the full member's uinput helper for remote paste on desktops
 # without another way to press keys.
 # --rootless, run without sudo (curl ... | sh -s -- --rootless), installs the
-# full member for the user who runs it, on Linux only (D-79).
+# full member, or with --lite the lite member, for the user who runs it, on
+# Linux only (D-79).
 # CBB_ATTESTATION=require refuses to install unless GitHub's build
 # provenance attestation of the archive checks out (it needs gh, signed in);
 # CBB_ATTESTATION=skip does not check it. CBB_VERSION=v1.2.3 picks a
@@ -104,7 +105,6 @@ if [ -n "$rootless" ]; then
 	if [ "$(uname -s)" != Linux ] || [ -f /etc/openwrt_release ]; then
 		fail "--rootless is for Linux computers"
 	fi
-	[ "$lite" = no ] || fail "--rootless is for the full member; install the lite member with sudo"
 else
 	[ "$(id -u)" -eq 0 ] || fail "run it with sudo: curl -fsSL $repo/releases/latest/download/get.sh | sudo sh"
 fi
