@@ -544,7 +544,7 @@ jobs:
           mkdir "$RUNNER_TEMP/other" && echo other >"$RUNNER_TEMP/other/SHA256SUMS"
           go run ./tools/release-sign drill "$RUNNER_TEMP/other" "$RUNNER_TEMP/other.pem"
           CBB_RELEASE_ROOTS="$RUNNER_TEMP/other.pem" refused "keys.json from other roots"
-          CBB_RELEASE_ROOTS= refused "keys.json from throwaway roots instead of the pinned ones"
+          CBB_RELEASE_ROOTS='' refused "keys.json from throwaway roots instead of the pinned ones"
           sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out"
           rm "$rel/stable.json"
           refused "no stable.json"
