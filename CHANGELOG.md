@@ -563,6 +563,23 @@ All notable changes to clipboardbridge are documented in this file. The format f
   same key and records it under itself. Before, the second takeover split the group's roots
   and the records of the root in between, such as a new name, stopped counting. `cbb
   takeover` refuses on an admin that has not met the current root since.
+- A member that was off or cut off while an admin took the group over follows the new root
+  when it meets only that root afterwards: the new root presents the member certificate it
+  had before the takeover, which the member still trusts, until that certificate is due for
+  renewal. Before, such a member could not verify the new root and stayed apart.
+- Members find each other again soon after one was off the network for a couple of minutes
+  without a change to its interfaces, as when a firewall dropped its packets: the member that
+  lost another asks for the service again from 1 s, doubling, and no longer lists the lost
+  member's PTR record as a known answer, which kept it from answering. Before, they could stay
+  apart for up to an hour. The bench's random walk (G40) found it.
+- An admin computer that the lost root had frozen, and the new root unfroze, gets its admin
+  CA from the new root and can take the group over in turn: an admin CA that comes before
+  the records that make it valid is kept and taken once they are in. Before, it was dropped,
+  and `cbb takeover` on that admin refused. `cbb status` on a frozen admin says it is
+  frozen, not removed.
+- `cbb status` on an admin computer, and on a device an admin admitted, no longer says the
+  device was removed from the group: it checked the device's certificate without the admin
+  CA that issued it.
 - `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
   left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
   the hub's addresses.

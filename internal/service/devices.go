@@ -105,9 +105,16 @@ func (s *Service) settleRecords(fresh []group.Record) {
 	if rooted || revoked {
 		s.mu.Lock()
 		err := s.adoptRootsLocked()
+		pending := s.pendingAdminCA
+		s.pendingAdminCA = nil
 		s.mu.Unlock()
 		if err != nil {
 			s.logf("cbb: trusting the group's new root: %v", err)
+		}
+		if pending != nil {
+			if err := s.becomeAdmin(pending); err != nil {
+				s.logf("cbb: an admin CA that came before its records: %v", err)
+			}
 		}
 	}
 	if revoked || rooted {
@@ -188,6 +195,8 @@ func (s *Service) afterRevocation() {
 		switch err := s.allow(id.ID, ownChain(id)); {
 		case errors.Is(err, group.ErrRecordsOnly):
 			s.logf("cbb: %s took the group over from this computer, its root; if this computer is not lost, cbb revoke %s undoes it", s.takenOverBy(id), s.takenOverBy(id))
+		case err != nil && s.frozen(id):
+			s.logf("cbb: another admin froze this computer's admin key; the other members refuse it until the group's root or an admin phone unfreezes it")
 		case err != nil:
 			s.logf("cbb: this device was removed from the group; the other members refuse it until it pairs again")
 		}

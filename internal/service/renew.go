@@ -164,6 +164,9 @@ func (s *Service) becomeAdmin(der []byte) error {
 	renewed := s.id.AdminCA != nil
 	next, err := s.id.WithAdminCA(der, s.cfg.now())
 	if err != nil {
+		// It may be from a new root, or for a key a thaw lets in, whose
+		// records come after it: try it again when they do.
+		s.pendingAdminCA = der
 		return err
 	}
 	// An admin CA that replaces one is from the current root, which
@@ -175,11 +178,13 @@ func (s *Service) becomeAdmin(der []byte) error {
 	// An admin CA the records refuse, as from a root that handed the
 	// group over, would make records nobody takes.
 	if err := s.allow(next.ID, []*x509.Certificate{next.AdminCA}); err != nil {
+		s.pendingAdminCA = der
 		return err
 	}
 	if err := s.setIdentityLocked(next); err != nil {
 		return err
 	}
+	s.pendingAdminCA = nil
 	if renewed {
 		s.logf("cbb: the group's root renewed this admin's CA, for the same key")
 		return nil

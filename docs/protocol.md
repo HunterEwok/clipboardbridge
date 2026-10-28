@@ -229,7 +229,10 @@ rescanned every 10 s.
 ### Browsing
 
 - Query PTR `_clipboardbridge._tcp.local` at start, then after 1 s, doubling up to one hour,
-  listing the PTR records known with more than half their TTL as known answers.
+  listing as known answers the PTR records with more than half their TTL left of the members
+  found (a PTR record whose SRV or addresses expired is not listed). When a member found is
+  lost, start again: query now, then after 1 s, doubling. A member that was off the network
+  for a while, as behind a firewall, comes back without announcing itself.
 - Each cached record of a found member (its PTR, SRV, TXT and host addresses) is queried
   again at 80, 85, 90 and 95 percent of its lifetime, plus 0 to 2 percent at random.
 - Received records are kept only if relevant: PTR of the service, SRV/TXT of an instance
@@ -1464,15 +1467,23 @@ an admin phone, never a computer; in a group a computer created an admin compute
 3. It signs a `device` record for itself under the new root (by = itself), which marks it
    as the root in the list, and from then on renews certificates from the new root. A
    computer that takes over keeps the new root's key in the identity file (`root_key`,
-   PKCS #8) and drops its admin key and admin CA; it keeps the member certificate it has,
-   which the old root or its own admin CA issued and the `keep` above still covers.
+   PKCS #8), drops its admin key and admin CA, and issues itself a member certificate from
+   the new root. It keeps the member certificate it had, which the old root or its own admin
+   CA issued and the `keep` above still covers, with that admin CA (`prev_cert` and
+   `prev_issuer`), and presents that chain on member connections until the certificate is
+   due for renewal: a member that was away during the takeover knows only the old root, and
+   meets the new one, verifies it and takes the `root` record from it. Pairing uses the
+   certificate from the new root.
 4. Each other admin computer still holds an admin CA from the old root, and a root record it
    signed would hang under that root, not under the new one, and split the group's roots
    (rule 7). So when such an admin is connected, its admin CA in its chain or its key in its
    hello, the new root signs a `device` record for it under its own key that names the same
    admin key, and sends it a new admin CA for that key, as when it makes an admin; the records
-   name the key, not the certificate, so nothing else changes. An admin whose admin CA is from
-   a root before the current one does not take the group over (`cbb takeover` refuses).
+   name the key, not the certificate, so nothing else changes. A frozen admin gets it once it
+   is unfrozen. The admin CA may come before the records that make it valid (the `root`
+   record, a thaw); the admin keeps it and takes it once they are in. An admin whose admin CA
+   is from a root before the current one does not take the group over (`cbb takeover`
+   refuses).
 
 A computer that gets the `root` record starts trusting the new root and saves it with its
 identity; a computer that held the root it replaces is no longer the root, and gives up its
@@ -1538,8 +1549,9 @@ identity (mode 0600) and the path in the identity file's `roots`.
   every connection whose peer certificate is now refused (rule 6), after what is queued for
   it and a `bye`, and the TLS check refuses it from then on. So a revoked member that is
   connected gets the record that revokes it. A member that learns that its own key is
-  revoked logs that it was removed from the group, and its status says so (`removed`); the
-  others refuse it. A member MUST close a connection, and refuse new ones, whose peer
+  revoked logs that it was removed from the group, and its status says so (`removed`); an
+  admin computer whose admin key is frozen says that instead (`frozen`); the others refuse
+  it. A member MUST close a connection, and refuse new ones, whose peer
   certificate the records refuse, as soon as it holds the record.
 - A member that holds the group CA key (the root, or a key holder of a legacy group) records
   every device it admits (its name and `os`

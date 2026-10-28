@@ -243,10 +243,7 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 			w.mark, w.frozenBy = "admin", nil
 			return w.name, nil
 		}},
-		// Not while an admin is frozen: a member that misses a takeover
-		// cannot reach a new root that is alone, whose certificate it
-		// does not know yet (docs/roadmap.md).
-		{"takeover", 1, func() bool { return len(with("admin")) > 0 && len(with("frozen")) == 0 }, func(int) (string, error) {
+		{"takeover", 1, func() bool { return len(with("admin")) > 0 }, func(int) (string, error) {
 			// The root is lost: cut off, then gone for good once an admin
 			// took the group over. Back, it would undo the takeover (G27).
 			old, w := root(), pick(with("admin"))
@@ -266,6 +263,11 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 		}},
 		{"restart", 3, func() bool { return true }, func(int) (string, error) {
 			w := pick(live)
+			// Without a desktop clipboard the text lives in the service
+			// alone: a member with no one to sync with comes back empty.
+			if w.d.Clipboard == "none" && !slices.ContainsFunc(syncing(), func(x *walker) bool { return x != w }) {
+				w.text = ""
+			}
 			return w.name, signalService(ctx, w.d, "KILL")
 		}},
 		{"sleep", 2, func() bool { return len(syncing()) > 1 }, func(step int) (string, error) {
