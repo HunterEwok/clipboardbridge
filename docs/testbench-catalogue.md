@@ -160,7 +160,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 |---|---|---|---|
 | K1 | A member certificate is renewed when less than 240 days remain, by the root, an admin computer and an admin phone (with `issuer`); new connections present it at once [L4] | time | |
 | K2 | The `clipboardbridge.local` certificate is renewed at 60 days left, and at once when its start is in the future | time | |
-| K3 | A member takes a renewal only from a valid admin: a `cert` message for another device or key, ending earlier, not for client and server, or signed by a frozen or removed admin is ignored and logged | fleet | |
+| K3 | A member takes a renewal only from a valid admin: a `cert` message for another device or key, ending earlier, not for client and server, or signed by a removed admin is ignored and logged; a frozen admin still renews a listed device (docs/protocol.md, section 10); a device whose certificate a removed admin renewed stays in the group | fleet | |
 | K4 | No admin on through the whole renewal window: the certificate expires, connections fail with a clear message, the device pairs again | time | |
 | K5 | A certificate already ending with its CA is not renewed; a CA at the end of its 20 years is replaced as after a removal | time | |
 | K6 | Clock behind (a board booting in 1970): certificates still accepted; clock ahead by 1 h, 3 h and a year: within the margin it works, beyond it a clear message; `cbb status` shows a skew over 5 s [F8] | fleet, time | |

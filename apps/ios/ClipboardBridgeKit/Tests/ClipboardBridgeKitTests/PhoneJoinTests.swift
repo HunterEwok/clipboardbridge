@@ -111,17 +111,19 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertEqual(try GroupCertificates.verifyMember(chain: admin.memberChain, groupCA: root.groupCA, now: later), admin.device)
 
         // The admin cannot remove the root; the root removes the admin and
-        // keeps the computer it admitted.
+        // keeps every listed device: the computer it admitted, and the root,
+        // whose certificate it renewed.
         XCTAssertThrowsError(try admin.revoke(device: root.device, caSigner: adminKey, now: t0)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .cannotRemoveRoot)
         }
         let revocation = try root.revoke(device: second.device, caSigner: rootKey, now: t0)
         let body = try JSONDecoder().decode(Records.Body.self, from: revocation.body)
         XCTAssertEqual(Set(body.keys ?? []), [listed.key, try Records.keyHash(cert: adminCA)])
-        XCTAssertEqual(body.keep, [try Records.keyHash(cert: pcJoined.welcome.cert)])
+        XCTAssertEqual(Set(body.keep ?? []), [try Records.keyHash(cert: pcJoined.welcome.cert), try Records.keyHash(cert: root.memberCert)])
         XCTAssertFalse(root.devices.contains { $0.id == second.device })
         XCTAssertTrue(root.devices.contains { $0.id == pc.device })
         XCTAssertNil(root.records.refused(chain: pcChain))
+        XCTAssertNil(root.records.refused(chain: [rootsOne.cert, adminCA]), "the root's certificate the removed admin renewed")
         XCTAssertNotNil(root.records.refused(chain: [joined.welcome.cert]))
     }
 

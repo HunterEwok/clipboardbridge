@@ -564,7 +564,7 @@ func (s *Service) revoke(target string) (string, error) {
 				body.Keys = append(body.Keys, k)
 			}
 		}
-		for _, k := range s.records.Admitted(*admin) {
+		for _, k := range s.records.Staying(*admin) {
 			if !slices.Contains(keys, k) && !slices.Contains(body.Keys, k) {
 				body.Keep = append(body.Keep, k)
 			}

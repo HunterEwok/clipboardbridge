@@ -1337,6 +1337,22 @@ func (s *Records) Admitted(admin KeyHash) []KeyHash {
 	return out
 }
 
+// Staying returns the keys that a record removing the admin CA with key
+// admin keeps: those of the devices it admitted, and those of every listed
+// device, whose certificate it may have renewed (docs/protocol.md,
+// section 10). The caller drops the keys the record revokes.
+func (s *Records) Staying(admin KeyHash) []KeyHash {
+	out := s.Admitted(admin)
+	for _, d := range s.Devices() {
+		for _, k := range d.Keys {
+			if !slices.Contains(out, k) {
+				out = append(out, k)
+			}
+		}
+	}
+	return out
+}
+
 // RevokedBy returns the keys that revocations signed by the admin CA with
 // key admin revoked and that count: what the record that removes that
 // admin names again, so its removals stand once its own records no longer

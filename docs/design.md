@@ -1760,8 +1760,8 @@ are never admins.
 in a phone group, without a new group:
 
 - a member that is no admin: its member key is revoked, and that is all;
-- an admin: its member key and its admin key are revoked, and the devices it admitted are
-  kept. Only the root or an admin phone removes an admin; another admin computer freezes it
+- an admin: its member key and its admin key are revoked, and the listed devices are kept:
+  those it admitted, and the others too, since any admin renews any device's certificate. Only the root or an admin phone removes an admin; another admin computer freezes it
   ("Who may remove an admin" below). In a group a computer created, it also held the iPhone CA key, so the admin that
   removes it replaces the iPhone CA as well: a new key, new `clipboardbridge.local`
   certificates for the admins, and every token revoked; iPhones that use the shortcut

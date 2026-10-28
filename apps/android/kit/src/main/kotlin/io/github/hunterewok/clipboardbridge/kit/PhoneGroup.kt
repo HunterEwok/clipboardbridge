@@ -164,7 +164,7 @@ class PhoneGroup internal constructor(
         val me = list.firstOrNull { it.id == device } ?: throw Failure("unknown device")
         val oldRoot = Records.keyHashOfCert(currentRoot)
         val newRoot = GroupCertificates.groupCA(rootSigner, now, pathLength = 1)
-        val keep = records.admitted(oldRoot).toMutableList()
+        val keep = records.staying(oldRoot).toMutableList()
         for (other in list) {
             val k = other.adminKey
             if (other.id != lost && k != null && keep.none { it.contentEquals(k) }) keep.add(k)
@@ -228,7 +228,7 @@ class PhoneGroup internal constructor(
             if (keys.none { it.contentEquals(admin) }) keys.add(admin)
             // Its own removals stop counting with it, so this record names them again.
             for (k in records.revokedBy(admin)) if (keys.none { it.contentEquals(k) }) keys.add(k)
-            keep = records.admitted(admin).filterNot { k -> keys.any { it.contentEquals(k) } }
+            keep = records.staying(admin).filterNot { k -> keys.any { it.contentEquals(k) } }
         }
         val r = Records.revoke(keys, tag, this.device, now, caSigner, keep, adminCA)
         records.add(r, groupCA)

@@ -124,8 +124,10 @@ certificate the peer presented in the handshake and, when it is due, sends a `ce
 connection. A member without the CA keys MUST keep a certificate from a `cert` message only when
 it verifies to the group CA (or to one of the group's roots, through the message's `issuer`
 when present, section 10), names its own device ID and key, has client and server use, ends
-later than its current one and is not refused by the records; otherwise it MUST ignore it,
-and SHOULD log that. A certificate that has
+later than its current one, is not refused by the records and was not issued by a CA whose
+key the records revoke (a removed admin's or an old root's certificates stay valid for the
+devices its removal keeps, but it renews none); otherwise it MUST ignore it, and SHOULD log
+that. A certificate that has
 already expired cannot be renewed this way, since the handshake fails; the device pairs again.
 
 Fingerprint (shown to the user): SHA-256 over the certificate DER as upper-case hex bytes
@@ -1246,7 +1248,7 @@ admin removes it.
   (`cbb pair`) and admits computers and lite members, never phones, with a Welcome that
   carries `issuer` and `roots` and no CA keys; it signs the `device` record of each device it
   admits and `revoke` records (`cbb revoke`), which for an admin also name its admin key and
-  keep the devices it admitted; it renews its own certificate and those of the computers it
+  keep the listed devices (it may have admitted or renewed any of them); it renews its own certificate and those of the computers it
   is connected to. It never removes the root and makes no admins; when the root computer is
   lost, it takes the group over (below, "Handing the group over").
 - **The iPhone CA.** In a group a computer created, the root holds the iPhone CA, and so does
@@ -1266,7 +1268,7 @@ admin removes it.
   the shortcut again only once another admin sends the new one. A group a phone created has
   no iPhone CA, and its admins never get one.
 - It is removed as an admin phone is: a revocation of its member key and its admin key that
-  keeps the devices it admitted. In a group a computer created it held the iPhone CA, so the
+  keeps the listed devices. In a group a computer created it held the iPhone CA, so the
   member that removes it, the root or an admin with the iPhone CA, makes a new iPhone CA,
   revokes in the same record the old one's key and the key of every `shortcut` device (their
   tokens stop working), takes the new CA itself and sends it to the admins as above; the
@@ -1364,7 +1366,8 @@ set.
    counts. So a computer's admin CA removes devices but neither the root nor another admin,
    and nothing it signs after it is removed counts. Its earlier removals stop counting with
    it, so the record that removes an admin names again the keys its counting revocations
-   named.
+   named, and its `keep` names the member keys of every listed device that it does not
+   remove: any admin may have issued or renewed their certificates.
 4. **Freezes.** An admin computer may not remove another admin, but any admin may freeze one
    until the root decides. A **computer's admin CA** here is one that a `device` record of
    a role other than `phone`, signed by a known root's own key, names in `admin`; the keys of
@@ -1448,7 +1451,8 @@ an admin phone, never a computer; in a group a computer created an admin compute
    admin CA under the current root.
 2. As the new root, it signs a `revoke` record whose `keys` are the old root's key and the
    lost root's member and admin keys, and whose `keep` names every other key the old root
-   certified: the member keys of the listed devices it admitted and the admin CA keys of the
+   certified: the member keys of every listed device, which it admitted or whose certificates
+   it may have renewed, and the admin CA keys of the
    other admins, its own included. By rule 6 nothing the old root's key signs from then on
    counts: neither new certificates nor new admin CAs, `device` records nor `root` records.
    In a group a computer created the lost root held the iPhone CA, so the record also names
