@@ -55,8 +55,8 @@ const channelBranch = "channel"
 const stableChannel = "stable"
 
 // The image the release workflow's docker job pushes; it adds the digest
-// to the draft's notes.
-var dockerRE = regexp.MustCompile(`ghcr\.io/hunterewok/clipboardbridge@sha256:[0-9a-f]{64}`)
+// to the draft's notes on a line of its own.
+var dockerRE = regexp.MustCompile(`(?m)^ghcr\.io/hunterewok/clipboardbridge@sha256:[0-9a-f]{64}\r?$`)
 
 // signing are the flags publish and renew share.
 type signing struct {
@@ -130,7 +130,7 @@ func publish(args []string) error {
 	}
 	switch *docker {
 	case "":
-		*docker = dockerRE.FindString(view.Body)
+		*docker = strings.TrimSuffix(dockerRE.FindString(view.Body), "\r")
 		if *docker == "" {
 			return errors.New("the draft's notes name no Docker image yet: wait for the release workflow's docker job, or pass -docker none")
 		}
