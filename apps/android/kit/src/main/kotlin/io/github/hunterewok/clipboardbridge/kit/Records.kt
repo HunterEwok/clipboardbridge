@@ -829,6 +829,18 @@ class RecordSet {
         return keys
     }
 
+    /**
+     * The keys a revocation of the CA with key hash admin keeps: those of
+     * the devices it admitted, and those of every listed device, whose
+     * certificate it may have renewed (section 10), as Go's
+     * Records.Staying. The caller drops the keys the revocation names.
+     */
+    fun staying(admin: ByteArray): List<ByteArray> {
+        val keys = admitted(admin).toMutableList()
+        for (d in devices) for (k in d.keys) if (keys.none { it.contentEquals(k) }) keys.add(k)
+        return keys
+    }
+
     /** Whether a valid device record names the device ID, with any key and whether or not it counts: an ID a new device may not take (section 6). */
     fun knows(device: String): Boolean = list.any { Records.Body.decode(it.body)?.let { b -> b.type == "device" && b.device == device } == true }
 

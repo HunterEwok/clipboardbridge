@@ -113,15 +113,17 @@ class PhoneGroupTest {
         assertContentEquals(adminCA, admin.memberIssuer)
         assertEquals(admin.device, GroupCertificates.verifyMember(admin.memberChain, root.groupCA, later))
 
-        // The admin cannot remove the root; the root removes the admin and keeps the computer it admitted.
+        // The admin cannot remove the root; the root removes the admin and keeps every listed device: the
+        // computer it admitted, and the root, whose certificate it renewed.
         assertFailsWith<PhoneGroup.Failure> { admin.revoke(root.device, adminKey, t0) }
         val revocation = root.revoke(second.device, rootKey, t0)
         val body = assertNotNull(Records.Body.decode(revocation.body))
         assertEquals(setOf(Key(listed.key), Key(Records.keyHashOfCert(adminCA))), body.keys!!.map { Key(it) }.toSet())
-        assertEquals(listOf(Key(Records.keyHashOfCert(pcJoined.welcome.cert))), body.keep!!.map { Key(it) })
+        assertEquals(setOf(Key(Records.keyHashOfCert(pcJoined.welcome.cert)), Key(Records.keyHashOfCert(root.memberCert))), body.keep!!.map { Key(it) }.toSet())
         assertFalse(root.devices.any { it.id == second.device })
         assertTrue(root.devices.any { it.id == pc.device })
         assertNull(root.records.refused(pcChain))
+        assertNull(root.records.refused(listOf(rootsOne.cert, adminCA)), "the root's certificate the removed admin renewed")
         assertNotNull(root.records.refused(listOf(joined.welcome.cert)))
     }
 

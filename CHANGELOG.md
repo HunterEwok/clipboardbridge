@@ -509,6 +509,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Removing an admin, or taking the group over from a lost root, no longer cuts off the
+  devices whose certificates it had only renewed: the revocation keeps every listed device,
+  not just those it admitted, on computers, phones and the lite member alike. A member no
+  longer takes a renewed certificate from a removed admin or an old root.
+- `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
+  left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
+  the hub's addresses.
+- A device whose third wrong attempt closes an invitation's window hears so at once; it
+  waited minutes, because the hub dropped its guest tunnel before the answer passed.
+- A second device using an invitation that was used hears that its pairing window is
+  closed, not "tls: internal error".
 - The installers and `cbb update` keep a `CBB_INTERFACES` line set by hand in
   `clipboardbridge.env` (Linux, macOS, FreeBSD) or in the service's registry environment
   (Windows); before, the next install or update dropped it, and the service then answered

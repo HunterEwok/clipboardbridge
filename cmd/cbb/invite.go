@@ -10,8 +10,11 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -59,6 +62,17 @@ func cmdInvite(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return fail(stderr, fmt.Errorf("writing the invitation: %w", err))
 	}
 	defer os.Remove(*out)
+	// Ctrl+C, or a stop, ends the process before the deferred removal
+	// runs: the invitation goes with the connection, and the file here.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+	go func() {
+		<-sig
+		os.Remove(*out)
+		fmt.Fprintln(stdout, "\nThe invitation is cancelled and its file deleted.")
+		os.Exit(130)
+	}()
 	until := time.Now().Add(time.Duration(m.Expires) * time.Second)
 	fmt.Fprintf(stdout, "The invitation is in %s, valid until %s.\n\n", *out, until.Format("15:04 on Jan 2"))
 	fmt.Fprintln(stdout, "Copy it to the new device only through a channel you trust: until it is used,")
@@ -140,16 +154,35 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	joined := false
+	var joined atomic.Bool
+	takeBack := func() {
+		if _, _, err := setAwayNet(before); err != nil {
+			fmt.Fprintf(stderr, "cbb: the service may still reach the hub's addresses: %v\n", err)
+		}
+	}
 	if opened {
 		defer func() {
-			if !joined {
-				if _, _, err := setAwayNet(before); err != nil {
-					fmt.Fprintf(stderr, "cbb: the service may still reach the hub's addresses: %v\n", err)
-				}
+			if !joined.Load() {
+				takeBack()
 			}
 		}()
 	}
+	// Ctrl+C gives up: the service ends the join when this connection
+	// closes, and the hub's addresses are taken back here, which the
+	// deferred call would not do once the signal ends the process.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+	go func() {
+		<-sig
+		if !joined.Load() {
+			if opened {
+				takeBack()
+			}
+			fmt.Fprintln(stdout, "\nGave up; this device did not join.")
+		}
+		os.Exit(130)
+	}()
 	// The join changes the group: it goes to the admin socket.
 	c, err := waitService(control.OpJoin)
 	if err != nil {
@@ -166,7 +199,7 @@ func cmdJoinInvite(path string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if _, err := c.Receive(); err != nil {
 		return fail(stderr, err)
 	}
-	joined = true
+	joined.Store(true)
 	// It is used up, and was a secret; nothing needs it any more.
 	os.Remove(path)
 	// The group's servers as the service knows them now that it joined. Until

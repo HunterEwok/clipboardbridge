@@ -551,9 +551,18 @@ impl Node {
         let mut ident = self.ident.write().unwrap();
         let next = ident.with_cert_from(der, issuer)?;
         let chain: Vec<Cert> = std::iter::once(next.cert.clone()).chain(next.issuer.clone()).collect();
-        if let Some(why) = self.records.lock().unwrap().refused(&chain) {
+        let records = self.records.lock().unwrap();
+        if let Some(why) = records.refused(&chain) {
             return Err(Error::msg(why));
         }
+        // A removed admin's or an old root's certificates stay valid for
+        // the devices its removal keeps (docs/protocol.md, section 10), but
+        // it renews none.
+        let by = next.issuer.clone().or_else(|| next.trusted().into_iter().find(|r| next.cert.signed_by(r)));
+        if by.is_some_and(|c| records.revoked(&c.key_hash())) {
+            return Err(Error::msg("its issuer was removed from the group"));
+        }
+        drop(records);
         next.save(&self.state_dir)?;
         self.logf(&format!("cbb: got a renewed certificate, valid until {}", date(next.cert.not_after)));
         *ident = Arc::new(next);

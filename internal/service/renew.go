@@ -88,11 +88,33 @@ func (s *Service) certRenewed(der, issuer []byte) error {
 	if err := s.allow(next.ID, chain); err != nil {
 		return err
 	}
+	if s.issuerRemoved(next) {
+		return errors.New("its issuer was removed from the group")
+	}
 	if err := s.setIdentityLocked(next); err != nil {
 		return err
 	}
 	s.logf("cbb: got a renewed member certificate, valid until %s", next.Cert.NotAfter.UTC().Format(time.DateOnly))
 	return nil
+}
+
+// issuerRemoved reports whether the records revoke the key of the CA that
+// issued id's certificate, an admin CA or a root. The certificates a
+// removed admin or an old root issued stay valid for the devices its
+// removal keeps (docs/protocol.md, section 10), but it renews none.
+func (s *Service) issuerRemoved(id *group.Identity) bool {
+	issuer := id.Issuer
+	if issuer == nil {
+		for _, r := range id.Trusted() {
+			if id.Cert.CheckSignatureFrom(r) == nil {
+				issuer = r
+				break
+			}
+		}
+	}
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	return issuer != nil && s.records != nil && s.records.Revoked(group.KeyHashOf(issuer))
 }
 
 // withAdminKey gives a member that is not the group's root the admin key

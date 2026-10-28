@@ -39,6 +39,10 @@ const (
 	// offers its own tunnel key. Once the hub answered that offer, the guest
 	// goes as soon as that connection ends.
 	guestGrace = 2 * time.Minute
+	// failGrace is how long a guest tunnel stays after its invitation
+	// ended without a device, for the last answer to reach the device. The
+	// window is closed by then: the guest can pair no more.
+	failGrace = 10 * time.Second
 )
 
 // guest is the guest tunnel of an open invitation, on the hub.
@@ -192,7 +196,10 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 	w.Close()
 	res, err := s.windowResult(w)
 	if err != nil {
-		s.dropGuest(addr)
+		// The attempt that closed the window, the third that failed, still
+		// sends the device its answer through the guest tunnel: the guest
+		// goes a little later, or the device waits minutes for nothing.
+		time.AfterFunc(failGrace, func() { s.dropGuest(addr) })
 		s.logf("cbb: the invitation ended: %v", err)
 		writeMu.Lock()
 		fail(c, err)
@@ -231,10 +238,9 @@ func (s *Service) serveGuest(ctx context.Context, raw net.Conn, from netip.Addr,
 	}
 	cfg := &tls.Config{GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		if slices.Contains(hello.SupportedProtos, pair.Protocol) {
-			if admitted != "" {
-				// The invitation was used: no second pairing with it.
-				return nil, errors.New("the invitation was used")
-			}
+			// Once the invitation was used its window is closed, and
+			// says so to a second device, which a failed handshake would
+			// not.
 			return pair.ServerTLS(id), nil
 		}
 		return nd.ServerTLS(), nil

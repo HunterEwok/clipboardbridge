@@ -786,6 +786,18 @@ public struct RecordSet: Codable, Equatable, Sendable {
         return keys
     }
 
+    /// The keys a revocation of the CA with key hash admin keeps: those of
+    /// the devices it admitted, and those of every listed device, whose
+    /// certificate it may have renewed (section 10), as Go's
+    /// Records.Staying. The caller drops the keys the revocation names.
+    public func staying(by admin: Data) -> [Data] {
+        var keys = admitted(by: admin)
+        for d in devices {
+            for k in d.keys where !keys.contains(k) { keys.append(k) }
+        }
+        return keys
+    }
+
     /// Whether a valid device record names the device ID, with any key and
     /// whether or not it counts: an ID a new device may not take (section
     /// 6).
