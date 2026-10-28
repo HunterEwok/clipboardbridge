@@ -38,7 +38,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   files in the user's home. Its hello and device record say `rootless`, and it is never the
   group's root, an admin or a hub, not even after a warning: the service refuses the keys,
   the root and the phones refuse to make it an admin, and `cbb status` and the phones'
-  device pages show it.
+  device pages show it. The lite member installs this way too (`get.sh --lite --rootless`),
+  without the text console target and the reboot action, which need root.
 - The roadmap plans Apple Vision Pro (item 40).
 - The model of the device tiles' own order and collections, for the apps' Arrange mode
   that follows: the same rules in the tray app (Go), the Android kit (Kotlin) and the

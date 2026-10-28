@@ -196,7 +196,9 @@ pub fn known_role(r: &str) -> bool {
 /// A hello message from a lite member running on `os` (`"linux"`, or
 /// `"none"` for firmware) with what it says about its device, with its
 /// tunnel key and its own preshared key while sync away from home is on,
-/// and the quick actions that are on there.
+/// the quick actions that are on there, and where its keys live:
+/// `"file"`, or `"rootless"` for a rootless install (docs/protocol.md,
+/// section 17).
 #[allow(clippy::too_many_arguments)]
 pub fn hello(
     h: &Hello,
@@ -207,6 +209,7 @@ pub fn hello(
     tunnel_key: Option<(&[u8], &[u8])>,
     mode: &str,
     actions: &[String],
+    key_store: &str,
 ) -> Message {
     let device = device.cleaned();
     let body = HelloBody {
@@ -219,8 +222,9 @@ pub fn hello(
         tunnel_key: tunnel_key.map(|(k, _)| k.to_vec()),
         tunnel_psk: tunnel_key.map(|(_, p)| p.to_vec()),
         mode: mode.to_string(),
-        // The lite member keeps its keys in a file, or in the ESP32's flash.
-        key_store: "file".into(),
+        // The lite member keeps its keys in a file, or in the ESP32's
+        // flash: "file", or "rootless" for a rootless install (D-79).
+        key_store: key_store.into(),
         actions: actions.to_vec(),
     };
     Message {

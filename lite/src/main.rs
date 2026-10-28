@@ -25,6 +25,7 @@ mod pair;
 mod pastehelper;
 mod records;
 mod remotepaste;
+mod rootless;
 mod service;
 mod tls;
 #[cfg(feature = "tunnel")]
@@ -103,7 +104,9 @@ This is the lite member: the commands of a full member, such as pair or
 invite, are not here. The state directory is /var/lib/clipboardbridge
 (CBB_STATE), the control socket /run/clipboardbridge/control.sock
 (CBB_SOCKET); on OpenWrt /etc/clipboardbridge/state and
-/var/run/clipboardbridge/control.sock. CBB_INTERFACES limits the member
+/var/run/clipboardbridge/control.sock; installed without root (install.sh
+--rootless, CBB_ROOTLESS=1), ~/.local/state/clipboardbridge and
+$XDG_RUNTIME_DIR/clipboardbridge/control.sock. CBB_INTERFACES limits the member
 port and mDNS to the network devices it names. -debug, or CBB_DEBUG=1, shows the details of errors.
 ";
 
@@ -128,14 +131,20 @@ fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut g = Global {
         state: std::env::var_os("CBB_STATE").map(PathBuf::from).unwrap_or_else(|| {
-            PathBuf::from(if openwrt() { "/etc/clipboardbridge/state" } else { "/var/lib/clipboardbridge" })
+            if rootless::is() {
+                rootless::state_dir()
+            } else {
+                PathBuf::from(if openwrt() { "/etc/clipboardbridge/state" } else { "/var/lib/clipboardbridge" })
+            }
         }),
         socket: std::env::var_os("CBB_SOCKET").map(PathBuf::from).unwrap_or_else(|| {
-            PathBuf::from(if openwrt() {
-                "/var/run/clipboardbridge/control.sock"
+            if rootless::is() {
+                rootless::socket()
+            } else if openwrt() {
+                PathBuf::from("/var/run/clipboardbridge/control.sock")
             } else {
-                "/run/clipboardbridge/control.sock"
-            })
+                PathBuf::from("/run/clipboardbridge/control.sock")
+            }
         }),
     };
     while let Some(a) = args.first().cloned() {
@@ -427,8 +436,9 @@ fn connect(g: &Global) -> Result<UnixStream> {
             "no permission to use the Clipboard Bridge service; add your user to the clipboardbridge group and log in again",
         )),
         c => c.context(format!(
-            "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
-            g.socket.display()
+            "cannot reach the lite member's service at {}; is it running ({} status clipboardbridge)?",
+            g.socket.display(),
+            rootless::systemctl()
         )),
     }
 }
@@ -444,8 +454,9 @@ fn request(g: &Global, m: &control::Message) -> Result<control::Message> {
                 ));
             }
             c => c.context(format!(
-                "cannot reach the lite member's service at {}; is it running (systemctl status clipboardbridge)?",
-                path.display()
+                "cannot reach the lite member's service at {}; is it running ({} status clipboardbridge)?",
+                path.display(),
+                rootless::systemctl()
             ))?,
         }
     } else {
@@ -629,6 +640,11 @@ fn cmd_paste_receive(g: &Global, args: &[String]) -> Result<()> {
             _ => return Err(usage()),
         }
     }
+    if h.console && rootless::is() {
+        return Err(Error::msg(
+            "text consoles need the console helper, which runs as root; this device is installed without root, so remote paste reaches tmux only",
+        ));
+    }
     let m = request(g, &control::Message::new(h, Vec::new()))?;
     let p = m.header.status.and_then(|s| s.paste).ok_or_else(|| Error::msg("this device is in no group"))?;
     println!("{}", paste_line(&p));
@@ -711,6 +727,12 @@ fn cmd_action(g: &Global, args: &[String]) -> Result<()> {
             a.name
         )));
     }
+    if a.on && rootless::is() && !actions::rights(std::slice::from_ref(&a.name)).is_empty() {
+        return Err(Error::msg(format!(
+            "{} needs a polkit rule, which only root writes; this device is installed without root, so it has restart only",
+            a.name
+        )));
+    }
     if a.on && !yes {
         print!("{}Type yes to turn it on: ", action_warning(&a));
         std::io::stdout().flush().ok();
@@ -736,8 +758,12 @@ fn cmd_action(g: &Global, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Writes or removes the polkit rule for the actions a status says are on.
+/// Writes or removes the polkit rule for the actions a status says are on;
+/// a rootless install has none.
 fn grant(m: &control::Message) -> Result<()> {
+    if rootless::is() {
+        return Ok(());
+    }
     let on: Vec<String> =
         m.header.status.iter().flat_map(|s| &s.actions).filter(|a| a.on).map(|a| a.name.clone()).collect();
     actions::grant(std::path::Path::new("/"), &on).map(|_| ())
@@ -920,7 +946,8 @@ fn cmd_update(g: &Global, args: &[String]) -> Result<()> {
     if modes > 1 || (check && timer) {
         return Err(Error::msg(USAGE));
     }
-    let root = is_root();
+    // A rootless install's user owns its files and updates it.
+    let root = is_root() || rootless::is();
     let need_root = || Err(Error::msg("run it with sudo"));
     let (dir, work) = update::paths();
     let mut st = if root { update::load_state(&dir)? } else { update::State::default() };

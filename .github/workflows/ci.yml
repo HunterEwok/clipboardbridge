@@ -1477,7 +1477,7 @@ jobs:
           cache: false
       - name: the lite member joins by the phone, syncs with Go members and takes their remote pastes
         working-directory: .
-        run: CBB_LITE="$PWD/lite/target/release/cbb" go test -race ./internal/service -run 'TestLiteMember|TestLiteRemotePaste|TestLiteQuickActions' -v
+        run: CBB_LITE="$PWD/lite/target/release/cbb" go test -race ./internal/service -run 'TestLiteMember|TestLiteRemotePaste|TestLiteQuickActions|TestLiteRootless' -v
       - name: get.sh --lite installs the lite member, moves an old cbb-lite to it, and uninstall.sh removes it
         working-directory: .
         run: |
@@ -1523,6 +1523,36 @@ jobs:
           fi
           sudo sh /usr/local/share/clipboardbridge/uninstall.sh --purge
           for f in /usr/local/bin/cbb /etc/systemd/system/clipboardbridge.service /usr/local/share/clipboardbridge /etc/clipboardbridge /var/lib/clipboardbridge; do
+            if [ -e "$f" ]; then
+              echo "uninstall.sh left $f" >&2
+              exit 1
+            fi
+          done
+      - name: install.sh --rootless runs the lite member as the user, without the console or the reboot, and uninstall.sh removes it
+        working-directory: .
+        run: |
+          rel="$RUNNER_TEMP/release"
+          rm -rf "$RUNNER_TEMP/lite-rootless"
+          mkdir -p "$RUNNER_TEMP/lite-rootless"
+          tar -xzf "$rel/clipboardbridge-lite-linux-amd64.tar.gz" -C "$RUNNER_TEMP/lite-rootless"
+          sudo loginctl enable-linger "$USER"
+          XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export XDG_RUNTIME_DIR
+          for _ in $(seq 50); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 0.2; done
+          sh "$RUNNER_TEMP/lite-rootless/clipboardbridge-lite/packaging/linux/install.sh" --rootless --auto-update off "$RUNNER_TEMP/lite-rootless/clipboardbridge-lite/cbb"
+          systemctl --user is-active -q clipboardbridge.service
+          test -S "$XDG_RUNTIME_DIR/clipboardbridge/control.sock"
+          test ! -e /usr/local/bin/cbb
+          ~/.local/bin/cbb version | grep -q 'lite member'
+          out=$(~/.local/bin/cbb status 2>&1) || true
+          echo "$out" | grep -q 'in no group'
+          if ~/.local/bin/cbb paste-receive on -console 2>"$RUNNER_TEMP/err"; then
+            echo "a rootless lite member took the console" >&2
+            exit 1
+          fi
+          grep -q 'without root' "$RUNNER_TEMP/err"
+          sh ~/.local/share/clipboardbridge/uninstall.sh --purge
+          for f in ~/.local/bin/cbb ~/.config/systemd/user/clipboardbridge.service ~/.local/share/clipboardbridge ~/.local/state/clipboardbridge; do
             if [ -e "$f" ]; then
               echo "uninstall.sh left $f" >&2
               exit 1

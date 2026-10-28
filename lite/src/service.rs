@@ -656,12 +656,16 @@ impl Service {
                 res.reason = format!("reading the remote paste settings: {}", e.for_log());
             }
             Ok(set) if !set.on => {
-                res.reason =
-                    "remote paste is off on this device; its user turns it on there with sudo cbb paste-receive on"
-                        .into();
+                res.reason = format!(
+                    "remote paste is off on this device; its user turns it on there with {}cbb paste-receive on",
+                    crate::rootless::sudo()
+                );
             }
             Ok(set) if body.enter && !set.enter => {
-                res.reason = "this device takes pastes without Enter only; its user allows Enter with sudo cbb paste-receive on -enter".into();
+                res.reason = format!(
+                    "this device takes pastes without Enter only; its user allows Enter with {}cbb paste-receive on -enter",
+                    crate::rootless::sudo()
+                );
             }
             Ok(_) if !self.pastes.lock().unwrap().allow(&body.by, uptime::wall_ms()) => {
                 res.reason = "too many pastes: at most one a second and 30 a minute from one device".into();

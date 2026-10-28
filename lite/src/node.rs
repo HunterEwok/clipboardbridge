@@ -693,6 +693,7 @@ fn writer(
                     key.read().unwrap().as_ref().map(|(k, p)| (k.as_slice(), p.as_slice())),
                     mode.name(),
                     &actions,
+                    if crate::rootless::is() { "rootless" } else { "file" },
                 ))
             }
             Out::Event(mut ev, queued) => {

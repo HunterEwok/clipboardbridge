@@ -40,7 +40,8 @@ keys, so it can never be the group's root, an admin or the hub
 ([how it works](how-it-works.md#rootless-members)), and it has no firewall rules, no TPM and
 no `--console` or `--uinput`. To keep it running after you log out, an administrator runs
 `sudo loginctl enable-linger YOUR-USER` once. To remove it:
-`sh ~/.local/share/clipboardbridge/uninstall.sh`.
+`sh ~/.local/share/clipboardbridge/uninstall.sh`. The lite member installs this way too,
+with `--lite --rootless` ([lite member](../../lite/README.md#without-sudo-rootless)).
 
 ### SteamOS (Steam Deck)
 
