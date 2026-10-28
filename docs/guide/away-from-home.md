@@ -13,8 +13,9 @@ the tunnel's keys.
 ## 1. Choose the hub
 
 The hub is a computer that is an admin of the group: Linux, Windows, a Mac, FreeBSD or a
-router with OpenWrt or OPNsense. The best one is always on: a home server, a NAS ([Docker](install.md#docker)),
-a Raspberry Pi. A computer you switch on only when you need it works too; while the hub is
+router with OpenWrt or OPNsense. The best one is always on: a home server, a NAS, a Raspberry Pi. A NAS in Docker
+can be the hub only with its keys in a file, which it refuses unless you allow it
+([the image's README](../../packaging/docker/README.md#keys)). A computer you switch on only when you need it works too; while the hub is
 off, nothing syncs away from home, and everything at home still syncs.
 
 In a group made on a phone, make that computer an admin first: on the phone, tap the

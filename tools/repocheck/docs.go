@@ -32,7 +32,12 @@ import (
 //     that is released already (the newest version in CHANGELOG.md);
 //   - every operation of the control socket (internal/control's Op
 //     constants) is named in section 8 of docs/protocol.md or has a row of
-//     its own in a table of the protocol, as section 10's do.
+//     its own in a table of the protocol, as section 10's do, and every
+//     field of its header (internal/control's Header) is named in section 8;
+//   - the pages for users and administrators (docs/guide, docs/admin and the
+//     READMEs) do not tell the reader something is easy ("simply", "easy",
+//     "easily", "obviously", "of course"), and call the product Clipboard
+//     Bridge: the lowercase clipboardbridge only in code, a link or quotes.
 
 var (
 	mdLink    = regexp.MustCompile(`\]\(([^)\s]+)\)`)
@@ -55,6 +60,12 @@ var (
 	rsPort     = regexp.MustCompile(`const \w*PORT: u16 = (\d{2,5});`)
 	listenPort = regexp.MustCompile(`\.String\("[\w-]*listen", "[\w.]*:(\d{2,5})"`)
 	plannedFor = regexp.MustCompile(`(?i)\bplanned for (\d+)\.(\d+)\b`)
+	// easyWord is a word that tells the reader something is easy;
+	// lowerName the product's name as its files spell it; notProse what a
+	// line holds besides prose: code, a link's target, a URL, a quote.
+	easyWord  = regexp.MustCompile(`(?i)\b(simply|easy|easily|obviously|of course)\b`)
+	lowerName = regexp.MustCompile(`\bclipboardbridge\b`)
+	notProse  = regexp.MustCompile("`[^`]*`|\\]\\([^)]*\\)|<[^>]*>|https?://\\S+|\"[^\"]*\"")
 )
 
 // notEnv are the CBB_ names in the code that are not environment variables.
@@ -461,6 +472,11 @@ func checkOps(files map[string][]byte) []string {
 		section = section[:end]
 	}
 	var problems []string
+	for _, f := range headerFields(string(code)) {
+		if !strings.Contains(section, "`"+f+"`") {
+			problems = append(problems, fmt.Sprintf("%s:1: the control header field %s (%s) is not described in section 8", ref, f, src))
+		}
+	}
 	for _, m := range controlOp.FindAllSubmatch(code, -1) {
 		op := string(m[1])
 		if !strings.Contains(section, "`"+op+"`") && !strings.Contains(string(doc), "\n| `"+op+"` |") {
@@ -468,4 +484,75 @@ func checkOps(files map[string][]byte) []string {
 		}
 	}
 	return problems
+}
+
+// styled reports whether a Markdown file is a page for users or
+// administrators, which the style rules cover.
+func styled(name string) bool {
+	return strings.HasPrefix(name, "docs/guide/") || strings.HasPrefix(name, "docs/admin/") ||
+		name == "README.md" || name == "lite/README.md" || name == "lite/esp32/README.md" ||
+		name == "packaging/docker/README.md"
+}
+
+// checkStyle reports the lines of the pages for users and administrators
+// that tell the reader something is easy, or name the product in lowercase
+// outside code, links and quotes.
+func checkStyle(files map[string][]byte) []string {
+	var problems []string
+	for _, name := range sortedKeys(files) {
+		if !styled(name) {
+			continue
+		}
+		// code is inside a fenced block, span inside a code span that
+		// goes on from an earlier line.
+		code, span := false, false
+		for i, line := range strings.Split(string(files[name]), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				code = !code
+				continue
+			}
+			if code {
+				continue
+			}
+			if span {
+				line = "`" + line
+			}
+			if span = strings.Count(line, "`")%2 == 1; span {
+				line += "`"
+			}
+			prose := notProse.ReplaceAllString(line, "")
+			if m := easyWord.FindString(prose); m != "" {
+				problems = append(problems, fmt.Sprintf("%s:%d: %q tells the reader it is easy; say what to do instead", name, i+1, m))
+			}
+			if lowerName.MatchString(prose) {
+				problems = append(problems, fmt.Sprintf("%s:%d: the product is Clipboard Bridge in prose; clipboardbridge only in code, links or quotes", name, i+1))
+			}
+		}
+	}
+	return problems
+}
+
+// jsonTag is a field's name in its JSON struct tag, headerStruct the start
+// of internal/control's Header.
+var (
+	jsonTag      = regexp.MustCompile("`json:\"([a-z_]+)[,\"]")
+	headerStruct = regexp.MustCompile(`(?m)^type Header struct \{`)
+)
+
+// headerFields returns the JSON names of the fields of internal/control's
+// Header, the header of every message on the control socket.
+func headerFields(code string) []string {
+	loc := headerStruct.FindStringIndex(code)
+	if loc == nil {
+		return nil
+	}
+	body := code[loc[0]:]
+	if end := strings.Index(body, "\n}"); end >= 0 {
+		body = body[:end]
+	}
+	var fields []string
+	for _, m := range jsonTag.FindAllStringSubmatch(body, -1) {
+		fields = append(fields, m[1])
+	}
+	return fields
 }

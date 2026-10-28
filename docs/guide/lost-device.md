@@ -6,7 +6,7 @@ group as soon as you can; the other devices stay in the group and keep syncing.
 
 ## 1. Remove it
 
-On a phone that is an admin, open **Devices**, choose the lost device and **Remove**. On an
+On a phone that is an admin, tap the lost device on **Home**, then **Remove**. On an
 admin computer:
 
 ```sh

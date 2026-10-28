@@ -13,13 +13,14 @@ computer's QR code, and turn on sharing on that computer.
 A group can have a computer at its heart or be made of phones only: both work, and we recommend
 a computer that is often on, which keeps sync away from home going at any time ([two kinds of group](how-it-works.md#two-kinds-of-group)).
 With phones only, skip steps 2 to 4: on each other phone tap **I already use Clipboard Bridge
-on another phone**, and scan the code it shows with **Connect a new device** on the first.
+on another phone**, and scan the code it shows with **Connect a new device** on the first (**+** once it has
+devices).
 
 ## 1. Install the app on your phone
 
 - **Android** 10 or later: download `clipboardbridge-X.Y.Z.apk` from the
   [latest release](https://github.com/HunterEwok/clipboardbridge/releases/latest) on the
-  phone and open it.
+  phone and open it; allow the browser to install apps when Android asks.
 - **iPhone**: the app comes with TestFlight, which is not open yet. Until then an iPhone
   uses a shortcut, and a computer holds the group: see [Without the app](without-app.md).
 
@@ -41,8 +42,9 @@ On **Windows** 10 or 11, in a PowerShell opened with "Run as administrator":
 irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
 ```
 
-The installer checks the download, starts Clipboard Bridge and asks before it opens the
-firewall for it (answer `y`). Then log out and in again once, or open a new terminal on
+The installer checks the download, starts Clipboard Bridge and asks two questions: whether
+to open the firewall for it (answer `y`) and whether to update itself automatically (`y`
+is a good answer too). Then log out and in again once, or open a new terminal on
 Windows. Homebrew, winget, Docker and the details are in [Installing](install.md).
 
 ## 3. Add the computer
@@ -69,6 +71,8 @@ copy on it reach the group, and what the group copies reach it:
 sudo cbb mode shared
 ```
 
+On Windows, run `cbb mode shared` in the administrator terminal.
+
 Now copy on the computer and paste on the phone, or the other way round:
 
 - **Android** gets the computers' copies by itself. To send the phone's copies, tap the big
@@ -77,8 +81,8 @@ Now copy on the computer and paste on the phone, or the other way round:
   you.
 - **Between computers** in shared mode: copy on one, paste on another. Nothing to press.
 
-Other modes (only receive, only send) and the rest of what the apps do are in
-[The apps](apps.md).
+Other modes (only receive, only send) are in [the commands](../reference/cli.md#cbb)
+(`cbb mode`), and the rest of what the apps do is in [The apps](apps.md).
 
 ## 5. Recommended: let a computer that is always on help the phone
 
@@ -86,7 +90,9 @@ The group works with just the phone, but two things are better on a computer tha
 such as a home server, a Raspberry Pi or a desktop:
 
 - **Make it an admin.** On the phone, tap the computer on Home and then
-  **Make it an admin**. It can then add and remove devices too (`sudo cbb pair`,
+  **Make it an admin**. A Mac, a Windows PC or a Linux computer without a TPM keeps its
+  keys in a file, and the app warns you about that first
+  ([keys](keys.md#the-three-levels)). It can then add and remove devices too (`sudo cbb pair`,
   `sudo cbb revoke NAME`), so you do not need the phone at hand every time. The phone stays
   the group's root, its most trusted device: the root's key never leaves the phone's
   security chip.

@@ -9,10 +9,10 @@ the desktop apps are a window onto the service that already runs on the computer
 | Android | `clipboardbridge-X.Y.Z.apk` in each [release](https://github.com/HunterEwok/clipboardbridge/releases) | built and tested in CI, not yet on a real phone |
 | Android without Google | `clipboardbridge-fdroid-X.Y.Z.apk`, and F-Droid once it is accepted: the same app without the Wear OS watch | built and tested in CI |
 | iPhone and iPad | TestFlight, when it opens | built and tested in CI, not yet on a real phone |
-| Wear OS | `clipboardbridge-wear-X.Y.Z.apk`, through the Android phone | built |
+| Wear OS | `clipboardbridge-wear-X.Y.Z.apk`, put on the watch from a computer with `adb install` over the watch's wireless debugging, until the app is on Google Play | built |
 | Apple Watch | with the iPhone app | built |
-| Mac app | built from `apps/macos` for now | built |
-| Tray app for Linux and Windows | built from `apps/desktop` for now | built |
+| Mac app | not yet a download: built from `apps/macos` for now | built |
+| Tray app for Linux and Windows | not yet a download: built from `apps/desktop` for now | built |
 
 ## Phones
 
@@ -26,7 +26,8 @@ the desktop apps are a window onto the service that already runs on the computer
 3. Add each further computer with **+** on Home. A lite member joins the same way
    (`sudo -u clipboardbridge cbb join` on it shows its code).
 
-When the camera cannot be used, type the six digits the computer shows instead.
+When the camera cannot be used: on an iPhone, type the six digits the computer shows; on
+Android, paste the text of the QR code, which `cbb pair` prints too.
 
 ### Every day
 
@@ -52,8 +53,9 @@ Tap a device to see its kind, system, version and role. On an admin phone you ca
 - **Rename** or **Remove** it; removing asks once, and then for your face, fingerprint or
   passcode.
 - **Make it an admin**, for a computer: it can then add and remove devices with
-  `sudo cbb pair` and `sudo cbb revoke`. Its key is a file on the computer, so choose a
-  computer you trust, ideally one that is always on and also the [hub](away-from-home.md).
+  `sudo cbb pair` and `sudo cbb revoke`. Its key is a file on the computer, unless it is a
+  Linux computer with a TPM, and the app warns you about that first; so choose a computer
+  you trust, ideally one that is always on and also the [hub](away-from-home.md).
 
 ### A second phone, and a lost one
 
@@ -67,7 +69,7 @@ Tap a device to see its kind, system, version and role. On an admin phone you ca
 ### Settings
 
 - **Sync away from home**: see [Away from home](away-from-home.md#3-turn-it-on-on-the-other-devices).
-- **Look**: ten colours, each dark and light, or the system's; on Android also the
+- **Theme**: ten colours, each dark and light, or the system's; on Android also the
   wallpaper's colours.
 - **Language**: the system's, English or Russian.
 - **Notifications**, one switch for each kind.

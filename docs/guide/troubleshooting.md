@@ -23,21 +23,19 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
 ## Devices do not see each other
 
 - **Firewall.** Members need TCP 8764 (or your port) and UDP 5353 (mDNS) from the home
-  network. The installers add both to ufw, firewalld, the macOS application firewall and
-  Windows Firewall when you answer Yes or pass `--express`; after a No they print the
-  commands. With another firewall, or one turned on later, run the installer again or allow
-  them by hand (see [the firewall](install.md#the-firewall)). When the
-  other computers at home could not connect to this one and sync only because it dials them
-  back, `cbb status` says so with a warning: a firewall here drops the member port, one
-  the installer does not know or a rule that is missing.
+  network. The installers add them when you answer Yes; which firewalls they know, and the
+  commands for the others, are in [the firewall](install.md#the-firewall). With a firewall
+  turned on later, run the installer again. If `cbb status` warns that the others cannot
+  connect to this computer, its firewall is blocking the member port.
 - **Another subnet or VLAN.** mDNS does not cross routers, so devices on, say,
   192.168.0.x and 192.168.20.x do not find each other. Turn on [sync away from home](away-from-home.md)
-  with a hub on one side, or, for a lite member, name a computer with
-  `cbb run -peer ADDRESS:8764` ([lite member](../../lite/README.md#install)).
+  with a hub on one side, or, for a lite member, name a computer with `-peer` in its
+  service ([lite member](../../lite/README.md#install)).
 - **Guest Wi-Fi or client isolation** on the router keeps devices from talking to each
   other at all; put them on the main network.
 - **A different group.** `cbb status` shows the group; devices of two groups never
-  sync. Join the right one again with `cbb pair`.
+  sync. To move a computer to the right one, remove it from the wrong group, uninstall it
+  with `--purge` ([removing it](install.md#removing-it)), install it again and pair it.
 
 ## Pairing fails
 
@@ -47,8 +45,8 @@ in again (on Windows, open a new terminal); until then, `sudo cbb ...` works.
   computer must be on the same network, and the computer's port must be open (above). On
   iOS, allow Local Network for the app (Settings, Privacy & Security, Local Network).
 - **The shortcut cannot reach `clipboardbridge.local`**: only the group's root and admin
-  computers serve it, on port 8764 only; at least one must be on (`cbb holder` says which
-  one answers). Check that the profile is installed and fully
+  computers serve it, on port 8764 only; at least one must be on (`cbb status` on each
+  computer says whether it answers). Check that the profile is installed and fully
   trusted ([Without the app](without-app.md#3-add-an-iphone-with-the-shortcut)).
 
 ## Sync away from home

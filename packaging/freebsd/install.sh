@@ -140,16 +140,21 @@ if [ -z "$cgnat" ]; then
 	cgnat=$(sed -n 's/^CBB_HOME_CGNAT=//p' "$env" 2>/dev/null | tail -n 1)
 fi
 [ "$cgnat" = 1 ] || cgnat=0
-if [ "$port" = 8764 ] && [ "$cgnat" = 0 ]; then
+# CBB_INTERFACES has no option: a line set by hand stays.
+interfaces=$(sed -n 's/^CBB_INTERFACES=//p' "$env" 2>/dev/null | tail -n 1)
+if [ "$port" = 8764 ] && [ "$cgnat" = 0 ] && [ -z "$interfaces" ]; then
 	rm -f "$env"
 else
 	{
-		echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N and --home-cgnat on|off."
+		echo "# Written by clipboardbridge's install.sh; change it with install.sh --port N and --home-cgnat on|off. A CBB_INTERFACES line is kept."
 		if [ "$port" != 8764 ]; then
 			echo "CBB_PORT=$port"
 		fi
 		if [ "$cgnat" = 1 ]; then
 			echo "CBB_HOME_CGNAT=1"
+		fi
+		if [ -n "$interfaces" ]; then
+			echo "CBB_INTERFACES=$interfaces"
 		fi
 	} >"$env"
 	chmod 0644 "$env"

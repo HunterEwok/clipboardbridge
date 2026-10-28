@@ -127,7 +127,7 @@ apps" below).
   compares the same way everywhere.
 - **Member port**: Clipboard Bridge's one port, TCP 8764 unless the installer was given another,
   advertised in the mDNS SRV record. Every computer and lite member listens there for mutual
-  TLS (Macs since D-46); phones only dial. The first bytes of a connection pick what it gets (docs/protocol.md, section 3):
+  TLS (Macs since D-46); phones only dial, except a phone that is the hub. The first bytes of a connection pick what it gets (docs/protocol.md, section 4):
   - members and the phone app, with the member ALPN protocol and mutual TLS;
   - pairing, with its own ALPN protocol;
   - the shortcut's HTTPS (`/sync` and the pairing page `/pair`), with no client

@@ -28,15 +28,17 @@ On the root:
 sudo cbb pair
 ```
 
-It shows a six-digit code and waits. On the new computer, also `sudo cbb pair`, and type
-the code there. The new computer joins within seconds.
+It shows a six-digit code and waits. On the new computer, also `sudo cbb pair`: it shows a
+QR code for the phone app first, which you can ignore, and asks for the code; type the six
+digits there. The new computer joins within seconds.
 
 Then turn on sharing on each computer, as in the [quick start](quickstart.md#4-share-the-computers-clipboard):
 `sudo cbb mode shared`.
 
 ## 3. Add an iPhone with the shortcut
 
-On the root (it must be a Linux computer):
+On the root, or an admin computer that answers for `clipboardbridge.local` (`cbb status`
+says whether it does):
 
 ```sh
 sudo cbb pair -phone
@@ -61,7 +63,8 @@ comes to the iPhone; otherwise a new copy on the iPhone goes to the computers.
 Make a second computer an admin, so it can add and remove devices too:
 
 ```sh
-sudo cbb admin NAME   # on the root; NAME as cbb status shows it, and it must be on
+sudo cbb admin NAME                   # on the root; NAME as cbb status shows it, and it must be on
+sudo cbb admin -allow-file-key NAME   # for a Mac, a Windows PC or a Linux computer without a TPM
 ```
 
 A Linux computer with a TPM keeps its admin key there. A Mac, a Windows PC or a Linux
