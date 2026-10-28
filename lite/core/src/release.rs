@@ -51,7 +51,8 @@ pub struct Key {
     pub key: Vec<u8>,
     pub name: String,
     /// `release` when absent; a key of another use, such as the `status`
-    /// key of the revocation mirror, signs no release.
+    /// key of the revocation mirror or the `channel` key that renews the
+    /// channel files, signs no release.
     #[serde(default, rename = "use")]
     pub usage: String,
 }
@@ -306,13 +307,18 @@ pub fn check(
     seen: &Seen,
 ) -> Result<(Release, Seen)> {
     let k = verify_keys(keys, roots, now_ms, seen).map_err(|e| e.context("keys.json is not valid"))?;
-    let spkis: Vec<&[u8]> = k
-        .keys
-        .iter()
-        .filter(|key| key.usage.is_empty() || key.usage == "release")
-        .map(|key| key.key.as_slice())
-        .collect();
-    channel.verify(&spkis).map_err(|e| e.context(format!("{name}.json is not valid")))?;
+    let of = |usage: &str| -> Vec<&[u8]> {
+        k.keys
+            .iter()
+            .filter(|key| key.usage == usage || (key.usage.is_empty() && usage == "release"))
+            .map(|key| key.key.as_slice())
+            .collect()
+    };
+    let spkis = of("release");
+    // A channel key signs channel files and nothing else.
+    let mut channel_spkis = spkis.clone();
+    channel_spkis.extend(of("channel"));
+    channel.verify(&channel_spkis).map_err(|e| e.context(format!("{name}.json is not valid")))?;
     let c = decode_channel(&channel.body).map_err(|e| e.context(format!("{name}.json is not valid")))?;
     if c.channel != name {
         return Err(Error::msg(format!("{name}.json is for the channel {:?}", c.channel)));

@@ -35,6 +35,7 @@ object Releases {
 
     const val USE_RELEASE = "release"
     const val USE_STATUS = "status"
+    const val USE_CHANNEL = "channel"
 
     class Refused(message: String) : Exception(message)
 
@@ -176,15 +177,17 @@ object Releases {
 
     /**
      * Checks a channel file and the release.json it names: keys.json under
-     * the pinned roots (SubjectPublicKeyInfos, DER), the channel file and
-     * release.json under its release keys, the channel's name, both expiries,
+     * the pinned roots (SubjectPublicKeyInfos, DER), the channel file under
+     * its release or channel keys and release.json under its release keys,
+     * the channel's name, both expiries,
      * and that nothing is older than seen. Returns the release and the Seen
      * to keep.
      */
     fun check(keys: File, channel: File, release: File, roots: List<ByteArray>, name: String, nowMS: Long, seen: Seen): Pair<Release, Seen> {
         val k = verifyKeys(keys, roots, nowMS, seen)
         val (cSeq, cRelease, cHash) = try {
-            channel.verify(k.spkis(USE_RELEASE))
+            // A channel key signs channel files and nothing else.
+            channel.verify(k.spkis(USE_RELEASE) + k.spkis(USE_CHANNEL))
             val o = decode(channel.body, "channel")
             val c = o.optString("channel") ?: ""
             val seq = o.optLong("seq") ?: 0

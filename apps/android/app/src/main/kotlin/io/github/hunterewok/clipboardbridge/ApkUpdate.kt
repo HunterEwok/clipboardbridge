@@ -247,6 +247,13 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
         private const val GITHUB = "https://github.com/HunterEwok/clipboardbridge/releases"
         private const val MIRROR = "https://dl.cbb.tools"
 
+        /**
+         * Where GitHub keeps the current keys.json and channel file: the branch
+         * channel, since a published release takes no new files and these are
+         * signed again while it is current (docs/protocol.md, section 16).
+         */
+        private const val CHANNEL_FILES = "https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel"
+
         /** GitHub first, then the mirror, as cbb update. */
         val SOURCES = listOf(GITHUB, MIRROR)
         const val CHANNEL = "stable"
@@ -279,8 +286,12 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
 
         fun asset(r: Releases.Release): Releases.Asset? = r.files.firstOrNull { it.name == apkName(r.version) }
 
-        /** Where a server keeps a file: GitHub under download/vX.Y.Z or latest/download, a mirror under vX.Y.Z or its top. */
+        /**
+         * Where a server keeps a file: GitHub under download/vX.Y.Z or latest/download, and the
+         * current keys.json and channel file in the branch channel; a mirror under vX.Y.Z or its top.
+         */
         fun url(base: String, name: String, version: String?): String = when {
+            base == GITHUB && version == null && (name == KEYS_FILE || name == CHANNEL_FILE) -> "$CHANNEL_FILES/$name"
             base == GITHUB && version == null -> "$base/latest/download/$name"
             base == GITHUB -> "$base/download/v$version/$name"
             version == null -> "$base/$name"

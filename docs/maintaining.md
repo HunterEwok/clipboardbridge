@@ -134,8 +134,9 @@ Rules for workflows:
   (`git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`), and
   `.github/workflows/release.yml` builds the archives, `SHA256SUMS` and the attestations and,
   once the iPhone app's CodeQL analysis passes on the tag (about 45 minutes),
-  publishes the release, with notes generated from the merged pull requests. A tag with a
-  hyphen (`v0.2.0-rc.1`) makes a pre-release, which `releases/latest` and so `get.sh` skip.
+  makes a draft release, with notes generated from the merged pull requests. The maintainer
+  signs and publishes it on their Mac with `release-sign publish` ("Signed releases" below).
+  A tag `vX.Y.Z-rc.N` makes a pre-release, which `releases/latest` and so `get.sh` skip.
 - The archives are `clipboardbridge-<os>-<arch>.tar.gz` without the version, so that
   `releases/latest/download/` has fixed names for `get.sh`; each holds `clipboardbridge/` with the
   binary, `LICENSE`, `THIRD_PARTY_NOTICES` (the licenses of the Go modules, the copied code
@@ -151,7 +152,7 @@ Rules for workflows:
   check the result by importing it on an iPhone, and commit the signed file.
 - Published with `SHA256SUMS` and a build provenance attestation
   (`actions/attest-build-provenance`), which users can check with `gh attestation verify`.
-- After the release, the `docker` job builds the image of `packaging/docker` from the
+- After the draft, the `docker` job builds the image of `packaging/docker` from the
   release's own Linux archives for amd64, arm64 and armv7, pushes it to
   `ghcr.io/hunterewok/clipboardbridge` as `X.Y.Z` (and `latest`, but not for a pre-release),
   attests it in the registry and adds its digest to the release notes. The first push makes
@@ -177,26 +178,53 @@ the maintainer's Mac; the keys never reach CI. The roots were made on 2026-10-28
   also turn on the Android app's own update).
 - **The release key**, in the Mac's Secure Enclave, asking for Touch ID at each signature:
   `swift tools/release-sign/se.swift create ~/.config/cbb-release/release.se`. A root
-  certifies it in `keys.json`, signed again at least every 90 days with a higher `-seq`:
-  `release-sign keys -seq N release=release.pem >keys.body` and
-  `release-sign sign -key piv:82 keys.body >keys.json`.
-- **Each release**: download the draft's files, check their attestations against the tag's
-  commit (`gh attestation verify FILE --repo HunterEwok/clipboardbridge`), then
-  `release-sign manifest -version X.Y.Z -min-from ... DIR >release.body`,
-  `release-sign sign -key se:$HOME/.config/cbb-release/release.se release.body >release.json`,
-  `release-sign channel -seq N release.json >stable.body`, sign it the same way into
-  `stable.json`, run `release-sign verify -roots root-1.pem,root-2.pem DIR`, upload
-  `keys.json`, `release.json` and `stable.json` to the release and publish it.
-- `stable.json` expires after 30 days: sign it again before then, with a higher `-seq`, even
-  without a new release.
+  certifies it in `keys.json`, which lives 90 days.
+- **The branch `channel`** holds the current `keys.json` and `stable.json`
+  (docs/protocol.md, section 16, "Where the files are"), since a published release takes no
+  new files. `release-sign publish` makes it with the first signed release, and only
+  `release-sign` and the `channel` workflow write to it.
+- **The channel key**, once, on cbb.tools beside the status key, readable only by root:
+  `openssl ecparam -name prime256v1 -genkey -noout -out /etc/cbb-channel/channel-key.pem`
+  and its public key `openssl ec -in channel-key.pem -pubout -out channel.pem`, copied to the
+  Mac. The first `release-sign publish` certifies it with `-channel cbb.tools=channel.pem`;
+  later ones keep it. A weekly systemd timer on cbb.tools
+  (`site/deploy/cbb-channel.service` and `.timer`, as the user `cbb-channel`, which gets the
+  root-only key as a credential for the run) runs `release-sign extend -key
+  file:channel-key.pem -out /srv/cbb.tools/channel`, which reads the
+  branch, checks it, signs `stable.json` again for 30 days with the same release and a
+  higher number, and serves it with `keys.json` at `https://cbb.tools/channel/` (build it
+  with `GOOS=linux GOARCH=amd64 go build ./tools/release-sign`). The daily `channel`
+  workflow (`.github/workflows/channel.yml`) takes it into the branch with `release-sign
+  take`, which refuses one that does not check out, names another release or is not newer.
+  GitHub holds no key and cbb.tools no GitHub token.
+- **Each release**: once the release workflow has made the draft (its `docker` job adds the
+  image's digest to the notes), `release-sign publish -version X.Y.Z [-min-from X.Y.Z]` on
+  the Mac, with `gh` signed in. It downloads the draft's files, checks each one's build
+  attestation against the tag (`gh attestation verify --source-ref refs/tags/vX.Y.Z`), keeps
+  the branch's `keys.json` when it is valid for 45 more days and certifies the release key
+  and the keys asked for (otherwise a root signs a new one, numbered above it, with the same
+  keys: the YubiKey's PIN and a touch), signs `release.json` and `stable.json` (numbered
+  above the branch's) with the release key (Touch ID for each), checks all of it under the
+  pinned roots as a device would, uploads `release.json` to the draft and, after a yes,
+  publishes it and commits `keys.json` and `stable.json` to the branch. `-no-publish` stops
+  before publishing, `-docker none` signs a release without the image; a pre-release
+  changes no `stable.json`. `published.yml` then checks what GitHub serves and updates the
+  Homebrew tap. The steps by hand: `release-sign manifest`, `sign`, `channel`, `keys` and
+  `verify` (the comment in `tools/release-sign/main.go`).
+- **Reminders**: the `channel` workflow opens the issue "Release channel: renewal due" when
+  the branch's `keys.json` expires within 21 days (run `release-sign renew -new-keys` on the
+  Mac with a YubiKey) or its `stable.json` within 10, which means cbb.tools stopped renewing
+  it (check its timer, or run `release-sign renew`, which signs it with the release key).
 - A lost or stolen Mac: a root signs a `keys.json` with a new release key and without the
   old one. A lost YubiKey: the other root signs, and the next release ships a new second root.
+  A stolen channel key: a new one on cbb.tools, and `release-sign renew -drop cbb.tools
+  -channel cbb.tools-2=channel.pem` (`-drop NAME` drops any key by its name in `keys.json`).
 - **The status key** of the revocation mirror, on cbb.tools in a file readable only by the
   mirror's user (it signs nothing but `attest-status.json`, so a stolen one can at most keep
   a revoked phone proven until it is replaced): `openssl ecparam -name prime256v1 -genkey
   -noout -out status-key.pem`. `keys.json` certifies it with `-status mirror=status.pem`. A
   daily timer runs `attest-status -key status-key.pem -out /srv/cbb.tools/attest` and copies
-  `keys.json` beside it. When it stops on a list that drops a serial number, check Google's
+  `keys.json` beside it from `/srv/cbb.tools/channel`. When it stops on a list that drops a serial number, check Google's
   list and run it once with `-allow-drop`; a stolen status key is dropped from the next
   `keys.json` like a release key.
 - **The TPM makers' certificates** in `internal/attest/tpmroots/roots.pem`, which decide
@@ -213,7 +241,7 @@ The tap is the repository
 [HunterEwok/homebrew-tap](https://github.com/HunterEwok/homebrew-tap),
 the one tap for all of the owner's formulae; Clipboard Bridge's is `Formula/clipboardbridge.rb`, and users install with
 `brew install hunterewok/tap/clipboardbridge`. After each release (not a
-pre-release) the `homebrew` job of `.github/workflows/release.yml` writes the formula with
+pre-release) is published, `.github/workflows/published.yml` checks its signed files and writes the formula with
 `packaging/homebrew/formula.sh` from the release's `SHA256SUMS` and pushes it to the tap's
 `main`. The formula installs the release archives as they are, so it needs no Apple signing,
 and CI's `homebrew` job installs one with it on macOS on every pull request.
@@ -230,8 +258,8 @@ Setting it up, once:
   secret** `CBB_HOMEBREW_TAP_KEY`: the contents of `homebrew-tap`, the private key. Then
   delete both files.
 
-To check the key without a release, run the release workflow from a branch (**Actions →
-release → Run workflow**): its `homebrew` job pushes to the tap with `--dry-run`, which
+To check the key without a release, run the published workflow from a branch (**Actions →
+published → Run workflow**): its `homebrew` job pushes to the tap with `--dry-run`, which
 fails unless the key may write there.
 
 Without the secret the release still succeeds and warns that the tap kept its formula. To

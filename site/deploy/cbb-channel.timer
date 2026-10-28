@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+#
+# stable.json lives 30 days; renewed weekly, three missed runs still leave
+# time before the channel workflow's reminder at 10 days.
+
+[Unit]
+Description=Renew the cbb release channel every week
+
+[Timer]
+OnCalendar=Mon *-*-* 05:00:00 UTC
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target
