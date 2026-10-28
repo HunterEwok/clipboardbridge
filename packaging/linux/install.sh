@@ -31,7 +31,8 @@
 # The full member only. --auto-update on|off (or CBB_AUTO_UPDATE) answers
 # whether the full member updates itself once a day to a signed release,
 # which it asks otherwise and keeps (packaging/update.sh, cbb update -auto).
-# uninstall.sh removes it all again.
+# uninstall.sh removes it all again. --rootless installs the full member for
+# the user who runs it, without sudo (install-rootless.sh, D-79).
 #
 # On SteamOS, whose / is read-only and replaced by each system update, the
 # binary and the shared files go to /opt/clipboardbridge instead, which
@@ -54,8 +55,20 @@ trap 'failed $?' EXIT
 # The firewall tools answer in the user's language; what this reads is English.
 export LC_ALL=C
 
+# --rootless installs for the user who runs it, without sudo.
+for a in "$@"; do
+	if [ "$a" = --rootless ]; then
+		if [ ! -f "$(dirname "$0")/install-rootless.sh" ]; then
+			echo "install.sh: --rootless is for the full member; install the lite member with sudo" >&2
+			exit 2
+		fi
+		exec sh "$(dirname "$0")/install-rootless.sh" "$@"
+	fi
+done
+
 usage() {
 	echo "usage: sudo sh install.sh [--console] [--uinput] [--port N] [--home-cgnat on|off] [--auto-update on|off] [--express | --no-firewall] path/to/cbb" >&2
+	echo "   or: sh install.sh --rootless [--port N] [--home-cgnat on|off] [--auto-update on|off] path/to/cbb" >&2
 	exit 2
 }
 console=no

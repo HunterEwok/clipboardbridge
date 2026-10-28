@@ -832,6 +832,7 @@ class AppModel(private val app: Context) {
                 if (e.code == Pairing.ErrorCode.WRONG_CODE) R.string.error_wrong_code else R.string.error_refused
             is PhoneGroup.Failure -> R.string.error_generic
             is PhoneGroup.FileKey -> R.string.error_file_key
+            is PhoneGroup.Rootless -> R.string.error_rootless
             is PairingJoiner.Failure -> R.string.error_join
             is Keys.NoScreenLock -> R.string.error_no_screen_lock
             is Authenticator.Cancelled -> R.string.error_not_authenticated

@@ -25,6 +25,23 @@ login or lock screen.
 Small devices that should only sync, such as a router or a Raspberry Pi Zero, can take the
 lighter [lite member](../../lite/README.md) instead: `... | sudo sh -s -- --lite`.
 
+### Without sudo (rootless)
+
+On a Linux computer where you cannot or do not want to use `sudo`, install it for your own
+user, without `sudo`:
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh -s -- --rootless
+```
+
+It runs as your own background service while you are logged in, and syncs as any member.
+Use it only when the normal install is not possible: every program you run could copy its
+keys, so it can never be the group's root, an admin or the hub
+([how it works](how-it-works.md#rootless-members)), and it has no firewall rules, no TPM and
+no `--console` or `--uinput`. To keep it running after you log out, an administrator runs
+`sudo loginctl enable-linger YOUR-USER` once. To remove it:
+`sh ~/.local/share/clipboardbridge/uninstall.sh`.
+
 ### SteamOS (Steam Deck)
 
 Switch to Desktop Mode, open Konsole, give the `deck` user a password once if it has none

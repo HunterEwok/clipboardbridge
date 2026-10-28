@@ -151,9 +151,10 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
 
     /// fileKey: the computer keeps its keys in a file, which a thief with
     /// it can copy and then act as an admin; the user allows it after a
-    /// warning (docs/protocol.md, section 17).
+    /// warning (docs/protocol.md, section 17). rootless: the computer is a
+    /// rootless install, which is never an admin (D-79).
     public enum Failure: Error, Equatable {
-        case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName, fileKey
+        case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName, fileKey, rootless
         /// A watch's request names a device ID or system that is not a new watch's,
         /// or a device that is not a watch of the group.
         case notAWatch
@@ -351,7 +352,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// naming that CA. It returns the admin CA, for the admin message, and
     /// the record to send. Only the root makes admins. keyStore is where
     /// the computer's hello says its keys live; one that keeps them in a
-    /// file becomes an admin only with allowFileKey, else Failure.fileKey.
+    /// file becomes an admin only with allowFileKey, else Failure.fileKey,
+    /// and a rootless install never (Failure.rootless).
     public mutating func makeAdmin(device: String, adminKey: Data, rootSigner: CertificateSigner, now: Date,
                                    keyStore: String? = nil, allowFileKey: Bool = false) throws -> (adminCA: Data, record: Member.Record) {
         guard isRoot else { throw Failure.notRoot }
@@ -360,6 +362,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         guard !d.frozen else { throw Failure.frozen }
         let proven = d.store == Records.proven
         let store = proven ? d.store : Records.store(keyStore, role: d.role)
+        guard store != Records.rootless, d.store != Records.rootless else { throw Failure.rootless }
         guard store != Records.file || allowFileKey else { throw Failure.fileKey }
         let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
         let r = try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: Records.keyHash(cert: ca),

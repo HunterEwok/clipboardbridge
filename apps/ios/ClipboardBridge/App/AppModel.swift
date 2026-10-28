@@ -144,6 +144,9 @@ final class AppModel: ObservableObject {
         /// Its keys sit in a file, as its hello or else its record says: a
         /// thief with it can copy them.
         var keysInFile = false
+        /// It is a rootless install, as its hello or else its record says:
+        /// never an admin or a hub (D-79).
+        var rootless = false
         /// An admin computer another admin froze: the root or an admin phone
         /// unfreezes or removes it.
         var frozen = false
@@ -921,6 +924,9 @@ final class AppModel: ObservableObject {
         }
         if let f = error as? PhoneGroup.Failure, f == .cannotRemoveRoot {
             return String(localized: "The phone that made the group cannot be removed yet.", bundle: .app)
+        }
+        if let f = error as? PhoneGroup.Failure, f == .rootless {
+            return String(localized: "This computer is installed without root, so any of its programs can read its keys. It can never be an admin.", bundle: .app)
         }
         if let f = error as? PhoneGroup.Failure, f == .fileKey {
             return String(localized: "This computer keeps its keys in a file. Make it an admin first on its page, which warns what that means.", bundle: .app)

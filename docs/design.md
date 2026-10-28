@@ -2410,7 +2410,9 @@ Desktop Mode.
 
 ### Rootless installs
 
-Planned (D-79, roadmap item 39).
+Built in 0.6 (D-79, roadmap item 39): `sh install.sh --rootless`
+(`packaging/linux/install-rootless.sh`) and `internal/rootless`; CI installs and removes one.
+Not yet run on a desktop session.
 
 Every install so far needs root once: for the service's own account, the system unit, its
 sandbox and the firewall. Some users cannot or will not give it, on a computer at work for
@@ -2430,7 +2432,15 @@ has lingering). So a rootless device:
   device with keys in a file be one (D-66): any program of the user can copy its keys;
 - has quick actions and remote paste off, as every device until its own user turns them on
   (D-71);
-- is shown as rootless in `cbb status` and on the apps' device pages.
+- is shown as rootless in `cbb status` and on the phones' device pages.
+
+The program knows it is one by `CBB_ROOTLESS=1`, which its user units set, or else by its
+own path, `~/.local/bin/cbb`, so the user's own commands find the user's service: the
+control socket in `$XDG_RUNTIME_DIR/clipboardbridge`, the state in
+`~/.local/state/clipboardbridge`, the settings in `~/.config/clipboardbridge`, cbb update's
+folder in `~/.local/state/clipboardbridge-update` and its timer among the user units. The
+admin socket is the user's too, so `cbb pair` needs no `sudo`; it can do little, since the
+device holds no key that admits or removes others.
 
 The system install stays the default and the advice. A Steam Deck takes the system install
 (above), since its user has `sudo`.

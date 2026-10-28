@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/HunterEwok/clipboardbridge/internal/rootless"
 )
 
 // EnvFile is where the installer keeps the settings it was given, such as
@@ -19,6 +22,9 @@ import (
 var EnvFile = envFile()
 
 func envFile() string {
+	if rootless.Is() {
+		return filepath.Join(rootless.ConfigDir(), "clipboardbridge.env")
+	}
 	if runtime.GOOS == "freebsd" {
 		return "/usr/local/etc/clipboardbridge/clipboardbridge.env"
 	}

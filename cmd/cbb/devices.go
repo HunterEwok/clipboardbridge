@@ -78,7 +78,7 @@ func writeDevices(w io.Writer, devs, peers []control.Device, newest string, now 
 }
 
 // keys says where a device's keys live: "in a file" warns that whoever
-// copies the file holds them.
+// copies the file holds them, "rootless" that any program of its user may.
 func keys(d control.Device) string {
 	switch d.Store {
 	case group.StoreProven:
@@ -87,6 +87,8 @@ func keys(d control.Device) string {
 		return "hardware"
 	case group.StoreFile:
 		return "in a file"
+	case group.StoreRootless:
+		return "in a file, rootless"
 	}
 	return ""
 }

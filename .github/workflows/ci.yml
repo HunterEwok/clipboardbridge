@@ -450,7 +450,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh packaging/fdroid/reproduce.sh mobile/cbbtun/bind.sh .github/ci-changes.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/install-rootless.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh packaging/fdroid/reproduce.sh mobile/cbbtun/bind.sh .github/ci-changes.sh
       - name: the OPNsense plugin hook
         run: php tools/e2e/opnsense-hook.php
       - name: systemd-analyze verify
@@ -671,6 +671,30 @@ jobs:
             echo "uninstall.sh left the tmux line" >&2
             exit 1
           fi
+      - name: install.sh --rootless runs the service as the user, never as the root of a group, and uninstall.sh removes it
+        run: |
+          sudo loginctl enable-linger "$USER"
+          XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export XDG_RUNTIME_DIR
+          for _ in $(seq 50); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 0.2; done
+          sh packaging/linux/install.sh --rootless --auto-update off "$RUNNER_TEMP/cbb"
+          systemctl --user is-active -q clipboardbridge.service
+          test -S "$XDG_RUNTIME_DIR/clipboardbridge/control.sock"
+          test ! -e /usr/local/bin/cbb
+          ~/.local/bin/cbb status | grep -q 'Not in a group'
+          if ~/.local/bin/cbb new 2>"$RUNNER_TEMP/err"; then
+            echo "a rootless install made a group" >&2
+            exit 1
+          fi
+          grep -q 'without root' "$RUNNER_TEMP/err"
+          sh ~/.local/share/clipboardbridge/uninstall.sh --purge
+          for f in ~/.local/bin/cbb ~/.config/systemd/user/clipboardbridge.service ~/.config/systemd/user/clipboardbridge-agent.service \
+            ~/.config/autostart/clipboardbridge-desktop.desktop ~/.local/share/clipboardbridge ~/.local/state/clipboardbridge ~/.local/state/clipboardbridge-update; do
+            if [ -e "$f" ]; then
+              echo "uninstall.sh left $f" >&2
+              exit 1
+            fi
+          done
 
   homebrew:
     name: homebrew

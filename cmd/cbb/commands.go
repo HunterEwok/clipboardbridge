@@ -29,6 +29,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
 	"github.com/HunterEwok/clipboardbridge/internal/pasteboard"
 	"github.com/HunterEwok/clipboardbridge/internal/phone"
+	"github.com/HunterEwok/clipboardbridge/internal/rootless"
 	"github.com/HunterEwok/clipboardbridge/internal/service"
 	"github.com/HunterEwok/clipboardbridge/internal/sysinfo"
 	"github.com/HunterEwok/clipboardbridge/internal/version"
@@ -658,7 +659,7 @@ func cmdService(args []string, stderr io.Writer) int {
 	return runService(stderr, func(ctx context.Context, logf func(string, ...any)) error {
 		return service.Run(ctx, service.Config{StateDir: *stateDir, Socket: *socket, Role: node.Full, OS: hostOS(),
 			Device: sysinfo.Device(strings.TrimPrefix(version.Version, "v")), Logf: logf, ReleaseRoots: roots,
-			Container: service.InContainer(), KeysInFile: service.KeysInFileAllowed()})
+			Container: service.InContainer(), KeysInFile: service.KeysInFileAllowed(), Rootless: rootless.Is()})
 	})
 }
 

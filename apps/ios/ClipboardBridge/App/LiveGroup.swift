@@ -204,7 +204,8 @@ final class LiveGroup: GroupController {
                   isSelf: $0.id == g.device,
                   admin: $0.admin || $0.id == root, isRoot: $0.id == root,
                   canMakeAdmin: g.isRoot && !$0.admin && !$0.frozen && $0.role == "full" && offers[$0.id] != nil,
-                  keysInFile: Records.store(keyStores[$0.id] ?? $0.store, role: $0.role) == Records.file, frozen: $0.frozen,
+                  keysInFile: Records.store(keyStores[$0.id] ?? $0.store, role: $0.role) == Records.file,
+                  rootless: Records.store(keyStores[$0.id] ?? $0.store, role: $0.role) == Records.rootless, frozen: $0.frozen,
                   device: $0.id == g.device ? Self.ownDevice : infos[$0.id], mode: $0.id == g.device ? modeBox.mode : modes[$0.id],
                   actions: actions[$0.id] ?? [])
         }
@@ -683,10 +684,12 @@ final class LiveGroup: GroupController {
     }
 
     /// Makes a computer an admin; one whose keys sit in a file only with
-    /// allowFileKey, else PhoneGroup.Failure.fileKey.
+    /// allowFileKey, else PhoneGroup.Failure.fileKey; a rootless install
+    /// never (PhoneGroup.Failure.rootless).
     private func makeAdmin(_ id: String, allowFileKey: Bool) async throws {
         guard state?.isRoot == true, let key = offers[id] else { throw Failure.notAdmin }
         let store = keyStores[id]
+        guard Records.store(store, role: "full") != Records.rootless else { throw PhoneGroup.Failure.rootless }
         guard Records.store(store, role: "full") == Records.hardware || allowFileKey else { throw PhoneGroup.Failure.fileKey }
         let root = try await caSigner(reason: String(localized: "Make a computer an admin", bundle: .app))
         guard var g = state else { return }

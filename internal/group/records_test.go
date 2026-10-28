@@ -513,6 +513,7 @@ func TestStoreOf(t *testing.T) {
 		{StoreFile, RolePhone, StoreFile},
 		{StoreHardware, RoleFull, StoreHardware},
 		{StoreProven, RoleFull, StoreProven},
+		{StoreRootless, RoleFull, StoreRootless},
 		{"", RolePhone, StoreHardware},
 		{"", RoleFull, StoreFile},
 		{"", RoleLite, StoreFile},

@@ -159,7 +159,7 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       Uploading with the release key itself keeps one key for both. The decision is the
       owner's, with the Wear OS app (which must share its key with the phone's) and the
       F-Droid build, planned at the end of 0.6 or in 0.7.
-- **39.** **Rootless installs** (D-79): a full member on Linux installed and run without root,
+- **39.** **Rootless installs** (D-79), built in 0.6 and not yet run on a desktop session: a full member on Linux installed and run without root,
     for a computer whose user has no `sudo` or does not want to give it. The service runs as
     the user's systemd user unit, with its files under the user's home; its hello and device
     record say `rootless`, and such a device is never the root, an admin or a hub, not even

@@ -6,7 +6,10 @@
 #
 #   sudo sh /usr/local/share/clipboardbridge/uninstall.sh [--purge]
 #
-# (on SteamOS /opt/clipboardbridge/share/uninstall.sh).
+# (on SteamOS /opt/clipboardbridge/share/uninstall.sh). A rootless install
+# is removed by its own user, without sudo:
+#
+#   sh ~/.local/share/clipboardbridge/uninstall.sh [--purge]
 #
 # It stops the service and the desktop agents and removes the binary, the
 # unit, the agent's user unit and autostart entry, the tmux and console
@@ -41,6 +44,26 @@ case ${1:-} in
 	exit 2
 	;;
 esac
+# A rootless install (install.sh --rootless) is removed by its own user.
+if [ "$(id -u)" -ne 0 ] && [ -n "${HOME:-}" ] && [ -e "$HOME/.local/bin/cbb" ]; then
+	config=${XDG_CONFIG_HOME:-$HOME/.config}
+	state=${XDG_STATE_HOME:-$HOME/.local/state}
+	for u in clipboardbridge-update.timer clipboardbridge-agent.service clipboardbridge.service; do
+		systemctl --user disable --now "$u" >/dev/null 2>&1 || true
+	done
+	rm -f "$config/systemd/user/clipboardbridge.service" "$config/systemd/user/clipboardbridge-agent.service" \
+		"$config/systemd/user/clipboardbridge-update.service" "$config/systemd/user/clipboardbridge-update.timer" \
+		"$config/autostart/clipboardbridge-desktop.desktop" "$HOME/.local/bin/cbb"
+	systemctl --user daemon-reload >/dev/null 2>&1 || true
+	rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/clipboardbridge" "$config/clipboardbridge" "$state/clipboardbridge-update"
+	if [ "$purge" = yes ]; then
+		rm -rf "$state/clipboardbridge"
+		echo "Clipboard Bridge is removed, with this device's keys; it left its group."
+	else
+		echo "Clipboard Bridge is removed. Its keys stay in $state/clipboardbridge for a reinstall; --purge removes them."
+	fi
+	exit 0
+fi
 if [ "$(id -u)" -ne 0 ]; then
 	echo "uninstall.sh: run it with sudo" >&2
 	exit 1

@@ -56,6 +56,8 @@ func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 	switch {
 	case peer == nil:
 		return "", fmt.Errorf("%s is not connected; it gets its admin CA over its connection, so start it and try again", d.Name)
+	case peer.KeyStore == group.StoreRootless || d.Store == group.StoreRootless:
+		return "", fmt.Errorf("%s is installed without root, so every program of its user can read its keys; such a device is never an admin (D-79)", d.Name)
 	case peer.AdminKey == nil:
 		return "", fmt.Errorf("%s offers no admin key: it runs an older Clipboard Bridge, or in a container that may not hold the group's keys (its log says so)", d.Name)
 	}

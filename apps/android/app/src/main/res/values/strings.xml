@@ -75,6 +75,7 @@
     <string name="error_image_unavailable">Could not get the image from the computers. Copy it there again, then try again.</string>
     <string name="error_not_admin">Only an admin phone can do this.</string>
     <string name="error_file_key">This computer keeps its keys in a file. Make it an admin first on its page, which warns what that means.</string>
+    <string name="error_rootless">This computer is installed without root, so any of its programs can read its keys. It can never be an admin.</string>
     <string name="error_unreachable">Could not reach the computer. Is it on the same network as this phone, and does its firewall let Clipboard Bridge in?</string>
     <string name="error_wrong_code">The code did not match. Run cbb pair on the computer again and scan the new code.</string>
     <string name="error_refused">The computer refused. Run cbb pair on it again.</string>
@@ -204,6 +205,7 @@
     <string name="error_command_refused">The computer refused.</string>
     <string name="error_no_answer">The computer did not answer. It may be offline, or run an older version of Clipboard Bridge.</string>
     <string name="role_full">Full member</string>
+    <string name="role_full_rootless">Full member, rootless</string>
     <string name="role_lite">Lite member</string>
     <string name="role_phone">Phone app</string>
     <string name="role_shortcut">Shortcut</string>
