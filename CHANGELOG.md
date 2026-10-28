@@ -544,6 +544,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   when it meets only that root afterwards: the new root presents the member certificate it
   had before the takeover, which the member still trusts, until that certificate is due for
   renewal. Before, such a member could not verify the new root and stayed apart.
+- Members find each other again soon after one was off the network for a couple of minutes
+  without a change to its interfaces, as when a firewall dropped its packets: the member that
+  lost another asks for the service again from 1 s, doubling, and no longer lists the lost
+  member's PTR record as a known answer, which kept it from answering. Before, they could stay
+  apart for up to an hour. The bench's random walk (G40) found it.
 - `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
   left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
   the hub's addresses.

@@ -480,7 +480,7 @@ func (s *state) timers(now time.Time) {
 	// members already known so they need not answer, and refresh the
 	// records of the members found before they expire.
 	if !now.Before(s.nextQuery) {
-		s.query([]dnsmessage.Question{{Name: name(ServiceName), Type: dnsmessage.TypePTR, Class: classIN}}, s.cache.knownServices(now))
+		s.query([]dnsmessage.Question{{Name: name(ServiceName), Type: dnsmessage.TypePTR, Class: classIN}}, s.cache.knownServices(now, s.r.cfg.ID, s.peers))
 		s.nextQuery = now.Add(s.queryGap)
 		s.queryGap = min(2*s.queryGap, maxQueryGap)
 	}
@@ -713,6 +713,15 @@ func (s *state) updatePeers(now time.Time) {
 		return a.ID == b.ID && a.Port == b.Port && slices.Equal(a.TXT, b.TXT) && slices.Equal(a.Addrs, b.Addrs)
 	}) {
 		return
+	}
+	// A member lost may only have been off the network for a while, and
+	// comes back without announcing itself, as when a firewall dropped its
+	// packets: ask for the service again soon, at growing intervals as at
+	// the start.
+	if slices.ContainsFunc(s.peers, func(old Peer) bool {
+		return !slices.ContainsFunc(peers, func(p Peer) bool { return p.ID == old.ID })
+	}) {
+		s.nextQuery, s.queryGap = now, time.Second
 	}
 	s.peers = peers
 	if s.r.cfg.OnPeers != nil {

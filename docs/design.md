@@ -618,7 +618,7 @@ sync away from home, the admins, and remote paste.
   a legacy unicast resolver gets a few answers a second at most. Packets are read record by
   record, so a record Clipboard Bridge cannot read, such as an Apple device's instance name with a
   dot in it, costs only itself. It browses at growing intervals, listing the members it
-  knows as known answers, and asks again for the records of the members it found at 80,
+  knows as known answers, and from 1 s again when it loses a member, and asks again for the records of the members it found at 80,
   85, 90 and 95 percent of their lifetime, so they do not expire while the members are
   there. A received record lives no longer than Clipboard Bridge's own records of its type, and
   only names in the form of device IDs count as members. Names are not probed: device IDs

@@ -6,6 +6,7 @@ package mdns
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"net"
 	"net/netip"
 	"slices"
@@ -59,6 +60,7 @@ type sentPacket struct {
 
 type fakeHost struct {
 	mu      sync.Mutex
+	cut     bool // off the network: it sends and gets nothing, as behind a firewall
 	ports   []*fakePort
 	packets chan packet
 	sent    chan sentPacket
@@ -93,6 +95,20 @@ func (h *fakeHost) attach(l *fakeLink, name string, addrs ...string) *fakePort {
 	l.ports = append(l.ports, p)
 	l.mu.Unlock()
 	return p
+}
+
+// setCut takes the host off the network, or puts it back, without a change
+// to its interfaces.
+func (h *fakeHost) setCut(cut bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.cut = cut
+}
+
+func (h *fakeHost) isCut() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cut
 }
 
 // host makes a host with one interface, eth0, on the link.
@@ -137,6 +153,9 @@ func (h *fakeHost) sendFrom(ifIndex int, srcPort uint16, data []byte, dst netip.
 	if from == nil {
 		return net.ErrClosed
 	}
+	if h.isCut() {
+		return errors.New("operation not permitted")
+	}
 	var src netip.Addr
 	for _, p := range from.prefixes() {
 		if p.Addr().Is4() == dst.Addr().Is4() {
@@ -155,7 +174,7 @@ func (h *fakeHost) sendFrom(ifIndex int, srcPort uint16, data []byte, dst netip.
 	ports := slices.Clone(from.link.ports)
 	from.link.mu.Unlock()
 	for _, to := range ports {
-		if !dst.Addr().IsMulticast() && !slices.ContainsFunc(to.prefixes(), func(p netip.Prefix) bool { return p.Addr() == dst.Addr() }) {
+		if !dst.Addr().IsMulticast() && !slices.ContainsFunc(to.prefixes(), func(p netip.Prefix) bool { return p.Addr() == dst.Addr() }) || to.host.isCut() {
 			continue
 		}
 		select {
@@ -715,6 +734,84 @@ func TestRefreshKeepsMembers(t *testing.T) {
 	}
 	if !sawRefresh {
 		t.Error("A never asked for B's SRV record again")
+	}
+}
+
+func TestRefindAfterOutage(t *testing.T) {
+	// B is off the network long enough that A's records of it expire, and
+	// back with no change to its interfaces. A browses again soon after it
+	// lost B, though its browse queries had long been far apart, without B
+	// as a known answer, and they find each other again.
+	var l fakeLink
+	clock := newClock()
+	a, b := l.host("192.168.1.10"), l.host("192.168.1.11")
+	ra := start(t, a, idA, 4001, clock)
+	rb := start(t, b, idB, 4002, clock)
+	waitPeers(t, ra.peers, func(p []Peer) bool { return len(p) == 1 && len(p[0].Addrs) == 1 })
+	waitPeers(t, rb.peers, func(p []Peer) bool { return len(p) == 1 && len(p[0].Addrs) == 1 })
+	// The responders look at the clock every 250 ms.
+	step := func(d time.Duration, wait time.Duration) {
+		clock.advance(d)
+		time.Sleep(wait)
+	}
+	// browses counts A's browse queries sent since the last call, and
+	// reports whether any listed B as a known answer.
+	browses := func() (n int, knownB bool) {
+		for len(a.sent) > 0 {
+			sp := <-a.sent
+			var m dnsmessage.Message
+			if m.Unpack(sp.data) != nil || m.Response || len(m.Questions) == 0 || m.Questions[0].Type != dnsmessage.TypePTR {
+				continue
+			}
+			n++
+			knownB = knownB || slices.ContainsFunc(m.Answers, func(r dnsmessage.Resource) bool {
+				ptr, ok := r.Body.(*dnsmessage.PTRResource)
+				return ok && strings.HasPrefix(ptr.PTR.String(), idB)
+			})
+		}
+		return n, knownB
+	}
+	for range 100 { // 50 minutes: the browse queries are far apart now
+		step(30*time.Second, 20*time.Millisecond)
+	}
+	b.setCut(true)
+	lost := false
+	for range 30 { // B's address and SRV records expire within 120 s
+		step(5*time.Second, 300*time.Millisecond)
+		for len(ra.peers) > 0 {
+			lost = len(<-ra.peers) == 0
+		}
+		if lost {
+			break
+		}
+	}
+	if !lost {
+		t.Fatal("A kept B while it was off the network")
+	}
+	browses()
+	for range 20 {
+		step(time.Second, 300*time.Millisecond)
+	}
+	if n, knownB := browses(); n < 2 || knownB {
+		t.Errorf("A sent %d browse queries in the 20 s after it lost B, B a known answer: %v; want 2 or more, without B", n, knownB)
+	}
+	b.setCut(false)
+	found := func(ch <-chan []Peer) bool {
+		ok := false
+		for len(ch) > 0 {
+			p := <-ch
+			ok = len(p) == 1 && len(p[0].Addrs) == 1
+		}
+		return ok
+	}
+	foundA, foundB := false, false
+	for i := 0; i < 24 && !(foundA && foundB); i++ { // 2 minutes
+		step(5*time.Second, 300*time.Millisecond)
+		foundA = foundA || found(ra.peers)
+		foundB = foundB || found(rb.peers)
+	}
+	if !foundA || !foundB {
+		t.Errorf("not found again within 2 minutes after the outage: A finds B %v, B finds A %v", foundA, foundB)
 	}
 }
 

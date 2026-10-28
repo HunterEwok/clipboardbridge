@@ -229,7 +229,10 @@ rescanned every 10 s.
 ### Browsing
 
 - Query PTR `_clipboardbridge._tcp.local` at start, then after 1 s, doubling up to one hour,
-  listing the PTR records known with more than half their TTL as known answers.
+  listing as known answers the PTR records with more than half their TTL left of the members
+  found (a PTR record whose SRV or addresses expired is not listed). When a member found is
+  lost, start again: query now, then after 1 s, doubling. A member that was off the network
+  for a while, as behind a firewall, comes back without announcing itself.
 - Each cached record of a found member (its PTR, SRV, TXT and host addresses) is queried
   again at 80, 85, 90 and 95 percent of its lifetime, plus 0 to 2 percent at random.
 - Received records are kept only if relevant: PTR of the service, SRV/TXT of an instance
