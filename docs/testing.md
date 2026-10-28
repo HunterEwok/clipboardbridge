@@ -12,7 +12,7 @@ real devices, and which level answers which question. The commands are in
 | Level | What it shows | Where | Runs |
 |---|---|---|---|
 | Unit tests | one package or type does what its comment says | `*_test.go`, `cargo test`, `swift test`, `./gradlew -p kit test` | every push, in CI |
-| Interop vectors | the five implementations read and write the same bytes | `testdata/interop` | every push, in CI |
+| Interop vectors | the four implementations (Go, Rust, Swift, Kotlin) read and write the same bytes | `testdata/interop` | every push, in CI |
 | Cross tests | two implementations talk over a real connection | Go tests that start the Swift or Kotlin `clipboardbridge-interop`, or the lite member | every push, in CI |
 | Service tests | several members, with their real services, in one process or as programs | `internal/service`, `cmd/cbb` | every push, in CI |
 | System tests | the built program on a real system: containers, sockets, a desktop, an installer | the `e2e`, `mdns with avahi`, `desktop clipboards`, `packaging`, `windows installer`, `OpenWrt`, `freebsd` jobs | every push, in CI |
@@ -20,8 +20,11 @@ real devices, and which level answers which question. The commands are in
 | Bench scenarios | real devices pass real copies over real networks | the [test bench](testbench.md), its [catalogue](testbench-catalogue.md) | before each release |
 
 A change is not done before the levels it touches pass locally (CONTRIBUTING lists the
-commands per part); CI then runs them all, and the `ci-ok` job sums them up for the branch
-rules.
+commands per part); CI then runs the jobs of every part the pull request changes, and the
+`ci-ok` job sums them up for the branch rules. Which part a path belongs to, and which parts
+read another's files, is in `.github/ci-changes.sh`; a path it does not know, the workflow,
+`go.mod` and `testdata/` run every job. A skipped job has nothing new to test: the pull
+request is up to date with main, whose run tested those files when they last changed.
 
 ## Unit tests
 

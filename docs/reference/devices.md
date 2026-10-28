@@ -18,7 +18,7 @@ the same full member without a desktop.
 | Images and files | yes, on a desktop | yes | yes | yes, while the app runs | no: it passes them on and takes their text |
 | Hold the group (root) | yes, [without the app](../guide/without-app.md) | yes | yes | yes | no |
 | Be an admin | yes | yes | yes | yes | no |
-| Be the hub | yes | yes | while the app is open | while the app is open | no |
+| Be the hub | yes | yes | while the app is open, or in the background with "Keep the hub running in the background" | while the app is open | no |
 | Sync away from home | yes | yes | yes, also in the background | while the app is open | yes, plain WireGuard only; not on MIPS routers |
 | AmneziaWG and VLESS | yes | yes | yes | yes | no |
 | Join from afar by an invitation | yes | yes | not yet | not yet | no |
@@ -55,8 +55,8 @@ others ([the firewall](../guide/install.md#the-firewall)).
 | FreeBSD, OPNsense | `/var/db/clipboardbridge` | `/usr/local/etc/clipboardbridge` | syslog, `/var/log/messages` |
 | OpenWrt | `/etc/clipboardbridge/state`, kept by sysupgrade | `/etc/config/clipboardbridge` | `logread -e clipboardbridge` |
 | Mac | `/Library/Application Support/clipboardbridge/state` | `/etc/clipboardbridge` | `/Library/Logs/clipboardbridge/service.log` |
-| Windows | `ProgramData\clipboardbridge` | the service's registry key | `ProgramData\clipboardbridge\logs\service.log`, the agent's `LocalAppData\clipboardbridge\agent.log` |
-| Lite member | `/var/lib/clipboardbridge` | `/etc/clipboardbridge` | `journalctl -u clipboardbridge` |
+| Windows | `ProgramData\clipboardbridge\state` | the service's registry key ([settings](config.md#settings-files)) | `ProgramData\clipboardbridge\logs\service.log`, the agent's `LocalAppData\clipboardbridge\agent.log` |
+| Lite member | `/var/lib/clipboardbridge`; on OpenWrt `/etc/clipboardbridge/state` | `/etc/clipboardbridge` | `journalctl -u clipboardbridge`; on OpenWrt `logread -e clipboardbridge` |
 
 Keep the keys out of unencrypted backups, and encrypt the disk (LUKS, FileVault,
 BitLocker): whoever copies them can act as that device until you remove it from the group.

@@ -107,6 +107,7 @@ func checkRepo() (problems []string, checked int, err error) {
 	problems = append(problems, checkFlags(contents)...)
 	problems = append(problems, checkPorts(contents)...)
 	problems = append(problems, checkOps(contents)...)
+	problems = append(problems, checkStyle(contents)...)
 	problems = append(problems, checkEnv(contents)...)
 	problems = append(problems, checkIndex(contents)...)
 	problems = append(problems, checkPlanned(contents)...)

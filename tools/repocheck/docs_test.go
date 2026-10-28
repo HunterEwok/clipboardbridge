@@ -193,3 +193,31 @@ func TestCheckOps(t *testing.T) {
 		t.Fatalf("checkOps() = %q, want one problem naming new", got)
 	}
 }
+
+func TestCheckStyle(t *testing.T) {
+	files := map[string][]byte{
+		"docs/guide/a.md": []byte("Simply run it.\n`cbb simply` and [setup](easy.md) and \"clipboardbridge\"\n```\neasy clipboardbridge\n```\nInstall clipboardbridge.\nSee https://example.com/easy and /usr/share/clipboardbridge.\nIn `a\nclipboardbridge b` too.\n"),
+		"docs/design.md":  []byte("It cannot simply go inside it.\n"),
+	}
+	got := checkStyle(files)
+	want := []string{"docs/guide/a.md:1: \"Simply\"", "docs/guide/a.md:6: the product", "docs/guide/a.md:7: the product"}
+	if len(got) != len(want) {
+		t.Fatalf("checkStyle() = %q, want %d problems", got, len(want))
+	}
+	for i, w := range want {
+		if !strings.HasPrefix(got[i], w) {
+			t.Errorf("problem %d = %q, want it to start with %q", i, got[i], w)
+		}
+	}
+}
+
+func TestCheckOpsHeader(t *testing.T) {
+	files := map[string][]byte{
+		"internal/control/control.go": []byte("type Header struct {\n\tOp string `json:\"op\"`\n\tLen int `json:\"len,omitempty\"` // the length\n\tRelayKey string `json:\"relay_key,omitempty\"`\n}\n\ntype Other struct {\n\tX int `json:\"x\"`\n}\n"),
+		"docs/protocol.md":            []byte("# P\n\n## 8. Local control socket\n\n| `op` | string |\n| `relay`, `relay_key` | strings |\n\n## 9. After\n\n`len`\n"),
+	}
+	got := checkOps(files)
+	if len(got) != 1 || !strings.Contains(got[0], "header field len ") {
+		t.Fatalf("checkOps() = %q, want one problem naming len", got)
+	}
+}

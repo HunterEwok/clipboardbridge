@@ -14,6 +14,7 @@ them is in the [protocol](../protocol.md).
 | Images and files through the group's tunnel | 25 MiB per copy | `cbb config max-copy-away SIZE`, at most `max-copy`; the hub's limit caps every device that reaches only it |
 | Images and files at all | 1 GiB, at most 10,000 parts and 8 clipboard types per copy | no |
 | A file name, a path | 255 bytes, 4,096 bytes | no |
+| What the phones' share sheet sends | 100 MiB on Android, 50 MB from the iPhone | no |
 | The plain text that goes with images or files | 256 KiB | no |
 | HTML from a desktop clipboard | 8 MiB | no |
 | A secret (marked by a password manager, or `cbb copy -secret`) | current for 60 s after the copy, kept only in memory; its text is recognised for 12 h after, so that it stays secret when offered again | no |
@@ -31,6 +32,17 @@ them is in the [protocol](../protocol.md).
 | A signed command (paste, action, mode) | valid 30 s after it was signed; its time may be at most 60 s ahead of the receiver's clock |
 | An action of your own | must end within 15 s; at most 32 of them, names of up to 32 characters |
 
+## Keyboards and TVs
+
+| What | Limit |
+|---|---|
+| A text typed by a Bluetooth or USB keyboard | 4,096 characters |
+| Typing speed | 5 to 60 characters a second, 20 by default (the Android app: 10, 20 or 40) |
+| Making a keyboard discoverable (`pair`) | 2 minutes |
+| The code an Android TV shows (`cbb remote code`) | taken within 2 minutes |
+| TVs of one computer | 16 |
+| Hosts the Nano ESP32's Bluetooth keyboard remembers | 4; a fifth pushes out the oldest |
+
 ## Pairing and invitations
 
 | What | Limit |
@@ -44,8 +56,8 @@ them is in the [protocol](../protocol.md).
 | What | Lifetime |
 |---|---|
 | The group's CA certificates | 20 years |
-| A computer's or a lite member's member certificate | 2 years, renewed 240 days before its end |
-| A phone's member certificate | 397 days (below the 825 days iOS allows), renewed 60 days before its end |
+| A member certificate (computers, lite members and phones) | 2 years, renewed 240 days before its end |
+| The `clipboardbridge.local` certificate the iPhone shortcut sees | 397 days (below the 825 days iOS allows), renewed 60 days before its end |
 | A period of the server credentials | 35 days; the root starts the next after 30, which on a phone asks for Face ID or the fingerprint about once a month |
 | A release's signed files (`keys.json`, `release.json`) | at most 100 days |
 | The signed status of the stable release (`stable.json`) | at most 8 days, so an old one cannot hold back an update |

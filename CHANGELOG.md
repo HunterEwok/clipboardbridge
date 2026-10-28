@@ -424,6 +424,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- CI runs only the jobs of the parts a pull request changes (`.github/ci-changes.sh`), so a
+  pull request of documentation no longer builds the phone apps, the lite member and the
+  firmware, and one brought up to date with main runs again only the jobs of its own parts.
 - The documentation is arranged by reader: the guide for users, `docs/admin/` for running
   servers (`self-hosting.md` moved there from `docs/reference/`), the reference, and the
   pages for engineers and maintainers, each part with its own table in `docs/README.md`.
@@ -433,7 +436,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   timeout and lifetime; `errors.md`, how each part shows errors and the switch that shows
   their details; and `glossary.md`.
   New guide pages for what 0.6 adds: images, files and formatted text; remote paste; quick
-  actions; and what to do when a device is lost or stolen.
+  actions; what to do when a device is lost or stolen; keyboards and TVs (the Android app,
+  `cbb keyboard`, the Nano ESP32 and `cbb remote`, side by side); and privacy, one table of
+  everyone outside the group who sees something, from the home network to the update
+  check, and how to avoid it. `docs/admin/routers.md` is for OpenWrt, OPNsense and FreeBSD:
+  what the installers set up, the networks the service answers on, the firewall and how to
+  check it. `limits.md` has the keyboards' and TVs' limits.
   `devices.md` says what 0.6 devices do: images and files, remote paste, quick actions, keys
   in the TPM, FreeBSD and OpenWrt.
 - `tools/repocheck` also checks that every `CBB_*` variable the code, the installers and the
@@ -441,7 +449,21 @@ All notable changes to clipboardbridge are documented in this file. The format f
   reached from `docs/README.md`, that no page calls something "planned for" a version
   that is out already, that every subcommand of `cbb` with flags of its own and each of
   its flags is in `docs/reference/cli.md`, and that every port the code listens on by
-  default is in the ports table of `docs/reference/devices.md`.
+  default is in the ports table of `docs/reference/devices.md`. The pages for users and
+  administrators may not tell the reader something is easy ("simply", "easily") or call
+  the product `clipboardbridge` outside code, links and quotes, and every field of the
+  control socket's header must be in section 8 of `docs/protocol.md`.
+- A fresh read of docs/protocol.md against the code fixed the length of CPace's channel
+  identifier (88 bytes, not 83), and added what an implementation needs and could not find:
+  the forwarder's and relay's framing (JSON lines, at most 1 MiB), the TLS parameters every
+  implementation must support (X25519, TLS_AES_128_GCM_SHA256, ECDSA P-256), the records'
+  8 KiB limit, encodings and validity, the exact digest of the record IDs, the device
+  record's `kind` and `proof`, the attestation challenge's group tag, AmneziaWG's sizes and
+  where its header protection is defined, the registration ID's 64 bits, the missing message
+  and control header fields, and the hub exception for phones. docs/cryptography.md says
+  which keys do leave a device, the member certificates' real lifetime on phones (2 years;
+  397 days is the `clipboardbridge.local` certificate's, in limits.md too) and the
+  invitation secret; the threat model says which WireGuard keys a hub admits.
 - docs/design.md follows arc42: goals and constraints, context, solution strategy, building
   blocks, runtime, deployment, crosscutting concepts, decisions, quality requirements, risks
   and glossary. The decisions D-1 to D-78 have a register with their status
@@ -487,6 +509,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The installers and `cbb update` keep a `CBB_INTERFACES` line set by hand in
+  `clipboardbridge.env` (Linux, macOS, FreeBSD) or in the service's registry environment
+  (Windows); before, the next install or update dropped it, and the service then answered
+  on every interface again.
+- The forwarder's drop-in for VLESS on port 443 also sets `PrivateUsers=no`: inside the
+  unit's own user namespace the capability did not cover the host's network, so the bind
+  was refused (docs/admin/self-hosting.md).
 - A computer that comes back after its hub moved on to its key for the new period reaches
   the hub at once: it tries the hub's old key and the next one together instead of waiting
   10 seconds for the old key's handshake first, and keeps that link when the hub's new offer

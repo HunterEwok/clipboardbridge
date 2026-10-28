@@ -17,7 +17,9 @@ For anyone with a phone or a computer, in plain words.
 | [Networks that block VPNs](guide/blocked-networks.md) | AmneziaWG and VLESS with REALITY |
 | [Images, files and formatted text](guide/images-and-files.md) | what goes where, the sizes, saving received files |
 | [Remote paste](guide/remote-paste.md) | an admin puts a text into the focused app on another device |
+| [Keyboards and TVs](guide/keyboards-and-tvs.md) | type into a TV, tablet, console or computer as a Bluetooth or USB keyboard, or as the TV's remote |
 | [Quick actions](guide/quick-actions.md) | lock, sleep or restart a device from a phone or another computer |
+| [Privacy](guide/privacy.md) | who outside the group sees what: networks, servers, updates, stores |
 | [Keys and attestation](guide/keys.md) | where each device keeps its keys, how devices prove it, the three levels |
 | [If a device is lost](guide/lost-device.md) | remove it, freeze an admin, take the group over |
 | [Without the app](guide/without-app.md) | a group held by a computer, the iPhone shortcut, joining over SSH or a VPN |
@@ -31,6 +33,7 @@ For administrators: your own server, a router, a NAS.
 |---|---|
 | [Running your own servers](admin/self-hosting.md) | a forwarder and a blind relay on your server, with Docker or systemd, and VLESS |
 | [Upgrades and backups](admin/upgrade-and-backup.md) | moving to a new release, what to back up, bringing a device or the root back, moving the hub |
+| [Routers and FreeBSD](admin/routers.md) | OpenWrt, OPNsense and FreeBSD: what the installers set up, the networks it answers on, the firewall, the checks |
 | [Hardening](admin/hardening.md) | the settings that make a group harder to attack, beyond the defaults |
 | [Docker image](../packaging/docker/README.md) | the image for a NAS, a home server or a server on the internet |
 | [Lite member](../lite/README.md) | the lite member for small Linux devices: build, install, use |

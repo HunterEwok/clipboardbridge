@@ -239,12 +239,13 @@ exe sc.exe @('failureflag', $name, '1') | Out-Null
 
 # The settings: the ones given, else the ones kept from before, else the
 # defaults (port 8764, 100.64.0.0/10 outside the home network). The service
-# reads CBB_PORT and CBB_HOME_CGNAT from its environment, kept in its
-# registry key.
+# reads CBB_PORT, CBB_HOME_CGNAT and CBB_INTERFACES from its environment,
+# kept in its registry key.
 $step = 'setting the port'
 $kept = (Get-ItemProperty -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue)
 $keptCgnat = $false
 $keptPort = 8764
+$keptInterfaces = $null
 if ($kept) {
 	foreach ($line in $kept.Environment) {
 		if ($line -match '^CBB_PORT=(\d+)$') {
@@ -252,6 +253,10 @@ if ($kept) {
 		}
 		if ($line -eq 'CBB_HOME_CGNAT=1') {
 			$keptCgnat = $true
+		}
+		# CBB_INTERFACES has no option: a value set by hand stays.
+		if ($line -match '^CBB_INTERFACES=.') {
+			$keptInterfaces = $line
 		}
 	}
 }
@@ -269,6 +274,9 @@ if ($Port -ne 8764) {
 if ($cgnat) {
 	$environment += 'CBB_HOME_CGNAT=1'
 	Write-Host '100.64.0.0/10 counts as the home network on this PC (-HomeCgnat on).'
+}
+if ($keptInterfaces) {
+	$environment += $keptInterfaces
 }
 if ($environment.Count -eq 0) {
 	Remove-ItemProperty -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue

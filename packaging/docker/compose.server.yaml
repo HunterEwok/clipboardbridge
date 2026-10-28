@@ -3,7 +3,7 @@
 
 # A forwarder (cbb forward) on a server with a public address, for hubs that
 # clients cannot reach directly. It holds no keys of any group; its own key
-# and the groups' roots, removals and freezes stay in the volume, and it
+# and a table of hashed tags (forward-state.json) stay in the volume, and it
 # prints the key at start:
 #
 #   docker compose -f compose.server.yaml up -d
