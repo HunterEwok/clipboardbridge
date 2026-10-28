@@ -214,9 +214,15 @@ if [ "$lite" = yes ]; then
 fi
 
 # The project's release root keys (docs/protocol.md, section 16), which sign
-# keys.json. None yet: until they are made, releases carry no signed files
-# and verify_release only says so.
-release_roots=''
+# keys.json: two YubiKeys, as internal/release/roots/roots.pem.
+release_roots='-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9sLfrcGBi23XveQN8dK8Z+lbEuxT
+LOgnQ9s/gzp/k7xx88IFvkdMuyoL2K7j1necQGYLmq3ifie9wDrF69AO/A==
+-----END PUBLIC KEY-----
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExGbAq55XGXip3Dtq6jsM2bOYUeoY
+fDxsggXLisjwoCQoDM28pCYkIoZAfcjwR3aAGOAUWZX+L53og7/TLLpnfg==
+-----END PUBLIC KEY-----'
 
 # field NAME FILE prints the string field NAME of the compact JSON in FILE,
 # number NAME FILE a number field: enough for the files Go's encoding/json

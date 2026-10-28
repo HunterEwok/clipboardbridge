@@ -419,7 +419,7 @@ func signer(spec string) (crypto.Signer, error) {
 		return s, nil
 	case "piv":
 		return newTool([]string{"yubico-piv-tool", "-a", "read-certificate", "-s", arg, "-K", "PEM"},
-			[]string{"yubico-piv-tool", "-a", "verify-pin", "-a", "sign", "-s", arg, "-A", "ECCP256", "-H", "SHA256"})
+			[]string{"yubico-piv-tool", "-a", "verify-pin", "--sign", "-s", arg, "-A", "ECCP256", "-H", "SHA256"})
 	case "se":
 		helper := filepath.Join(sourceDir(), "se.swift")
 		return newTool([]string{"swift", helper, "public", arg}, []string{"swift", helper, "sign", arg})

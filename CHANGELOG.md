@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The project's release root keys: two P-256 keys made on two YubiKeys, with the PIN and a
+  touch for every signature, in `internal/release/roots` with Yubico's attestation that
+  they were made on the keys. `get.sh`, `get.ps1`, `cbb update`, the lite member's
+  `cbb update` and the Android app's own update now check releases against them; a release
+  before 0.6 has no signed files, so a new `get.sh` or `get.ps1` installs one only with
+  `CBB_VERIFY=skip`.
 - SteamOS: `install.sh` (and so `get.sh`) puts Clipboard Bridge in `/opt/clipboardbridge`
   on a Steam Deck, whose system files each update replaces, and lists its files in `/etc`
   in SteamOS's keep list, so the install and the device's group survive SteamOS updates;

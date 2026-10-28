@@ -2070,7 +2070,7 @@ docs/protocol.md, section 16.
 #### The signed manifest
 
 - **Two tiers of keys.** Two **root keys**, each on its own hardware key (YubiKey) kept
-  offline and apart, certify the **release key** in `keys.json`. The release key lives in
+  apart, in a spare PIV slot with the PIN and a touch for every signature, certify the **release key** in `keys.json`. The release key lives in
   the Secure Enclave of the owner's Mac and asks for Touch ID at each signature; `keys.json`
   expires and is signed again every 90 days. The programs pin the root keys, so a lost or
   stolen Mac is replaced by a new release key certified by a root, with no reinstall, and a
