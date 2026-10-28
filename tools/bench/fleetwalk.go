@@ -30,6 +30,7 @@ type walker struct {
 	id, name string
 	mark     string // the ADMIN column: "root", "admin", "frozen" or ""
 	text     string // the last text copied since it joined
+	frozenBy *walker
 }
 
 // randomWalk (G40): steps chosen at random among join, remove, rename, make
@@ -113,6 +114,14 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 	drop := func(w *walker) {
 		live = slices.DeleteFunc(live, func(x *walker) bool { return x == w })
 		spares = append(spares, w.d)
+		// Removing the admin that froze one ends its freezes
+		// (docs/protocol.md, section 10, rule 4); a lost root's stay
+		// after a takeover, until the new root unfreezes.
+		for _, x := range live {
+			if x.frozenBy == w && w.mark != "root" {
+				x.mark, x.frozenBy = "admin", nil
+			}
+		}
 	}
 	isolate := func(d *Device) error {
 		_, err := Run(ctx, d, "iptables -I INPUT -i eth0 -j DROP && iptables -I OUTPUT -o eth0 -j DROP", "")
@@ -223,7 +232,7 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 			if _, err := Run(ctx, by.d, "cbb freeze "+w.id, ""); err != nil {
 				return "", err
 			}
-			w.mark = "frozen"
+			w.mark, w.frozenBy = "frozen", by
 			return w.name + " by " + by.name, nil
 		}},
 		{"unfreeze", 2, func() bool { return len(with("frozen")) > 0 }, func(int) (string, error) {
@@ -231,7 +240,7 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 			if _, err := Run(ctx, root().d, "cbb unfreeze "+w.id, ""); err != nil {
 				return "", err
 			}
-			w.mark = "admin"
+			w.mark, w.frozenBy = "admin", nil
 			return w.name, nil
 		}},
 		{"takeover", 1, func() bool { return len(with("admin")) > 0 }, func(int) (string, error) {

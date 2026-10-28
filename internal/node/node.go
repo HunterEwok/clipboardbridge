@@ -239,8 +239,11 @@ type Peer struct {
 	Device group.DeviceInfo
 	Key    group.KeyHash
 	// AdminKey is the admin key its hello offers, a SubjectPublicKeyInfo
-	// in DER; nil when it offers none.
+	// in DER, as a member that is no admin yet or whose admin CA is from an
+	// earlier root does; nil when it offers none.
 	AdminKey []byte
+	// Chain is the certificate chain its handshake verified, leaf first.
+	Chain []*x509.Certificate
 	// OldKeys tells that its hello says it holds the group CA key of a
 	// legacy group.
 	OldKeys bool
@@ -666,7 +669,7 @@ func (n *Node) Peers() []Peer {
 			adminKey, oldKeys, device, mode, store, acts, media := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
-			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), AdminKey: adminKey,
+			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), Chain: c.peerChain, AdminKey: adminKey,
 				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
@@ -1340,7 +1343,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 			out.Device = &d
 		}
 		id := c.n.identity()
-		if id.AdminKey != nil && id.AdminCA == nil {
+		if id.AdminKey != nil && (id.AdminCA == nil || id.StaleAdminCA()) {
 			spki, err := x509.MarshalPKIXPublicKey(group.PublicKey(id.AdminKey))
 			if err != nil {
 				return nil, err

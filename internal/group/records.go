@@ -819,6 +819,18 @@ func (s *Records) mayHandOver(r *signedRecord) bool {
 	return ev.rootSigned(r) || ev.phoneAdmin[r.signer] && ev.roots[r.anchor] || ev.roots[r.anchor] && s.computerHandOver(r)
 }
 
+// AdminUnder reports whether a device record that the root key signed
+// with its own key names the admin CA key admin: what lets that admin
+// computer take the group over from that root (computerHandOver).
+func (s *Records) AdminUnder(root, admin KeyHash) bool {
+	for _, r := range s.byID {
+		if r.body.Type == RecordDevice && r.signer == root && r.anchor == root && r.body.Admin != nil && *r.body.Admin == admin {
+			return true
+		}
+	}
+	return false
+}
+
 // computerHandOver reports whether r, a root record, was signed by the
 // admin CA of a computer under its anchor, a root that is a computer
 // itself: the root's own key signed a device record that names that admin

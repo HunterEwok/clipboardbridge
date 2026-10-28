@@ -161,9 +161,16 @@ func (s *Service) becomeAdmin(der []byte) error {
 	if err := s.adoptRootsLocked(); err != nil {
 		return err
 	}
+	renewed := s.id.AdminCA != nil
 	next, err := s.id.WithAdminCA(der, s.cfg.now())
 	if err != nil {
 		return err
+	}
+	// An admin CA that replaces one is from the current root, which
+	// renews a CA of an earlier root; an earlier root's would split the
+	// group's roots again.
+	if renewed && next.AdminCA.CheckSignatureFrom(next.Root()) != nil {
+		return errors.New("the new admin CA is not from the group's current root")
 	}
 	// An admin CA the records refuse, as from a root that handed the
 	// group over, would make records nobody takes.
@@ -172,6 +179,10 @@ func (s *Service) becomeAdmin(der []byte) error {
 	}
 	if err := s.setIdentityLocked(next); err != nil {
 		return err
+	}
+	if renewed {
+		s.logf("cbb: the group's root renewed this admin's CA, for the same key")
+		return nil
 	}
 	s.logf("cbb: this device is now an admin of the group: it can admit and remove devices")
 	return nil

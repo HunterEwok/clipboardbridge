@@ -528,6 +528,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - Taking the group over from a lost root no longer cuts off the devices that an admin
   removed earlier had admitted: their certificates hold through that admin's CA, which the
   takeover now keeps under the old root, on computers and phones alike.
+- An admin computer made by one root takes the group over from the next root correctly:
+  after a takeover the new root gives every other admin computer a new admin CA for the
+  same key and records it under itself. Before, the second takeover split the group's roots
+  and the records of the root in between, such as a new name, stopped counting. `cbb
+  takeover` refuses on an admin that has not met the current root since.
 - `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
   left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
   the hub's addresses.
