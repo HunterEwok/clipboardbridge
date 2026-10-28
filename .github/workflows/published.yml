@@ -8,7 +8,7 @@ name: published
 on:
   release:
     types: [published]
-  # Run from a branch, it only checks that the tap's key in the secrets works.
+  # Run by hand from main, it only checks that the tap's key in the secrets works.
   workflow_dispatch:
 
 permissions:
@@ -22,11 +22,12 @@ jobs:
   homebrew:
     # A pre-release stays out of the tap, as it stays out of releases/latest.
     # The formula comes from the published release's SHA256SUMS.
-    # Run from a branch, it only checks that the key in the secrets may push
+    # Run by hand from main, it only checks that the key in the secrets may push
     # to the tap, with git push --dry-run.
     if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    environment: release # the tap's key
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

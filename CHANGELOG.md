@@ -462,6 +462,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The Android app is signed with a new release key from 0.6 on. Android installs an update
+  only with the same key, so an APK of 0.3 to 0.5 has to be uninstalled before 0.6 is
+  installed (the phone then joins its group again).
+- The keys that sign releases (Android, Windows, the OpenWrt feed, the Homebrew tap) are
+  secrets of the environment `release`, which only release tags and `main` may use, instead
+  of repository secrets that any branch's workflow could read (docs/maintaining.md,
+  "Release secrets").
 - CI runs only the jobs of the parts a pull request changes (`.github/ci-changes.sh`), so a
   pull request of documentation no longer builds the phone apps, the lite member and the
   firmware, and one brought up to date with main runs again only the jobs of its own parts.

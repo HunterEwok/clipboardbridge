@@ -14,8 +14,9 @@ name: release
 on:
   push:
     tags: ["v*"]
-  # Run from a branch, it builds everything, the signed APK included, and
-  # makes no release: a check that the release key in the secrets works.
+  # Run by hand from main, it builds everything, the signed APK included, and
+  # makes no release: a check that the release keys in the secrets work. The
+  # environment release gives its secrets only to main and the tags v*.
   workflow_dispatch:
 
 permissions:
@@ -48,6 +49,9 @@ jobs:
           - { goos: windows, goarch: arm64, name: arm64, runner: ubuntu-latest, cgo: "0", ext: zip }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    # The Windows certificate's secrets live in the environment release, which
+    # only release tags and main may use (docs/maintaining.md, "Release secrets").
+    environment: release
     env:
       CGO_ENABLED: ${{ matrix.cgo }}
       GOOS: ${{ matrix.goos }}
@@ -116,6 +120,7 @@ jobs:
     name: build (android)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: release # the Android release key
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -127,7 +132,7 @@ jobs:
           cache: false # a release builds from scratch
       - name: build the signed APK
         working-directory: apps/android
-        # The release key lives in the repository's secrets (docs/apps.md, "Releasing the
+        # The release key lives in the environment release's secrets (docs/apps.md, "Releasing the
         # Android app"); without it the release has no APK rather than an unsigned one.
         env:
           KEYSTORE_BASE64: ${{ secrets.CBB_ANDROID_KEYSTORE_BASE64 }}
@@ -144,7 +149,7 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 -d >"$CBB_ANDROID_KEYSTORE"
           # A release's tag builds the version of apps/android/version.properties, which
           # F-Droid reads too, so the two must agree; a pre-release (v1.2.3-rc.1) passes its
-          # own, and a run by hand from a branch builds 0.0.0-dev.
+          # own, and a run by hand from main builds 0.0.0-dev.
           version=${GITHUB_REF_NAME#v}
           if [ "$GITHUB_REF_TYPE" != tag ]; then version=0.0.0-dev; fi
           case $version in
@@ -267,6 +272,7 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: release # the feed's key
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
