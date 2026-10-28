@@ -28,6 +28,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `keys.json` or `stable.json` is close to its expiry.
 - `get.sh` and `get.ps1` take only release keys for `release.json`, no longer every key of
   `keys.json`.
+- The release keys on the two YubiKeys (PIV slot 83) with their attestations, in
+  `internal/release/roots/release-keys.pem`, checked by `TestReleaseKeysAttested`.
+- docs/own-build.md: what ties a build to this project's releases, and how a fork or a
+  build of one's own uses its own roots and addresses; `TestProjectAddresses` checks that
+  every copy of the project's addresses matches `internal/update`.
 - SteamOS: `install.sh` (and so `get.sh`) puts Clipboard Bridge in `/opt/clipboardbridge`
   on a Steam Deck, whose system files each update replaces, and lists its files in `/etc`
   in SteamOS's keep list, so the install and the device's group survive SteamOS updates;
