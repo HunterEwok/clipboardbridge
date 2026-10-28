@@ -1339,8 +1339,11 @@ func (s *Records) Admitted(admin KeyHash) []KeyHash {
 
 // Staying returns the keys that a record removing the admin CA with key
 // admin keeps: those of the devices it admitted, and those of every listed
-// device, whose certificate it may have renewed (docs/protocol.md,
-// section 10). The caller drops the keys the record revokes.
+// device, whose certificate it may have renewed; and the keys of the admin
+// CAs removed earlier whose removals keep one of those devices, since
+// their certificates for it hold only while their admin CA stands under its
+// root, which a takeover removes (docs/protocol.md, section 10). The
+// caller drops the keys the record revokes.
 func (s *Records) Staying(admin KeyHash) []KeyHash {
 	out := s.Admitted(admin)
 	for _, d := range s.Devices() {
@@ -1350,7 +1353,14 @@ func (s *Records) Staying(admin KeyHash) []KeyHash {
 			}
 		}
 	}
-	return out
+	var removed []KeyHash
+	for k := range s.eval().revokers {
+		if !slices.Contains(out, k) && slices.ContainsFunc(out, func(d KeyHash) bool { return s.kept(k, d) }) {
+			removed = append(removed, k)
+		}
+	}
+	slices.SortFunc(removed, func(a, b KeyHash) int { return bytes.Compare(a[:], b[:]) })
+	return append(out, removed...)
 }
 
 // RevokedBy returns the keys that revocations signed by the admin CA with

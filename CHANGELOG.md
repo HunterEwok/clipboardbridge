@@ -513,6 +513,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   devices whose certificates it had only renewed: the revocation keeps every listed device,
   not just those it admitted, on computers, phones and the lite member alike. A member no
   longer takes a renewed certificate from a removed admin or an old root.
+- Taking the group over from a lost root no longer cuts off the devices that an admin
+  removed earlier had admitted: their certificates hold through that admin's CA, which the
+  takeover now keeps under the old root, on computers and phones alike.
 - `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
   left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
   the hub's addresses.

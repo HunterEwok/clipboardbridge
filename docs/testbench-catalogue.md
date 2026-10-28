@@ -189,7 +189,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | D10 | The router's member port refuses its WAN side even with the firewall open by mistake | fleet, real | phase 8 |
 | D11 | Dial-back: a member whose firewall drops the member port still syncs because the others dial it, and `cbb status` warns | real, fleet | |
 | D12 | Heartbeats: a ping after 5 s of silence; a silent connection closed at 15 s; a large frame gets time at 16 KiB/s | fleet | |
-| D13 | At most 32 handshakes or pairing attempts at once, the 33rd waits; running out of file descriptors pauses accepting and recovers | fleet | |
+| D13 | At most 32 handshakes or pairing attempts at once, a connection beyond them is closed; running out of file descriptors pauses accepting and recovers | fleet | |
 | D14 | A queue of 256 messages: a peer a whole queue behind is disconnected and catches up from its next hello | fleet | |
 | D15 | Junk on the member port: random bytes, a wrong ALPN, a TLS client without a certificate, a hello or an event that does not decode, a frame over 7 MiB: each closed or dropped, the service unharmed [S14] | fleet | |
 | D16 | Address change: a member's DHCP address changes; an away device moves between networks without a new invitation [F11] | fleet, real | |

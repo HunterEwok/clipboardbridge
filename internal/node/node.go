@@ -823,6 +823,19 @@ func (n *Node) SendCert(dev group.DeviceID, cert, issuer *x509.Certificate) bool
 	return false
 }
 
+// SendEvent sends the connected member dev the event ev as it is, as a
+// member passing on one it received; the bench sends one again to check
+// that it is written once. It reports whether dev is connected.
+func (n *Node) SendEvent(dev group.DeviceID, ev clip.Event) bool {
+	for _, c := range n.helloed() {
+		if c.id == dev {
+			c.enqueue(outgoing{event: &ev})
+			return true
+		}
+	}
+	return false
+}
+
 // SendEvidence sends the connected member dev an evidence message, as the
 // steps of a TPM's attestation (docs/protocol.md, section 17, "TPM
 // evidence"). It reports whether dev is connected.

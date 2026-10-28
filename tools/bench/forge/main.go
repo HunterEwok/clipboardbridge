@@ -11,6 +11,7 @@
 //	forge -state DIR -signer DIR -to DEVICE -addr HOST:PORT replay altered other-group other-target
 //	forge ... flood:N:DEVICE
 //	forge ... make:N:FILE send:FILE:SEED
+//	forge ... event:TEXT:N
 //	forge -os SYSTEM ... hold:N
 //
 // Each line of the commands is "CASE N: done", "CASE N: refused: REASON" or
@@ -21,7 +22,7 @@
 // hello that names SYSTEM (G35). The tunnel's cases are in tunnel.go, the
 // stand-in for a well-known site that VLESS borrows in site.go, the control
 // socket's in control.go, the TVs in tv.go, the mDNS records in mdns.go,
-// the renewals in cert.go. It is
+// the renewals in cert.go, watching the writes in watch.go. It is
 // never part of a release.
 package main
 
@@ -71,6 +72,13 @@ func main() {
 	}
 	if flag.NArg() > 0 && mdnsCase(flag.Arg(0)) {
 		if err := runMDNS(*addr, flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && watchCase(flag.Arg(0)) {
+		if err := runWatch(*socket, flag.Arg(0)); err != nil {
 			fmt.Fprintln(os.Stderr, "forge:", err)
 			os.Exit(1)
 		}
@@ -224,6 +232,27 @@ func run(state, signerDir string, to group.DeviceID, addr, system string, cases 
 			if err := sendCert(n, to, parts[1], by); err != nil {
 				return err
 			}
+		case "event":
+			// event:TEXT:N makes one event of TEXT and sends it N times, as
+			// members passing it on would (Y15).
+			if len(parts) != 3 {
+				return fmt.Errorf("event takes a text and a count")
+			}
+			count, err := strconv.Atoi(parts[2])
+			if err != nil {
+				return err
+			}
+			ev, ok, err := eng.Copied(parts[1], clip.Text, clip.Copy)
+			if err != nil || !ok {
+				return fmt.Errorf("making the event: %v", err)
+			}
+			for range count {
+				if !n.SendEvent(to, ev) {
+					return fmt.Errorf("%s is not connected", to)
+				}
+			}
+			time.Sleep(2 * time.Second)
+			fmt.Printf("event: sent %d times\n", count)
 		case "hold":
 			// hold:N stays connected for N seconds, as the member.
 			secs, err := strconv.Atoi(parts[len(parts)-1])
@@ -291,7 +320,7 @@ func run(state, signerDir string, to group.DeviceID, addr, system string, cases 
 			}
 			send("other-target 1", cmd, b.ID)
 		default:
-			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" && parts[0] != "hold" && parts[0] != "cert" {
+			if parts[0] != "flood" && parts[0] != "make" && parts[0] != "send" && parts[0] != "hold" && parts[0] != "cert" && parts[0] != "event" {
 				return fmt.Errorf("no case %q", c)
 			}
 		}

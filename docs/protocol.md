@@ -1452,8 +1452,10 @@ an admin phone, never a computer; in a group a computer created an admin compute
 2. As the new root, it signs a `revoke` record whose `keys` are the old root's key and the
    lost root's member and admin keys, and whose `keep` names every other key the old root
    certified: the member keys of every listed device, which it admitted or whose certificates
-   it may have renewed, and the admin CA keys of the
-   other admins, its own included. By rule 6 nothing the old root's key signs from then on
+   it may have renewed, the admin CA keys of the
+   other admins, its own included, and those of removed admins whose removals keep one of
+   those devices, whose certificates from them hold only while their admin CA stands under
+   the old root. By rule 6 nothing the old root's key signs from then on
    counts: neither new certificates nor new admin CAs, `device` records nor `root` records.
    In a group a computer created the lost root held the iPhone CA, so the record also names
    the iPhone CA's key and the key of every `shortcut` device, and the new root makes a new

@@ -124,6 +124,10 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertTrue(root.devices.contains { $0.id == pc.device })
         XCTAssertNil(root.records.refused(chain: pcChain))
         XCTAssertNil(root.records.refused(chain: [rootsOne.cert, adminCA]), "the root's certificate the removed admin renewed")
+        // A takeover keeps the removed admin's CA too, under which those
+        // certificates hold.
+        let staying = root.records.staying(by: try Records.keyHash(cert: root.groupCA))
+        XCTAssertTrue(staying.contains(try Records.keyHash(cert: adminCA)), "a takeover drops the removed admin's CA")
         XCTAssertNotNil(root.records.refused(chain: [joined.welcome.cert]))
     }
 

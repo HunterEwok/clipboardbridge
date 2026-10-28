@@ -124,6 +124,9 @@ class PhoneGroupTest {
         assertTrue(root.devices.any { it.id == pc.device })
         assertNull(root.records.refused(pcChain))
         assertNull(root.records.refused(listOf(rootsOne.cert, adminCA)), "the root's certificate the removed admin renewed")
+        // A takeover keeps the removed admin's CA too, under which those certificates hold.
+        val staying = root.records.staying(Records.keyHashOfCert(root.groupCA)).map { Key(it) }
+        assertTrue(Key(Records.keyHashOfCert(adminCA)) in staying, "a takeover drops the removed admin's CA")
         assertNotNull(root.records.refused(listOf(joined.welcome.cert)))
     }
 

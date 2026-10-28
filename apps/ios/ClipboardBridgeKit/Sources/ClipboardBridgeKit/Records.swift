@@ -788,14 +788,19 @@ public struct RecordSet: Codable, Equatable, Sendable {
 
     /// The keys a revocation of the CA with key hash admin keeps: those of
     /// the devices it admitted, and those of every listed device, whose
-    /// certificate it may have renewed (section 10), as Go's
+    /// certificate it may have renewed; and the keys of the admin CAs
+    /// removed earlier whose removals keep one of those devices, since their
+    /// certificates for it hold only while their admin CA stands under its
+    /// root, which a takeover removes (section 10), as Go's
     /// Records.Staying. The caller drops the keys the revocation names.
     public func staying(by admin: Data) -> [Data] {
         var keys = admitted(by: admin)
         for d in devices {
             for k in d.keys where !keys.contains(k) { keys.append(k) }
         }
-        return keys
+        let ev = Eval(self)
+        let removed = ev.revokers.keys.filter { r in !keys.contains(r) && keys.contains { ev.kept(r, $0) } }
+        return keys + removed.sorted { $0.lexicographicallyPrecedes($1) }
     }
 
     /// Whether a valid device record names the device ID, with any key and

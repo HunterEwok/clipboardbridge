@@ -86,6 +86,10 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"G13-invitations", func() { invitations(ctx, r, f, timeout) }},
 		{"D17-mdns", func() { mdnsRecords(ctx, r, f, timeout) }},
 		{"D14-queue", func() { slowPeer(ctx, r, f, timeout) }},
+		{"D13-handshakes", func() { handshakeSlots(ctx, r, f, timeout) }},
+		{"Y15-duplicates", func() { duplicates(ctx, r, f, timeout) }},
+		{"G16-killed-joiner", func() { killedJoiner(ctx, r, f, timeout) }},
+		{"G40-random-walk", func() { randomWalk(ctx, r, f, timeout) }},
 		{"K3-renewals", func() { renewalChecks(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
