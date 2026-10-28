@@ -83,7 +83,7 @@ of service, **E**levation of privilege.
 | 24 | device | I | a secret outlives its minute | secrets are kept in memory only, never on disk, and gone 60 s after the copy; their formatting is never read | `internal/clip` |
 | 25 | device | E | a received file is opened as a program | received files are never executable, carry the quarantine mark on a Mac and the Mark of the Web on Windows, and names are made safe | `internal/mediafile` |
 | 26 | iPhone shortcut | I | a member uses the iPhone CA against the phone's other HTTPS | the iPhone CA is limited by name constraints to `clipboardbridge.local` and excludes IP addresses | `internal/group/cert.go` |
-| 27 | release | T | a changed program reaches users | release builds only in CI, pinned actions, `SHA256SUMS`, build provenance attestations; release files signed with the project's keys outside CI (D-69); **open**: the installers check the signature once the root keys are built in | `.github/workflows/release.yml`, `internal/release`, `packaging/get.sh` |
+| 27 | release | T | a changed program reaches users | release builds only in CI, pinned actions, `SHA256SUMS`, build provenance attestations; release files signed outside CI with the project's keys: roots on two YubiKeys, the release key in a Mac's Secure Enclave, a channel key on cbb.tools that only renews `stable.json` (D-69); every installer and updater checks them against the pinned roots | `.github/workflows/release.yml`, `internal/release`, `packaging/get.sh`, `tools/release-sign` |
 | 28 | release | T | a vulnerable dependency | few dependencies, `govulncheck` for Go and OSV-Scanner for the Rust crates, the Android libraries and the tray app in CI | `.github/workflows/ci.yml` |
 
 ## Residual risks

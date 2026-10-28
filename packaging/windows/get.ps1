@@ -45,6 +45,19 @@
 		'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExGbAq55XGXip3Dtq6jsM2bOYUeoYfDxsggXLisjwoCQoDM28pCYkIoZAfcjwR3aAGOAUWZX+L53og7/TLLpnfg=='
 	)
 
+	# Where the current keys.json and stable.json are: the branch channel,
+	# since a published release takes no new files and these are signed
+	# again while it is current (docs/protocol.md, section 16).
+	$channelFiles = 'https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel'
+
+	# The roots the release is checked against; none while CBB_VERIFY=skip.
+	$roots = $releaseRoots
+	if ($env:CBB_RELEASE_DIR -and $env:CBB_RELEASE_ROOTS) {
+		$roots = @(((Get-Content -Raw $env:CBB_RELEASE_ROOTS) -split '-----END PUBLIC KEY-----') |
+			ForEach-Object { ($_ -replace '-----BEGIN PUBLIC KEY-----', '' -replace '\s', '') } | Where-Object { $_ })
+	}
+	$verifying = $env:CBB_VERIFY -ne 'skip' -and $roots.Count -gt 0
+
 	# Invoke-Quietly runs a program without its output and returns its exit
 	# code. Windows PowerShell 5.1 turns a program's redirected stderr into
 	# errors, which Stop would throw, so the preference is relaxed here only.
@@ -122,23 +135,17 @@
 	}
 
 	# Test-Release checks keys.json against the root keys, release.json and,
-	# for the latest release, stable.json against its release keys, and the
-	# archive against release.json. CBB_VERIFY=skip skips it.
-	function Test-Release($base, $version, $archive, $got, $tmp) {
-		$roots = $releaseRoots
-		if ($env:CBB_RELEASE_DIR -and $env:CBB_RELEASE_ROOTS) {
-			$roots = @(((Get-Content -Raw $env:CBB_RELEASE_ROOTS) -split '-----END PUBLIC KEY-----') |
-				ForEach-Object { ($_ -replace '-----BEGIN PUBLIC KEY-----', '' -replace '\s', '') } | Where-Object { $_ })
-		}
+	# for the latest release ($named), stable.json against its release or
+	# channel keys, and the archive against release.json. CBB_VERIFY=skip
+	# skips it.
+	function Test-Release($base, $version, $named, $archive, $got, $tmp) {
 		if ($env:CBB_VERIFY -eq 'skip') {
 			Write-Host "Not checked: the release's signature (CBB_VERIFY=skip)."
 			return
 		}
-		if ($roots.Count -eq 0) { return }
-		$latest = "$repo/releases/latest/download"
-		if ($env:CBB_RELEASE_DIR) { $latest = $base }
+		if (-not $verifying) { return }
 		try {
-			Get-ReleaseFile "$latest/keys.json" (Join-Path $tmp 'keys.json')
+			Get-ReleaseFile "$channelFiles/keys.json" (Join-Path $tmp 'keys.json')
 			Get-ReleaseFile "$base/release.json" (Join-Path $tmp 'release.json')
 		} catch {
 			throw "$version has no signed release files; not installing it (CBB_VERIFY=skip installs it unchecked)"
@@ -146,11 +153,15 @@
 		$nowMS = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 		$keys = Open-ReleaseFile -path (Join-Path $tmp 'keys.json') -type 'keys' -keys @($roots | ForEach-Object { , [Convert]::FromBase64String($_) })
 		if ([long]$keys.Value.expires_ms -le $nowMS) { throw 'keys.json has expired; check the clock, or try again later' }
-		$releaseKeys = @($keys.Value.keys | ForEach-Object { , [Convert]::FromBase64String($_.key) })
+		# A release key (no use) signs release.json and stable.json, a channel
+		# key only stable.json, a key of another use neither.
+		$releaseKeys = @($keys.Value.keys | Where-Object { -not $_.use -or $_.use -eq 'release' } |
+			ForEach-Object { , [Convert]::FromBase64String($_.key) })
+		$channelKeys = @($keys.Value.keys | Where-Object { $_.use -eq 'channel' } |
+			ForEach-Object { , [Convert]::FromBase64String($_.key) })
 		$rel = Open-ReleaseFile -path (Join-Path $tmp 'release.json') -type 'release' -keys $releaseKeys
-		if ($version -eq 'latest') {
-			Get-ReleaseFile "$base/stable.json" (Join-Path $tmp 'stable.json')
-			$ch = Open-ReleaseFile -path (Join-Path $tmp 'stable.json') -type 'channel' -keys $releaseKeys
+		if ($named) {
+			$ch = Open-ReleaseFile -path (Join-Path $tmp 'stable.json') -type 'channel' -keys ($releaseKeys + $channelKeys)
 			if ($ch.Value.channel -ne 'stable') { throw "stable.json is not the stable channel's" }
 			if ([long]$ch.Value.expires_ms -le $nowMS) { throw 'stable.json has expired; check the clock, or try again later' }
 			$sum = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($rel.Bytes) | ForEach-Object { $_.ToString('x2') })
@@ -203,6 +214,19 @@
 		$tmp = Join-Path ([IO.Path]::GetTempPath()) ("clipboardbridge-" + [Guid]::NewGuid())
 		New-Item -ItemType Directory -Path $tmp | Out-Null
 		try {
+			# The latest release is the one stable.json names, checked below,
+			# rather than GitHub's latest: the two differ for a few minutes
+			# after a release.
+			$named = $null
+			if ($version -eq 'latest' -and $verifying) {
+				$step = 'finding the latest release'
+				Get-ReleaseFile "$channelFiles/stable.json" (Join-Path $tmp 'stable.json')
+				$named = ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((Get-Content -Raw (Join-Path $tmp 'stable.json') |
+								ConvertFrom-Json).body)) | ConvertFrom-Json).release
+				if ($named -notmatch '^\d+\.\d+\.\d+(-rc\.\d+)?$') { throw 'stable.json names no release' }
+				$version = "v$named"
+				if (-not $env:CBB_RELEASE_DIR) { $base = "$repo/releases/download/$version" }
+			}
 			$step = "downloading $archive ($version)"
 			Write-Host "Downloading $archive ($version)..."
 			foreach ($f in @($archive, 'SHA256SUMS')) {
@@ -234,7 +258,7 @@
 			# the download is whole. The signed release files show that the
 			# project signed this release (docs/protocol.md, section 16).
 			$step = "checking the release's signature"
-			Test-Release -base $base -version $version -archive $archive -got $got -tmp $tmp
+			Test-Release -base $base -version $version -named $named -archive $archive -got $got -tmp $tmp
 
 			# The attestation shows that this repository's release workflow
 			# built the archive.

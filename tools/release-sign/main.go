@@ -4,23 +4,28 @@
 // Command release-sign makes and signs the files that describe a release
 // (docs/protocol.md, section 16), on the maintainer's Mac:
 //
-//	release-sign publish -version 0.6.0 [-min-from 0.5.0] [-docker none] [-no-publish]
-//	release-sign renew
+//	release-sign publish -version 0.6.0 [-min-from 0.5.0] [-docker none] [-channel NAME=KEY.pem] [-no-publish]
+//	release-sign renew [-new-keys]
+//	release-sign extend -key file:channel-key.pem -out DIR      (on cbb.tools)
+//	release-sign take [-new URL] BRANCH-DIR                     (the channel workflow)
+//	release-sign due BRANCH-DIR                                 (the channel workflow)
 //	release-sign manifest -version 0.6.0 -channel stable [-min-from 0.5.0] [-docker IMAGE@sha256:...] DIR >release.body
 //	release-sign keys -seq 2 [-days 90] [-status NAME=status-key.pem] NAME=release-key.pem... >keys.body
 //	release-sign channel -seq 7 [-days 30] release.json >stable.body
 //	release-sign sign -key SIGNER BODY >FILE.json
 //	release-sign public -key SIGNER >key.pem
 //	release-sign verify [-roots ROOTS.pem,...] [-channel stable] DIR
-//	release-sign drill -version 0.6.0 DIR ROOTS.pem
+//	release-sign drill -version 0.6.0 [-channel-key] DIR ROOTS.pem
 //
 // A SIGNER is file:KEY.pem (a P-256 key in a file, for tests and drills),
 // piv:SLOT (a key on a YubiKey, through yubico-piv-tool; the root keys) or
 // se:KEY (a Secure Enclave key through se.swift beside this file, which
 // asks for Touch ID; the release key). drill signs DIR as a release with
 // throwaway keys in files and writes their roots to ROOTS.pem, for the
-// installers' tests and for drills. docs/maintaining.md, "Signed
-// releases", has the whole flow.
+// installers' tests and for drills. publish and renew write keys.json and
+// stable.json to the branch channel; extend renews stable.json with the
+// channel key, and take and due bring it into the branch.
+// docs/maintaining.md, "Signed releases", has the whole flow.
 package main
 
 import (
@@ -56,7 +61,7 @@ func main() {
 	cmds := map[string]func([]string) error{
 		"manifest": manifest, "keys": keys, "channel": channel,
 		"sign": sign, "public": public, "verify": verify, "drill": drill,
-		"publish": publish, "renew": renew,
+		"publish": publish, "renew": renew, "extend": extend, "take": take, "due": due,
 	}
 	cmd, ok := cmds[os.Args[1]]
 	if !ok {
@@ -69,7 +74,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: release-sign publish|renew|manifest|keys|channel|sign|public|verify|drill ... (see the comment in tools/release-sign/main.go)")
+	fmt.Fprintln(os.Stderr, "usage: release-sign publish|renew|extend|take|due|manifest|keys|channel|sign|public|verify|drill ... (see the comment in tools/release-sign/main.go)")
 	os.Exit(2)
 }
 
@@ -488,12 +493,13 @@ func seHelper() (string, error) {
 func drill(args []string) error {
 	fs := flag.NewFlagSet("drill", flag.ExitOnError)
 	version := fs.String("version", "0.0.1", "the release's version")
+	channelKey := fs.Bool("channel-key", false, "sign stable.json with a channel key, as the server renews it")
 	fs.Parse(args)
 	if fs.NArg() != 2 {
 		return errors.New("drill needs the directory and the file for the roots")
 	}
 	dir, rootsPath := fs.Arg(0), fs.Arg(1)
-	var ks [3]*ecdsa.PrivateKey
+	var ks [4]*ecdsa.PrivateKey
 	var roots []byte
 	for i := range ks {
 		k, err := ecdsa.GenerateKey(ellipticP256(), randReader)
@@ -516,14 +522,21 @@ func drill(args []string) error {
 	}
 	spki, _ := x509.MarshalPKIXPublicKey(&ks[2].PublicKey)
 	t := now().UnixMilli()
-	keysFile, err := release.Sign(release.Keys{V: 1, Type: release.TypeKeys, Seq: 1, TimeMS: t,
-		ExpiresMS: t + 90*24*time.Hour.Milliseconds(), Keys: []release.Key{{Key: spki, Name: "drill"}}}, ks[0])
+	k := release.Keys{V: 1, Type: release.TypeKeys, Seq: 1, TimeMS: t,
+		ExpiresMS: t + 90*24*time.Hour.Milliseconds(), Keys: []release.Key{{Key: spki, Name: "drill"}}}
+	chSigner := ks[2]
+	if *channelKey {
+		chSpki, _ := x509.MarshalPKIXPublicKey(&ks[3].PublicKey)
+		k.Keys = append(k.Keys, release.Key{Key: chSpki, Name: "drill channel", Use: release.UseChannel})
+		chSigner = ks[3]
+	}
+	keysFile, err := release.Sign(k, ks[0])
 	if err != nil {
 		return err
 	}
 	h := rel.Hash()
 	ch, err := release.Sign(release.Channel{V: 1, Type: release.TypeChannel, Channel: "stable", Seq: 1, TimeMS: t,
-		ExpiresMS: t + 30*24*time.Hour.Milliseconds(), Release: r.Version, ReleaseSHA256: hex.EncodeToString(h[:])}, ks[2])
+		ExpiresMS: t + 30*24*time.Hour.Milliseconds(), Release: r.Version, ReleaseSHA256: hex.EncodeToString(h[:])}, chSigner)
 	if err != nil {
 		return err
 	}

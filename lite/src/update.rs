@@ -47,6 +47,10 @@ pub const ROOTS: &[&[u8]] = &[
 pub const CHANNEL: &str = "stable";
 const GITHUB: &str = "https://github.com/HunterEwok/clipboardbridge/releases";
 pub const MIRROR: &str = "https://dl.cbb.tools";
+/// Where GitHub keeps the current keys.json and channel file: the branch
+/// channel, since a published release takes no new files and these are
+/// signed again while it is current (docs/protocol.md, section 16).
+const CHANNEL_FILES: &str = "https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel";
 const MAX_MANIFEST: u64 = 1 << 20;
 const MAX_ARCHIVE: u64 = 256 << 20;
 pub const HEALTH: Duration = Duration::from_secs(60);
@@ -162,6 +166,11 @@ impl Source {
     /// The address of name in the release version, or the latest one.
     fn url(&self, name: &str, version: &str) -> String {
         match self {
+            Source::Http { github: true, .. }
+                if version.is_empty() && (name == "keys.json" || name == format!("{CHANNEL}.json")) =>
+            {
+                format!("{CHANNEL_FILES}/{name}")
+            }
             Source::Http { base, github: true } if version.is_empty() => format!("{base}/latest/download/{name}"),
             Source::Http { base, github: true } => format!("{base}/download/v{version}/{name}"),
             Source::Http { base, .. } if version.is_empty() => format!("{base}/{name}"),
@@ -784,7 +793,9 @@ mod tests {
         };
         assert_eq!(u.check(&State::default()).err().unwrap().for_user(), NO_ROOTS);
         let gh = Source::Http { base: GITHUB.into(), github: true };
-        assert_eq!(gh.url("stable.json", ""), format!("{GITHUB}/latest/download/stable.json"));
+        assert_eq!(gh.url("stable.json", ""), format!("{CHANNEL_FILES}/stable.json"));
+        assert_eq!(gh.url("keys.json", ""), format!("{CHANNEL_FILES}/keys.json"));
+        assert_eq!(gh.url("release.json", ""), format!("{GITHUB}/latest/download/release.json"));
         assert_eq!(gh.url("release.json", "0.6.1"), format!("{GITHUB}/download/v0.6.1/release.json"));
         let m = Source::mirror("https://example.org/cbb/").unwrap();
         assert_eq!(m.url("release.json", "0.6.1"), "https://example.org/cbb/v0.6.1/release.json");

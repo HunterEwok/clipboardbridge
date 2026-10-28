@@ -15,11 +15,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
   before 0.6 has no signed files, so a new `get.sh` or `get.ps1` installs one only with
   `CBB_VERIFY=skip`.
 - `release-sign publish`: one command on the maintainer's Mac signs a release and publishes
-  it (the draft's attestations checked, `keys.json` carried on or signed again by a root,
-  `release.json` and `stable.json` signed, all of it checked under the pinned roots), and
-  `release-sign renew` signs `stable.json` again before it expires. The release workflow now
-  leaves a draft, and the new `published` workflow updates the Homebrew tap once the
-  release is published.
+  it (the draft's attestations checked, `keys.json` kept or signed again by a root,
+  `release.json` and `stable.json` signed, all of it checked under the pinned roots). The
+  release workflow now leaves a draft, and the new `published` workflow updates the Homebrew
+  tap once the release is published.
+- The current `keys.json` and `stable.json` live in the repository's branch `channel`, as a
+  published release takes no new files: `get.sh`, `get.ps1`, `cbb update`, the lite member and
+  the Android app read them there, and `get.sh` and `get.ps1` install the release
+  `stable.json` names. A channel key on cbb.tools (`use` `channel` in `keys.json`, which signs
+  channel files only) renews `stable.json` every week (`release-sign extend`), and the daily
+  `channel` workflow checks it, commits it to the branch, and opens an issue when
+  `keys.json` or `stable.json` is close to its expiry.
+- `get.sh` and `get.ps1` take only release keys for `release.json`, no longer every key of
+  `keys.json`.
 - SteamOS: `install.sh` (and so `get.sh`) puts Clipboard Bridge in `/opt/clipboardbridge`
   on a Steam Deck, whose system files each update replaces, and lists its files in `/etc`
   in SteamOS's keep list, so the install and the device's group survive SteamOS updates;

@@ -38,7 +38,16 @@ type Source interface {
 const (
 	GitHub = "https://github.com/HunterEwok/clipboardbridge/releases"
 	Mirror = "https://dl.cbb.tools"
+	// ChannelFiles is where GitHub keeps the current keys.json and channel
+	// files: the branch channel, since a published release takes no new
+	// files and these are signed again while it is current
+	// (docs/protocol.md, section 16, "Where the files are").
+	ChannelFiles = "https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel"
 )
+
+// channelFile reports whether name is a file signed again while a release
+// is current: keys.json and the channel file.
+func channelFile(name string) bool { return name == "keys.json" || name == Channel+".json" }
 
 // Sources returns where updates come from: the mirror the user set, or
 // GitHub and then dl.cbb.tools.
@@ -77,7 +86,9 @@ func (d Dir) Fetch(ctx context.Context, name, version string, max int64) ([]byte
 type httpSource struct {
 	base   string
 	github bool
-	client *http.Client
+	// channel is where GitHub keeps the channel files: ChannelFiles.
+	channel string
+	client  *http.Client
 }
 
 // allowedHost reports whether the updater may connect to host: the update
@@ -95,7 +106,7 @@ func allowedHost(host, base string) bool {
 func newHTTP(base string, github bool) *httpSource {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.ResponseHeaderTimeout = 30 * time.Second
-	s := &httpSource{base: base, github: github}
+	s := &httpSource{base: base, github: github, channel: ChannelFiles}
 	s.client = &http.Client{
 		Transport: t,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -115,6 +126,8 @@ func (s *httpSource) String() string { return s.base }
 
 func (s *httpSource) url(name, version string) string {
 	switch {
+	case s.github && version == "" && channelFile(name):
+		return s.channel + "/" + name
 	case s.github && version == "":
 		return s.base + "/latest/download/" + name
 	case s.github:

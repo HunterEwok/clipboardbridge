@@ -178,33 +178,51 @@ the maintainer's Mac; the keys never reach CI. The roots were made on 2026-10-28
   also turn on the Android app's own update).
 - **The release key**, in the Mac's Secure Enclave, asking for Touch ID at each signature:
   `swift tools/release-sign/se.swift create ~/.config/cbb-release/release.se`. A root
-  certifies it in `keys.json`, signed again at least every 90 days with a higher `-seq`:
-  `release-sign keys -seq N release=release.pem >keys.body` and
-  `release-sign sign -key piv:82 keys.body >keys.json`.
+  certifies it in `keys.json`, which lives 90 days.
+- **The branch `channel`** holds the current `keys.json` and `stable.json`
+  (docs/protocol.md, section 16, "Where the files are"), since a published release takes no
+  new files. `release-sign publish` makes it with the first signed release, and only
+  `release-sign` and the `channel` workflow write to it.
+- **The channel key**, once, on cbb.tools beside the status key, readable only by its user:
+  `openssl ecparam -name prime256v1 -genkey -noout -out /etc/cbb-channel/channel-key.pem`
+  and its public key `openssl ec -in channel-key.pem -pubout -out channel.pem`, copied to the
+  Mac. The first `release-sign publish` certifies it with `-channel cbb.tools=channel.pem`;
+  later ones keep it. A weekly systemd timer on cbb.tools runs `release-sign extend -key
+  file:/etc/cbb-channel/channel-key.pem -out /srv/cbb.tools/www/channel`, which reads the
+  branch, checks it, signs `stable.json` again for 30 days with the same release and a
+  higher number, and serves it with `keys.json` at `https://cbb.tools/channel/` (build it
+  with `GOOS=linux GOARCH=amd64 go build ./tools/release-sign`). The daily `channel`
+  workflow (`.github/workflows/channel.yml`) takes it into the branch with `release-sign
+  take`, which refuses one that does not check out, names another release or is not newer.
+  GitHub holds no key and cbb.tools no GitHub token.
 - **Each release**: once the release workflow has made the draft (its `docker` job adds the
   image's digest to the notes), `release-sign publish -version X.Y.Z [-min-from X.Y.Z]` on
   the Mac, with `gh` signed in. It downloads the draft's files, checks each one's build
-  attestation against the tag (`gh attestation verify --source-ref refs/tags/vX.Y.Z`), takes
-  `keys.json` from the latest release when it is valid for 45 more days and certifies the
-  release key (otherwise a root signs a new one, numbered above it, with the same keys:
-  the YubiKey's PIN and a touch), signs `release.json` and `stable.json` (numbered above the
-  latest) with the release key (Touch ID for each), checks all of it under the pinned roots
-  as a device would, uploads the three files to the draft and, after a yes, publishes it.
-  `-no-publish` stops before that, `-docker none` signs a release without the image; a
-  pre-release gets no `stable.json`. `published.yml` then checks what GitHub serves and
-  updates the Homebrew tap. The steps by hand: `release-sign manifest`, `sign`, `channel`,
-  `keys` and `verify` (the comment in `tools/release-sign/main.go`).
-- `stable.json` expires after 30 days: every three weeks, with or without a new release,
-  `release-sign renew` signs it again with a higher number (and `keys.json` when it has less
-  than 45 days left) and replaces both in the latest release.
+  attestation against the tag (`gh attestation verify --source-ref refs/tags/vX.Y.Z`), keeps
+  the branch's `keys.json` when it is valid for 45 more days and certifies the release key
+  and the keys asked for (otherwise a root signs a new one, numbered above it, with the same
+  keys: the YubiKey's PIN and a touch), signs `release.json` and `stable.json` (numbered
+  above the branch's) with the release key (Touch ID for each), checks all of it under the
+  pinned roots as a device would, uploads `release.json` to the draft and, after a yes,
+  publishes it and commits `keys.json` and `stable.json` to the branch. `-no-publish` stops
+  before publishing, `-docker none` signs a release without the image; a pre-release
+  changes no `stable.json`. `published.yml` then checks what GitHub serves and updates the
+  Homebrew tap. The steps by hand: `release-sign manifest`, `sign`, `channel`, `keys` and
+  `verify` (the comment in `tools/release-sign/main.go`).
+- **Reminders**: the `channel` workflow opens the issue "Release channel: renewal due" when
+  the branch's `keys.json` expires within 21 days (run `release-sign renew -new-keys` on the
+  Mac with a YubiKey) or its `stable.json` within 10, which means cbb.tools stopped renewing
+  it (check its timer, or run `release-sign renew`, which signs it with the release key).
 - A lost or stolen Mac: a root signs a `keys.json` with a new release key and without the
   old one. A lost YubiKey: the other root signs, and the next release ships a new second root.
+  A stolen channel key: a new one on cbb.tools, and `release-sign renew -drop cbb.tools
+  -channel cbb.tools-2=channel.pem` (`-drop NAME` drops any key by its name in `keys.json`).
 - **The status key** of the revocation mirror, on cbb.tools in a file readable only by the
   mirror's user (it signs nothing but `attest-status.json`, so a stolen one can at most keep
   a revoked phone proven until it is replaced): `openssl ecparam -name prime256v1 -genkey
   -noout -out status-key.pem`. `keys.json` certifies it with `-status mirror=status.pem`. A
   daily timer runs `attest-status -key status-key.pem -out /srv/cbb.tools/attest` and copies
-  `keys.json` beside it. When it stops on a list that drops a serial number, check Google's
+  `keys.json` beside it from `/srv/cbb.tools/www/channel`. When it stops on a list that drops a serial number, check Google's
   list and run it once with `-allow-drop`; a stolen status key is dropped from the next
   `keys.json` like a release key.
 - **The TPM makers' certificates** in `internal/attest/tpmroots/roots.pem`, which decide

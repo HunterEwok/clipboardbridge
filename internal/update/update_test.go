@@ -410,6 +410,7 @@ func TestHTTPSources(t *testing.T) {
 	for _, github := range []bool{true, false} {
 		s := newHTTP(ts.URL, github)
 		s.client.Transport = ts.Client().Transport
+		s.channel = ts.URL + "/channel"
 		for _, v := range []string{"", "0.6.1"} {
 			if data, err := s.Fetch(context.Background(), "keys.json", v, 10); err != nil || string(data) != "data" {
 				t.Errorf("%v %q: %q, %v", github, v, data, err)
@@ -422,10 +423,17 @@ func TestHTTPSources(t *testing.T) {
 			t.Errorf("redirect: %v", err)
 		}
 	}
-	want := []string{"/latest/download/keys.json", "/download/v0.6.1/keys.json", "/latest/download/keys.json",
+	want := []string{"/channel/keys.json", "/download/v0.6.1/keys.json", "/channel/keys.json",
 		"/latest/download/elsewhere", "/keys.json", "/v0.6.1/keys.json", "/keys.json", "/elsewhere"}
 	if !slices.Equal(paths, want) {
 		t.Errorf("paths %v", paths)
+	}
+	gh := newHTTP(GitHub, true)
+	if got := gh.url("stable.json", ""); got != ChannelFiles+"/stable.json" {
+		t.Errorf("stable.json from GitHub at %s", got)
+	}
+	if got := gh.url("release.json", ""); got != GitHub+"/latest/download/release.json" {
+		t.Errorf("release.json from GitHub at %s", got)
 	}
 	if _, err := Sources("http://mirror.example"); err == nil {
 		t.Error("took an http mirror")

@@ -432,7 +432,7 @@ fn go_release() {
     let name = v["channel"].as_str().unwrap();
     let now = v["now_ms"].as_i64().unwrap();
     let cases = v["vectors"].as_array().unwrap();
-    assert_eq!(cases.len(), 27);
+    assert_eq!(cases.len(), 30);
     for c in cases {
         let file = |k: &str| -> File { serde_json::from_value(c[k].clone()).unwrap() };
         let seen: Seen = serde_json::from_value(c["seen"].clone()).unwrap();

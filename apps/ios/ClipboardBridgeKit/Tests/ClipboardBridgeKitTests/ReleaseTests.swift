@@ -27,7 +27,7 @@ final class ReleaseTests: XCTestCase {
             var vectors: [C]
         }
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-release.json")))
-        XCTAssertEqual(v.vectors.count, 27)
+        XCTAssertEqual(v.vectors.count, 30)
         for c in v.vectors {
             let got = Result { try Releases.check(keys: c.keys, channel: c.channel, release: c.release, roots: v.roots,
                                                   name: v.channel, nowMS: v.now_ms, seen: c.seen) }
@@ -62,7 +62,7 @@ final class ReleaseTests: XCTestCase {
             var status: [C]
         }
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-release.json")))
-        XCTAssertEqual(v.status.count, 14)
+        XCTAssertEqual(v.status.count, 15)
         for c in v.status {
             let got = Result { try Releases.checkStatus(keys: c.keys, status: c.status, roots: v.roots, nowMS: v.now_ms, seen: c.seen) }
             switch got {

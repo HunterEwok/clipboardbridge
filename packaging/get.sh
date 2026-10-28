@@ -224,6 +224,18 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExGbAq55XGXip3Dtq6jsM2bOYUeoY
 fDxsggXLisjwoCQoDM28pCYkIoZAfcjwR3aAGOAUWZX+L53og7/TLLpnfg==
 -----END PUBLIC KEY-----'
 
+# Where the current keys.json and stable.json are: the branch channel, since
+# a published release takes no new files and these are signed again while
+# it is current (docs/protocol.md, section 16).
+channel_files=https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel
+
+roots=$release_roots
+if [ -n "${CBB_RELEASE_DIR:-}" ] && [ -n "${CBB_RELEASE_ROOTS:-}" ]; then
+	roots=$(cat "$CBB_RELEASE_ROOTS")
+fi
+# verifying tells whether the release's signature is checked.
+verifying() { [ "${CBB_VERIFY:-}" != skip ] && [ -n "$roots" ]; }
+
 # field NAME FILE prints the string field NAME of the compact JSON in FILE,
 # number NAME FILE a number field: enough for the files Go's encoding/json
 # writes, which is all these are.
@@ -249,14 +261,10 @@ opened() {
 }
 
 # verify_release checks keys.json against the root keys, release.json and,
-# for the latest release, stable.json against its release keys, and the
-# archive against release.json. Without openssl it stops unless
+# for the latest release, stable.json against its release (or channel) keys,
+# and the archive against release.json. Without openssl it stops unless
 # CBB_VERIFY=skip, since the sums come from the same server as the archive.
 verify_release() {
-	roots=$release_roots
-	if [ -n "${CBB_RELEASE_DIR:-}" ] && [ -n "${CBB_RELEASE_ROOTS:-}" ]; then
-		roots=$(cat "$CBB_RELEASE_ROOTS")
-	fi
 	if [ "${CBB_VERIFY:-}" = skip ]; then
 		echo "Not checked: the release's signature (CBB_VERIFY=skip)."
 		return
@@ -267,27 +275,34 @@ verify_release() {
 	command -v openssl >/dev/null 2>&1 ||
 		fail "openssl is required to check the release's signature (or CBB_VERIFY=skip to install it unchecked)"
 	printf '%s\n' "$roots" | awk -v d="$tmp" '/BEGIN/ { n++ } { print > (d "/root-" n ".pem") }'
-	latest=$repo/releases/latest/download
-	[ -z "${CBB_RELEASE_DIR:-}" ] || latest=$base
-	if ! fetch "$latest/keys.json" "$tmp/keys.json" || ! fetch "$base/release.json" "$tmp/release.json"; then
+	if ! fetch "$channel_files/keys.json" "$tmp/keys.json" || ! fetch "$base/release.json" "$tmp/release.json"; then
 		fail "$version has no signed release files; not installing it (CBB_VERIFY=skip installs it unchecked)"
 	fi
 	opened "$tmp/keys.json" keys "$tmp"/root-*.pem || fail "keys.json is not signed by the project's root key; not installing"
 	now_ms=$(($(date +%s) * 1000))
 	[ "$(number expires_ms "$tmp/keys.body")" -gt "$now_ms" ] || fail "keys.json has expired; check the clock, or try again later"
-	grep -o '"key":"[^"]*"' "$tmp/keys.body" | sed 's/^"key":"//; s/"$//' >"$tmp/keys.list"
+	# Each key with its use: a release key (no use) signs release.json and
+	# stable.json, a channel key only stable.json, a key of another use
+	# neither.
+	grep -o '{"key":"[^"]*"[^}]*}' "$tmp/keys.body" >"$tmp/keys.list"
 	n=0
-	while read -r k; do
+	while read -r entry; do
 		n=$((n + 1))
-		printf '%s' "$k" | openssl base64 -d -A | openssl pkey -pubin -inform DER -out "$tmp/release-$n.pem" 2>/dev/null ||
+		printf '%s\n' "$entry" >"$tmp/key"
+		case $(field use "$tmp/key") in
+		"" | release) use=release ;;
+		channel) use=channel ;;
+		*) continue ;;
+		esac
+		field key "$tmp/key" | openssl base64 -d -A | openssl pkey -pubin -inform DER -out "$tmp/$use-$n.pem" 2>/dev/null ||
 			fail "keys.json holds a key that is not valid"
 	done <"$tmp/keys.list"
-	[ "$n" -gt 0 ] || fail "keys.json holds no release key"
+	ls "$tmp"/release-*.pem >/dev/null 2>&1 || fail "keys.json holds no release key"
 	opened "$tmp/release.json" release "$tmp"/release-*.pem || fail "release.json is not signed by a release key; not installing"
 	got_version=$(field version "$tmp/release.body")
-	if [ "$version" = latest ]; then
-		fetch "$base/stable.json" "$tmp/stable.json" || fail "could not download $base/stable.json"
-		opened "$tmp/stable.json" channel "$tmp"/release-*.pem || fail "stable.json is not signed by a release key; not installing"
+	if [ -n "$named" ]; then
+		opened "$tmp/stable.json" channel "$tmp"/release-*.pem "$tmp"/channel-*.pem ||
+			fail "stable.json is not signed by a release or channel key; not installing"
 		[ "$(field channel "$tmp/channel.body")" = stable ] || fail "stable.json is not the stable channel's"
 		[ "$(number expires_ms "$tmp/channel.body")" -gt "$now_ms" ] || fail "stable.json has expired; check the clock, or try again later"
 		if [ "$(field release_sha256 "$tmp/channel.body")" != "$(sha256 "$tmp/release.body")" ] ||
@@ -308,6 +323,21 @@ verify_release() {
 
 tmp=$(mktemp -d)
 trap 'rc=$?; rm -rf "$tmp"; failed $rc' EXIT
+# The latest release is the one stable.json names, checked below, rather
+# than GitHub's latest: the two differ for a few minutes after a release.
+named=
+if [ "$version" = latest ] && verifying; then
+	command -v openssl >/dev/null 2>&1 ||
+		fail "openssl is required to check the release's signature (or CBB_VERIFY=skip to install it unchecked)"
+	fetch "$channel_files/stable.json" "$tmp/stable.json" || fail "could not download $channel_files/stable.json"
+	named=$(field body "$tmp/stable.json" | openssl base64 -d -A 2>/dev/null | sed -n 's/.*"release":"\([^"]*\)".*/\1/p')
+	case $named in
+	[0-9]*.[0-9]*.[0-9]*) ;;
+	*) fail "stable.json names no release" ;;
+	esac
+	version=v$named
+	[ -n "${CBB_RELEASE_DIR:-}" ] || base=$repo/releases/download/$version
+fi
 echo "Downloading $archive ($version)..."
 fetch "$base/$archive" "$tmp/$archive" || fail "could not download $base/$archive"
 fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || fail "could not download $base/SHA256SUMS"

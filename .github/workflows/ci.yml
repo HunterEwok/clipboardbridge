@@ -527,6 +527,9 @@ jobs:
           go run ./tools/release-sign drill -version 0.6.0 "$rel" "$RUNNER_TEMP/roots.pem"
           export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/roots.pem"
           sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
+          # stable.json renewed by a channel key, as cbb.tools does.
+          go run ./tools/release-sign drill -version 0.6.0 -channel-key "$rel" "$RUNNER_TEMP/roots.pem"
+          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
           refused() {
             if sudo -E sh packaging/get.sh --no-firewall; then
               echo "get.sh installed a release with $1" >&2
@@ -876,7 +879,8 @@ jobs:
             "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower())  clipboardbridge-windows-amd64.zip" | Set-Content (Join-Path $rel 'SHA256SUMS')
             $roots = Join-Path $env:RUNNER_TEMP 'roots.pem'
             # Through cmd: Windows PowerShell stops on a native program's stderr (go's "downloading").
-            cmd /c "go run ./tools/release-sign drill -version 0.6.0 `"$rel`" `"$roots`" 2>&1"
+            # stable.json signed by a channel key, as cbb.tools renews it.
+            cmd /c "go run ./tools/release-sign drill -version 0.6.0 -channel-key `"$rel`" `"$roots`" 2>&1"
             if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
             $env:CBB_RELEASE_DIR = $rel
             $env:CBB_RELEASE_ROOTS = $roots
