@@ -217,7 +217,7 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 			w.mark = "admin"
 			return w.name, nil
 		}},
-		{"freeze", 1, func() bool { return len(with("admin")) > 1 }, func(int) (string, error) {
+		{"freeze", 3, func() bool { return len(with("admin")) > 1 }, func(int) (string, error) {
 			w := pick(with("admin"))
 			by := pick(slices.DeleteFunc(actors(), func(x *walker) bool { return x == w }))
 			if _, err := Run(ctx, by.d, "cbb freeze "+w.id, ""); err != nil {
