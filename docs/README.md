@@ -70,6 +70,7 @@ for security reviewers.
 | [App specification](apps.md) | what the apps do and how they look |
 | [Roadmap](roadmap.md) | what comes next, the agreed plans not built yet, research |
 | [Contributing](../CONTRIBUTING.md) | conventions, building and testing every part |
+| [Your own build](own-build.md) | what ties a build to this project's releases, and how to use your own keys and addresses |
 | [Security audit](security-audit.md) | the plan of the security audit |
 
 ## For maintainers

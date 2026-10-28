@@ -263,6 +263,13 @@ func (w *Window) succeed(r *Result) {
 	close(w.done)
 }
 
+// ServerTLS returns the TLS configuration for connections to this window.
+// It presents the certificate the window binds the exchange to: the admin's
+// identity when the window opened, which a renewal while it is open (an
+// admin's new admin CA, a renewed member certificate) does not change, or
+// every joiner would fail as with a wrong code.
+func (w *Window) ServerTLS() *tls.Config { return ServerTLS(w.admin) }
+
 // ServerTLS returns the TLS configuration for pairing connections: the
 // member's own certificate, and any client certificate, which the exchange
 // authenticates.
