@@ -2082,3 +2082,44 @@ func TestBrokenIdentity(t *testing.T) {
 
 // sharedMode is the sync mode of the test services, which sync.
 var sharedMode = clip.Shared
+
+// TestPairingAcrossARenewal checks that a pairing window keeps working when
+// the admin's certificates change while it is open, as when its root sends
+// an admin a new admin CA right after making it an admin: the window binds
+// the exchange to the certificate it opened with and presents that one.
+func TestPairingAcrossARenewal(t *testing.T) {
+	every := renewEvery
+	renewEvery = 200 * time.Millisecond
+	t.Cleanup(func() { renewEvery = every })
+	var ahead atomic.Bool
+	var h hub
+	pi := startService(t, &h, "pi")
+	pi.cfg = func(c *Config) {
+		c.now = func() time.Time {
+			if ahead.Load() {
+				return time.Now().AddDate(1, 6, 0)
+			}
+			return time.Now()
+		}
+	}
+	pi.stop()
+	pi = restartService(t, &h, pi)
+	b := startService(t, &h, "b")
+	c, code := openWindow(t, pi)
+	defer c.Close()
+	before, err := group.Load(pi.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ahead.Store(true)
+	waitFor(t, "the pi renews its certificate", func() bool {
+		id, err := group.Load(pi.dir)
+		return err == nil && !id.Cert.Equal(before.Cert)
+	})
+	if _, err := b.do(t, control.Header{Op: control.OpJoin, Code: code}, ""); err != nil {
+		t.Fatalf("join after the renewal: %v", err)
+	}
+	if m, err := c.Receive(); err != nil || m.Name != "b" {
+		t.Fatalf("pair ended with %+v, %v", m, err)
+	}
+}

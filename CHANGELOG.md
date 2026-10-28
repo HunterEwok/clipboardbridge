@@ -547,6 +547,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A pairing window or an invitation on an admin failed every joiner with "wrong code" once
+  the admin's certificates changed while it was open, as when the root sends a new admin
+  its admin CA again right after making it an admin; the window now presents the
+  certificate it opened with.
 - Removing an admin, or taking the group over from a lost root, no longer cuts off the
   devices whose certificates it had only renewed: the revocation keeps every listed device,
   not just those it admitted, on computers, phones and the lite member alike. A member no

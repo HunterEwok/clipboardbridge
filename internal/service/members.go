@@ -68,6 +68,9 @@ func (s *Service) serveMember(ctx context.Context, raw net.Conn, release func())
 		defer s.mu.Unlock()
 		switch {
 		case slices.Contains(hello.SupportedProtos, pair.Protocol):
+			if s.window != nil {
+				return s.window.ServerTLS(), nil
+			}
 			// Also without a window, so the joiner hears that it is closed.
 			return pair.ServerTLS(s.id), nil
 		case !slices.Contains(hello.SupportedProtos, group.MemberProtocol) && s.phoneTLS != nil:
