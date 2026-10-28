@@ -137,6 +137,10 @@ func makeVectors(t *testing.T) vectors {
 	withStatus := keysBody(5, nowMS-1000, 90*day, rk1)
 	withStatus.Keys = append(withStatus.Keys, Key{Key: sk.spki, Name: "status key", Use: UseStatus})
 	keysStatus := sign(t, withStatus, root1)
+	ck := newSigner(t)
+	withChannel := keysBody(6, nowMS-1000, 90*day, rk1)
+	withChannel.Keys = append(withChannel.Keys, Key{Key: ck.spki, Name: "channel key", Use: UseChannel})
+	keysChannel := sign(t, withChannel, root1)
 	unknownUse := keysBody(5, nowMS-1000, 90*day)
 	unknownUse.Keys = []Key{{Key: rk1.spki, Name: "a key of a later use", Use: "later"}}
 	v := vectors{Roots: [][]byte{root1.spki, root2.spki}, NowMS: nowMS, Name: "stable"}
@@ -171,6 +175,10 @@ func makeVectors(t *testing.T) vectors {
 	add("the channel signed by the status key", keysStatus, sign(t, channelBody("stable", 7, nowMS-1000, 30*day, rel, "0.6.0"), sk), rel, first, "")
 	add("release.json signed by the status key", keysStatus, ch, sign(t, releaseBody("0.6.0", "stable"), sk), first, "")
 	add("signed by a key of a use the reader does not know", sign(t, unknownUse, root1), ch, rel, first, "")
+	add("the channel signed by the channel key", keysChannel, sign(t, channelBody("stable", 8, nowMS-1000, 30*day, rel, "0.6.0"), ck), rel, first, "0.6.0")
+	add("release.json signed by the channel key", keysChannel, sign(t, channelBody("stable", 8, nowMS-1000, 30*day, rel, "0.6.0"), ck),
+		sign(t, releaseBody("0.6.0", "stable"), ck), first, "")
+	add("the channel signed by a channel key of another keys.json", keys, sign(t, channelBody("stable", 8, nowMS-1000, 30*day, rel, "0.6.0"), ck), rel, first, "")
 
 	revoked := []string{"0", "1f", "9a", "c35a2e1e3b46b5a1", "15b3d8b2f3a0e3e3cc1d2a4e1f0b7c9d"}
 	addStatus := func(name string, k, st File, seen Seen, ok bool) {
@@ -194,6 +202,9 @@ func makeVectors(t *testing.T) vectors {
 	addStatus("a serial twice", keysStatus, sign(t, statusBody(40, nowMS-1000, day, "1f", "1f"), sk), first, false)
 	addStatus("a serial with a leading zero", keysStatus, sign(t, statusBody(40, nowMS-1000, day, "01f"), sk), first, false)
 	addStatus("a serial in capitals", keysStatus, sign(t, statusBody(40, nowMS-1000, day, "1F"), sk), first, false)
+	withBoth := withStatus
+	withBoth.Keys = append(append([]Key{}, withStatus.Keys...), Key{Key: ck.spki, Name: "channel key", Use: UseChannel})
+	addStatus("signed by the channel key", sign(t, withBoth, root1), sign(t, statusBody(40, nowMS-3600_000, 8*day, revoked...), ck), first, false)
 	addStatus("a channel file where the list belongs", keysStatus, sign(t, channelBody("stable", 40, nowMS-1000, day, rel, "0.6.0"), sk), first, false)
 	return v
 }
@@ -221,7 +232,7 @@ func TestReleaseVectors(t *testing.T) {
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatal(err)
 	}
-	if len(v.Vectors) != 27 || len(v.Status) != 14 {
+	if len(v.Vectors) != 30 || len(v.Status) != 15 {
 		t.Fatalf("the file has %d vectors and %d of the list", len(v.Vectors), len(v.Status))
 	}
 	for _, c := range v.Status {

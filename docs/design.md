@@ -2081,16 +2081,19 @@ docs/protocol.md, section 16.
   another.
 - Each release gets `release.json`: the version, the date, the channel, the lowest version
   that may update to it directly, and the SHA-256 and size of every file, with the hashes of
-  the binaries inside each archive and the Docker image's digest. GitHub releases are
-  immutable, so a small `stable.json` beside it names the current release of the channel with
-  a sequence number and an expiry, and is signed again before it expires; a mirror then cannot
-  freeze a device on an old release.
-- **The key never sits in CI.** The release workflow builds the files and an unsigned
-  `release.json` into a draft and stops. `tools/release-sign` on the owner's Mac checks the
-  build attestations against the commit of the tag the owner pushed, optionally rebuilds the
-  targets without cgo and compares the hashes, signs, and publishes the release. Only then a
-  second workflow updates Docker, Homebrew, winget and the mirror, after checking the
-  signature. A stolen GitHub token can publish files but not a manifest any program accepts.
+  the binaries inside each archive and the Docker image's digest. A small `stable.json`
+  names the current release of the channel with a sequence number and an expiry of 30 days,
+  so a mirror cannot freeze a device on an old release. GitHub releases are immutable, so it
+  lives with the current `keys.json` in the repository's branch `channel`. A **channel key**
+  on cbb.tools, which `keys.json` certifies for channel files only, signs it again every
+  week with the same release, and a scheduled workflow checks it and commits it to the
+  branch: GitHub holds no key and cbb.tools no GitHub token. A stolen channel key can only
+  hold the channel on a release the project signed; the next `keys.json` drops it.
+- **The key never sits in CI.** The release workflow builds the files and the Docker image
+  into a draft and stops. `release-sign publish` on the owner's Mac checks the build
+  attestations against the tag the owner pushed, signs, checks the result under the pinned
+  roots and publishes the release. Only then a second workflow checks the signature and
+  updates Homebrew. A stolen GitHub token can publish files but not a manifest any program accepts.
 - The check refuses a signature that fails, an expired `keys.json` or `stable.json`, a
   version lower than the highest the device has ever seen (not only the installed one), and
   a file whose SHA-256 differs. `get.sh` and `get.ps1` carry the root keys and check the

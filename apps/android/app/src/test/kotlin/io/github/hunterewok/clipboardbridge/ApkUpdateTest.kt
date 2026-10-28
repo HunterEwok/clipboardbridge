@@ -18,11 +18,13 @@ class ApkUpdateTest {
     private fun asset(data: ByteArray, name: String = "clipboardbridge-0.6.1.apk") =
         Releases.Asset(name, data.size.toLong(), MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }, emptyList())
 
-    /** The same places as cbb update: GitHub's download/vX.Y.Z and latest/download, the mirror's vX.Y.Z and top. */
+    /** The same places as cbb update: GitHub's download/vX.Y.Z, latest/download and branch channel, the mirror's vX.Y.Z and top. */
     @Test
     fun urls() {
         val (github, mirror) = ApkUpdate.SOURCES
-        assertEquals("https://github.com/HunterEwok/clipboardbridge/releases/latest/download/stable.json", ApkUpdate.url(github, "stable.json", null))
+        assertEquals("https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel/stable.json", ApkUpdate.url(github, "stable.json", null))
+        assertEquals("https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel/keys.json", ApkUpdate.url(github, "keys.json", null))
+        assertEquals("https://github.com/HunterEwok/clipboardbridge/releases/latest/download/release.json", ApkUpdate.url(github, "release.json", null))
         assertEquals("https://github.com/HunterEwok/clipboardbridge/releases/download/v0.6.1/release.json", ApkUpdate.url(github, "release.json", "0.6.1"))
         assertEquals("https://dl.cbb.tools/keys.json", ApkUpdate.url(mirror, "keys.json", null))
         assertEquals("https://dl.cbb.tools/v0.6.1/clipboardbridge-0.6.1.apk", ApkUpdate.url(mirror, "clipboardbridge-0.6.1.apk", "0.6.1"))

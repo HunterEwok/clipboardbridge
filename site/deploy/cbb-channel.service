@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+#
+# Renews the release channel's stable.json with the channel key
+# (docs/maintaining.md, "Signed releases"): /etc/systemd/system/cbb-channel.service,
+# run by cbb-channel.timer. The key stays readable only by root, and the
+# service gets it as a credential for the run.
+
+[Unit]
+Description=Renew the cbb release channel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cbb-channel
+Group=cbb-channel
+LoadCredential=channel-key.pem:/etc/cbb-channel/channel-key.pem
+ExecStart=/bin/sh -ec 'exec /usr/local/bin/release-sign extend -key "file:$CREDENTIALS_DIRECTORY/channel-key.pem" -out /srv/cbb.tools/channel'
+UMask=0022
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/srv/cbb.tools/channel
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service

@@ -38,10 +38,12 @@ const (
 )
 
 // The uses keys.json gives its keys. A key of a use the reader does not
-// know signs nothing for it.
+// know signs nothing for it. A channel key signs only channel files, so
+// that a server renews them without the release key.
 const (
 	UseRelease = "release"
 	UseStatus  = "status"
+	UseChannel = "channel"
 )
 
 const (
@@ -485,15 +487,15 @@ func CheckStatus(keys, status File, roots [][]byte, now time.Time, seen Seen) (S
 }
 
 // Check verifies a channel file and the release.json it names: keys.json
-// under the roots, the channel file and release.json under its release
-// keys, the channel's name, both expiries, and that nothing is older than
+// under the roots, the channel file under its release or channel keys and
+// release.json under its release keys, the channel's name, both expiries, and that nothing is older than
 // seen. It returns the release and the new Seen to keep.
 func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, seen Seen) (Release, Seen, error) {
 	k, err := VerifyKeys(keys, roots, now, seen)
 	if err != nil {
 		return Release{}, seen, fmt.Errorf("keys.json: %w", err)
 	}
-	if err := channel.verify(k.spkis(UseRelease)); err != nil {
+	if err := channel.verify(append(k.spkis(UseRelease), k.spkis(UseChannel)...)); err != nil {
 		return Release{}, seen, fmt.Errorf("%s.json: %w", name, err)
 	}
 	c, err := decodeChannel(channel.Body)

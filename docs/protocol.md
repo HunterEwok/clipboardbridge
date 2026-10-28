@@ -2366,6 +2366,10 @@ them alike, against `testdata/interop/go-release.json`.
 - A **status key**, P-256, which `keys.json` certifies with `use` `status`. It lives on the
   mirror of Google's revocation list and signs only `attest-status.json` (section 17,
   "Revoked attestations"), never a release.
+- A **channel key**, P-256, which `keys.json` certifies with `use` `channel`. It lives on
+  cbb.tools and signs only channel files, to renew them every week with the release they
+  already name; it signs no `release.json`, so whoever takes it can at most hold a channel
+  on a release the project signed, which a device that has seen a newer version refuses.
 
 ### The envelope
 
@@ -2377,14 +2381,14 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 
 | `type` | Signed by | Fields |
 |--------|-----------|--------|
-| `keys` (`keys.json`) | a root key | `seq` (from 1, raised with each new file), `time_ms`, `expires_ms`, `keys`: 1 to 8 of `{key` (SubjectPublicKeyInfo, DER, base64), `name` (1-64 bytes), `use` (`release` when absent, or `status`)`}` |
+| `keys` (`keys.json`) | a root key | `seq` (from 1, raised with each new file), `time_ms`, `expires_ms`, `keys`: 1 to 8 of `{key` (SubjectPublicKeyInfo, DER, base64), `name` (1-64 bytes), `use` (`release` when absent, `status` or `channel`)`}` |
 | `release` (`release.json`) | a release key | `version`, `channel`, `time_ms`, `min_from` (a version, optional), `files`: 1 to 256 of `{name, size, sha256, binaries?}`, `docker` (optional `{image, digest}`) |
-| `channel` (`stable.json`, ...) | a release key | `channel`, `seq` (from 1), `time_ms`, `expires_ms`, `release` (the version), `release_sha256` (SHA-256 of that `release.json`'s body, hex) |
+| `channel` (`stable.json`, ...) | a release key or a channel key | `channel`, `seq` (from 1), `time_ms`, `expires_ms`, `release` (the version), `release_sha256` (SHA-256 of that `release.json`'s body, hex) |
 | `attest-status` (`attest-status.json`) | a status key | `seq` (from 1), `time_ms`, `expires_ms`, `source_ms` (when Google last changed its list, optional), `android_revoked`: the serial numbers |
 
 - A key of a `use` the reader does not know is in `keys.json` for newer programs and signs
-  nothing for it; a release key signs no `attest-status.json` and a status key no release
-  or channel file.
+  nothing for it; a release key signs no `attest-status.json`, a status key no release
+  or channel file, and a channel key nothing but channel files.
 
 - A version is `X.Y.Z` or, for a release candidate, `X.Y.Z-rc.N`: decimal numbers of at
   most 6 digits without leading zeros (`N` from 1), compared number by number, a release
@@ -2403,6 +2407,18 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
   digits, as Google's list names them. `android_revoked` lists each once, shorter numbers
   first and numbers of one length in string order, which is numeric order.
 
+### Where the files are
+
+A release on GitHub cannot take new files once published, while `keys.json` and the
+channel files are signed again during its life. So `release.json` is a file of its release
+(`releases/download/vX.Y.Z/release.json`), and the current `keys.json` and `stable.json` are
+in the repository's branch `channel`, read at
+`https://raw.githubusercontent.com/HunterEwok/clipboardbridge/channel/<file>`. A mirror
+keeps all three at its top and each release's files under `vX.Y.Z/`. A device fetches
+`keys.json` and the channel file, then the `release.json` of the version the channel file
+names, and that version's files; `get.sh` and `get.ps1` install the release `stable.json`
+names, not GitHub's latest, which differ for a few minutes after a release.
+
 ### The check
 
 A device that looks for an update fetches `keys.json`, the channel file of its channel and
@@ -2410,7 +2426,7 @@ the `release.json` that names, and MUST take the release only when:
 
 1. `keys.json` verifies under a pinned root key, decodes as a `keys` body, has not expired,
    and its `seq` is not below the highest the device has taken;
-2. the channel file verifies under a release key of that `keys.json`, decodes as a `channel`
+2. the channel file verifies under a release or channel key of that `keys.json`, decodes as a `channel`
    body for the device's channel, has not expired, and its `seq` is not below the highest
    taken;
 3. `release.json` verifies under a release key of that `keys.json`, the SHA-256 of its body
