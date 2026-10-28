@@ -568,6 +568,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the records that make it valid is kept and taken once they are in. Before, it was dropped,
   and `cbb takeover` on that admin refused. `cbb status` on a frozen admin says it is
   frozen, not removed.
+- `cbb status` on an admin computer, and on a device an admin admitted, no longer says the
+  device was removed from the group: it checked the device's certificate without the admin
+  CA that issued it.
 - `cbb invite` stopped with Ctrl+C deletes its invitation file, as it says it does; it was
   left on the disk. `cbb pair -invite` given up with Ctrl+C takes back its leave to reach
   the hub's addresses.

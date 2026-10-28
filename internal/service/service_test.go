@@ -199,7 +199,8 @@ type testService struct {
 	memberAddr string // where the member port listens
 
 	logMu   sync.Mutex
-	stopped bool // the test may have ended: the log goes nowhere
+	stopped bool     // the test may have ended: the log goes nowhere
+	lines   []string // what it logged
 }
 
 // logf logs to the test until the service stopped: the tunnel's
@@ -208,9 +209,17 @@ type testService struct {
 func (s *testService) logf(t *testing.T, f string, a ...any) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
+	s.lines = append(s.lines, fmt.Sprintf(f, a...))
 	if !s.stopped {
 		t.Logf(time.Now().Format("15:04:05.000")+" "+s.name+": "+f, a...)
 	}
+}
+
+// logged reports whether the service logged a line that contains part.
+func (s *testService) logged(part string) bool {
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	return slices.ContainsFunc(s.lines, func(l string) bool { return strings.Contains(l, part) })
 }
 
 // addrs returns where the shortcut's HTTPS and the profile are: both on the
@@ -452,14 +461,23 @@ func TestThreeMembers(t *testing.T) {
 	}
 	makeAdmin(t, a, b)
 	pairWith(t, b, c) // an admin admits too
-	group := a.status(t).Group
+	tag := a.status(t).Group
 	for _, s := range []*testService{b, c} {
-		if g := s.status(t).Group; g != group {
-			t.Fatalf("%s is in group %q, want %q", s.name, g, group)
+		if g := s.status(t).Group; g != tag {
+			t.Fatalf("%s is in group %q, want %q", s.name, g, tag)
 		}
 	}
 	for _, s := range []*testService{a, b, c} {
 		waitFor(t, s.name+" connected to both others", func() bool { return len(s.status(t).Peers) == 2 })
+		// Its certificate is from an admin CA, which the check of its
+		// status takes into account.
+		if st := s.status(t); st.Removed || st.Frozen {
+			t.Errorf("%s says it was removed (%v) or frozen (%v)", s.name, st.Removed, st.Frozen)
+		}
+	}
+	// The root made b an admin once, not again for the same root.
+	if a.logged("a new admin CA from this root") {
+		t.Error("the root gave b a second admin CA")
 	}
 	// One copy reaches every member's own clipboard.
 	if _, err := a.do(t, control.Header{Op: control.OpCopy}, "from alpha"); err != nil {

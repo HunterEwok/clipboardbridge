@@ -5,7 +5,6 @@ package service
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -391,7 +390,7 @@ func (s *Service) statusWithRemoved() *control.Status {
 	if id == nil {
 		return st
 	}
-	switch err := s.allow(id.ID, []*x509.Certificate{id.Cert}); {
+	switch err := s.allow(id.ID, ownChain(id)); {
 	case errors.Is(err, group.ErrRecordsOnly):
 		st.TakenOverBy = s.takenOverBy(id)
 	case err != nil && s.frozen(id):
