@@ -176,6 +176,12 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     3. Sync away from home there: gomobile builds no visionOS framework
        ([golang/go#65251](https://github.com/golang/go/issues/65251)), so the phones' tunnel
        needs another build of the same Go code or the lite member's tunnel in Rust.
+- **41.** **A member away during a takeover.** The admin that takes the group over gets a
+    member certificate from its new root at once, so a member that was off, cut off or frozen
+    during the takeover, and meets only the new root afterwards, cannot verify it: it learns
+    of the new root only from another member it still trusts. The bench's random walk (G40)
+    found this. The plan: the new root keeps its previous certificate and tries it when a
+    peer turns its new one down, so the peer gets the root record and follows.
 
 ## Devices that are hard to type into
 
