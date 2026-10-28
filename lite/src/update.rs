@@ -83,7 +83,10 @@ fn is_zero(n: &i64) -> bool {
 /// The updater's folder, which only root may change, and where it
 /// downloads: on OpenWrt /etc, which survives a sysupgrade, and RAM.
 pub fn paths() -> (PathBuf, PathBuf) {
-    if crate::openwrt() {
+    if crate::rootless::is() {
+        let d = crate::rootless::update_dir();
+        (d.clone(), d)
+    } else if crate::openwrt() {
         (PathBuf::from("/etc/clipboardbridge-update"), PathBuf::from("/tmp/clipboardbridge-update"))
     } else {
         (PathBuf::from("/var/lib/clipboardbridge-update"), PathBuf::from("/var/lib/clipboardbridge-update"))
@@ -433,12 +436,12 @@ pub fn prefixed(e: Error, p: &str) -> Error {
 /// nothing and keeps the settings.
 pub fn install(root: &Path, bin: &Path) -> Result<()> {
     let script = if crate::openwrt() { "packaging/openwrt/install.sh" } else { "packaging/linux/install.sh" };
-    let out = Command::new("sh")
-        .arg(root.join(script))
-        .arg(bin)
-        .env("CBB_UPDATING", "1")
-        .output()
-        .context("cannot run install.sh")?;
+    let mut cmd = Command::new("sh");
+    cmd.arg(root.join(script));
+    if crate::rootless::is() {
+        cmd.arg("--rootless");
+    }
+    let out = cmd.arg(bin).env("CBB_UPDATING", "1").output().context("cannot run install.sh")?;
     if out.status.success() {
         return Ok(());
     }
@@ -464,7 +467,10 @@ pub fn wait_healthy(status: &dyn Fn() -> Result<String>, version: &str, within: 
             Ok(v) => Error::msg(format!("it runs {v}")),
             // Not the hint to start the service: the previous version goes
             // back in and starts. The cause stays for -debug.
-            Err(e) => e.context("it does not answer; journalctl -u clipboardbridge (logread on OpenWrt) tells why"),
+            Err(e) => e.context(format!(
+                "it does not answer; {} -u clipboardbridge (logread on OpenWrt) tells why",
+                crate::rootless::journalctl()
+            )),
         };
         if start.elapsed() >= within {
             return Err(last);
@@ -513,8 +519,24 @@ pub fn set_timer(on: bool, exe: &Path) -> Result<()> {
     if crate::openwrt() {
         return cron_timer(on, exe);
     }
+    // A rootless install's timer is one of the user's own units.
+    let user = crate::rootless::is();
+    let (service_file, timer_file) = if user {
+        let d = crate::rootless::unit_dir();
+        (d.join("clipboardbridge-update.service"), d.join("clipboardbridge-update.timer"))
+    } else {
+        (PathBuf::from(SYSTEMD_SERVICE), PathBuf::from(SYSTEMD_TIMER))
+    };
+    let systemctl = |args: &[&str]| {
+        let mut c = Command::new("systemctl");
+        if user {
+            c.arg("--user");
+        }
+        c.args(args);
+        c
+    };
     let run = |args: &[&str]| -> Result<()> {
-        let o = Command::new("systemctl").args(args).output().context("cannot run systemctl")?;
+        let o = systemctl(args).output().context("cannot run systemctl")?;
         if o.status.success() {
             Ok(())
         } else {
@@ -522,10 +544,12 @@ pub fn set_timer(on: bool, exe: &Path) -> Result<()> {
         }
     };
     if !on {
-        let _ = Command::new("systemctl").args(["disable", "--now", "clipboardbridge-update.timer"]).output();
-        for p in [SYSTEMD_TIMER, SYSTEMD_SERVICE] {
+        let _ = systemctl(&["disable", "--now", "clipboardbridge-update.timer"]).output();
+        for p in [&timer_file, &service_file] {
             match fs::remove_file(p) {
-                Err(e) if e.kind() != ErrorKind::NotFound => return Err(Error::with(format!("cannot remove {p}"), e)),
+                Err(e) if e.kind() != ErrorKind::NotFound => {
+                    return Err(Error::with(format!("cannot remove {}", p.display()), e));
+                }
                 _ => {}
             }
         }
@@ -540,8 +564,11 @@ pub fn set_timer(on: bool, exe: &Path) -> Result<()> {
     );
     let timer = "# Written by cbb update -auto on; cbb update -auto off removes it.\n[Unit]\nDescription=Check for a Clipboard Bridge update once a day\n\n\
                  [Timer]\nOnCalendar=daily\nRandomizedDelaySec=6h\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n";
-    write_atomic(Path::new(SYSTEMD_SERVICE), service.as_bytes(), 0o644)?;
-    write_atomic(Path::new(SYSTEMD_TIMER), timer.as_bytes(), 0o644)?;
+    if user {
+        fs::create_dir_all(timer_file.parent().unwrap()).context("cannot make the user's unit folder")?;
+    }
+    write_atomic(&service_file, service.as_bytes(), 0o644)?;
+    write_atomic(&timer_file, timer.as_bytes(), 0o644)?;
     run(&["daemon-reload"])?;
     run(&["enable", "--now", "clipboardbridge-update.timer"])
 }

@@ -175,7 +175,7 @@ struct DeviceDetailView: View {
     private func roleText(_ d: AppModel.Computer) -> Text {
         switch d.role {
         case "phone": Text("Phone app")
-        case "lite": Text("Lite member")
+        case "lite": d.rootless ? Text("Lite member, rootless") : Text("Lite member")
         case "shortcut": Text("Shortcut")
         case "watch": Text("Watch")
         // A rootless install is never an admin or a hub (D-79).

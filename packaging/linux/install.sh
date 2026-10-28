@@ -59,7 +59,7 @@ export LC_ALL=C
 for a in "$@"; do
 	if [ "$a" = --rootless ]; then
 		if [ ! -f "$(dirname "$0")/install-rootless.sh" ]; then
-			echo "install.sh: --rootless is for the full member; install the lite member with sudo" >&2
+			echo "install.sh: this archive has no install-rootless.sh, so it cannot install without root" >&2
 			exit 2
 		fi
 		exec sh "$(dirname "$0")/install-rootless.sh" "$@"

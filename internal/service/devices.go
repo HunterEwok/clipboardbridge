@@ -377,7 +377,8 @@ func (s *Service) ensureListed() {
 			newOS := os != "" && d.OS != os
 			rootless := store == group.StoreRootless && d.Store != group.StoreRootless
 			newStore := d.Store == group.StoreFile && store == group.StoreHardware || rootless
-			if d.Role != group.RoleFull || !newOS && !newStore {
+			// A lite member's record changes only to say rootless.
+			if d.Role != group.RoleFull && (d.Role != group.RoleLite || !rootless) || !newOS && !newStore {
 				return
 			}
 			body.Name, body.Admin, body.Kind, body.Proof = d.Name, d.AdminKey, d.Kind, d.Proof

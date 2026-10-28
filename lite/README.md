@@ -156,6 +156,28 @@ Without mDNS on the network, name the full members in a drop-in
 `ExecStart=/usr/local/bin/cbb run -peer 192.168.0.10:8764 -peer ...`. `run -no-listen`
 turns the member port off (the device then only dials the computers).
 
+### Without sudo (rootless)
+
+On a Linux computer where you have no `sudo`, install it for your own user instead
+([D-79](../docs/decisions.md), "Rootless installs" in [docs/design.md](../docs/design.md)):
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh -s -- --lite --rootless
+cbb join -name pi              # as yourself, without sudo -u
+```
+
+It runs as your own systemd user service (`systemctl --user status clipboardbridge`), with the
+program in `~/.local/bin`, the keys in `~/.local/state/clipboardbridge` and the control socket
+in `$XDG_RUNTIME_DIR/clipboardbridge`, and its hello and device record say `rootless`. Since
+every program you run can read its keys, the system install stays the advice: a rootless
+lite member has no firewall rules, no text console target (`paste-receive on -console`
+refuses) and no `reboot` or `cancel-shutdown` action (they need a polkit rule; `restart`
+stays), and it starts at boot only when an administrator once runs
+`sudo loginctl enable-linger YOUR-USER`. The commands above that take `sudo` take none here.
+For copy and paste in tmux, add the line the installer prints to `~/.tmux.conf`. To remove
+it: `sh ~/.local/share/clipboardbridge/uninstall.sh` (`--purge` also deletes the keys).
+OpenWrt has no user services, so a router takes the normal install.
+
 ### OpenWrt
 
 On a router with OpenWrt 25.12 or later (ARM64, ARMv7, x86-64, MIPS or MIPSel; on MIPS the lite
