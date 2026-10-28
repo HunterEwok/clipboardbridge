@@ -46,8 +46,10 @@ func TestProjectAddresses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A Windows checkout may end its lines in CR LF.
+		text := strings.ReplaceAll(string(data), "\r\n", "\n")
 		for _, w := range want {
-			if !strings.Contains(string(data), w) {
+			if !strings.Contains(text, w) {
 				t.Errorf("%s: no %q", file, w)
 			}
 		}
