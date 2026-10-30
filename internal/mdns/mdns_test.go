@@ -796,19 +796,21 @@ func TestRefindAfterOutage(t *testing.T) {
 		t.Errorf("A sent %d browse queries in the 20 s after it lost B, B a known answer: %v; want 2 or more, without B", n, knownB)
 	}
 	b.setCut(false)
-	found := func(ch <-chan []Peer) bool {
-		ok := false
+	// found follows a member's peers to the last list it reported. B
+	// need not have lost A: when A's records were younger in B's cache
+	// than B's in A's, they outlive the outage and B keeps A throughout.
+	found := func(ch <-chan []Peer, ok bool) bool {
 		for len(ch) > 0 {
 			p := <-ch
 			ok = len(p) == 1 && len(p[0].Addrs) == 1
 		}
 		return ok
 	}
-	foundA, foundB := false, false
+	foundA, foundB := false, found(rb.peers, true)
 	for i := 0; i < 24 && !(foundA && foundB); i++ { // 2 minutes
 		step(5*time.Second, 300*time.Millisecond)
-		foundA = foundA || found(ra.peers)
-		foundB = foundB || found(rb.peers)
+		foundA = found(ra.peers, foundA)
+		foundB = found(rb.peers, foundB)
 	}
 	if !foundA || !foundB {
 		t.Errorf("not found again within 2 minutes after the outage: A finds B %v, B finds A %v", foundA, foundB)

@@ -417,6 +417,7 @@ of the repository:
 
 | Piece | Where | Setup | Teardown |
 |---|---|---|---|
+| A member in a namespace | its Linux host | `sudo sh setup-netns.sh setup NAME SOCKS TUN2SOCKS` (the namespace, tun2socks to the proxy, the units) | `sudo sh setup-netns.sh teardown NAME` |
 | The container's host | the controller (or another host) | `sh tools/bench/setup-docker.sh setup` (Docker, the docker group, the kill helper for F1) | `sh tools/bench/setup-docker.sh teardown [--group]` |
 | SSH to itself, for a device on the controller | the controller | `sh tools/bench/setup-controller.sh setup` | `sh tools/bench/setup-controller.sh teardown` |
 | The bench's signing key | the controller | `ssh-keygen -t ed25519 -N '' -f ~/.ssh/cbb_bench_sign -C cbbbench` | delete `~/.ssh/cbb_bench_sign` and its `.pub` |
@@ -458,7 +459,20 @@ paste` (it has no desktop clipboard). `tools/bench/setup-docker.sh setup` prepar
 once: Docker, the SSH user in the `docker` group, and for F1 the helper
 `cbbbench-kill-container`, which that user may run as root without a password (the
 container's process belongs to the image's user); `setup-docker.sh up CBB` starts a new
-container of the build under test, and `down` removes it with its volume. `address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
+container of the build under test, and `down` removes it with its volume.
+
+A device with `os = "netns"` is a second full member on a Linux host, for a way out that
+the host's own member does not take, such as a VPN: it runs in a network namespace whose
+only interface is tun2socks's, which carries its traffic to a SOCKS5 proxy on the host:
+over a proxy without UDP the member goes away from home with VLESS (`-vless`), over one
+with UDP with WireGuard too; it resolves names over TCP. `tools/bench/setup-netns.sh setup NAME SOCKS
+TUN2SOCKS` prepares it once in `/opt/cbbbench-netns/NAME`, with the units `cbbbench-NAME-net`
+(tun2socks) and `cbbbench-NAME` (the service, as root, with its own state and socket), and
+prints the address it goes out from; the bench calls its cbb as `sudo -n
+/opt/cbbbench-netns/NAME/cbb`. `up NAME CBB` installs the build under test with its state
+empty (reset), `down NAME` stops it and empties its state, and `teardown NAME` removes all of
+it. NAME is the device's name, 1 to 10 small letters and digits. Its keys are in files, so it
+is never the hub. `address` (`host:port`) on a device is where the others dial it to pair when mDNS cannot
 find it; a lite member always joins at an address, which `cbb pair` prints.
 `tools/bench/inventory.example.toml` is a complete example. Each device needs the
 controller's SSH key for its desktop user; a Windows device also runs
