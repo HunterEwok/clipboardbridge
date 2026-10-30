@@ -58,7 +58,15 @@ The maintainer follows these rules; they are written down to keep the history co
   words (`docs/guide`), administrators' pages (`docs/admin`), exact reference without the
   reasons (`docs/reference`), and the engineers' pages. A new command, flag or `CBB_*`
   variable goes into the reference in the same change. A change to the wire format changes
-  [the protocol](docs/protocol.md), which is normative (MUST, SHOULD), its registries
+  The users' guides (`docs/guide`) are also translated into every language of the website,
+  in `site/docs/<language>/guide/<page>.md`: the same headings, links, pictures and code
+  blocks as the English page, only the text translated. When you change a guide page, change
+  its translations in the same pull request (or say in it which languages are left), then
+  run `go run ./tools/site docs-sync`; `go run ./tools/site check -strict` fails on a
+  translation that follows an older page. The text inside the pictures of `docs/images` is
+  translated in `tools/diagrams/l10n/<language>.json`; `python3 tools/diagrams/diagrams.py`
+  draws them again. Every other page stays English and opens on GitHub from the website.
+    [the protocol](docs/protocol.md), which is normative (MUST, SHOULD), its registries
   (section 19), the interop vectors and every implementation together
   ([testing](docs/testing.md)). A design that is built moves from the roadmap into the
   design.
