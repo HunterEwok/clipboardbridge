@@ -1112,3 +1112,81 @@ func TestRegistrationsPerAddress(t *testing.T) {
 		}
 	}
 }
+
+// A member that puts a CA of its own in front of its group's root in the
+// chain is checked under the root its certificate verified to, so the
+// group's records still remove it and the hub's registration stays.
+func TestRegistrationUnderVerifiedRoot(t *testing.T) {
+	f, pin := startForwarder(t, Limits{})
+	hubCert, tag, root := member(t)
+	now := time.Now()
+	mk, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mleaf, err := root.IssueMember(group.NewDeviceID(), &mk.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli(),
+		Keys: []group.KeyHash{group.KeyHashOf(mleaf)}}, root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hk, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	hc, a := rawOpen(t, f, pin, hubCert, hk.PublicKey().Bytes(), hk, hubAuth{key: root.Key, records: []group.Record{revoke}})
+	if a.Error != "" {
+		t.Fatal(a.Error)
+	}
+	defer hc.Close()
+
+	own, err := group.NewRootCA(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	for name, chain := range map[string][][]byte{
+		"own CA first":  {mleaf.Raw, own.Cert.Raw, root.Cert.Raw},
+		"own CA last":   {mleaf.Raw, root.Cert.Raw, own.Cert.Raw},
+		"own CA only":   {mleaf.Raw, own.Cert.Raw},
+		"group CA only": {mleaf.Raw, root.Cert.Raw},
+	} {
+		cert := tls.Certificate{Certificate: chain, PrivateKey: mk, Leaf: mleaf}
+		if a := rawRegister(t, f, pin, cert, ak.PublicKey().Bytes(), ak, hubAuth{key: own.Key}); a.Error == "" {
+			t.Errorf("%s: the removed member registered", name)
+		}
+	}
+	f.mu.Lock()
+	r := f.regs[tag]
+	f.mu.Unlock()
+	if r == nil || r.key != [32]byte(hk.PublicKey().Bytes()) {
+		t.Fatal("the hub's registration was replaced")
+	}
+}
+
+// Handshakes that come over VLESS, from the loopback, spend the budget of
+// one network, so a flood of them leaves the budget of every other source.
+func TestVLESSScansApart(t *testing.T) {
+	cert, err := NewCert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert, VLESS: &VLESSConfig{Listen: "127.0.0.1:0", Site: "example.com", Dest: "127.0.0.1:1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for i := range 200 {
+		fakeReg(f, fmt.Sprintf("group %d", i), netip.AddrPortFrom(netip.MustParseAddr("198.51.100.1"), uint16(8000+i)))
+	}
+	_, pub := fakeReg(f, "victim", netip.MustParseAddrPort("198.51.100.2:8764"))
+	now := time.Now()
+	var nobody [32]byte
+	rand.Read(nobody[:])
+	for i := range 8000 {
+		f.route(netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(30000+i%1000)), initiation(nobody, uint32(i)), now)
+	}
+	if _, ok := f.route(netip.MustParseAddrPort("203.0.113.10:4000"), initiation(pub, 2), now); !ok {
+		t.Fatal("a client's handshake was dropped after a flood over VLESS")
+	}
+}

@@ -112,7 +112,8 @@ object Media {
                 o.optString("path")?.takeIf { it.isNotEmpty() },
                 o.optBool("dir") ?: false,
                 o.optLong("size") ?: 0,
-                o.optBytes("sha256")?.takeIf { it.isNotEmpty() },
+                // An empty hash stays: a folder has none, as in Go, not even an empty one.
+                o.optBytes("sha256"),
             )
         }
     }

@@ -111,6 +111,21 @@ pub fn valid_action_name(name: &str) -> bool {
 }
 
 impl Command {
+    /// Reads and checks a command's body, in the strict form of signed
+    /// bodies.
+    pub(crate) fn parse(data: &[u8]) -> Result<Command> {
+        if data.len() > MAX_PASTE_BODY {
+            return Err(Error::msg("the command is too large"));
+        }
+        crate::strict::check(data, COMMAND_FIELDS)?;
+        let body: Command = serde_json::from_slice(data).context("a command does not decode")?;
+        if body.kind != "paste" && data.len() > MAX_COMMAND_BODY {
+            return Err(Error::msg("the command is too large"));
+        }
+        body.check()?;
+        Ok(body)
+    }
+
     fn check(&self) -> Result<()> {
         if self.v != VERSION {
             return Err(Error::msg(format!("unknown command version {}", self.v)));
@@ -129,6 +144,7 @@ impl Command {
         match self.kind.as_str() {
             "mode" if self.mode.is_empty() || hub => return Err(Error::msg("a mode command names no mode")),
             "hub" if !hub || !self.mode.is_empty() => return Err(Error::msg("a hub command has no order")),
+            "hub" if !self.hub_valid() => return Err(Error::msg("a hub command's order is not valid")),
             "paste-off" | "actions-off" | "away-off" if hub || !self.mode.is_empty() => {
                 return Err(Error::msg(format!("a {} command carries an order", self.kind)));
             }
@@ -154,6 +170,12 @@ impl Command {
         Ok(())
     }
 
+    /// Whether the hub order has the form Go reads: its members of the
+    /// right types, the clients' keys base64 in its standard form.
+    fn hub_valid(&self) -> bool {
+        self.hub.as_ref().is_none_or(|h| serde_json::from_value::<HubOrder>(h.clone()).is_ok())
+    }
+
     fn check_paste(&self, hub: bool) -> Result<()> {
         let limit = match self.mode.as_str() {
             "paste" => MAX_PASTE_TEXT,
@@ -174,6 +196,38 @@ impl Command {
         }
         Ok(())
     }
+}
+
+/// A hub command's order, as Go's HubOrder reads it; only checked here.
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct HubOrder {
+    #[serde(default)]
+    forwarder: Option<HubForwarder>,
+    #[serde(default)]
+    endpoints: Vec<String>,
+    #[serde(default)]
+    clients: Vec<HubClient>,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct HubForwarder {
+    #[serde(default)]
+    endpoint: String,
+    #[serde(default)]
+    key: String,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct HubClient {
+    #[serde(default)]
+    device: String,
+    #[serde(with = "b64", default)]
+    key: Vec<u8>,
+    #[serde(with = "b64", default)]
+    psk: Vec<u8>,
 }
 
 /// A signed record: the body's exact bytes, an ECDSA signature over them,
@@ -197,7 +251,7 @@ impl Record {
 
 /// What a record says; the fields depend on its type.
 #[derive(Deserialize, Default, Clone)]
-struct Body {
+pub(crate) struct Body {
     #[serde(default)]
     v: i64,
     #[serde(rename = "type", default)]
@@ -271,7 +325,19 @@ fn os_of(b: &Body) -> &str {
     }
 }
 
+/// The members every record's body has, and every command's.
+const RECORD_FIELDS: &[&str] = &["v", "type", "group", "time_ms"];
+const COMMAND_FIELDS: &[&str] = &["v", "type", "group", "by", "to", "id", "time_ms", "expires_ms"];
+
 impl Body {
+    /// Reads and checks a record's body, in the strict form of signed bodies.
+    pub(crate) fn parse(data: &[u8]) -> Result<Body> {
+        crate::strict::check(data, RECORD_FIELDS)?;
+        let body: Body = serde_json::from_slice(data).context("a record does not decode")?;
+        body.check()?;
+        Ok(body)
+    }
+
     fn check(&self) -> Result<()> {
         if self.v != VERSION {
             return Err(Error::msg(format!("unknown record version {}", self.v)));
@@ -590,8 +656,7 @@ impl Records {
         if r.body.len() > MAX_BODY {
             return Err(Error::msg("the record is too large"));
         }
-        let body: Body = serde_json::from_slice(&r.body).context("a record does not decode")?;
-        body.check()?;
+        let body = Body::parse(&r.body)?;
         if body.group != self.tag {
             return Err(Error::msg("the record is for another group"));
         }
@@ -1139,14 +1204,7 @@ impl Records {
     /// nor frozen), it is for `me` in this group, it has not expired and it
     /// was not signed in the future. The caller keeps the replay cache.
     pub fn verify_command(&self, c: &Record, me: &str, now_ms: i64) -> Result<Command> {
-        if c.body.len() > MAX_PASTE_BODY {
-            return Err(Error::msg("the command is too large"));
-        }
-        let body: Command = serde_json::from_slice(&c.body).context("a command does not decode")?;
-        if body.kind != "paste" && c.body.len() > MAX_COMMAND_BODY {
-            return Err(Error::msg("the command is too large"));
-        }
-        body.check()?;
+        let body = Command::parse(&c.body)?;
         if body.group != self.tag {
             return Err(Error::msg("the command is for another group"));
         }
