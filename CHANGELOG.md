@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The website's code signing policy (`/code-signing.html`), which SignPath Foundation asks
+  for: who signs the Windows programs and who approves it, linked from the download page and
+  from every page's footer. The privacy page now says what the programs send outside the
+  group and who is responsible for the policy; while the site is closed, these three pages
+  stay open in every language.
 - The project's release root keys: two P-256 keys made on two YubiKeys, with the PIN and a
   touch for every signature, in `internal/release/roots` with Yubico's attestation that
   they were made on the keys. `get.sh`, `get.ps1`, `cbb update`, the lite member's
@@ -466,6 +471,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The website's chalk is written about 30% faster (a board in about a second) and moves more
+  smoothly: the chalk filter is on each table cell and on a drawing's moving parts apart, the
+  panes under living boards are tinted rather than blurred, the underline grows by a
+  transform, and the chalk's grain holds still while a board is drawn or the page scrolls.
 - A member refuses an event more than 7 days ahead of its own wall clock, whatever events it
   took before, in Go, the lite member and both phone kits (docs/protocol.md, section 5).
 

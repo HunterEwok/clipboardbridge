@@ -29,6 +29,15 @@
   </div></div>
   <p>{{t "The servers at cbb.tools keep no logs. The details are in %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/how-it-works.md" (t "how it works"))}}</p>
 
+  <h2 id="programs">{{t "What the programs send"}}</h2>
+  <ul>
+    <li>{{t "Updates, when you turn them on (the installers and the Android app ask): a computer or the Android app asks GitHub whether there is a new version and downloads it from there, or from %s when GitHub does not answer. They see your address and that you use Clipboard Bridge, nothing about your group." (code "dl.cbb.tools")}}</li>
+    <li>{{t "Once a day the group's root may fetch from %s the signed copy of Google's list of revoked Android keys. It is the same file for everyone." (code "cbb.tools")}}</li>
+    <li>{{t "Nothing reports crashes or usage, and the logs stay on each device."}}</li>
+    <li>{{t "If you install the app from the App Store, Google Play, F-Droid, Homebrew or winget, that store knows you installed it, under its own privacy policy."}}</li>
+    <li>{{t "Everything anyone outside your group can see, and how to avoid it: %s." (link "/docs/guide/privacy.html" (t "who sees what"))}}</li>
+  </ul>
+
   <h2 id="site">{{t "This website"}}</h2>
   <ul>
     <li>{{t "It loads nothing from other sites: no trackers, no fonts or scripts from elsewhere."}}</li>
@@ -38,6 +47,9 @@
     <li>{{t "When you pick a light or a dark theme with the button in the header, your browser remembers it on your device. It is not sent anywhere."}}</li>
     <li>{{t "The country database is IP to Country Lite by %s, under the Creative Commons Attribution 4.0 license." (link "https://db-ip.com" "DB-IP")}}</li>
   </ul>
+
+  <h2 id="contact">{{t "Who is responsible"}}</h2>
+  <p>{{t "Clipboard Bridge is an open-source project of its maintainer, %s; there is no company behind it, and nobody sells or shares data, since there is none to share. Questions about this policy: %s. Every change to this page is public in %s." (link "https://github.com/HunterEwok" "HunterEwok") (link "https://github.com/HunterEwok/clipboardbridge/issues" (t "a GitHub issue")) (link "https://github.com/HunterEwok/clipboardbridge/commits/main/site/templates/privacy.html" (t "its history"))}}</p>
 
   <h2>{{t "Found a problem?"}}</h2>
   <p>{{t "Please report a vulnerability privately, as %s describes, and not in a public issue." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/SECURITY.md" "SECURITY.md")}}</p>
