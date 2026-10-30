@@ -249,6 +249,9 @@ func killCmd(d *Device) string {
 	switch d.OS {
 	case "linux", "linux-lite":
 		return "sudo -n systemctl kill -s KILL clipboardbridge"
+	case "netns":
+		// Restart=always starts it again.
+		return "sudo -n systemctl kill -s KILL " + netnsUnit(d)
 	case "openwrt":
 		// procd starts it again (respawn).
 		return "kill -KILL $(pidof cbb)"

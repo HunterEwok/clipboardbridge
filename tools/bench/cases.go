@@ -192,7 +192,7 @@ func restartService(ctx context.Context, d *Device) error {
 // where the bench cannot (Windows so far).
 func asRoot(d *Device, cmd string) (string, bool) {
 	switch d.OS {
-	case "linux", "linux-lite", "docker", "openwrt", "freebsd":
+	case "linux", "linux-lite", "docker", "netns", "openwrt", "freebsd":
 		return rootPrefix(d) + "sh -c " + shellQuote(cmd), true
 	}
 	return "", false
@@ -210,6 +210,8 @@ func stateDir(ctx context.Context, d *Device) (string, error) {
 		return "/etc/clipboardbridge/state", nil
 	case "freebsd":
 		return "/var/db/clipboardbridge", nil
+	case "netns":
+		return netnsDir(d) + "/state", nil
 	case "docker":
 		out, err := Run(ctx, d, "docker inspect -f '{{range .Mounts}}{{if eq .Destination \"/var/lib/clipboardbridge\"}}{{.Source}}{{end}}{{end}}' "+d.Container, "")
 		if err != nil {
@@ -352,6 +354,8 @@ func logsClean(ctx context.Context, r *Report, g *benchGroup, since time.Time) {
 			logs = "{ sudo -n journalctl -u clipboardbridge --since @" + at + " --no-pager -o cat && { journalctl --user _COMM=cbb --since @" + at + " --no-pager -o cat 2>/dev/null || true; }; }"
 		case "darwin":
 			logs = "sudo -n " + macHelper + " logs"
+		case "netns":
+			logs = "{ sudo -n journalctl -u " + netnsUnit(d) + " --since @" + at + " --no-pager -o cat; }"
 		case "docker":
 			// The container's log is docker logs' standard error.
 			logs = "{ docker logs --since " + at + " " + d.Container + " 2>&1; }"
