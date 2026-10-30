@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/netip"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -21,7 +20,7 @@ type posing struct {
 	mu       sync.Mutex
 	as       map[uint16]netip.Addr // by the client's port
 	other    netip.Addr            // for every other client
-	accepted atomic.Int64
+	accepted chan struct{}         // a value for each connection accepted
 }
 
 type posedConn struct {
@@ -43,7 +42,10 @@ func (l *posing) Accept() (net.Conn, error) {
 		a = l.other
 	}
 	l.mu.Unlock()
-	l.accepted.Add(1)
+	select {
+	case l.accepted <- struct{}{}:
+	default:
+	}
 	return posedConn{c, net.TCPAddrFromAddrPort(netip.AddrPortFrom(a, port))}, nil
 }
 
@@ -52,7 +54,6 @@ func (l *posing) Accept() (net.Conn, error) {
 // connections on some systems (FreeBSD, Windows) instead of holding them.
 func (l *posing) dialAs(t *testing.T, a netip.Addr) net.Conn {
 	t.Helper()
-	before := l.accepted.Load()
 	l.mu.Lock()
 	c, err := net.Dial("tcp", l.Addr().String())
 	if err != nil {
@@ -62,7 +63,11 @@ func (l *posing) dialAs(t *testing.T, a netip.Addr) net.Conn {
 	l.as[netip.MustParseAddrPort(c.LocalAddr().String()).Port()] = a
 	l.mu.Unlock()
 	t.Cleanup(func() { c.Close() })
-	waitFor(t, "the relay to accept a connection", func() bool { return l.accepted.Load() > before })
+	select {
+	case <-l.accepted:
+	case <-time.After(15 * time.Second):
+		t.Fatal("timed out waiting for the relay to accept a connection")
+	}
 	return c
 }
 
@@ -77,7 +82,7 @@ func startPosing(t *testing.T) (*Relay, *posing, Link) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := &posing{Listener: r.tcp, as: map[uint16]netip.Addr{}, other: netip.MustParseAddr("198.51.100.20")}
+	l := &posing{Listener: r.tcp, as: map[uint16]netip.Addr{}, accepted: make(chan struct{}, 1), other: netip.MustParseAddr("198.51.100.20")}
 	r.tcp = l
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -100,16 +105,17 @@ func (r *Relay) settingNow() int {
 
 // Connections that never finish their setup hold only their address's and
 // network's share of the setups, and devices from elsewhere still register
-// and reach each other.
+// and reach each other. The connections are opened well within setupTimeout,
+// which frees the first ones' setups.
 func TestSetupsBoundByAddress(t *testing.T) {
 	r, l, link := startPosing(t)
 	one := netip.MustParseAddr("203.0.113.7")
-	for range maxSetups + 10 {
+	for range maxSetupsAddress + 10 {
 		l.dialAs(t, one)
 	}
 	waitFor(t, "the setups from one address", func() bool { return r.settingNow() == maxSetupsAddress })
 	// Many addresses of one network.
-	for i := range maxSetups {
+	for i := range maxSetupsNetwork + 10 {
 		l.dialAs(t, netip.AddrFrom4([4]byte{192, 0, 2, byte(i)}))
 	}
 	waitFor(t, "the setups from one network", func() bool { return r.settingNow() == maxSetupsAddress+maxSetupsNetwork })
