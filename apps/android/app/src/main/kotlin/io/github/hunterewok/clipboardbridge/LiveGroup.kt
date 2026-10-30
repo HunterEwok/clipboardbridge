@@ -962,7 +962,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /**
      * Puts text where a computer's focus is (design.md, "Remote paste"): a
      * paste command signed with this phone's root or admin key, passed on
-     * by a member connected to it when this phone is not; the computer
+     * by a hub of the group connected to it when this phone is not; the computer
      * answers once the text is in, or why not.
      */
     suspend fun paste(id: String, text: String, method: String, enter: Boolean, secret: Boolean) {
@@ -972,7 +972,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val c = g.pasteCommand(id, text, method, enter, secret, ca, Instant.now())
         // The computer waits 5 s for its target, and 5 ms more for each typed byte.
         val wait = 10_000L + if (method == "type") text.toByteArray().size * 5L else 0L
-        val r = withContext(Dispatchers.IO) { n.command(id, c, timeoutMS = wait, via = true) }
+        val r = withContext(Dispatchers.IO) { n.command(id, c, timeoutMS = wait, via = hubOrder()) }
         if (!r.done) throw CommandRefused(r.reason ?: r.status)
     }
 
@@ -987,7 +987,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val g = copyOfState() ?: return
         val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
         // The computer waits up to 20 s for the action to start.
-        val r = withContext(Dispatchers.IO) { n.command(id, g.actionCommand(id, name, ca, Instant.now()), timeoutMS = ACTION_TIMEOUT_MS, via = true) }
+        val r = withContext(Dispatchers.IO) { n.command(id, g.actionCommand(id, name, ca, Instant.now()), timeoutMS = ACTION_TIMEOUT_MS, via = hubOrder()) }
         if (!r.done) throw CommandRefused(r.reason ?: r.status)
     }
 
@@ -996,7 +996,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val ca = caSigner(R.string.reason_action)
         val g = copyOfState() ?: return
         val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
-        val r = withContext(Dispatchers.IO) { n.command(id, g.actionsOffCommand(id, ca, Instant.now()), via = true) }
+        val r = withContext(Dispatchers.IO) { n.command(id, g.actionsOffCommand(id, ca, Instant.now()), via = hubOrder()) }
         if (!r.done) throw CommandRefused(r.reason ?: r.status)
     }
 
@@ -1125,7 +1125,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }
         val to = o.optString("to").takeIf { it.isNotEmpty() } ?: throw PhoneGroup.Failure(PhoneGroup.NOT_FOR_WATCH)
         val n = currentNode ?: throw MemberNode.ProtocolException("the device is not connected")
-        val res = withContext(Dispatchers.IO) { n.command(to, r, 25_000, via = true) }
+        val res = withContext(Dispatchers.IO) { n.command(to, r, 25_000, via = hubOrder()) }
         if (!res.done) throw CommandRefused(res.reason ?: res.status)
     }
 

@@ -403,7 +403,7 @@ func (s *Service) sendPaste(ctx context.Context, m *control.Message) error {
 }
 
 // commandOn signs body for the device d as this admin and sends it, through
-// a member connected to d when this one is not.
+// a hub of the group connected to d when this one is not.
 func (s *Service) commandOn(ctx context.Context, d control.Device, body group.CommandBody) error {
 	s.mu.Lock()
 	id, nd := s.id, s.nd
@@ -431,7 +431,7 @@ func (s *Service) commandOn(ctx context.Context, d control.Device, body group.Co
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second+wait)
 	defer cancel()
-	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, true)
+	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, s.hubOrder())
 	if err != nil {
 		return fmt.Errorf("%s: %w", d.Name, err)
 	}

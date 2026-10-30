@@ -230,7 +230,7 @@ func (s *Service) setModeOn(ctx context.Context, target, name string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, true)
+	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, s.hubOrder())
 	if err != nil {
 		return fmt.Errorf("setting the sync mode of %s: %w", d.Name, err)
 	}

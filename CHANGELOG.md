@@ -615,6 +615,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- An admin's command for a device it is not connected to, such as a remote paste, now goes
+  only through the group's hubs (the root and the admins), not through every member, on
+  computers and both phone apps.
 - A device that restarts no longer carries out again a command it took just before the
   restart: computers, phones and the lite member refuse a command signed before they
   started, and the reason asks the sender to send it again.

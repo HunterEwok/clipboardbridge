@@ -2357,7 +2357,11 @@ commands, such as one before 0.5, ignores the message, so the sender gives up af
 (20 s for `hub`).
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
-`action`, `actions-off` or `away-off` command to every member it is connected to (a `hub` command only goes directly). A member
+`action`, `actions-off` or `away-off` command to the group's hubs it is connected to (the
+root and the admins, "Several hubs" in section 11), and to no other member: a command's body,
+a paste's text among it, is signed but not encrypted, and the hubs are the devices the user
+gave admin powers. A `hub` command only goes directly. Senders before 0.6 send it to every
+member they are connected to, and a member that is not a hub still passes it on. A member
 that gets a command whose `to` is another device passes it on, unchanged, only when it is
 connected to that device and has not passed that `id` before (it keeps the IDs until the
 command expires, at most 4096), and passes the receiver's `result` back to the member it

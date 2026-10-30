@@ -586,7 +586,7 @@ final class LiveGroup: GroupController {
 
     /// Puts text where the focus of a computer is (design.md, "Remote
     /// paste"): a paste command signed with this phone's root or admin key
-    /// after Face ID, passed on by a member connected to it when this phone
+    /// after Face ID, passed on by a hub of the group connected to it when this phone
     /// is not; the computer answers once the text is in, or why not.
     func paste(_ id: String, text: String, method: String, enter: Bool, secret: Bool) async throws {
         guard let node else { throw MemberNode.Failure.notConnected }
@@ -595,7 +595,7 @@ final class LiveGroup: GroupController {
         let c = try g.pasteCommand(to: id, text: text, method: method, enter: enter, secret: secret, caSigner: ca, now: Date())
         // The computer waits 5 s for its target, and 5 ms more for each typed byte.
         let wait = 10 + (method == "type" ? Double(text.utf8.count) * 0.005 : 0)
-        let r = try await node.command(c, to: id, timeout: wait, via: true)
+        let r = try await node.command(c, to: id, timeout: wait, via: g.records.hubOrder)
         if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
     }
 
@@ -609,7 +609,7 @@ final class LiveGroup: GroupController {
         guard let g = state else { return }
         let c = try g.actionCommand(to: id, name: name, caSigner: ca, now: Date())
         // A preset may take 20 s to start, and an own action runs up to 15 s.
-        let r = try await node.command(c, to: id, timeout: 25, via: true)
+        let r = try await node.command(c, to: id, timeout: 25, via: g.records.hubOrder)
         if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
     }
 
@@ -620,7 +620,7 @@ final class LiveGroup: GroupController {
         let ca = try await caSigner(reason: String(localized: "Run a quick action", bundle: .app))
         guard let g = state else { return }
         let c = try g.actionsOffCommand(to: id, caSigner: ca, now: Date())
-        let r = try await node.command(c, to: id, via: true)
+        let r = try await node.command(c, to: id, via: g.records.hubOrder)
         if !r.done { throw CommandRefused(reason: r.reason ?? r.status) }
     }
 
@@ -679,7 +679,7 @@ final class LiveGroup: GroupController {
         }
         guard let to = o?["to"] as? String else { throw PhoneGroup.Failure.notForWatch }
         guard let node else { throw MemberNode.Failure.notConnected }
-        let res = try await node.command(r, to: to, timeout: 25, via: true)
+        let res = try await node.command(r, to: to, timeout: 25, via: state?.records.hubOrder ?? [])
         if !res.done { throw CommandRefused(reason: res.reason ?? res.status) }
     }
 

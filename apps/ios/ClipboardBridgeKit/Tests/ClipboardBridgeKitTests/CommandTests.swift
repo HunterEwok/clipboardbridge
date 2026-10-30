@@ -122,12 +122,16 @@ final class CommandTests: XCTestCase {
             _ = try await a.command(c, to: ib)
             XCTFail("sent to a device that is not connected, without via")
         } catch MemberNode.Failure.notConnected {}
-        let r = try await a.command(c, to: ib, via: true)
+        do {
+            _ = try await a.command(c, to: ib, via: ["d"])
+            XCTFail("sent through a member that is not one of the hubs")
+        } catch MemberNode.Failure.notConnected {}
+        let r = try await a.command(c, to: ib, via: ["d", ih])
         XCTAssertEqual(r.status, "done")
         XCTAssertEqual(r.by, ib)
         XCTAssertEqual(got.all, ["b"])
         do {
-            _ = try await a.command(c, to: ib, timeout: 0.3, via: true)
+            _ = try await a.command(c, to: ib, timeout: 0.3, via: [ih])
             XCTFail("the hub passed the same command on twice")
         } catch MemberNode.Failure.timedOut {}
         XCTAssertEqual(got.all, ["b"])
