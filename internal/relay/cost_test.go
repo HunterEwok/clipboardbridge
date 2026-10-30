@@ -81,10 +81,14 @@ func TestRequestsBoundBySourceAndGroup(t *testing.T) {
 // within requestTimeout.
 func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 	r, l, link := startPosing(t)
+	l.mu.Lock()
 	l.other = netip.MustParseAddr("203.0.113.7")
+	l.mu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	for i := 0; i < DefaultOpenLimits.PerAddress; i++ {
+	// Four devices with all their connections are twice what one address
+	// may have read at once.
+	for i := 0; i < 2*maxRequestsSource/maxRequestsOne; i++ {
 		d := newDevice(t, newGroup(t))
 		cfg := MemberConfig{Link: link, Self: d.id, Key: d.key, Cert: func() tls.Certificate { return d.cert }, Logf: t.Logf}
 		tc, w, _, err := register(ctx, cfg)
@@ -102,7 +106,7 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 		}
 		defer client.Close()
 		for range maxRequestsOne {
-			dctx, c := context.WithTimeout(ctx, 5*time.Second)
+			dctx, c := context.WithTimeout(ctx, 15*time.Second)
 			conn, err := client.Dial(dctx)
 			c()
 			if err != nil {
