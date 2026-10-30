@@ -4,9 +4,11 @@
 package service
 
 import (
+	"fmt"
 	"net"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -193,5 +195,89 @@ func TestConnPeer(t *testing.T) {
 	defer s.Close()
 	if p := connPeer(s); !p.known || !p.privileged() {
 		t.Errorf("the peer is %+v", p)
+	}
+}
+
+// TestKeysGrant: the uinput helper presses keys only for a remote paste
+// that the service handed to a desktop session, for that session's user,
+// the paste keys once and Enter once when the command asked for it, and
+// none after the session answered.
+func TestKeysGrant(t *testing.T) {
+	var next atomic.Pointer[peer]
+	next.Store(&peer{known: true, uid: uidAtScreen})
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startWith(t, &h, "deck", "linux", fakeUsers(&next))
+	pairWith(t, pi, deck)
+	waitFor(t, "connected", func() bool { return len(pi.status(t).Peers) == 1 })
+	if _, err := deck.do(t, control.Header{Op: control.OpReceive, Name: "on", Enter: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	// The helper is root; another user of the socket's group asks for none.
+	keysAs := func(as peer, grant, req string, uid int) error {
+		next.Store(&as)
+		_, err := deck.do(t, control.Header{Op: control.OpKeys, Name: req, Value: strconv.Itoa(uid), Keys: grant}, "")
+		return err
+	}
+	keys := func(grant, req string, uid int) error { return keysAs(peer{known: true, uid: 0}, grant, req, uid) }
+	w := deck.dial(t)
+	defer w.Close()
+	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetDesktop}}); err != nil {
+		t.Fatal(err)
+	}
+	grants := make(chan string, 4)
+	go func() {
+		for {
+			m, err := w.Receive()
+			if err != nil {
+				return
+			}
+			if m.Op != control.OpInject {
+				continue
+			}
+			g := m.Keys
+			var errs []string
+			if err := keysAs(peer{known: true, uid: uidAtScreen}, g, "paste", uidAtScreen); err == nil || !strings.Contains(err.Error(), "as root") {
+				errs = append(errs, fmt.Sprintf("the session's user asked for the keys itself: %v", err))
+			}
+			check := func(what string, err error, ok bool) {
+				if (err == nil) != ok {
+					errs = append(errs, fmt.Sprintf("%s: %v", what, err))
+				}
+			}
+			check("another user's paste keys", keys(g, "paste", uidAway), false)
+			check("Enter before the paste", keys(g, "enter", uidAtScreen), false)
+			check("the paste keys", keys(g, "paste", uidAtScreen), true)
+			check("the paste keys again", keys(g, "paste", uidAtScreen), false)
+			check("Enter", keys(g, "enter", uidAtScreen), m.Enter)
+			check("Enter again", keys(g, "enter", uidAtScreen), false)
+			ans := control.Header{Op: control.OpInjected, Seq: m.Seq}
+			if len(errs) > 0 {
+				ans.Error = strings.Join(errs, "; ")
+			}
+			w.Send(&control.Message{Header: ans})
+			grants <- g
+		}
+	}()
+	waitFor(t, "deck offers the desktop", func() bool {
+		p := deck.status(t).Paste
+		return p != nil && slices.Equal(p.Targets, []string{targetDesktop})
+	})
+	for _, enter := range []bool{true, false} {
+		time.Sleep(time.Second) // one paste a second from one sender
+		if _, err := pi.do(t, control.Header{Op: control.OpPasteOn, Device: "deck", Enter: enter}, "ls"); err != nil {
+			t.Fatal(err)
+		}
+		g := <-grants
+		if g == "" {
+			t.Fatal("the inject carries no grant")
+		}
+		time.Sleep(100 * time.Millisecond) // the answer ends it
+		if err := keys(g, "paste", uidAtScreen); err == nil {
+			t.Error("the paste keys after the session answered")
+		}
+	}
+	if err := keys("00", "paste", uidAtScreen); err == nil {
+		t.Error("the paste keys under a grant the service did not make")
 	}
 }

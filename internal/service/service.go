@@ -217,7 +217,10 @@ type Service struct {
 	// commands holds the IDs of the commands carried out, until they
 	// expire, so that none is carried out twice; the cache starts empty, so
 	// a command signed before startedMS is refused.
-	commands  map[string]time.Time
+	commands map[string]time.Time
+	// keys holds the grants of the remote pastes handed to desktop
+	// sessions, for the uinput helper (keysGrant).
+	keys      map[string]*keysGrant
 	startedMS int64
 	online    map[group.DeviceID]bool
 	// unreached holds the members at home that could not connect to this

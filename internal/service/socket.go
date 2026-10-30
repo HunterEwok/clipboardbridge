@@ -177,6 +177,18 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpKeys:
+		// The uinput helper runs as root with no capability, so it reaches
+		// the control socket through its group, not the admin socket.
+		if p := s.cfg.peerOf(c); !p.known || !p.privileged() {
+			fail(c, errors.New("only the uinput helper, as root, asks for a paste's keys"))
+			return
+		}
+		if err := s.takeKeys(m.Keys, m.Name, m.Value); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
 	case control.OpRemote:
 		if err := s.remote(ctx, m); err != nil {
 			fail(c, err)
@@ -1028,6 +1040,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 		delete(injected, seq)
 		injMu.Unlock()
 		if in != nil {
+			s.endKeys(in.keys)
 			res.ID = in.body.ID
 			in.done <- res
 		}
@@ -1098,10 +1111,11 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			}
 		case in := <-w.injects:
 			injSeq++
+			in.keys = s.grantKeys(in, w)
 			injMu.Lock()
 			injected[injSeq] = in
 			injMu.Unlock()
-			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By)}
+			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By), Keys: in.keys}
 			if in.body.Type == group.CommandAction {
 				h = control.Header{Op: control.OpAct, Seq: injSeq, Name: in.body.Action, Command: in.command}
 			}

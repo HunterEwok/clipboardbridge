@@ -82,13 +82,22 @@ func TestKeysHelperPaste(t *testing.T) {
 	}
 	board := &memBoard{item: connector.Item{Text: "before"}, has: true}
 	keys := &recordKeys{board: board}
-	h := &uinput.Helper{Keys: keys, Logf: t.Logf, Check: func(uint32) string { return "" }}
+	h := &uinput.Helper{Keys: keys, Logf: t.Logf, Check: func(uint32) string { return "" }, Grant: func(_ uint32, _, grant string) string {
+		if grant != "g7" {
+			return "no remote paste asked for these keys now"
+		}
+		return ""
+	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.Serve(ctx, ln)
 
 	kb := keysHelper{socket: sock}
-	if err := keysInject(kb, board, "pasted text", "paste", true, false); err != nil {
+	var r *connector.Refusal
+	if err := keysInject(context.Background(), kb, board, "no grant", "paste", false, false); !errors.As(err, &r) {
+		t.Errorf("a paste without the service's grant: %v", err)
+	}
+	if err := keysInject(connector.WithKeysGrant(context.Background(), "g7"), kb, board, "pasted text", "paste", true, false); err != nil {
 		t.Fatal(err)
 	}
 	want := []uinput.Key{{Code: uinput.KeyLeftShift, Press: true}, {Code: uinput.KeyInsert, Press: true}, {Code: uinput.KeyInsert}, {Code: uinput.KeyLeftShift},
@@ -105,8 +114,7 @@ func TestKeysHelperPaste(t *testing.T) {
 	if it, _, _ := board.Current(); it.Text != "before" {
 		t.Errorf("the clipboard afterwards: %q, want its text back", it.Text)
 	}
-	var r *connector.Refusal
-	if err := keysInject(kb, board, "typed", "type", false, false); !errors.As(err, &r) {
+	if err := keysInject(context.Background(), kb, board, "typed", "type", false, false); !errors.As(err, &r) {
 		t.Errorf("typing through the helper: %v", err)
 	}
 }

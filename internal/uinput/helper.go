@@ -19,12 +19,14 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
+	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/lockcheck"
 )
 
 // Socket is where the helper listens. The connection is one line from the
-// desktop connector, "paste" (Shift+Insert) or "enter", and one line back:
-// "ok", "refused REASON" or "error MESSAGE".
+// desktop connector, "paste GRANT" (Shift+Insert) or "enter GRANT", GRANT
+// the grant of the service's inject, and one line back: "ok",
+// "refused REASON" or "error MESSAGE".
 const Socket = "/run/clipboardbridge-keys/keys"
 
 // The keys of each request.
@@ -48,6 +50,11 @@ type Helper struct {
 	// Check says why the user uid may not have keys pressed now, or "";
 	// nil checks logind's active session (Allowed).
 	Check func(uid uint32) string
+	// Grant says why the service did not ask for the keys of req for the
+	// user uid under grant, or ""; nil asks the service (AskService). The
+	// keys go only to a remote paste the service took and handed to a
+	// desktop session of that user, as its switches allow.
+	Grant func(uid uint32, req, grant string) string
 
 	mu sync.Mutex // one paste at a time
 }
@@ -77,11 +84,15 @@ func (h *Helper) serve(c *net.UnixConn) {
 	if err != nil {
 		return
 	}
-	req := strings.TrimSpace(line)
+	req, grant, _ := strings.Cut(strings.TrimSpace(line), " ")
 	answer := func(s string) { fmt.Fprintln(c, s) }
 	keys, ok := requests[req]
 	if !ok {
 		answer("error the keys helper presses paste or enter, not " + strconv.Quote(req))
+		return
+	}
+	if grant == "" {
+		answer("refused the keys helper presses keys only for a remote paste; the desktop connector is older than the helper, so log out and in again after an update")
 		return
 	}
 	uid, err := peerUID(c)
@@ -89,12 +100,20 @@ func (h *Helper) serve(c *net.UnixConn) {
 		answer("error " + err.Error())
 		return
 	}
-	check := h.Check
+	check, granted := h.Check, h.Grant
 	if check == nil {
 		check = Allowed
 	}
+	if granted == nil {
+		granted = AskService
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if why := granted(uid, req, grant); why != "" {
+		h.Logf("cbb: refused %s for user %d: %s", names[req], uid, why)
+		answer("refused " + why)
+		return
+	}
 	if why := check(uid); why != "" {
 		h.Logf("cbb: refused %s for user %d: %s", names[req], uid, why)
 		answer("refused " + why)
@@ -152,9 +171,27 @@ func Allowed(uid uint32) string {
 	return ""
 }
 
+// AskService asks the service, on its control socket, whether it handed a
+// remote paste to a desktop session of the user uid under grant whose keys
+// req may be pressed now (control.OpKeys); it says why not, or "".
+func AskService(uid uint32, req, grant string) string {
+	c, err := control.DialFor(control.OpKeys)
+	if err != nil {
+		return "the keys helper cannot reach the service: " + err.Error()
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(5 * time.Second))
+	_, err = c.Do(&control.Message{Header: control.Header{Op: control.OpKeys, Name: req, Value: strconv.FormatUint(uint64(uid), 10), Keys: grant}})
+	if err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
 // Ask asks the helper at socket to press the keys of req, "paste" or
-// "enter". A refusal comes back as a connector.Refusal.
-func Ask(ctx context.Context, socket, req string) error {
+// "enter", for the inject whose grant is grant. A refusal comes back as a
+// connector.Refusal.
+func Ask(ctx context.Context, socket, req, grant string) error {
 	var d net.Dialer
 	c, err := d.DialContext(ctx, "unix", socket)
 	if err != nil {
@@ -162,7 +199,7 @@ func Ask(ctx context.Context, socket, req string) error {
 	}
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(5 * time.Second))
-	if _, err := fmt.Fprintln(c, req); err != nil {
+	if _, err := fmt.Fprintln(c, req, grant); err != nil {
 		return fmt.Errorf("the keys helper: %w", err)
 	}
 	line, err := bufio.NewReader(c).ReadString('\n')

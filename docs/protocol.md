@@ -1009,7 +1009,7 @@ Next to it the service listens on the **admin socket** `admin.sock` (on Windows
 `run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
-`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices`, `release`, `release-get` and `watch` (with
+`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices`, `release`, `release-get`, `keys` (from root only) and `watch` (with
 the watcher's `copied`, `clipboard`, `injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
 all, and MUST be the only way to them. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
@@ -1056,6 +1056,7 @@ Header fields (all omitted when empty):
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
+| `keys` | string | `inject` to a `desktop` watcher: the grant that its desktop connector hands the uinput helper; `keys`: that grant |
 | `keyboard` | object | `keyboard on`: the Bluetooth keyboard's settings, `{layout?, rate?, pastes?}`; in `status`, also `{on?, connected?, visible_until_ms?, problem?}` |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
@@ -1105,6 +1106,7 @@ A connection carries one request: the service reads the first message and dispat
 | `actions-off` | `{device}` or `{all}` | `{status, done}`: every quick action is turned off on that device, or on every device of the group, through signed commands; this device's own at once. Only on an admin's admin socket |
 | `release` | payload = the release in JSON, `{keys, channel, release}`, the three files of section 16 that `cbb update` fetched | `{done}`: the service checks the release as a `release` message (section 16, "In the group"), keeps it when it is newer than the one it holds, and passes it on to its peers |
 | `release-file` | `{value, part}`: the archive's SHA-256 and its `size`, then its bytes in `data` messages | `{done}`: `cbb update` hands the service an archive of the release it holds (section 16), which keeps it only whole and matching its hash, to pass on to its peers. Only on the admin socket |
+| `keys` | `{name, value, keys}`: `paste` or `enter`, a user ID, and the grant of an `inject` | `{done}` when the service handed that inject to a `desktop` watcher of that user and it is not answered yet, and `name` is its paste keys the first time or, after them, its Enter the first time when the command set `enter`; otherwise an error. Only from root (the uinput helper), on the control socket |
 | `release-get` | `{value}`: an archive's SHA-256 | `{part}`, its bytes in `data` answers, then `{done}`: the archive of the held release, from this device or fetched from its peers |
 | `watch` | `{kind, via, inject?, paste_only?, act?, images?, files?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
@@ -1151,8 +1153,9 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   presets to the agent of the user signed in, waiting up to 20 s; on Linux it asks logind
   itself.
 - Service to watcher, for remote paste, only to a watcher whose watch request named an
-  `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`, and `name`, the
-  sender's device name). The watcher checks
+  `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`, `name`, the
+  sender's device name, and for a `desktop` watcher `keys`, the grant for the uinput
+  helper). The watcher checks
   that its session is active and not locked, puts the text in, presses Enter when `enter`
   is set, clears the clipboard after a `secret`, shows a notification with the sender, and
   answers `injected` with the same `seq`: no `error` when it did, or `error` (and `detail`),

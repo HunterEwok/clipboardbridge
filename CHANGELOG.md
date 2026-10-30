@@ -293,7 +293,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   uinput` in the `clipboardbridge-uinput` unit: a virtual keyboard that presses only
   Shift+Insert and Enter for the desktop connector of the session on the screen, so that
   remote paste works on GNOME and KDE without the portal's dialog. It presses them only for
-  the user of the active graphical session, and never on a login or lock screen.
+  a remote paste that the service took under the paste switches and handed to that
+  session, asking the service for each, only for the user of the active graphical session,
+  and never on a login or lock screen; its socket is open to the service's group only.
 - Remote paste on Windows: the clipboard agent pastes into the window with the focus
   through the clipboard and Ctrl+V, or types any character with SendInput's Unicode keys.
   It refuses on the lock screen and under an administrator prompt, and when the window with

@@ -5,9 +5,12 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +59,75 @@ type inject struct {
 	text    string
 	command []string // an action's: the user's own program and arguments
 	done    chan node.Result
+	keys    string // the grant for the uinput helper, while a desktop session pastes it
+}
+
+// A keysGrant lets the uinput helper press the keys of one remote paste for
+// the user of the desktop session that the service handed it to: the paste
+// keys once, then Enter once if the command asked for it (control.OpKeys).
+// The helper presses keys anywhere, so it presses none that the service
+// did not ask for, after the paste switches and the checks on the signer.
+type keysGrant struct {
+	uid          uint32
+	enter        bool
+	pasted, done bool
+	until        time.Time
+}
+
+// grantKeys makes the grant of in for the user of w, a desktop session.
+func (s *Service) grantKeys(in *inject, w *watcher) string {
+	if w.inject != targetDesktop || !w.peer.known || w.peer.sid != "" || in.body.Type == group.CommandAction {
+		return ""
+	}
+	var b [16]byte
+	rand.Read(b[:])
+	g := hex.EncodeToString(b[:])
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.cfg.now()
+	for k, old := range s.keys {
+		if !now.Before(old.until) {
+			delete(s.keys, k)
+		}
+	}
+	if s.keys == nil {
+		s.keys = map[string]*keysGrant{}
+	}
+	s.keys[g] = &keysGrant{uid: w.peer.uid, enter: in.body.Enter, until: now.Add(injectTime(in.body))}
+	return g
+}
+
+// endKeys ends the grant of an inject that was answered.
+func (s *Service) endKeys(g string) {
+	if g == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.keys, g)
+	s.mu.Unlock()
+}
+
+// errNoKeys refuses the helper keys that no remote paste asked for.
+var errNoKeys = errors.New("no remote paste asked for these keys now")
+
+// takeKeys answers the uinput helper: whether it may press the keys of req
+// ("paste" or "enter") for the user uid under grant.
+func (s *Service) takeKeys(grant, req, uid string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.keys[grant]
+	if g == nil || !s.cfg.now().Before(g.until) || strconv.FormatUint(uint64(g.uid), 10) != uid {
+		return errNoKeys
+	}
+	switch {
+	case req == "paste" && !g.pasted:
+		g.pasted = true
+	case req == "enter" && g.enter && g.pasted && !g.done:
+		g.done = true
+	default:
+		return errNoKeys
+	}
+	return nil
 }
 
 // errPasteOff is the refusal of a member whose user did not turn remote

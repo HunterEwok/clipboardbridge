@@ -76,6 +76,7 @@ const (
 	OpReleaseFile = "release-file"  // client → service: an archive of the held release that cbb update installed, Value its SHA-256 and Part its size, its bytes in data messages
 	OpReleaseGet  = "release-get"   // client → service: the archive of the held release whose SHA-256 is Value, from this device or its peers; a reply with Part, its bytes, then Done
 	OpKeyboard    = "keyboard"      // client → service: Name "on" (Keyboard the settings), "off", "pair", "type" (the payload) or "" (status): this computer as a Bluetooth keyboard
+	OpKeys        = "keys"          // uinput helper (root) → service: may it press Name ("paste" or "enter") for the user Value, under the grant Keys of an inject
 	OpRemote      = "remote"        // client → service: Name "add" (Address, Value the kind, NewName, Consent), "code" (Code), "cancel", "remove", "pastes" (Value on or off), "type" (the payload), for the TV Device, or "" (status): this device as a TV's remote
 )
 
@@ -119,6 +120,10 @@ type Header struct {
 	Inject    string `json:"inject,omitempty"`
 	PasteOnly bool   `json:"paste_only,omitempty"`
 	Refused   bool   `json:"refused,omitempty"`
+	// Keys, in an inject to a desktop session, is the grant that the
+	// session's desktop connector hands the uinput helper, which asks the
+	// service with keys whether it may press the paste's keys.
+	Keys string `json:"keys,omitempty"`
 
 	// Actions: in action-set, the one action to set. Act, in a watch
 	// request, says the watcher runs the quick actions in its session, as

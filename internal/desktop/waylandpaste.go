@@ -76,7 +76,7 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 		if w.kb == nil {
 			return &connector.Refusal{Reason: "this compositor offers no virtual keyboard to paste with"}
 		}
-		return keysInject(w.kb, w, text, method, enter, secret)
+		return keysInject(ctx, w.kb, w, text, method, enter, secret)
 	}
 	if why := lockcheck.Reason(); why != "" {
 		return &connector.Refusal{Reason: why}

@@ -44,8 +44,8 @@ func (f *fakeKeys) pressed() []Key {
 }
 
 // TestHelper checks the helper's requests: the keys of a paste and of
-// Enter for a caller the check lets through, a refusal with its reason,
-// and nothing else.
+// Enter for a caller the check lets through under a grant of the service, a
+// refusal with its reason, and nothing else.
 func TestHelper(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "keys")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sock, Net: "unix"})
@@ -60,6 +60,11 @@ func TestHelper(t *testing.T) {
 		defer mu.Unlock()
 		callers = append(callers, uid)
 		return why
+	}, Grant: func(uid uint32, req, grant string) string {
+		if grant != "g1" || uid != uint32(os.Getuid()) {
+			return "no remote paste asked for these keys now"
+		}
+		return ""
 	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -71,10 +76,10 @@ func TestHelper(t *testing.T) {
 		}
 	}()
 
-	if err := Ask(ctx, sock, "paste"); err != nil {
+	if err := Ask(ctx, sock, "paste", "g1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Ask(ctx, sock, "enter"); err != nil {
+	if err := Ask(ctx, sock, "enter", "g1"); err != nil {
 		t.Fatal(err)
 	}
 	want := []Key{{KeyLeftShift, true}, {KeyInsert, true}, {KeyInsert, false}, {KeyLeftShift, false}, {KeyEnter, true}, {KeyEnter, false}}
@@ -89,10 +94,17 @@ func TestHelper(t *testing.T) {
 	mu.Unlock()
 
 	var r *connector.Refusal
-	if err := Ask(ctx, sock, "paste"); !errors.As(err, &r) || r.Reason != "the session is locked" {
+	if err := Ask(ctx, sock, "paste", "g1"); !errors.As(err, &r) || r.Reason != "the session is locked" {
 		t.Errorf("a paste while locked: %v", err)
 	}
-	if err := Ask(ctx, sock, "type rm -rf /"); err == nil || errors.As(err, &r) || !strings.Contains(err.Error(), "not") {
+	// Keys that the service did not grant, or with no grant, as an older
+	// desktop connector asks.
+	for _, g := range []string{"g2", ""} {
+		if err := Ask(ctx, sock, "paste", g); !errors.As(err, &r) || !strings.Contains(r.Reason, "remote paste") {
+			t.Errorf("a paste with the grant %q: %v", g, err)
+		}
+	}
+	if err := Ask(ctx, sock, "type", "rm -rf /"); err == nil || errors.As(err, &r) || !strings.Contains(err.Error(), "not") {
 		t.Errorf("another request: %v", err)
 	}
 	if got := keys.pressed(); len(got) != len(want) {
@@ -105,7 +117,7 @@ func TestHelper(t *testing.T) {
 	keys.mu.Lock()
 	keys.err = errors.New("the device is gone")
 	keys.mu.Unlock()
-	if err := Ask(ctx, sock, "enter"); err == nil || errors.As(err, &r) || !strings.Contains(err.Error(), "the device is gone") {
+	if err := Ask(ctx, sock, "enter", "g1"); err == nil || errors.As(err, &r) || !strings.Contains(err.Error(), "the device is gone") {
 		t.Errorf("a failed press: %v", err)
 	}
 }

@@ -81,7 +81,7 @@ func (b *X11) Inject(ctx context.Context, text, method string, enter, secret boo
 		if b.kb == nil {
 			return &connector.Refusal{Reason: "this Wayland desktop offers no way to press keys for a paste"}
 		}
-		return keysInject(b.kb, b, text, method, enter, secret)
+		return keysInject(ctx, b.kb, b, text, method, enter, secret)
 	}
 	b.inj.once.Do(func() {
 		if err := xtest.Init(b.x); err != nil {

@@ -93,6 +93,24 @@ type Target interface {
 	Inject(ctx context.Context, text, method string, enter, secret bool) error
 }
 
+type keysGrant struct{}
+
+// WithKeysGrant returns ctx carrying grant, the service's grant of an
+// inject for the uinput helper.
+func WithKeysGrant(ctx context.Context, grant string) context.Context {
+	if grant == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, keysGrant{}, grant)
+}
+
+// KeysGrant returns the grant of the inject that ctx carries out, which the
+// uinput helper needs to press its keys, or "".
+func KeysGrant(ctx context.Context) string {
+	g, _ := ctx.Value(keysGrant{}).(string)
+	return g
+}
+
 // A Refusal is a Target's reason not to paste, such as a locked session.
 type Refusal struct{ Reason string }
 
@@ -455,7 +473,7 @@ func injected(ctx context.Context, tgt Target, m *control.Message, logf func(str
 		ans.Error, ans.Refused = "this watcher does not paste", true
 		return ans
 	}
-	err := tgt.Inject(ctx, string(m.Payload), m.Method, m.Enter, m.Kind == control.KindSecret)
+	err := tgt.Inject(WithKeysGrant(ctx, m.Keys), string(m.Payload), m.Method, m.Enter, m.Kind == control.KindSecret)
 	var r *Refusal
 	switch {
 	case err == nil:

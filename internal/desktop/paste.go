@@ -6,6 +6,7 @@
 package desktop
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
@@ -21,9 +22,15 @@ type keyboard interface {
 	enter() error
 }
 
+// granted is a keyboard that presses keys only under the service's grant
+// of the inject, the uinput helper.
+type granted interface {
+	withGrant(grant string) keyboard
+}
+
 // keysInject pastes through the clipboard and kb, on GNOME and KDE and
 // where the user installed the uinput helper.
-func keysInject(kb keyboard, b connector.PasteBoard, text, method string, enter, secret bool) error {
+func keysInject(ctx context.Context, kb keyboard, b connector.PasteBoard, text, method string, enter, secret bool) error {
 	switch method {
 	case "paste":
 	case "type":
@@ -33,6 +40,9 @@ func keysInject(kb keyboard, b connector.PasteBoard, text, method string, enter,
 	}
 	if why := lockcheck.Reason(); why != "" {
 		return &connector.Refusal{Reason: why}
+	}
+	if k, ok := kb.(granted); ok {
+		kb = k.withGrant(connector.KeysGrant(ctx))
 	}
 	if err := kb.ready(); err != nil {
 		return err
