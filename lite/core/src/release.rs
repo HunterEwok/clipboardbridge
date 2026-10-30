@@ -194,7 +194,9 @@ fn decode<'a, T: Deserialize<'a>>(body: &'a [u8], kind: &str) -> Result<T> {
 }
 
 fn lifetime(time_ms: i64, expires_ms: i64) -> Result<()> {
-    if expires_ms <= time_ms || expires_ms - time_ms > MAX_LIFETIME_MS {
+    // A time before 1970 is no signing time; from it the difference cannot
+    // leave the range of i64.
+    if time_ms < 0 || expires_ms <= time_ms || expires_ms - time_ms > MAX_LIFETIME_MS {
         return Err(Error::msg("the file's lifetime is out of range"));
     }
     Ok(())
@@ -366,7 +368,7 @@ pub fn check(
     if c.seq < at {
         return Err(Error::msg(format!("{name}.json is older than one already seen")));
     }
-    if at > 0 && c.seq - at > MAX_SEQ_STEP {
+    if c.seq - at > MAX_SEQ_STEP {
         return Err(Error::msg(format!("{name}.json is too far ahead of the one already seen")));
     }
     rel.verify(&spkis).map_err(|e| e.context("release.json is not valid"))?;

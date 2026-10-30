@@ -101,7 +101,7 @@ object Releases {
 
     private fun checkSeq(seq: Long, floor: Long) {
         if (seq < floor) throw Refused("the file is older than one already seen")
-        if (floor > 0 && seq - floor > MAX_SEQ_STEP) throw Refused("the file is too far ahead of the one already seen")
+        if (seq - floor > MAX_SEQ_STEP) throw Refused("the file is too far ahead of the one already seen")
     }
 
     private fun signedAhead(timeMS: Long, nowMS: Long): Boolean = nowMS >= PLAUSIBLE && timeMS > nowMS + MAX_AHEAD_MS
@@ -146,7 +146,8 @@ object Releases {
     private fun lifetime(o: JsonObject, max: Long = MAX_LIFETIME_MS): Long {
         val time = o.optLong("time_ms") ?: 0
         val expires = o.optLong("expires_ms") ?: 0
-        if (expires <= time || expires - time > max) throw Refused("the file's lifetime is out of range")
+        // A time before 1970 is no signing time; from it the difference cannot overflow.
+        if (time < 0 || expires <= time || expires - time > max) throw Refused("the file's lifetime is out of range")
         return expires
     }
 

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -404,5 +405,42 @@ func TestCheckPinned(t *testing.T) {
 	}
 	if _, _, err := CheckPinned(keys, rel, roots, now, Seen{KeysSeq: 3}); !errors.Is(err, ErrRollback) {
 		t.Errorf("an older keys.json: %v", err)
+	}
+}
+
+// A seq rises at most MaxSeqStep past the one a device holds, and past
+// none on a fresh device, so one file cannot take a device to a seq that
+// no later file reaches.
+func TestSeqStepFromNothing(t *testing.T) {
+	for _, c := range []struct {
+		seq, floor uint64
+		ok         bool
+	}{
+		{1, 0, true}, {MaxSeqStep, 0, true}, {MaxSeqStep + 1, 0, false}, {1<<64 - 1, 0, false},
+		{10 + MaxSeqStep, 10, true}, {11 + MaxSeqStep, 10, false}, {9, 10, false},
+	} {
+		if err := checkSeq(c.seq, c.floor); (err == nil) != c.ok {
+			t.Errorf("seq %d over %d: %v", c.seq, c.floor, err)
+		}
+	}
+}
+
+// A lifetime from a time before 1970 is refused, so that its length
+// cannot leave the range of int64.
+func TestLifetimeInRange(t *testing.T) {
+	for _, c := range []struct {
+		time, expires int64
+		ok            bool
+	}{
+		{1, 2, true},
+		{0, MaxLifetime.Milliseconds(), true},
+		{0, MaxLifetime.Milliseconds() + 1, false},
+		{-1, 1, false},
+		{math.MinInt64, math.MaxInt64, false},
+		{-(1 << 62), math.MaxInt64, false},
+	} {
+		if err := lifetime(c.time, c.expires); (err == nil) != c.ok {
+			t.Errorf("lifetime from %d to %d: %v", c.time, c.expires, err)
+		}
 	}
 }

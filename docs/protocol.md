@@ -2507,7 +2507,7 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
   `..`), and `sha256`.
 - `docker.digest` is `sha256:` and 64 hex digits.
 - A `keys` or `channel` file lives at most 100 days (`expires_ms` after `time_ms`, by at
-  most 8 640 000 000 ms). `keys.json` is signed again every 90 days, and a channel file
+  most 8 640 000 000 ms), and its `time_ms` is not negative. `keys.json` is signed again every 90 days, and a channel file
   before it expires. `attest-status.json` lives at most 8 days (691 200 000 ms) and is
   signed again at least a day before it expires.
 - A serial number is lowercase hex without leading zeros (`0` for zero), at most 64
@@ -2543,9 +2543,9 @@ the `release.json` that names, and MUST take the release only when:
    is `release_sha256`, its `version` and `channel` are the channel file's, and its version is
    not below the highest the device has taken.
 
-A channel file's `seq` MUST also be at most 65 536 above the highest taken (when that still
-counts), so that one file signed with a far `seq` cannot hold a device above every file
-signed after it. A device whose clock reads before 2026 skips the checks of `time_ms`, as its
+A channel file's `seq` MUST also be at most 65 536 above the highest taken, or at most
+65 536 when none counts (a fresh device, or one under a newer `keys.json`), so that one file
+signed with a far `seq` cannot hold a device above every file signed after it. A device whose clock reads before 2026 skips the checks of `time_ms`, as its
 clock is unset. `attest-status.json` (section 17) is checked the same way as a channel file,
 under its `keys.json`.
 

@@ -649,6 +649,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   at most 256 KiB of records for one group and 128 MiB in all, and refuses a registration
   past those rather than keep part of its records. Devices see the new refusals as
   ordinary ones; nothing on the wire changes.
+- A channel or status file may raise its `seq` at most 65 536 on a fresh device or under a
+  newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
+  with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
+  computers, the lite member and both phones; files the project signs are unaffected.
 - A command's `by` must be a device ID and, when the receiver's records show which device
   holds the signing key, that device; the limits on pastes and actions from one device and
   the logs then count the device that signed. The same on computers, the lite member and
