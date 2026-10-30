@@ -415,3 +415,29 @@ func TestGzipStatic(t *testing.T) {
 		t.Errorf("/plain.txt: %v %d", r.Header.Get("Content-Encoding"), r.StatusCode)
 	}
 }
+
+// A picture of the documentation is put inline on a board, without its own
+// style and size, and a table is wrapped so that it can scroll on its own.
+func TestBoards(t *testing.T) {
+	ds := &docSet{images: map[string][]byte{
+		"a.svg": []byte("<!-- note -->\n<svg xmlns=\"x\" width=\"720\" height=\"250\" viewBox=\"0 0 720 250\">\n<style>.a{}</style>\n<rect width=\"150\" height=\"64\"/><path d=\"M0 0\"/></svg>\n"),
+	}}
+	l := linker{ds: ds, lang: "en"}
+	got := l.boards(`<p><img src="/docs/images/a.svg" alt="A"></p><table><tr><td>1</td></tr></table>`)
+	for _, want := range []string{
+		`<div class="frame diagram">`,
+		`<svg xmlns="x" viewBox="0 0 720 250">`,
+		`<rect width="150" height="64"/>`,
+		`<path pathLength="1" d="M0 0"/>`,
+		`<div class="tablewrap"><table><tr><td>1</td></tr></table></div>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("boards() lacks %q in %s", want, got)
+		}
+	}
+	for _, bad := range []string{"<style", "note", "<img"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("boards() keeps %q in %s", bad, got)
+		}
+	}
+}
