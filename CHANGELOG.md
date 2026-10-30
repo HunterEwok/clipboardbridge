@@ -462,6 +462,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The member port holds at most 32 connections to the iPhone endpoints and the profile at a
+  time, 4 from one address, and closes one idle for 30 s.
+
 - A device bounds what it reads from a relay's watch: a note's length, the list of devices
   online, the calls it answers at once, and the form of a call's name and ticket
   (docs/protocol.md, section 14).

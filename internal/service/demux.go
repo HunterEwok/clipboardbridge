@@ -6,6 +6,7 @@ package service
 import (
 	"bufio"
 	"net"
+	"net/netip"
 	"sync"
 )
 
@@ -36,6 +37,14 @@ func peek(raw net.Conn) (net.Conn, byte, error) {
 	return &peekedConn{raw, r}, b[0], nil
 }
 
+// The connections a connListener holds open at once, in all and from one
+// address: they gave up the member port's handshake slot, so they are
+// bounded here.
+const (
+	maxPassed        = 32
+	maxPassedAddress = 4
+)
+
 // connListener is a net.Listener that hands out the connections that the
 // member port passes to it, for an http.Server.
 type connListener struct {
@@ -43,19 +52,60 @@ type connListener struct {
 	conns chan net.Conn
 	done  chan struct{}
 	once  sync.Once
+
+	mu     sync.Mutex
+	open   int
+	fromIP map[netip.Addr]int
 }
 
 func newConnListener(addr net.Addr) *connListener {
-	return &connListener{addr: addr, conns: make(chan net.Conn), done: make(chan struct{})}
+	return &connListener{addr: addr, conns: make(chan net.Conn), done: make(chan struct{}), fromIP: map[netip.Addr]int{}}
 }
 
-// pass hands c to the server, or closes it once the listener is closed.
+// pass hands c to the server, or closes it once the listener is closed or
+// holds as many connections as it may.
 func (l *connListener) pass(c net.Conn) {
+	var from netip.Addr
+	if ap, err := netip.ParseAddrPort(c.RemoteAddr().String()); err == nil {
+		from = ap.Addr().Unmap()
+	}
+	l.mu.Lock()
+	full := l.open >= maxPassed || l.fromIP[from] >= maxPassedAddress
+	if !full {
+		l.open++
+		l.fromIP[from]++
+	}
+	l.mu.Unlock()
+	if full {
+		c.Close()
+		return
+	}
+	c = &passedConn{Conn: c, l: l, from: from}
 	select {
 	case l.conns <- c:
 	case <-l.done:
 		c.Close()
 	}
+}
+
+// passedConn is a connection a connListener counts until it is closed.
+type passedConn struct {
+	net.Conn
+	l    *connListener
+	from netip.Addr
+	once sync.Once
+}
+
+func (c *passedConn) Close() error {
+	c.once.Do(func() {
+		c.l.mu.Lock()
+		c.l.open--
+		if c.l.fromIP[c.from]--; c.l.fromIP[c.from] <= 0 {
+			delete(c.l.fromIP, c.from)
+		}
+		c.l.mu.Unlock()
+	})
+	return c.Conn.Close()
 }
 
 func (l *connListener) Accept() (net.Conn, error) {

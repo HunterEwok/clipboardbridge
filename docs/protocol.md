@@ -352,6 +352,9 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
   offers `clipboardbridge-pair/1` gets the pairing configuration (section 6), whether or not a
   window is open; one that offers `clipboardbridge/1` the member configuration; any other, on a
   member that serves the iPhone, the iPhone endpoints' (section 7, ALPN `http/1.1`).
+  The connections passed on to the iPhone endpoints and to the profile are bounded while they
+  are open: 32 at a time, at most 4 from one IP address; a connection over a limit is closed
+  at once, and one idle for 30 s is closed.
 
 ### Framing
 

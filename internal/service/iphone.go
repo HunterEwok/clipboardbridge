@@ -74,7 +74,7 @@ func (s *Service) servePhone(ctx context.Context, addr net.Addr) {
 		return s.phoneWindow
 	}))
 	srv := &http.Server{Handler: homeOnly(mux), ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	ln := newConnListener(addr)
 	s.mu.Lock()
 	s.phoneConns, s.phoneTLS = ln, cfg
@@ -171,7 +171,7 @@ func (s *Service) pairPhone(ctx context.Context, c net.Conn, r *control.Reader, 
 	s.mu.Unlock()
 	ln := newConnListener(&net.TCPAddr{Port: int(port)})
 	srv = &http.Server{Handler: homeOnly(phone.ProfileHandler(id.PhoneCA)), ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
+		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	go srv.Serve(ln)
 	s.learnNetworks() // the user opens a window where the group is
 	s.mu.Lock()
