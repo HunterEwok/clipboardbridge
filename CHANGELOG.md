@@ -462,6 +462,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A device bounds what it reads from a relay's watch: a note's length, the list of devices
+  online, the calls it answers at once, and the form of a call's name and ticket
+  (docs/protocol.md, section 14).
+
 - The forwarder counts the handshakes that come over VLESS as one network against its
   budget of checks, as it counts any other network's.
 
