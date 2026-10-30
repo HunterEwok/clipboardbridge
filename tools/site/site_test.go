@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -201,7 +202,7 @@ func TestChooserNewLanguage(t *testing.T) {
 // TestSite checks the real site: every page renders in every language and
 // every translation is complete, as CI's "site check" does.
 func TestSite(t *testing.T) {
-	if err := check("../../site"); err != nil {
+	if err := check("../../site", false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	out := t.TempDir()
@@ -256,12 +257,23 @@ func TestSite(t *testing.T) {
 	if err := xml.Unmarshal(data, &sm); err != nil {
 		t.Fatal(err)
 	}
-	docs, err := docFiles("../..")
+	ds, err := loadDocs("../../site")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sm.URLs) != len(pages)*len(langs)+len(docs) || len(sm.URLs[0].Links) != len(langs) {
-		t.Errorf("sitemap: %d pages, want %d and %d of the documentation, the site's each with %d languages", len(sm.URLs), len(pages)*len(langs), len(docs), len(langs))
+	// The documentation's pages are listed in the languages they are
+	// translated into, English always.
+	want := len(pages) * len(langs)
+	for _, f := range ds.files {
+		want++ // English
+		for _, l := range langs[1:] {
+			if data, _ := ds.translation(l.Code, f); data != nil || f == indexFile {
+				want++
+			}
+		}
+	}
+	if len(sm.URLs) != want || len(sm.URLs[0].Links) != len(langs) {
+		t.Errorf("sitemap: %d pages, want %d, the site's each with %d languages", len(sm.URLs), want, len(langs))
 	}
 	checkLinks(t, out)
 	for _, name := range []string{"robots.txt", "soon.html", ".well-known/security.txt", "site.webmanifest", "en/index.html.gz"} {

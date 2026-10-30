@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The users' guides (`docs/guide`) in Chinese, Hindi, Spanish, Russian, Arabic, Swahili and
+  Hebrew, opening inside the website's own layout with its header and language menu, with
+  the text inside their pictures translated; the index's descriptions are translated too.
+  Every other page of the documentation stays English and opens on GitHub from the index.
+  `site check -strict` and `site docs-sync` keep the translations in step with the pages.
 - The website's code signing policy (`/code-signing.html`), which SignPath Foundation asks
   for: who signs the Windows programs and who approves it, linked from the download page and
   from every page's footer. The privacy page now says what the programs send outside the
