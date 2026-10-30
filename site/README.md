@@ -122,8 +122,7 @@ installs and changes it; nothing here does it by itself.
    log, since the site promises none.
 2. DNS: `cbb.tools` already points at the server; add `www.cbb.tools` (a CNAME to
    `cbb.tools`), which redirects to `cbb.tools`.
-3. The firewall: TCP 80 and 443, and UDP 443 for HTTP/3 (QUIC). Without UDP 443 browsers
-   use HTTP/2 or HTTP/1.1 over TCP, as old clients always do.
+3. The firewall: TCP 80 and 443. The site has no HTTP/3, so it needs no UDP port.
 4. The language chooser: build it with `GOOS=linux GOARCH=amd64 go build -o cbb-site
    ./tools/site`, copy it to `/usr/local/bin/cbb-site`, copy
    [`deploy/cbb-site.service`](deploy/cbb-site.service),
