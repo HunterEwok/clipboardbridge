@@ -358,7 +358,40 @@ func (l linker) body(d *docInfo, file string) (template.HTML, error) {
 	if err := markdown.Renderer().Render(&b, d.src, d.root); err != nil {
 		return "", err
 	}
-	return template.HTML(b.String()), nil
+	return template.HTML(l.boards(b.String())), nil
+}
+
+// A picture of the documentation on its own line, as goldmark renders it.
+var pictureLine = regexp.MustCompile(`<p><img src="/docs/images/([^"]+\.svg)" alt="[^"]*"></p>`)
+
+var (
+	svgStyle  = regexp.MustCompile(`(?s)<style>.*?</style>\n?`)
+	svgSize   = regexp.MustCompile(`^(<svg [^>]*?) width="\d+" height="\d+"`)
+	svgLead   = regexp.MustCompile(`^<!--.*?-->\n`)
+	svgShape  = regexp.MustCompile(`<path\b`)
+	tableOpen = regexp.MustCompile(`<table\b[^>]*>`)
+)
+
+// boards puts each picture of a page, which is an SVG drawn for GitHub, on a
+// board of the site: inline in a walnut frame on the slate, where the
+// stylesheet (.diagram) draws it in chalk in place of its own colours. The
+// file stays as it is, so GitHub shows it as before.
+func (l linker) boards(html string) string {
+	html = tableOpen.ReplaceAllString(html, `<div class="tablewrap"><table>`)
+	html = strings.ReplaceAll(html, "</table>", "</table></div>")
+	return pictureLine.ReplaceAllStringFunc(html, func(m string) string {
+		name := pictureLine.FindStringSubmatch(m)[1]
+		data, ok := l.ds.images[name]
+		if !ok {
+			return m
+		}
+		svg := svgLead.ReplaceAllString(string(lf(data)), "")
+		svg = svgStyle.ReplaceAllString(svg, "")
+		svg = svgSize.ReplaceAllString(svg, "$1")
+		svg = svgShape.ReplaceAllString(svg, "<path pathLength=\"1\"")
+		return `<div class="frame diagram"><i class="rail t"></i><i class="rail b"></i><i class="rail l"></i><i class="rail r"></i><div class="surface">` +
+			strings.TrimSpace(svg) + `</div></div>`
+	})
 }
 
 // plainText returns the text of n without its markup.

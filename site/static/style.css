@@ -530,6 +530,16 @@ nav a[aria-current] { color: var(--accent); }
   .draw .frame.drawn .chalk .y { animation-delay: .3s; }
   .draw .frame.drawn .chalk .link { animation-delay: .65s; animation-duration: .3s; }
   .draw .frame.drawn .words { animation: chalk-in .3s cubic-bezier(.3, 0, .2, 1) .75s both; }
+  /* A picture of the documentation is drawn in the same way: its boxes
+     appear, its lines are drawn (tools/site gives the paths pathLength 1,
+     which browsers honour on paths only), then the words. */
+  .draw .diagram:not(.drawn) svg path { stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .draw .diagram:not(.drawn) svg :is(rect, line, text) { opacity: 0; }
+  .draw .diagram:not(.drawn) svg :is(.badge, .lbl-bg, .a-home, .a-pair, .a-tunnel, .a-e2e) { opacity: 0; }
+  .draw .diagram.drawn svg path { animation: draw .8s cubic-bezier(.45, .05, .3, 1) .15s both; }
+  .draw .diagram.drawn svg :is(rect, line) { animation: chalk-in .3s cubic-bezier(.3, 0, .2, 1) both; }
+  .draw .diagram.drawn svg :is(.e-home, .e-e2e, .e-pair, .e-tunnel) { animation-delay: .4s; }
+  .draw .diagram.drawn svg :is(text, .badge, .lbl-bg, .a-home, .a-pair, .a-tunnel, .a-e2e) { animation: chalk-in .35s cubic-bezier(.3, 0, .2, 1) .9s both; }
   /* A table is written in the same way: its head, then row after row,
      in about a second. Each cell fades in on its own, under its own chalk. */
   .draw .board-table:not(.drawn) tr > * { opacity: 0; }
@@ -626,6 +636,7 @@ nav a[aria-current] { color: var(--accent); }
    column, headings to the left, plain ruled tables that scroll on a phone. */
 .doc { max-width: 880px; line-height: 1.6; }
 .doc > h1 { text-align: start; font-size: clamp(30px, 3.6vw, 46px); }
+.doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 { text-wrap: wrap; }
 .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 { text-align: start; color: var(--accent); margin: 40px 0 12px; scroll-margin-top: 80px; }
 .doc h2 { font-size: clamp(24px, 2.6vw, 30px); }
 .doc h2::after { display: none; }
@@ -637,10 +648,49 @@ nav a[aria-current] { color: var(--accent); }
 .doc pre, .doc code { direction: ltr; unicode-bidi: isolate; }
 .doc ol { padding-inline-start: 26px; }
 .doc li + li { margin-top: 4px; }
-.doc table { display: block; overflow-x: auto; border-collapse: collapse; margin: 16px 0; font-size: 15px; }
+.tablewrap { overflow-x: auto; margin: 16px 0; }
+.doc table { border-collapse: collapse; font-size: 15px; min-width: 100%; }
+/* Inside a table the code wraps like the words around it, so that the columns are
+   sized by what is in them and not by the widest unbreakable piece. */
+.doc td code, .doc th code { display: inline; white-space: normal; overflow-wrap: break-word; max-width: none; overflow: visible; }
 .doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: start; vertical-align: top; }
 .doc th { background: var(--raised); font-weight: 600; }
 .doc td code, .doc th code { white-space: normal; display: inline; }
 .doc img { max-width: 100%; height: auto; background: #fff; border-radius: 8px; }
 .doc blockquote { margin: 16px 0; padding: 4px 16px; border-inline-start: 3px solid var(--accent); color: var(--dim); }
 .doc hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+
+/* The pictures of the documentation: the SVG files are drawn for GitHub, in
+   their own colours; here they are chalk on a board, like every other picture
+   of the site. Their own style element is dropped by tools/site, so these are
+   the only rules. No animation: they are shown drawn. */
+.diagram { --f: 14px; margin: 1.6em 0; }
+.diagram .surface { padding: 12px; }
+.diagram svg { filter: url(#chalk); }
+.diagram .bg { fill: none; }
+.diagram .zone { fill: none; stroke: var(--chalk-rule); stroke-width: 2; }
+.diagram .card { fill: none; stroke: var(--chalk); stroke-width: 3; }
+.diagram .card.key, .diagram .card.srv { stroke: var(--chalk-yellow); }
+.diagram text { font-family: var(--f-hand); font-weight: 600; fill: var(--chalk-words); }
+.diagram .zone-t { fill: var(--chalk-yellow); font-size: 17px; letter-spacing: .02em; }
+.diagram .t { font-size: 17px; }
+.diagram .s { font-size: 15px; fill: var(--chalk-faint); }
+.diagram .lbl { font-size: 14px; }
+.diagram .note { font-size: 16px; font-style: normal; fill: var(--chalk-faint); }
+.diagram .lbl.tunnel, .diagram .lbl.pair { fill: var(--chalk-yellow); }
+.diagram .ic { fill: none; stroke: var(--chalk); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.diagram .key .ic, .diagram .ic.key { stroke: var(--chalk-yellow); }
+.diagram .badge { fill: var(--chalk-yellow); }
+.diagram .badge-t { fill: var(--slate); font-size: 12px; letter-spacing: .04em; }
+.diagram .lbl-bg { fill: var(--slate); stroke: var(--chalk-rule); stroke-width: 1.5; }
+.diagram .e-home, .diagram .e-e2e { fill: none; stroke: var(--chalk-strong); stroke-width: 3; stroke-linecap: round; }
+.diagram .e-home { stroke-dasharray: none; }
+.diagram .e-tunnel, .diagram .e-pair { fill: none; stroke: var(--chalk-yellow); stroke-width: 3.6; stroke-linecap: round; }
+.diagram .e-e2e { stroke-width: 3.4; }
+.diagram .a-home, .diagram .a-e2e { fill: var(--chalk-strong); }
+.diagram .a-tunnel, .diagram .a-pair { fill: var(--chalk-yellow); }
+/* The hand font has no Chinese, Arabic, Hebrew or Hindi letters: the pictures use the body font there, whose widths the diagrams are laid out for. */
+:is([lang="zh"], [lang="ar"], [lang="he"], [lang="hi"]) .diagram text { font-family: var(--f-body); }
+:is([lang="zh"], [lang="ar"], [lang="he"], [lang="hi"]) .diagram .lbl { font-size: 12px; font-weight: 500; }
+:is([lang="zh"], [lang="ar"], [lang="he"], [lang="hi"]) .diagram .t { font-size: 15px; }
+:is([lang="zh"], [lang="ar"], [lang="he"], [lang="hi"]) .diagram .s { font-size: 12px; }
