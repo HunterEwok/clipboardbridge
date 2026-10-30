@@ -1,0 +1,273 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: bfd0846e196a -->
+# Установка
+
+Clipboard Bridge работает как небольшая фоновая служба на каждом компьютере. Его команда —
+`cbb`. Все способы ниже ставят одну и ту же программу; выберите тот, что нравится.
+
+## Linux
+
+Любой Linux с systemd (x86-64, ARM64, ARMv7, ARMv6): ноутбук, настольный компьютер,
+Raspberry Pi, сервер, Steam Deck.
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
+```
+
+Затем один раз выйдите из системы и войдите снова, чтобы ваш пользователь мог запускать `cbb`
+без `sudo`. На машине без рабочего стола копирование и вставка работают внутри tmux с
+`--console` (`... | sudo sh -s -- --console`).
+
+Удалённая вставка в GNOME и KDE один раз спрашивает в окне на компьютере, прежде чем первая
+вставка администратора сможет нажимать клавиши. Чтобы пропустить это окно, добавьте `--uinput`
+(`... | sudo sh -s -- --uinput`): небольшой помощник будет нажимать клавиши вставки
+(Shift+Insert и Enter) для того, кто работает за экраном, но никогда не на экране входа или
+блокировки.
+
+Небольшим устройствам, которым нужно только синхронизироваться, например роутеру или
+Raspberry Pi Zero, подойдёт более лёгкий [лёгкий участник](../../lite/README.md):
+`... | sudo sh -s -- --lite`.
+
+### Без sudo (rootless)
+
+На компьютере с Linux, где вы не можете или не хотите использовать `sudo`, установите его для
+своего пользователя, без `sudo`:
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh -s -- --rootless
+```
+
+Он работает как ваша собственная фоновая служба, пока вы вошли в систему, и синхронизируется
+как любой участник. Используйте его, только когда обычная установка невозможна: любая
+запущенная вами программа может скопировать его ключи, поэтому он никогда не станет корнем
+группы, администратором или хабом ([как это работает](how-it-works.md#rootless-members)), и у
+него нет правил брандмауэра, TPM, `--console` и `--uinput`. Чтобы он продолжал работать после
+выхода из системы, администратор один раз выполняет `sudo loginctl enable-linger YOUR-USER`.
+Чтобы удалить: `sh ~/.local/share/clipboardbridge/uninstall.sh`. Лёгкий участник тоже
+устанавливается так, с `--lite --rootless`
+([лёгкий участник](../../lite/README.md#without-sudo-rootless)).
+
+### SteamOS (Steam Deck)
+
+Переключитесь в режим рабочего стола, откройте Konsole, один раз задайте пользователю `deck`
+пароль, если его нет (`passwd`), и выполните ту же команду. SteamOS заменяет свои системные
+файлы при каждом обновлении, поэтому установщик кладёт Clipboard Bridge в
+`/opt/clipboardbridge` вместо `/usr/local` и сообщает SteamOS, какие из его файлов в `/etc`
+сохранять (`/etc/atomic-update.conf.d/clipboardbridge.conf`). Программа остаётся установленной
+и в своей группе после обновлений SteamOS.
+
+- `cbb` попадает в путь нового Konsole после того, как вы выйдете из системы и войдёте снова.
+  `sudo` там не ищет, поэтому командам, которым он нужен, нужен полный путь:
+  `sudo /opt/clipboardbridge/bin/cbb pair`.
+- В режиме рабочего стола буфер обмена синхронизируется, как на любом рабочем столе KDE Plasma.
+- В игровом режиме буфера обмена рабочего стола нет, поэтому там ничего не синхронизируется;
+  служба продолжает работать и нагоняет в режиме рабочего стола.
+- Чтобы удалить: `sudo sh /opt/clipboardbridge/share/uninstall.sh`.
+
+## Mac
+
+Apple silicon или Intel, в Терминале, та же команда, что и в Linux:
+
+```sh
+curl -fsSL https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sudo sh
+```
+
+Или через Homebrew, который заодно обновляет программу. После каждого `brew upgrade`
+выполняйте вторую строку заново:
+
+```sh
+brew install hunterewok/tap/clipboardbridge
+sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/macos/install.sh" --in-place "$(brew --prefix)/opt/clipboardbridge/bin/cbb"
+```
+
+## Windows
+
+Windows 10 (1809 или новее) или 11, x86-64 или ARM64, в PowerShell, открытом через «Запуск от
+имени администратора»:
+
+```powershell
+irm https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.ps1 | iex
+```
+
+Установщик позволяет пользователю, вошедшему за экраном, использовать `cbb` (в новом
+терминале) и запускает для него агент буфера обмена. Команды, меняющие группу, выполняются в
+терминале, открытом от имени администратора, там, где Linux и macOS используют `sudo`.
+
+Через winget, когда пакет появится в репозитории winget:
+
+```powershell
+winget install HunterEwok.clipboardbridge
+cbb install           # in the administrator terminal; again after each winget upgrade
+```
+
+## OpenWrt
+
+Роутер с OpenWrt 25.12 или новее и местом для программы в 25 МБ (128 МБ флеш-памяти или
+больше, либо eMMC; 256 МБ ОЗУ), от имени root по SSH:
+
+```sh
+uclient-fetch -qO - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh
+```
+
+Установщик ставит `cbb` как службу, которая работает только в зоне `lan` и никогда не отвечает
+в `wan`. Ключи лежат в `/etc/clipboardbridge`, который sysupgrade сохраняет; после
+sysupgrade с вашим участием (ASU, owut) выполните команду снова. Другая зона, например сеть
+для IoT, брандмауэр и проверки описаны в разделе
+[роутеры и FreeBSD](../admin/routers.md#openwrt).
+
+Или из нашей ленты пакетов, которую `apk upgrade` потом поддерживает в актуальном состоянии.
+Архитектура ленты соответствует процессору роутера (`grep DISTRIB_ARCH /etc/openwrt_release`):
+`arm64` для `aarch64_*`, `armv7` для `arm_cortex-a*` с `neon` или `vfp` в названии, `mipsle`
+для `mipsel_*`, `mips` для `mips_*`, `amd64` для `x86_64`. Подставьте свою вместо `arm64` во
+второй строке:
+
+```sh
+uclient-fetch -qO /etc/apk/keys/clipboardbridge.pem https://cbb.tools/openwrt/clipboardbridge.pem
+echo https://cbb.tools/openwrt/arm64/packages.adb >>/etc/apk/repositories.d/customfeeds.list
+apk update && apk add clipboardbridge
+```
+
+`apk del clipboardbridge` удаляет программу и оставляет ключи в `/etc/clipboardbridge`.
+
+## FreeBSD
+
+FreeBSD 15, amd64 или arm64, от имени root (через `sudo` или `doas`):
+
+```sh
+fetch -qo - https://github.com/HunterEwok/clipboardbridge/releases/latest/download/get.sh | sh
+```
+
+Установщик ставит `cbb`, сценарий rc.d, который запускает службу через daemon(8), и добавляет
+в rc.conf строку `clipboardbridge_enable="YES"`. Ключи лежат в `/var/db/clipboardbridge`.
+
+В OPNsense тот же установщик добавляет ещё и хук плагина: служба появляется в System >
+Diagnostics > Services, а её правила брандмауэра (в якоре pf `clipboardbridge`) сохраняются при
+каждой перезагрузке фильтра. Пока служба работает, выключите повторитель mDNS (Services > mDNS
+Repeater): обоим нужен UDP-порт 5353, а служба сама отвечает на mDNS на каждом домашнем
+интерфейсе. pfSense не поддерживается: установщик там тоже запускается, но не добавляет
+правила брандмауэра, а выводит их для Firewall > Rules, и обновление pfSense может удалить
+Clipboard Bridge.
+
+На рабочем столе FreeBSD (X11 или Wayland с протоколом data control, как в KDE, sway и
+Hyprland) сеанс запускает `cbb agent` из автозапуска XDG, и буфер обмена присоединяется к
+группе; после установки войдите в систему заново. Удалённая вставка набирает текст через
+XTEST в X11 и через виртуальную клавиатуру на рабочих столах wlroots; GNOME во FreeBSD не
+принимает удалённую вставку, поскольку без logind ничто не сообщает, заблокирован ли его
+экран.
+
+## Docker
+
+Для NAS или домашнего сервера, который всегда включён
+([README образа](../../packaging/docker/README.md); публикуется с каждым релизом начиная с
+0.5). Он входит как обычный участник: создайте группу на телефоне или на компьютере, который
+вы держите.
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/HunterEwok/clipboardbridge/main/packaging/docker/compose.home.yaml
+docker compose -f compose.home.yaml up -d
+docker compose -f compose.home.yaml exec clipboardbridge cbb pair
+```
+
+## Брандмауэр
+
+Clipboard Bridge нужен один TCP-порт, 8764, и mDNS (UDP 5353), оба только из домашней сети.
+Установщик находит брандмауэр (ufw, firewalld, nftables или iptables в Linux, pf или ipfw во
+FreeBSD, брандмауэр приложений на Mac, брандмауэр Windows), перечисляет каждое правило и
+спрашивает
+`Add these rules now? [y/N]`:
+
+- **Да**: он добавляет их, обновляет при каждом обновлении программы и удаляет при
+  удалении. Других правил он никогда не трогает.
+- **Нет** (по умолчанию, а также когда спросить негде, потому что нет терминала): он ничего не
+  добавляет и выводит точные команды, чтобы вы выполнили их сами.
+- `--express` (`-Express` в Windows) добавляет их без вопроса; `--no-firewall` отвечает «Нет».
+
+В nftables и iptables всегда выводятся только команды, поскольку правила, добавленные во время
+работы, не переживают перезагрузку. Во FreeBSD pf получает правила в собственном якоре,
+который pf читает через три помеченные строки, добавляемые установщиком в конец
+`/etc/pf.conf` и затем убираемые; ipfw получает их в наборе правил 17, добавляемом заново при
+каждом запуске. Если вы включите брандмауэр позже, запустите установщик снова.
+
+**Другой порт**, если 8764 занят: `... | sudo sh -s -- --port 9000` (в Windows перед
+установщиком выполните `$env:CBB_PORT = "9000"`). Приложение на телефоне узнаёт порт из
+QR-кода; быстрая команда для iPhone работает только с 8764.
+
+Все параметры установщиков описаны в [справочнике команд](../reference/cli.md#installers).
+
+## Обновление
+
+Релизы подписываются начиная с 0.6. Чтобы перейти на 0.6 с более ранней версии, выполните
+команду установки снова; дальше это делает `cbb update`.
+
+`sudo cbb update` (в Windows `cbb update` в терминале, открытом от имени администратора)
+устанавливает самый новый релиз на компьютер или лёгкого участника, установленного через
+`get.sh`, `get.ps1` или архив релиза; `cbb update -check` только сообщает, есть ли он. Ваши
+настройки сохраняются. Устанавливается только релиз, подписанный проектом, и никогда не более
+старый. Если новая версия не запускается за минуту, предыдущая возвращается сама. Как
+проверяются подписи, описано в [протоколе](../protocol.md), раздел 16.
+
+Установщики один раз спрашивают, обновляться ли автоматически (`--auto-update on|off`, а в
+Windows `-AutoUpdate on|off` и `$env:CBB_AUTO_UPDATE`, чтобы ответить заранее);
+`sudo cbb update -auto on|off` меняет это позже. Когда включено, таймер проверяет раз в сутки
+в своё время: таймер systemd в Linux, задание launchd на Mac, запланированная задача от имени
+SYSTEM в Windows, cron в OpenWrt и FreeBSD. Каждая проверка скачивает одни и те же небольшие
+файлы с GitHub (или с `dl.cbb.tools`, когда GitHub не отвечает), поэтому GitHub узнаёт адрес
+этого устройства и то, что оно использует Clipboard Bridge, как при любой загрузке; о группе
+не отправляется ничего. `sudo cbb update -mirror https://...` берёт обновления с другого
+зеркала, которому доверять не нужно, поскольку подписи проверяются. Журнал таймера —
+`update.log` в `/var/lib/clipboardbridge-update` (Linux), `/etc/clipboardbridge-update`
+(OpenWrt), `/var/db/clipboardbridge-update` (FreeBSD),
+`/Library/Application Support/clipboardbridge-update` (Mac) или
+`C:\Program Files\clipboardbridge-update` (Windows).
+
+Устройства группы сообщают друг другу о самом новом подписанном релизе, который видело любое из
+них, поэтому проверки одного устройства достаточно, чтобы `cbb status` и приложение в трее на
+остальных сообщили, что вышла новая версия («Update to X» в приложении в трее запускает
+`cbb update` от имени администратора). Каждое устройство всё равно само проверяет подписи и
+скачивает собственный архив.
+
+Повторный запуск той же команды установки тоже обновляет. С Homebrew или winget обновляйте
+через них и выполняйте вторую строку заново; `cbb update` сообщит об этом. Docker и пакет
+OpenWrt обновляются через `docker compose pull` и `apk upgrade`.
+
+## Проверка загрузки
+
+Однострочные установщики сверяют загрузку с `SHA256SUMS` релиза. У каждого файла релиза есть
+ещё и аттестация происхождения сборки, которая связывает его с этим репозиторием и сборкой,
+его создавшей; с помощью [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify clipboardbridge-linux-amd64.tar.gz --repo HunterEwok/clipboardbridge
+```
+
+`get.sh` проверяет её сам, когда `gh` установлен и выполнен вход для root
+(`sudo gh auth login`); `CBB_ATTESTATION=require` отказывается устанавливать без неё.
+
+Релизы подписаны также собственными ключами проекта, которые никогда не касаются CI
+(корневые ключи лежат на автономных аппаратных ключах, ключ релиза — в Secure Enclave
+сопровождающего): `keys.json` называет ключи релиза под корневыми ключами проекта,
+`release.json` перечисляет каждый файл релиза с его хешем, а `stable.json` указывает, какой
+релиз текущий. Когда корневые ключи будут встроены в установщики, `get.sh` (с `openssl`) и
+`get.ps1` будут проверять это до установки и отказываться ставить неподписанный релиз; пока
+этого нет, они проверяют только `SHA256SUMS` и аттестацию. `CBB_VERIFY=skip` устанавливает без
+проверки.
+
+## Удаление
+
+В Linux и на Mac:
+
+```sh
+sudo sh /usr/local/share/clipboardbridge/uninstall.sh
+```
+
+В SteamOS это `sudo sh /opt/clipboardbridge/share/uninstall.sh`. С Homebrew после этого
+выполните `brew uninstall clipboardbridge`.
+
+В Windows: Параметры, Приложения, «Clipboard Bridge», Удалить.
+
+Это удаляет программу, службу и правила брандмауэра, добавленные установщиком. Ключи
+устройства остаются, поэтому повторная установка возвращает его в свою группу. Чтобы удалить и
+их, добавьте `--purge` (`-Purge` в Windows, с
+`powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\clipboardbridge\uninstall.ps1" -Purge`),
+затем удалите устройство из группы на другом устройстве (`sudo cbb revoke NAME`, или на
+телефоне).

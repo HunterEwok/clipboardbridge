@@ -1,0 +1,61 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only. Drawn by tools/diagrams/diagrams.py; edit it there. -->
+<svg xmlns="http://www.w3.org/2000/svg" lang="sw" width="760" height="230" viewBox="0 0 760 230" role="img" aria-label="Relei pofu huunganisha vifaa viwili na haisomi chochote">
+<title>Relei pofu huunganisha vifaa viwili na haisomi chochote</title>
+<style>
+  .bg { fill: none; }
+  .zone { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1; }
+  .zone-t { fill: #57606a; font: 600 13px system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: .02em; }
+  .card { fill: #ffffff; stroke: #d0d7de; stroke-width: 1.2; }
+  .card.key { stroke: #8250df; stroke-width: 2; }
+  .card.srv { fill: #fff8c5; stroke: #d4a72c; }
+  .t { fill: #1f2328; font: 600 14px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .s { fill: #57606a; font: 12px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .ic { fill: none; stroke: #1f2328; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .key .ic, .ic.key { stroke: #8250df; }
+  .badge { fill: #8250df; }
+  .badge-t { fill: #ffffff; font: 600 10px system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: .04em; }
+  .e-tunnel { fill: none; stroke: #0969da; stroke-width: 3; }
+  .e-home { fill: none; stroke: #57606a; stroke-width: 1.6; stroke-dasharray: 5 4; }
+  .e-pair { fill: none; stroke: #8250df; stroke-width: 1.8; }
+  .e-e2e { fill: none; stroke: #1a7f37; stroke-width: 1.8; stroke-dasharray: 2 4; stroke-linecap: round; }
+  .a-tunnel { fill: #0969da; } .a-home { fill: #57606a; } .a-pair { fill: #8250df; } .a-e2e { fill: #1a7f37; }
+  .lbl-bg { fill: #ffffff; stroke: #d0d7de; stroke-width: 1; }
+  .lbl { fill: #1f2328; font: 12px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .lbl.tunnel { fill: #0969da; } .lbl.pair { fill: #8250df; } .lbl.e2e { fill: #1a7f37; }
+  .note { fill: #57606a; font: italic 12px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    .zone { fill: #161b22; stroke: #30363d; }
+    .zone-t, .s, .note { fill: #8b949e; }
+    .card { fill: #0d1117; stroke: #3d444d; }
+    .card.key { stroke: #a371f7; }
+    .card.srv { fill: #272115; stroke: #9e6a03; }
+    .t, .lbl { fill: #e6edf3; }
+    .ic { stroke: #e6edf3; }
+    .key .ic, .ic.key { stroke: #a371f7; }
+    .badge { fill: #a371f7; }
+    .badge-t { fill: #0d1117; }
+    .e-tunnel { stroke: #4493f8; } .a-tunnel { fill: #4493f8; } .lbl.tunnel { fill: #4493f8; }
+    .e-home { stroke: #8b949e; } .a-home { fill: #8b949e; }
+    .e-pair { stroke: #a371f7; } .a-pair { fill: #a371f7; } .lbl.pair { fill: #a371f7; }
+    .e-e2e { stroke: #3fb950; } .a-e2e { fill: #3fb950; } .lbl.e2e { fill: #3fb950; }
+    .lbl-bg { fill: #0d1117; stroke: #3d444d; }
+  }
+</style>
+<g class=""><rect class="card " x="25.0" y="38.0" width="170" height="64" rx="10"/><g transform="translate(37.0,56)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="75.0" y="66">Laptopu</text><text class="s" x="75.0" y="84">mbali</text></g>
+<g class="srv"><rect class="card srv" x="273.4" y="38.0" width="213.2" height="64" rx="10"/><g transform="translate(285.4,56)" class="ic"><path d="M8 21h13a5 5 0 0 0 0 -10a7 7 0 0 0 -13.5 1.5A4.3 4.3 0 0 0 8 21z"/></g><text class="t" x="323.4" y="66">Relei pofu</text><text class="s" x="323.4" y="84">huunganisha vifaa viwili</text></g>
+<g class=""><rect class="card " x="565.0" y="38.0" width="170" height="64" rx="10"/><g transform="translate(577.0,56)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="615.0" y="66">Mac</text><text class="s" x="615.0" y="84">nyumbani</text></g>
+<path class="e-tunnel" d="M195.0,70.0 L273.4,70.0"/>
+<path class="a-tunnel" d="M273.4,70.0 L263.4,64.5 L263.4,75.5z"/>
+<path class="e-tunnel" d="M565.0,70.0 L486.59999999999997,70.0"/>
+<path class="a-tunnel" d="M486.59999999999997,70.0 L496.6,75.5 L496.6,64.5z"/>
+<path class="e-e2e" d="M110,102 L110,160 L650,160 L650,102"/>
+<path class="a-e2e" d="M650,102 L645.6,110.0 L654.4,110.0z"/>
+<path class="a-e2e" d="M110,102 L105.6,110.0 L114.4,110.0z"/>
+<text class="note" x="380" y="212" text-anchor="middle">Huona ni vifaa vipi vyako vinavyozungumza, na lini. Leo: seva yako mwenyewe; katika 0.5, pia cbb.tools.</text>
+<rect class="lbl-bg" x="204.1" y="59.0" width="60.1" height="22" rx="11.0"/>
+<text class="lbl tunnel" x="234.2" y="74.0" text-anchor="middle">handaki</text>
+<rect class="lbl-bg" x="495.7" y="59.0" width="60.1" height="22" rx="11.0"/>
+<text class="lbl tunnel" x="525.8" y="74.0" text-anchor="middle">handaki</text>
+<rect class="lbl-bg" x="205.1" y="149.0" width="349.9" height="22" rx="11.0"/>
+<text class="lbl e2e" x="380" y="164.0" text-anchor="middle">usimbaji wa mwisho hadi mwisho: relei haiwezi kuusoma</text>
+</svg>

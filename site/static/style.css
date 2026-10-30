@@ -631,6 +631,10 @@ nav a[aria-current] { color: var(--accent); }
 .doc h2::after { display: none; }
 .doc h3 { font-size: 22px; }
 .doc h4, .doc h5, .doc h6 { font-family: var(--f-body); font-size: 18px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text); }
+.doc .crumb { margin: 0 0 8px; font-size: 15px; }
+.doc .docnote { margin: 16px 0; padding: 8px 16px; border-inline-start: 3px solid var(--accent); background: var(--raised); }
+.doc .docfoot { font-size: 15px; color: var(--dim); }
+.doc pre, .doc code { direction: ltr; unicode-bidi: isolate; }
 .doc ol { padding-inline-start: 26px; }
 .doc li + li { margin-top: 4px; }
 .doc table { display: block; overflow-x: auto; border-collapse: collapse; margin: 16px 0; font-size: 15px; }
