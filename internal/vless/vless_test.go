@@ -4,6 +4,7 @@
 package vless
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"net"
@@ -177,6 +178,13 @@ func TestUserOfEachClient(t *testing.T) {
 			}
 		}
 		return ""
+	}
+	// A client that comes before the server has learned the site's
+	// handshakes waits for it, longer than ask does.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := s.Ready(ctx); err != nil {
+		t.Fatal(err)
 	}
 	a, _ := tunnel.NewVLESSID()
 	b, _ := tunnel.NewVLESSID()
