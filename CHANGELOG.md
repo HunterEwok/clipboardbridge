@@ -637,6 +637,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   table is written to its state file a moment after a change (and when the forwarder
   stops), no longer under the lock of every registration. State files from earlier versions
   are read as before.
+- A relay counts the requests being read in its tunnels by group and by the address and
+  network the devices registered from, besides by device, waits 5 s instead of 15 s for a
+  request line, and charges the registrations an address and a network start by the
+  second. An open relay verifies a group's records once and keeps the verified set, keeps
+  at most 256 KiB of records for one group and 128 MiB in all, and refuses a registration
+  past those rather than keep part of its records. Devices see the new refusals as
+  ordinary ones; nothing on the wire changes.
 - The release workflow run by hand from `main` builds the OpenWrt feed: it named the
   package's version after the branch, which apk refuses.
 - A forwarder keeps the handshake budgets of clients that come over VLESS apart for each

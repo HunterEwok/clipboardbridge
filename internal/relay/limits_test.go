@@ -141,8 +141,8 @@ func TestSetupsBoundByAddress(t *testing.T) {
 // A device's requests in its tunnel take only its own share of the
 // requests being read, so one device cannot hold up the others'.
 func TestRequestsBoundByDevice(t *testing.T) {
-	r := &Relay{}
-	a, b := &member{}, &member{}
+	r := newRequestRelay()
+	a, b := &member{from: netip.MustParseAddr("192.0.2.1")}, &member{from: netip.MustParseAddr("198.51.100.1")}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for range maxRequestsOne {
