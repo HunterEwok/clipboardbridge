@@ -27,7 +27,7 @@
     </tbody>
   </table>
   </div></div>
-  <p>{{t "The servers at cbb.tools keep no logs. The details are in %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/how-it-works.md" (t "how it works"))}}</p>
+  <p>{{t "The servers at cbb.tools keep no logs. The details are in %s." (link (printf "/%s/docs/guide/how-it-works.html" .Lang.Code) (t "how it works"))}}</p>
 
   <h2 id="programs">{{t "What the programs send"}}</h2>
   <ul>
@@ -35,7 +35,7 @@
     <li>{{t "Once a day the group's root may fetch from %s the signed copy of Google's list of revoked Android keys. It is the same file for everyone." (code "cbb.tools")}}</li>
     <li>{{t "Nothing reports crashes or usage, and the logs stay on each device."}}</li>
     <li>{{t "If you install the app from the App Store, Google Play, F-Droid, Homebrew or winget, that store knows you installed it, under its own privacy policy."}}</li>
-    <li>{{t "Everything anyone outside your group can see, and how to avoid it: %s." (link "/docs/guide/privacy.html" (t "who sees what"))}}</li>
+    <li>{{t "Everything anyone outside your group can see, and how to avoid it: %s." (link (printf "/%s/docs/guide/privacy.html" .Lang.Code) (t "who sees what"))}}</li>
   </ul>
 
   <h2 id="site">{{t "This website"}}</h2>

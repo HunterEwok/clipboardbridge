@@ -41,6 +41,7 @@ func TestCheckDocs(t *testing.T) {
 		},
 		{name: "the old name in the changelog", file: "CHANGELOG.md", content: "clipbridge is now clipboardbridge.\n"},
 		{name: "the old name in code", file: "docs/a.md", content: "```sh\nrm -rf /var/lib/clipbridge\n```\n"},
+		{name: "a translated page keeps its original's links", file: "site/docs/ru/guide/a.md", content: "[x](design.md#roadmap) [y](missing.md) clipbridge\n"},
 		{name: "not Markdown", file: "a.sh", content: "# [x](missing.md) clipbridge\n"},
 	}
 	for _, tt := range tests {

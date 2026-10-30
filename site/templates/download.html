@@ -27,7 +27,7 @@
     <div class="card" id="iphone" data-os="iphone">
       <p class="badge mine-badge">{{t "Your device"}}</p>
       <h3>iPhone</h3>
-      <p>{{t "The app comes with TestFlight, which is not open yet. Until then an iPhone joins with a shortcut, and a computer holds the group: see %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/without-app.md" (t "without the app"))}}</p>
+      <p>{{t "The app comes with TestFlight, which is not open yet. Until then an iPhone joins with a shortcut, and a computer holds the group: see %s." (link (printf "/%s/docs/guide/without-app.html" .Lang.Code) (t "without the app"))}}</p>
     </div>
   </div>
 
@@ -62,7 +62,7 @@ sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/ma
     </div>
   </div>
   <p>{{t "The installer checks the download, starts Clipboard Bridge and asks before it opens the firewall for it. Then run %s and scan its QR code in the app." (code "sudo cbb pair")}}
-     {{t "All the ways and options: %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/install.md" (t "installing"))}}</p>
+     {{t "All the ways and options: %s." (link (printf "/%s/docs/guide/install.html" .Lang.Code) (t "installing"))}}</p>
 
   <h2 id="check">{{t "Checking a download"}}</h2>
   <p>{{t "The installers check every file against the release's checksums. Each file also has a build attestation that ties it to this repository and the build that made it, which %s checks:" (code "gh attestation verify")}}</p>
@@ -73,7 +73,7 @@ sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/ma
   <div class="final">
     <h2>{{t "Next: make your group"}}</h2>
     <p>{{t "The quick start walks you through the first devices, with a computer or with phones only."}}</p>
-    <p class="actions"><a class="button accent go" href="https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/quickstart.md" data-goatcounter-click="quickstart">{{t "Open the quick start"}}</a></p>
+    <p class="actions"><a class="button accent go" href="/{{.Lang.Code}}/docs/guide/quickstart.html" data-goatcounter-click="quickstart">{{t "Open the quick start"}}</a></p>
   </div>
 </section>
 {{end}}
