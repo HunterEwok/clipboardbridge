@@ -723,6 +723,15 @@ func (s *state) updatePeers(now time.Time) {
 	}) {
 		s.nextQuery, s.queryGap = now, time.Second
 	}
+	// A member found that was not among the peers may have lost this one
+	// too, and its browse queries may be far apart by now, after the ones
+	// it sent while it was off the network: announce this member once, so
+	// that it finds this one as soon as this one found it.
+	if len(s.announce) == 0 && slices.ContainsFunc(peers, func(p Peer) bool {
+		return !slices.ContainsFunc(s.peers, func(old Peer) bool { return old.ID == p.ID })
+	}) {
+		s.announce = append(s.announce, announcement{at: now, left: 1})
+	}
 	s.peers = peers
 	if s.r.cfg.OnPeers != nil {
 		s.r.cfg.OnPeers(slices.Clone(peers))
