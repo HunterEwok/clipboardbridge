@@ -673,6 +673,21 @@ public struct RecordSet: Codable, Equatable, Sendable {
             && (a.signer == anchor || ev.issued(anchor, a.signer))
     }
 
+    /// The device whose admin key signed command c, as Go's
+    /// Records.CommandSigner: the device that holds the group's root when
+    /// the root's own key signed it, or the device whose record names the
+    /// admin CA that did. nil when no listed device holds the key, as for an
+    /// admin phone whose own record is not here yet.
+    public func signerDevice(_ c: Member.Record) -> String? {
+        guard let groupCA, let a = RecordSet.anchor(c, roots: knownRoots(groupCA)),
+              let anchor = try? Records.keyHash(cert: a.root) else { return nil }
+        if a.signer == anchor {
+            guard let id = rootMember()?.device else { return nil }
+            return devices.first { $0.id == id }?.id
+        }
+        return devices.first { $0.adminKey == a.signer }?.id
+    }
+
     /// Whether a watch's admin CA signed the record or command c
     /// (docs/protocol.md, section 10, rule 8), whose powers are few.
     public func signedByWatch(_ c: Member.Record) -> Bool {

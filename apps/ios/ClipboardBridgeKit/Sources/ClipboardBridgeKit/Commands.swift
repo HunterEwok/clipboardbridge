@@ -187,7 +187,8 @@ public enum Commands {
 
     /// Checks command c for the member me at nowMS, as Go's
     /// Records.VerifyCommand: an admin of the group signed it now (records
-    /// says), it is for me in this group, it has not expired and was not
+    /// says), its by is the signer's device when the records show it, it is
+    /// for me in this group, it has not expired and was not
     /// signed in the future. The caller keeps the replay cache; a mode
     /// command's mode is not checked against Member.modes here.
     public static func verify(_ c: Member.Record, records: RecordSet, me: String, nowMS: Int64) throws -> Body {
@@ -198,6 +199,8 @@ public enum Commands {
         guard b.to == me else { throw refuse("the command is for another device") }
         guard records.signedByAdmin(c) else { throw refuse("the command's signer is not an admin of the group") }
         guard watchTypes.contains(b.type) || !records.signedByWatch(c) else { throw refuse("a watch does not sign \(b.type) commands") }
+        // by names the signer's device whenever the records show it.
+        if let dev = records.signerDevice(c), dev != b.by { throw refuse("a command's by is not the device of its signer") }
         guard b.expires_ms > nowMS else { throw refuse("the command expired; check the clocks of both devices") }
         guard b.time_ms <= nowMS + aheadMS else { throw refuse("the command was signed in the future; check the clocks of both devices") }
         return b
@@ -255,6 +258,7 @@ public enum Commands {
         default: throw refuse("unknown command type \(b.type)")
         }
         guard hex32(b.to) else { throw refuse("the command names no valid device") }
+        guard hex32(b.by) else { throw refuse("a command's by is not a device ID") }
         guard b.expires_ms > b.time_ms, b.expires_ms - b.time_ms <= lifetimeMS else { throw refuse("the command's lifetime is not valid") }
         return b
     }

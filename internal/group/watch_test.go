@@ -235,6 +235,8 @@ func makeWatchCase(t *testing.T, name string) watchCase {
 		c.Self = DeviceID(self.Subject.CommonName)
 		all = append(all, deviceRecord(t, g, pg.root, nil, self, "my computer", 1))
 		c.NowMS = 1_800_000_000_000
+		known := NewRecords(g)
+		known.AddAll(all)
 		cmd := func(signer *CA, chain []*x509.Certificate, typ string) Record {
 			b := CommandBody{Type: typ, Group: Tag(g), By: c.Self, To: c.Self, ID: NewCommandID(), TimeMS: c.NowMS, ExpiresMS: c.NowMS + CommandLifetime.Milliseconds()}
 			switch typ {
@@ -248,6 +250,13 @@ func makeWatchCase(t *testing.T, name string) watchCase {
 			r, err := SignCommand(b, signer.Key, chain...)
 			if err != nil {
 				t.Fatal(err)
+			}
+			// A command's by is its signer's device when the records show it.
+			if dev, _, ok := known.CommandSigner(r); ok && dev.ID != b.By {
+				b.By = dev.ID
+				if r, err = SignCommand(b, signer.Key, chain...); err != nil {
+					t.Fatal(err)
+				}
 			}
 			return r
 		}

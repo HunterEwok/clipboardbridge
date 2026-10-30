@@ -164,6 +164,9 @@ impl Command {
         if !certs::is_id(&self.to) {
             return Err(Error::msg("the command names no valid device"));
         }
+        if !certs::is_id(&self.by) {
+            return Err(Error::msg("a command's by is not a device ID"));
+        }
         if self.expires_ms <= self.time_ms || self.expires_ms - self.time_ms > COMMAND_LIFETIME_MS {
             return Err(Error::msg("the command's lifetime is not valid"));
         }
@@ -1218,7 +1221,8 @@ impl Records {
     /// Checks a command for the member `me` at now_ms, as Go's
     /// Records.VerifyCommand: its signer is an admin of the group now (a
     /// root on the path, or an admin CA under one that is neither revoked
-    /// nor frozen), it is for `me` in this group, it has not expired and it
+    /// nor frozen), its by is the signer's device when the records show it
+    /// (command_signer), it is for `me` in this group, it has not expired and it
     /// was not signed in the future. The caller keeps the replay cache.
     pub fn verify_command(&self, c: &Record, me: &str, now_ms: i64) -> Result<Command> {
         let body = Command::parse(&c.body)?;
@@ -1240,6 +1244,12 @@ impl Records {
         }
         if self.watch(&signer) && !watch_command(&body.kind) {
             return Err(Error::msg(format!("a watch does not sign {} commands", body.kind)));
+        }
+        // by names the signer's device whenever the records show it.
+        if let (Some(d), _) = self.command_signer(c) {
+            if d.id != body.by {
+                return Err(Error::msg("a command's by is not the device of its signer"));
+            }
         }
         if body.expires_ms <= now_ms {
             return Err(Error::msg("the command expired; check the clocks of both devices"));

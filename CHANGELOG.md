@@ -649,6 +649,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   at most 256 KiB of records for one group and 128 MiB in all, and refuses a registration
   past those rather than keep part of its records. Devices see the new refusals as
   ordinary ones; nothing on the wire changes.
+- A command's `by` must be a device ID and, when the receiver's records show which device
+  holds the signing key, that device; the limits on pastes and actions from one device and
+  the logs then count the device that signed. The same on computers, the lite member and
+  both phones. A member from before still takes a command whose `by` names another device;
+  no current sender writes one.
 - The release workflow run by hand from `main` builds the OpenWrt feed: it named the
   package's version after the branch, which apk refuses.
 - A forwarder keeps the handshake budgets of clients that come over VLESS apart for each

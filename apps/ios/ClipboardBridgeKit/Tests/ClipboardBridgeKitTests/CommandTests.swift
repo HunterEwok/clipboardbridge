@@ -222,7 +222,7 @@ final class CommandTests: XCTestCase {
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-commands.json")))
         var set = RecordSet()
         XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
-        XCTAssertEqual(v.commands.count, 14)
+        XCTAssertEqual(v.commands.count, 15)
         for c in v.commands {
             let got = Result { try Commands.verify(c.command, records: set, me: v.`self`, nowMS: v.now_ms) }
             switch got {

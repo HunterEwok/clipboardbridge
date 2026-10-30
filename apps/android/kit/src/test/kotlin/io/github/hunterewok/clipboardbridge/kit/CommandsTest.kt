@@ -225,7 +225,7 @@ class CommandsTest {
         assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
         val now = v.getValue("now_ms").jsonPrimitive.long
         val commands = v.getValue("commands").jsonArray.map { it.jsonObject }
-        assertEquals(14, commands.size)
+        assertEquals(15, commands.size)
         for (c in commands) {
             val name = c.str("name")
             val got = runCatching { Commands.verify(Member.Record.fromJson(c.getValue("command").jsonObject), set, v.str("self"), now) }

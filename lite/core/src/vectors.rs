@@ -389,7 +389,7 @@ fn go_commands() {
     let me = v["self"].as_str().unwrap();
     let now = v["now_ms"].as_i64().unwrap();
     let cs = v["commands"].as_array().unwrap();
-    assert_eq!(cs.len(), 14);
+    assert_eq!(cs.len(), 15);
     for c in cs {
         let r: Record = serde_json::from_value(c["command"].clone()).unwrap();
         let got = s.verify_command(&r, me, now);
