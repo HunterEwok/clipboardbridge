@@ -637,6 +637,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   table is written to its state file a moment after a change (and when the forwarder
   stops), no longer under the lock of every registration. State files from earlier versions
   are read as before.
+- The release workflow run by hand from `main` builds the OpenWrt feed: it named the
+  package's version after the branch, which apk refuses.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.
