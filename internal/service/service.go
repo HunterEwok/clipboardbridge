@@ -215,9 +215,11 @@ type Service struct {
 	adminCAsUnder  map[group.DeviceID]group.KeyHash // the root this root last sent each admin a new admin CA under
 	pendingAdminCA []byte                           // an admin CA that came before the records that make it valid
 	// commands holds the IDs of the commands carried out, until they
-	// expire, so that none is carried out twice.
-	commands map[string]time.Time
-	online   map[group.DeviceID]bool
+	// expire, so that none is carried out twice; the cache starts empty, so
+	// a command signed before startedMS is refused.
+	commands  map[string]time.Time
+	startedMS int64
+	online    map[group.DeviceID]bool
 	// unreached holds the members at home that could not connect to this
 	// one and synced only because it dialed them back (cbb status).
 	unreached map[group.DeviceID]bool
@@ -340,7 +342,8 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.runner = actions.System()
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{}, restart: make(chan struct{}, 1),
-		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery()}
+		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery(),
+		startedMS: cfg.now().UnixMilli()}
 	if s.cfg.runner == nil {
 		// A Mac and Windows run the presets in the signed-in user's
 		// session, through the agent.

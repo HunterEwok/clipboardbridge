@@ -125,6 +125,9 @@ struct Service {
     /// The replay cache: the IDs of the commands carried out, until they
     /// expire, in milliseconds since the Unix epoch.
     commands: Mutex<HashMap<String, i64>>,
+    /// When the service started: the replay cache starts empty, so a
+    /// command signed before is refused.
+    started_ms: i64,
     log: Arc<dyn Fn(&str) + Send + Sync>,
 }
 
@@ -162,6 +165,7 @@ pub fn run(cfg: Config) -> Result<()> {
         pending: Mutex::new(None),
         state_dir: cfg.state_dir.clone(),
         commands: Mutex::new(HashMap::new()),
+        started_ms: uptime::wall_ms(),
         log: log.clone(),
     });
     let only = crate::interfaces::only();
@@ -461,6 +465,15 @@ impl Service {
             Ok(b) => b,
             Err(e) => return refused("", e.message().to_string()),
         };
+        if body.time_ms < self.started_ms {
+            // It may have been carried out before the restart, which the
+            // replay cache does not remember.
+            return refused(
+                &body.id,
+                "this device started after the command was signed, so it may have carried it out already; send it again"
+                    .into(),
+            );
+        }
         {
             let mut seen = self.commands.lock().unwrap();
             seen.retain(|_, exp| *exp > now);

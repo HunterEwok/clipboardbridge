@@ -613,6 +613,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A device that restarts no longer carries out again a command it took just before the
+  restart: computers, phones and the lite member refuse a command signed before they
+  started, and the reason asks the sender to send it again.
 - A pairing window or an invitation on an admin failed every joiner with "wrong code" once
   the admin's certificates changed while it was open, as when the root sends a new admin
   its admin CA again right after making it an admin; the window now presents the

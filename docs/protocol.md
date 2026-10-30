@@ -2374,7 +2374,11 @@ The receiver MUST take a command only when:
   (section 10, rule 8) signs only `paste-off`, `actions-off`, `away-off` and `action`;
 - `expires_ms` is after its clock and `time_ms` at most 60 s ahead of it;
 - its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
-  until they expire (at most 4096 at a time).
+  until they expire (at most 4096 at a time);
+- `time_ms` is not before the time the receiver started. The replay cache lives in memory
+  and starts empty, so a command carried out before a restart would otherwise be taken
+  again; a refused one is sent again with a new `id`. Members before 0.6 take such
+  a command within its lifetime.
 
 A body is at most 64 KiB, a `paste` command's 2 MiB (the sender writes the text without
 JSON's escapes of `<`, `>` and `&`). A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it

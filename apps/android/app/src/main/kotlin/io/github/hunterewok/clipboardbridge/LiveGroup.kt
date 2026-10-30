@@ -193,6 +193,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /** The IDs of the commands carried out, until they expire: the replay cache (docs/protocol.md, section 15). */
     private val commands = mutableMapOf<String, Long>()
 
+    /** When the app started: the replay cache starts empty, so a command signed before then may have been carried out already. */
+    private val startedMS = System.currentTimeMillis()
+
     /** The images this phone copied, which the computers fetch from it. */
     private val content = MemoryContent(maxBytes = 2 * Images.MAX_COPY)
 
@@ -896,6 +899,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             synchronized(lock) { Commands.verify(c, g.records, g.device, now) }
         } catch (e: Commands.Refused) {
             return refused(e.message ?: "the command is not valid")
+        }
+        if (body.timeMS < startedMS) {
+            return refused("this device started after the command was signed, so it may have carried it out already; send it again")
         }
         synchronized(lock) {
             commands.entries.removeAll { it.value <= now }

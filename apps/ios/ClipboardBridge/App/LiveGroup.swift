@@ -1277,6 +1277,9 @@ final class LiveGroup: GroupController {
         private let lock = NSLock()
         private let url: URL
         private var commands: [String: Int64] = [:]
+        /// When the app started: the replay cache starts empty, so a command
+        /// signed before then may have been carried out already.
+        private let startedMS = Int64(Date().timeIntervalSince1970 * 1000)
         /// The most command IDs it keeps; a command lives at most 30 s, as Go's maxCommandIDs.
         static let maxCommands = 4096
 
@@ -1324,6 +1327,9 @@ final class LiveGroup: GroupController {
                 return refused(e.reason)
             } catch {
                 return refused("the command is not valid")
+            }
+            if body.time_ms < startedMS {
+                return refused("this device started after the command was signed, so it may have carried it out already; send it again")
             }
             let again: String? = lock.withLock {
                 commands = commands.filter { $0.value > now }
