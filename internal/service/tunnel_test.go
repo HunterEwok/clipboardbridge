@@ -473,11 +473,13 @@ func testAwayThroughForwarder(t *testing.T, obfuscate, overVLESS bool) {
 		return a != nil && a.Forwarder != nil && a.Forwarder.Registered && a.Forwarder.Seen != ""
 	})
 	// The pi, the group's root, registered with the period's hubs'
-	// credential it signed, which the deck keeps too.
-	var kept map[string]json.RawMessage
-	if b, err := os.ReadFile(state); err != nil || json.Unmarshal(b, &kept) != nil || len(kept) != 1 {
-		t.Errorf("the forwarder's state after a registration with a credential: %v, %d entries", err, len(kept))
-	}
+	// credential it signed, which the deck keeps too. The forwarder writes
+	// its state a moment after a change.
+	waitFor(t, "the forwarder's state after a registration with a credential", func() bool {
+		var kept map[string]json.RawMessage
+		b, err := os.ReadFile(state)
+		return err == nil && json.Unmarshal(b, &kept) == nil && len(kept) == 1
+	})
 	waitFor(t, "the deck keeps the credential", func() bool {
 		_, err := os.Stat(filepath.Join(deck.dir, group.CredentialsFileName))
 		return err == nil

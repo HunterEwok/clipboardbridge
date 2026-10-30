@@ -630,6 +630,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The forwarder bounds what it remembers of the groups that registered with records and are
+  gone: 32 MiB in all, the group kept least recently forgotten first and the records of a
+  group that is registered now never. It refuses a registration whose authority records
+  come to more than 256 KiB, rather than keep part of them; a group that registers again no
+  longer costs time in proportion to the square of its records. Hubs see the refusal as an
+  ordinary one; nothing else on the wire changes.
+- The forwarder keeps what it remembers of a group's credentials until the newest one has
+  expired, instead of forgetting the oldest group when its table fills: a period tag new to
+  the table is refused when the table, or 256 entries of one network, are full, and the
+  table is written to its state file a moment after a change (and when the forwarder
+  stops), no longer under the lock of every registration. State files from earlier versions
+  are read as before.
 - The release workflow run by hand from `main` builds the OpenWrt feed: it named the
   package's version after the branch, which apk refuses.
 - The lite member writes its state files through a temporary file with a random name that
