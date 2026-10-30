@@ -730,6 +730,9 @@ jobs:
           done
           (cd "$rel" && shasum -a 256 -- *.tar.gz >SHA256SUMS)
           brew tap-new --no-git local/test
+          # Homebrew from 5.2 on loads formulas only from taps one trusts;
+          # earlier ones have no brew trust.
+          if brew trust --help >/dev/null 2>&1; then brew trust local/test; fi
           formula="$(brew --repository local/test)/Formula/clipboardbridge.rb"
           sh packaging/homebrew/formula.sh v0.0.1 "$rel/SHA256SUMS" "file://$rel" >"$formula"
           cat "$formula"
