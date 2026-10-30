@@ -625,6 +625,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A pre-release tag (`vX.Y.Z-rc.N`) gets its notes from CHANGELOG's *Unreleased*; it
+  failed at the end of the release for want of a section of its own.
 - The forwarder bounds what it remembers of the groups that registered with records and are
   gone: 32 MiB in all, the group kept least recently forgotten first and the records of a
   group that is registered now never. It refuses a registration whose authority records
