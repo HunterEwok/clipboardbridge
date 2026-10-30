@@ -129,7 +129,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the store.
 - The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
   and a serial port for the console on the chip's OTG controller, `type TEXT` with the
-  layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into
+  layout active on the host (`layout us` or `ru`) at a set rate (only in a build with the
+  feature `console-type`, which the default firmware leaves out), and `flash` to restart into
   download mode. A text with characters the layout cannot type is refused, naming them. The
   layouts' key tables are in the protocol core (`cbb_core::keyboard`). Remote paste through
   the keyboard follows the board's sync.

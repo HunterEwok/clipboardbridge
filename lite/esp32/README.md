@@ -80,7 +80,7 @@ cbb> status
 | `ble on`, `ble off` | makes the board a Bluetooth LE keyboard, or not; saved, and the board restarts |
 | `ble pair` | makes the Bluetooth keyboard discoverable for two minutes, for a host to pair with it |
 | `ble forget` | forgets every host the Bluetooth keyboard is paired with; the board restarts |
-| `type TEXT` | types TEXT on a connected Bluetooth host, or else on the USB keyboard |
+| `type TEXT` | types TEXT on a connected Bluetooth host, or else on the USB keyboard; only in a build with the feature `console-type` |
 | `flash` | restarts into the ROM's download mode, for espflash |
 
 The board joins WPA2 networks (and WPA2/WPA3 mixed ones), or open ones with an empty password; it joins
@@ -113,7 +113,9 @@ If the console is unreachable, short B1 to GND while pressing reset: the board t
 in download mode. A panic's message still goes to the USB serial, so in keyboard mode it is
 lost.
 
-`type TEXT` types TEXT with the board's `layout`, which must be the layout active on the
+`type TEXT` is only in a firmware built with `--features console-type`: it types any text
+for whatever reaches the console, a program on the computer at the USB port among them, so
+the default firmware leaves it out. It types TEXT with the board's `layout`, which must be the layout active on the
 host: a keyboard sends the position of a key, and the host's layout makes it a character.
 `us` types every printable ASCII character; `ru` the Russian letters, the digits and the
 punctuation of the Russian layout. A text with a character the layout has no key for is
@@ -165,7 +167,7 @@ as for any lost device.
 QEMU=path/to/qemu-system-xtensa ESPFLASH=path/to/espflash ./qemu-test.sh
 ```
 
-The script builds with the `qemu` feature, writes a flash image with the partition table,
+The script builds with the `qemu` feature (which includes `console-type`), writes a flash image with the partition table,
 and `qemu-test.py` boots it in [Espressif's QEMU](https://github.com/espressif/qemu)
 (machine `esp32s3`) three times, typing on the console over UART0: it checks that `join`
 says the build has no network, sets a Wi-Fi network and debug mode, runs the self-test, sets the keyboard's layout and rate, checks that `type` refuses what the layout cannot type and that the build has no keyboard and no Bluetooth, checks that all of it is still there after a restart,

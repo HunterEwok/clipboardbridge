@@ -1684,6 +1684,7 @@ jobs:
         run: |
           cargo +esp fmt --check
           cargo +esp clippy --locked --release -- -D warnings
+          cargo +esp clippy --locked --release --features console-type -- -D warnings
           cargo +esp clippy --locked --release --no-default-features --features qemu -- -D warnings
           cargo +esp build --locked --release
       - name: Espressif's QEMU and espflash
