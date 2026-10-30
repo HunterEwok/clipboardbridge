@@ -223,6 +223,7 @@ func (s *Service) fetchPart(ctx context.Context, run *fetchRun, p clip.Part) err
 func (s *Service) fetchFrom(ctx context.Context, nd *node.Node, peer group.DeviceID, run *fetchRun, p clip.Part) error {
 	sum := [sha256.Size]byte(p.SHA256)
 	f, have, h, err := s.content.partial(sum)
+	defer s.content.fetchEnded(sum)
 	if err != nil {
 		return err
 	}
@@ -240,7 +241,7 @@ func (s *Service) fetchFrom(ctx context.Context, nd *node.Node, peer group.Devic
 		return nil
 	})
 	if err != nil {
-		f.Close()
+		s.content.leave(f, sum)
 		run.fetched.Add(-have)
 		return err
 	}

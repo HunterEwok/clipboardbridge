@@ -466,6 +466,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The content cache counts what fetches that stopped short left toward twice the device's
+  limit, and deletes it 10 minutes after no copy needs it, as it deletes the parts of
+  replaced copies.
+
 - Remote pastes and quick actions go only to a paste target or an agent of the user at the
   screen: the service reads the user at the other end of the control socket from the
   system, gives the console target only to root, the desktop and the actions only to the

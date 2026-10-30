@@ -860,7 +860,8 @@ The service keeps fetched content as files in a cache in its state directory, re
 by the service, so a Pi Zero never holds a large copy in memory; files the clipboard points
 at live in a folder per copy readable only by the user. The cache keeps the current copy,
 deletes older ones 10 minutes after they are replaced and everything on restart, within
-twice the device's limit. The apps keep it in their sandbox. Nothing is kept as history.
+twice the device's limit. What a fetch that stopped short left, for the next peer to
+continue, counts toward that and goes the same way once no copy needs it. The apps keep it in their sandbox. Nothing is kept as history.
 
 Received names are cleaned (no path separators, `..`, control characters or reserved Windows
 names, at most 255 bytes); links inside folders are neither followed nor created; nothing is
