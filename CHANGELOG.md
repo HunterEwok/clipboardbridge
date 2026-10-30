@@ -462,6 +462,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Every member reads the bodies of records and commands in one strict form of JSON: exact
+  lower-case member names, none twice, valid UTF-8, no null, integers only, the common
+  fields required, base64 in its one form (docs/protocol.md, Conventions, "Signed bodies").
+  The lite member and both phone kits check a record's fields as the Go member does, and a
+  folder in a manifest has no hash, not even an empty one, in every implementation; the
+  vectors in `testdata/interop/strict.json` hold them to one verdict.
+
 - The relay bounds the registrations being set up by the address and the network they come
   from (16 and 64 of its 256), and counts the requests inside the tunnels apart from them,
   at most 16 of each device's (docs/protocol.md, section 14).

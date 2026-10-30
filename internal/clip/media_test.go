@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -192,5 +194,35 @@ func TestMediaValidation(t *testing.T) {
 	var back Event
 	if err := json.Unmarshal(b, &back); err != nil || back.Validate() != nil || back.Media.key() != good.Media.key() {
 		t.Errorf("round trip %+v, %v", back, err)
+	}
+}
+
+// TestStrictManifests checks the manifests of testdata/interop/strict.json,
+// which every member reads alike: a folder has no hash, not even an empty
+// one.
+func TestStrictManifests(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "interop", "strict.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Manifests []struct {
+			Name  string `json:"name"`
+			Body  []byte `json:"body"`
+			Valid bool   `json:"valid"`
+		} `json:"manifests"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil || len(v.Manifests) == 0 {
+		t.Fatalf("no manifests: %v", err)
+	}
+	for _, c := range v.Manifests {
+		var m Manifest
+		err := json.Unmarshal(c.Body, &m)
+		if err == nil {
+			err = m.Validate()
+		}
+		if (err == nil) != c.Valid {
+			t.Errorf("manifest %q: valid %v, got %v", c.Name, c.Valid, err)
+		}
 	}
 }

@@ -38,6 +38,29 @@ these words depends on it.
   ignore fields it does not know, unless a section says otherwise. Byte strings in JSON are
   standard base64 with padding ([RFC 4648](https://www.rfc-editor.org/rfc/rfc4648), section
   4; Go's encoding of `[]byte`) unless a field says base64url.
+- **Signed bodies.** The body of a record (section 10) and of a command (section 15) is
+  signed as bytes and passed on unchanged, so every member MUST read it alike. A receiver
+  MUST refuse a body that breaks any of these rules, before it reads a field, and so MUST
+  a signer's own code before it signs:
+  - The body is one JSON object in UTF-8 (RFC 3629: no overlong forms, no surrogates), with
+    nothing but whitespace (space, tab, CR, LF) around it; no byte order mark.
+  - Every member name, at every depth, is 1 to 64 of `a`-`z`, `0`-`9` and `_`, written
+    without escapes, and no object has the same name twice. Names match exactly: `Type` is
+    not `type`.
+  - No value is `null`; a field that is not there is left out.
+  - Every number is an integer written as `-?(0|[1-9][0-9]*)`, without a fraction or an
+    exponent, from -2^63 to 2^63-1.
+  - A `\u` escape names a UTF-16 code unit; a surrogate MUST be one half of a pair, the high
+    half followed at once by the low half.
+  - The fields every body of its kind has are there: `v`, `type`, `group` and `time_ms` in a
+    record; `v`, `type`, `group`, `by`, `to`, `id`, `time_ms` and `expires_ms` in a command.
+  - Bytes are standard base64 with padding in its one form: decoding and encoding again
+    gives the same string (no line breaks, no missing padding, zero bits after the last
+    byte).
+
+  Fields a receiver does not know are still ignored. Go's `checkStrict`, the lite member's
+  `strict`, and `Strict` in both phone kits implement these rules; every one of them gives the
+  same verdict on the vectors in `testdata/interop/strict.json`.
 - **Time.** Times on the wire are Unix milliseconds (`_ms`), and durations integer
   milliseconds, unless a field says otherwise. Local durations (ages, windows, timeouts) are
   measured on a clock that counts the time the machine sleeps and does not jump when the
@@ -485,7 +508,7 @@ Part:
 |-------|------|---------|
 | `type` | string or absent | clipboard data: `image/png`, `image/jpeg` or `text/html`, each at most once, so three parts at most today; an unknown type is refused, and the limit for types added later is 8 |
 | `path` | string or absent | a copy of files: the file's or folder's path, names joined by `/`, each path once, compared byte for byte (case matters) |
-| `dir` | bool or absent | with `path`: `true` for a folder, which has no `size` or `sha256` |
+| `dir` | bool or absent | with `path`: `true` for a folder, which has no `size` or `sha256`: the field is absent or null, never an empty string |
 | `size` | integer or absent | the part's bytes; absent means 0 |
 | `sha256` | string | the SHA-256 of the part's bytes, 32 bytes in base64; absent only for a folder |
 
@@ -1315,8 +1338,9 @@ padding (RFC 4648, section 4), as everywhere in JSON in this document. A key has
 characters of base64.
 
 A receiver MUST drop an envelope whose `body` is longer than 8 KiB before it checks
-anything else, and a body that is not valid: `v` other than 1, an unknown `type`, or a type
-without its fields: a `device` record without a valid device ID, a valid `name`, a known
+anything else, and a body that is not valid: one that breaks the rules of signed bodies
+(Conventions), `v` other than 1, an unknown `type`, a key hash or record ID that is not 32
+bytes, or a type without its fields: a `device` record without a valid device ID, a valid `name`, a known
 `role` and a `key`, or with an unknown `os`; a `revoke` record without `keys`; a `root`
 record without `root`; a `freeze` record without `keys`; a `thaw` record without
 `records`.
@@ -2256,7 +2280,8 @@ the receiver (section 11), which only its own user turns on again (D-45).
 
 ### The command
 
-It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
+It has the form of a record, `{body, sig, chain?}`. Its body is JSON, in the strict form of
+signed bodies (Conventions):
 
 | Field | Type | Meaning |
 |-------|------|---------|
@@ -2265,7 +2290,7 @@ It has the form of a record, `{body, sig, chain?}`. Its body is JSON:
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID, for showing |
 | `to` | string | the receiver's device ID |
-| `id` | string | 128 random bits as 32 hex characters; a sender MUST write lowercase, and the Go receiver also takes uppercase; IDs compare as byte strings |
+| `id` | string | 128 random bits as 32 lowercase hex characters; IDs compare as byte strings |
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
 | `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
 | `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send`; in a `paste` command: `paste` (the clipboard and the paste keys) or `type` (key by key) |

@@ -55,8 +55,10 @@ pub struct Part {
     pub dir: bool,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub size: i64,
-    #[serde(with = "b64", default, skip_serializing_if = "Vec::is_empty")]
-    pub sha256: Vec<u8>,
+    /// Absent (or null) for a folder; "" is a hash of no bytes, which no
+    /// part has.
+    #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<Vec<u8>>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -106,12 +108,12 @@ impl Manifest {
                 return Err(Error::msg(format!("{key:?} is twice in a manifest")));
             }
             if p.dir {
-                if p.size != 0 || !p.sha256.is_empty() {
+                if p.size != 0 || p.sha256.is_some() {
                     return Err(Error::msg("a folder in a manifest has a size or a hash"));
                 }
                 continue;
             }
-            if p.sha256.len() != 32 {
+            if p.sha256.as_ref().is_none_or(|h| h.len() != 32) {
                 return Err(Error::msg("a part of a manifest has no valid SHA-256"));
             }
             if p.size < 0 || p.size > MAX_MEDIA {

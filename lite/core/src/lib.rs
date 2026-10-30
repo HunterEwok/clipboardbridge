@@ -32,6 +32,7 @@ pub mod pair;
 pub mod records;
 pub mod release;
 pub mod store;
+pub mod strict;
 pub mod sync;
 pub mod third_party {
     pub mod cpace;

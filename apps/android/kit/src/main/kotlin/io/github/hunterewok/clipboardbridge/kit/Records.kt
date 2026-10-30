@@ -43,6 +43,19 @@ object Records {
         // the freeze records it ends. Both are record IDs.
         val records: List<ByteArray>? = null,
     ) {
+        /** Whether the fields its type needs are there and valid, as Go's RecordBody.check. */
+        fun valid(): Boolean {
+            val hashes = listOfNotNull(key, admin) + keys.orEmpty() + keep.orEmpty() + records.orEmpty()
+            if (hashes.any { it.size != 32 }) return false
+            return when (type) {
+                "device" -> isDeviceID(device) && validName(name) && Records.role(role) in ROLES && (os.isNullOrEmpty() || os in OSES) && key != null
+                "revoke", "freeze" -> !keys.isNullOrEmpty()
+                "root" -> root != null && root.isNotEmpty()
+                "thaw" -> !records.isNullOrEmpty()
+                else -> false
+            }
+        }
+
         fun encode(): ByteArray = Wire.encode(
             Wire.obj(
                 "v" to Wire.num(v.toLong()),
@@ -67,12 +80,20 @@ object Records {
         )
 
         companion object {
-            /** The body in data, or null when it does not decode. */
+            /** The members every record's body has. */
+            private val FIELDS = arrayOf("v", "type", "group", "time_ms")
+
+            /**
+             * The body in data, or null when it does not decode or is not
+             * valid: in the strict form of signed bodies, checked as Go's
+             * RecordBody.check.
+             */
             fun decode(data: ByteArray): Body? {
+                if (!Strict.ok(data, *FIELDS)) return null
                 val o = Wire.parse(data) ?: return null
                 return try {
                     Body(
-                        v = o.optLong("v")?.toInt() ?: return null,
+                        v = o.optLong("v")?.takeIf { it == VERSION.toLong() }?.toInt() ?: return null,
                         type = o.optString("type") ?: return null,
                         group = o.optString("group") ?: return null,
                         timeMS = o.optLong("time_ms") ?: return null,
@@ -90,13 +111,26 @@ object Records {
                         keep = o.optBytesList("keep"),
                         root = o.optBytes("root"),
                         records = o.optBytesList("records"),
-                    )
+                    ).takeIf { it.valid() }
                 } catch (e: WireTypeException) {
                     null
                 }
             }
         }
     }
+
+    /** The roles of device records, after [role]. */
+    private val ROLES = setOf("full", "phone", "lite", "shortcut", "watch")
+
+    /** The systems device records name. */
+    private val OSES = setOf("linux", "windows", "macos", "ios", "android", "watchos", "wearos", "none")
+
+    /** Whether s is a device ID: 32 of 0-9 and a-f. */
+    fun isDeviceID(s: String?): Boolean = s != null && s.length == 32 && s.all { it in '0'..'9' || it in 'a'..'f' }
+
+    /** Whether s is a device name: 1 to 64 bytes of UTF-8 without control characters. */
+    fun validName(s: String?): Boolean =
+        s != null && s.isNotEmpty() && s.toByteArray().size <= 64 && s.codePoints().noneMatch { Character.isISOControl(it) }
 
     /** The hash that names a key in records: SHA-256 over a SubjectPublicKeyInfo. */
     fun keyHash(spki: ByteArray): ByteArray = sha256(spki)

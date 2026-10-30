@@ -42,6 +42,65 @@ public enum Records {
         public init(type: String, group: String, timeMS: Int64, by: String?) {
             (self.type, self.group, self.time_ms, self.by) = (type, group, timeMS, by)
         }
+
+        /// The members every record's body has.
+        static let fields = ["v", "type", "group", "time_ms"]
+
+        /// The body in data, or nil when it does not decode or is not
+        /// valid: in the strict form of signed bodies, checked as Go's
+        /// RecordBody.check.
+        public static func decode(_ data: Data) -> Body? {
+            guard Strict.ok(data, required: fields), let b = try? JSONDecoder().decode(Body.self, from: data),
+                  let raw = try? JSONDecoder().decode(Raw.self, from: data), raw.canonical, b.valid else { return nil }
+            return b
+        }
+
+        /// The bytes of a body as their strings, to check their form.
+        private struct Raw: Decodable {
+            var key, admin, root: String?
+            var keys, keep, records: [String]?
+
+            var canonical: Bool {
+                ([key, admin, root].compactMap { $0 } + (keys ?? []) + (keep ?? []) + (records ?? [])).allSatisfy { Strict.base64($0) != nil }
+            }
+        }
+
+        /// Whether the fields its type needs are there and valid, as Go's
+        /// RecordBody.check.
+        var valid: Bool {
+            guard v == Records.version else { return false }
+            let hashes = [key, admin].compactMap { $0 } + (keys ?? []) + (keep ?? []) + (records ?? [])
+            guard hashes.allSatisfy({ $0.count == 32 }) else { return false }
+            switch type {
+            case "device":
+                let os = os ?? ""
+                return key != nil && Records.isDeviceID(device) && Records.validName(name) && Records.roles.contains(Records.role(role))
+                    && (os.isEmpty || Records.systems.contains(os))
+            case "revoke", "freeze": return !(keys ?? []).isEmpty
+            case "root": return !(root ?? Data()).isEmpty
+            case "thaw": return !(records ?? []).isEmpty
+            default: return false
+            }
+        }
+    }
+
+    /// The roles of device records, after role(_:).
+    static let roles: Set<String> = ["full", "phone", "lite", "shortcut", "watch"]
+
+    /// The systems device records name.
+    static let systems: Set<String> = ["linux", "windows", "macos", "ios", "android", "watchos", "wearos", "none"]
+
+    /// Whether s is a device ID: 32 of 0-9 and a-f.
+    static func isDeviceID(_ s: String?) -> Bool {
+        guard let s, s.utf8.count == 32 else { return false }
+        return s.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
+    }
+
+    /// Whether s is a device name: 1 to 64 bytes of UTF-8 without control
+    /// characters.
+    static func validName(_ s: String?) -> Bool {
+        guard let s, !s.isEmpty, s.utf8.count <= 64 else { return false }
+        return !s.unicodeScalars.contains { $0.value < 0x20 || (0x7f...0x9f).contains($0.value) }
     }
 
     /// The hash that names a key in records: SHA-256 over a
@@ -256,7 +315,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         if rootList.isEmpty { rootList = [groupCA] }
         let id = Records.id(r)
         guard self.groupCA == groupCA, !records.contains(where: { Records.id($0) == id }),
-              let body = try? JSONDecoder().decode(Records.Body.self, from: r.body),
+              let body = Records.Body.decode(r.body),
               body.v == Records.version, body.group == GroupCertificates.tag(groupCA: groupCA),
               let anchor = Self.anchor(r, roots: rootList), let anchorKey = try? Records.keyHash(cert: anchor.root) else { return false }
         if body.type == "root" {
@@ -407,7 +466,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             guard let groupCA = set.groupCA else { return }
             let roots = set.knownRoots(groupCA)
             entries = set.records.compactMap { r in
-                guard let b = try? JSONDecoder().decode(Records.Body.self, from: r.body),
+                guard let b = Records.Body.decode(r.body),
                       let a = RecordSet.anchor(r, roots: roots), let anchor = try? Records.keyHash(cert: a.root) else { return nil }
                 return Entry(record: r, body: b, id: Records.id(r), signer: a.signer, anchor: anchor)
             }
@@ -811,7 +870,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// whether or not it counts: an ID a new device may not take (section
     /// 6).
     public func knows(_ device: String) -> Bool {
-        records.contains { (try? JSONDecoder().decode(Records.Body.self, from: $0.body)).map { $0.type == "device" && $0.device == device } ?? false }
+        records.contains { Records.Body.decode($0.body).map { $0.type == "device" && $0.device == device } ?? false }
     }
 
     /// The phone that holds the root: the one whose own record the current

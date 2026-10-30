@@ -684,7 +684,7 @@ mod tests {
         a.connected(B);
         let (_, out) = a.send("mine", Kind::Text, Via::Copy).unwrap();
         assert!(out.write);
-        let png = Part { kind: "image/png".into(), size: 3, sha256: alloc::vec![7; 32], ..Default::default() };
+        let png = Part { kind: "image/png".into(), size: 3, sha256: Some(alloc::vec![7; 32]), ..Default::default() };
         let mut ev = Event {
             id: random_id(),
             origin: B.to_string(),
