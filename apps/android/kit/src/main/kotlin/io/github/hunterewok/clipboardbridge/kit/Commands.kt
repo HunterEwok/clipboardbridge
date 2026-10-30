@@ -297,10 +297,35 @@ object Commands {
      * command's mode is not checked against [Member.MODES] here.
      */
     fun verify(c: Member.Record, records: RecordSet, self: String, nowMS: Long): Body {
-        if (c.body.size > MAX_PASTE_BODY) throw Refused("the command is too large")
-        val o = Wire.parse(c.body) ?: throw Refused("the command is not valid")
+        val b = parse(c.body)
+        val ca = records.groupCA ?: throw Refused("this device has no records of its group yet")
+        if (b.group != GroupCertificates.tag(ca)) throw Refused("the command is for another group")
+        if (b.to != self) throw Refused("the command is for another device")
+        if (!records.signedByAdmin(c)) throw Refused("the command's signer is not an admin of the group")
+        if (b.type !in WATCH_TYPES && records.signedByWatch(c)) throw Refused("a watch does not sign ${b.type} commands")
+        if (b.expiresMS <= nowMS) throw Refused("the command expired; check the clocks of both devices")
+        if (b.timeMS > nowMS + AHEAD_MS) throw Refused("the command was signed in the future; check the clocks of both devices")
+        return b
+    }
+
+    /** Reads and checks a command's body, in the strict form of signed bodies, as Go's parseCommandBody. */
+    internal fun parse(body: ByteArray): Body =
+        try {
+            parseBody(body)
+        } catch (e: WireTypeException) {
+            throw Refused("the command is not valid: ${e.message}")
+        }
+
+    private fun parseBody(body: ByteArray): Body {
+        if (body.size > MAX_PASTE_BODY) throw Refused("the command is too large")
+        try {
+            Strict.check(body, "v", "type", "group", "by", "to", "id", "time_ms", "expires_ms")
+        } catch (e: Strict.Invalid) {
+            throw Refused("the command is not valid: ${e.message}")
+        }
+        val o = Wire.parse(body) ?: throw Refused("the command is not valid")
         val type = o.optString("type")
-        if (type != "paste" && c.body.size > MAX_BODY) throw Refused("the command is too large")
+        if (type != "paste" && body.size > MAX_BODY) throw Refused("the command is too large")
         val b = Body(
             type = type ?: "",
             group = o.optString("group") ?: "",
@@ -317,8 +342,9 @@ object Commands {
         )
         if (o.optLong("v") != Records.VERSION.toLong()) throw Refused("unknown command version")
         if (b.id.length != 32 || b.id.any { it !in "0123456789abcdef" }) throw Refused("the command has no valid ID")
-        if (type != "paste" && (b.enter || b.kind != null || b.text != null)) throw Refused("a $type command carries a paste")
-        if (type != "action" && b.action != null) throw Refused("a $type command names an action")
+        // As in Go, an empty string is no paste and no action.
+        if (type != "paste" && (b.enter || !b.kind.isNullOrEmpty() || !b.text.isNullOrEmpty())) throw Refused("a $type command carries a paste")
+        if (type != "action" && !b.action.isNullOrEmpty()) throw Refused("a $type command names an action")
         when (type) {
             "mode" -> if (b.mode.isNullOrEmpty() || o.opt("hub") != null) throw Refused("a mode command names no mode")
             "hub" -> if (o.opt("hub") == null || !b.mode.isNullOrEmpty()) throw Refused("a hub command has no order")
@@ -343,13 +369,6 @@ object Commands {
         }
         if (b.to.length != 32 || b.to.any { it !in "0123456789abcdef" }) throw Refused("the command names no valid device")
         if (b.expiresMS <= b.timeMS || b.expiresMS - b.timeMS > LIFETIME_MS) throw Refused("the command's lifetime is not valid")
-        val ca = records.groupCA ?: throw Refused("this device has no records of its group yet")
-        if (b.group != GroupCertificates.tag(ca)) throw Refused("the command is for another group")
-        if (b.to != self) throw Refused("the command is for another device")
-        if (!records.signedByAdmin(c)) throw Refused("the command's signer is not an admin of the group")
-        if (type !in WATCH_TYPES && records.signedByWatch(c)) throw Refused("a watch does not sign $type commands")
-        if (b.expiresMS <= nowMS) throw Refused("the command expired; check the clocks of both devices")
-        if (b.timeMS > nowMS + AHEAD_MS) throw Refused("the command was signed in the future; check the clocks of both devices")
         return b
     }
 

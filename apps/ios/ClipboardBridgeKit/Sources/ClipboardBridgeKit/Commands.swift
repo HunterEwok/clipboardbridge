@@ -192,14 +192,51 @@ public enum Commands {
     /// command's mode is not checked against Member.modes here.
     public static func verify(_ c: Member.Record, records: RecordSet, me: String, nowMS: Int64) throws -> Body {
         func refuse(_ reason: String) -> Refused { Refused(reason: reason) }
-        guard c.body.count <= maxPasteBody else { throw refuse("the command is too large") }
-        guard let b = try? JSONDecoder().decode(Body.self, from: c.body) else { throw refuse("the command is not valid") }
-        guard b.type == "paste" || c.body.count <= maxBody else { throw refuse("the command is too large") }
+        let b = try parse(c.body)
+        guard let ca = records.groupCA else { throw refuse("this device has no records of its group yet") }
+        guard b.group == GroupCertificates.tag(groupCA: ca) else { throw refuse("the command is for another group") }
+        guard b.to == me else { throw refuse("the command is for another device") }
+        guard records.signedByAdmin(c) else { throw refuse("the command's signer is not an admin of the group") }
+        guard watchTypes.contains(b.type) || !records.signedByWatch(c) else { throw refuse("a watch does not sign \(b.type) commands") }
+        guard b.expires_ms > nowMS else { throw refuse("the command expired; check the clocks of both devices") }
+        guard b.time_ms <= nowMS + aheadMS else { throw refuse("the command was signed in the future; check the clocks of both devices") }
+        return b
+    }
+
+    /// The members every command's body has.
+    static let fields = ["v", "type", "group", "by", "to", "id", "time_ms", "expires_ms"]
+
+    /// The keys of a hub order's clients as their strings, to check their form.
+    private struct RawHub: Decodable {
+        struct Order: Decodable {
+            struct Client: Decodable { var key, psk: String? }
+            var clients: [Client]?
+        }
+
+        var hub: Order?
+    }
+
+    /// Reads and checks a command's body, in the strict form of signed
+    /// bodies, as Go's parseCommandBody.
+    static func parse(_ data: Data) throws -> Body {
+        func refuse(_ reason: String) -> Refused { Refused(reason: reason) }
+        guard data.count <= maxPasteBody else { throw refuse("the command is too large") }
+        do {
+            try Strict.check(data, required: fields)
+        } catch let e as Strict.Invalid {
+            throw refuse("the command is not valid: \(e.reason)")
+        }
+        guard let b = try? JSONDecoder().decode(Body.self, from: data), let raw = try? JSONDecoder().decode(RawHub.self, from: data),
+              (raw.hub?.clients ?? []).allSatisfy({ Strict.base64($0.key ?? "") != nil && Strict.base64($0.psk ?? "") != nil }) else {
+            throw refuse("the command is not valid")
+        }
+        guard b.type == "paste" || data.count <= maxBody else { throw refuse("the command is too large") }
         func hex32(_ s: String) -> Bool { s.utf8.count == 32 && s.allSatisfy { "0123456789abcdef".contains($0) } }
         guard b.v == Records.version else { throw refuse("unknown command version") }
         guard hex32(b.id) else { throw refuse("the command has no valid ID") }
-        guard b.type == "paste" || (b.enter == nil && b.kind == nil && b.text == nil) else { throw refuse("a \(b.type) command carries a paste") }
-        guard b.type == "action" || b.action == nil else { throw refuse("a \(b.type) command names an action") }
+        // As in Go, an empty string is no paste and no action.
+        guard b.type == "paste" || (b.enter != true && (b.kind ?? "").isEmpty && (b.text ?? "").isEmpty) else { throw refuse("a \(b.type) command carries a paste") }
+        guard b.type == "action" || (b.action ?? "").isEmpty else { throw refuse("a \(b.type) command names an action") }
         switch b.type {
         case "mode": guard let m = b.mode, !m.isEmpty, b.hub == nil else { throw refuse("a mode command names no mode") }
         case "hub": guard b.hub != nil, (b.mode ?? "").isEmpty else { throw refuse("a hub command has no order") }
@@ -219,13 +256,6 @@ public enum Commands {
         }
         guard hex32(b.to) else { throw refuse("the command names no valid device") }
         guard b.expires_ms > b.time_ms, b.expires_ms - b.time_ms <= lifetimeMS else { throw refuse("the command's lifetime is not valid") }
-        guard let ca = records.groupCA else { throw refuse("this device has no records of its group yet") }
-        guard b.group == GroupCertificates.tag(groupCA: ca) else { throw refuse("the command is for another group") }
-        guard b.to == me else { throw refuse("the command is for another device") }
-        guard records.signedByAdmin(c) else { throw refuse("the command's signer is not an admin of the group") }
-        guard watchTypes.contains(b.type) || !records.signedByWatch(c) else { throw refuse("a watch does not sign \(b.type) commands") }
-        guard b.expires_ms > nowMS else { throw refuse("the command expired; check the clocks of both devices") }
-        guard b.time_ms <= nowMS + aheadMS else { throw refuse("the command was signed in the future; check the clocks of both devices") }
         return b
     }
 

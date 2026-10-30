@@ -98,7 +98,8 @@ public enum Media {
             path = try c.decodeIfPresent(String.self, forKey: .path).flatMap { $0.isEmpty ? nil : $0 }
             dir = try c.decodeIfPresent(Bool.self, forKey: .dir) ?? false
             size = try c.decodeIfPresent(Int64.self, forKey: .size) ?? 0
-            sha256 = try c.decodeIfPresent(Data.self, forKey: .sha256).flatMap { $0.isEmpty ? nil : $0 }
+            // An empty hash stays: a folder has none, as in Go, not even an empty one.
+            sha256 = try c.decodeIfPresent(Data.self, forKey: .sha256)
         }
 
         public func encode(to encoder: Encoder) throws {

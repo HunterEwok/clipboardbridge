@@ -561,11 +561,10 @@ func network(a netip.Addr) netip.Prefix {
 // scanLocked charges a handshake that n groups are checked against to the
 // budget of all sources and to that of its network; false drops it. One
 // handshake costs a network at most its whole budget, so it still passes
-// now and then on a forwarder with more groups than the budget.
+// now and then on a forwarder with more groups than the budget. What comes
+// over VLESS, from the loopback, counts as one network, so its clients
+// cannot spend the budget of the others.
 func (f *Forwarder) scanLocked(from netip.AddrPort, n int, now time.Time) bool {
-	if f.vless != nil && from.Addr().IsLoopback() {
-		return f.scans.take(float64(n), now)
-	}
 	p := network(from.Addr())
 	b := f.netScans[p]
 	if b == nil {

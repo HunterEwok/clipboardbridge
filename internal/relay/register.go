@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -204,23 +205,24 @@ func (r *Relay) acceptRegistrations() {
 			r.logf("cbb relay: accepting registrations: %v", err)
 			return
 		}
-		if !r.takeSlot() {
+		from := addrOf(conn)
+		if !r.takeSlot(from) {
 			conn.Close()
 			continue
 		}
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
-			r.serveRegistration(conn)
+			r.serveRegistration(conn, from)
 		}()
 	}
 }
 
 // serveRegistration registers one device and holds its registration while
 // the connection lasts.
-func (r *Relay) serveRegistration(raw net.Conn) {
+func (r *Relay) serveRegistration(raw net.Conn, from netip.Addr) {
 	m, err := r.register(raw)
-	r.freeSlot()
+	r.freeSlot(from)
 	if err != nil {
 		raw.Close()
 		return

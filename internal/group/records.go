@@ -190,8 +190,12 @@ func (h KeyHash) MarshalJSON() ([]byte, error) {
 }
 
 func (h *KeyHash) UnmarshalJSON(b []byte) error {
-	var raw []byte
-	if err := json.Unmarshal(b, &raw); err != nil {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	raw, err := decodeStrictBase64(s)
+	if err != nil {
 		return err
 	}
 	if len(raw) != len(h) {
@@ -280,6 +284,32 @@ func SignRecord(body RecordBody, key crypto.Signer, chain ...*x509.Certificate) 
 		r.Chain = append(r.Chain, c.Raw)
 	}
 	return r, nil
+}
+
+// parseRecordBody reads and checks a record's body, in the strict form of
+// signed bodies.
+func parseRecordBody(data []byte) (RecordBody, error) {
+	var body RecordBody
+	if err := checkStrict(data, "v", "type", "group", "time_ms"); err != nil {
+		return body, err
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return body, fmt.Errorf("group: a record: %w", err)
+	}
+	// The root's certificate is the only plain bytes of a body; the key
+	// hashes check their own form.
+	var raw struct {
+		Root *string `json:"root"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return body, fmt.Errorf("group: a record: %w", err)
+	}
+	if raw.Root != nil {
+		if _, err := decodeStrictBase64(*raw.Root); err != nil {
+			return body, fmt.Errorf("group: a root record: %w", err)
+		}
+	}
+	return body, body.check()
 }
 
 func (b *RecordBody) check() error {
@@ -516,18 +546,14 @@ func (s *Records) verify(r Record) (*signedRecord, error) {
 	if len(r.Body) > maxRecordBody {
 		return nil, errors.New("group: the record is too large")
 	}
-	var body RecordBody
-	if err := json.Unmarshal(r.Body, &body); err != nil {
-		return nil, fmt.Errorf("group: a record: %w", err)
-	}
-	if err := body.check(); err != nil {
+	body, err := parseRecordBody(r.Body)
+	if err != nil {
 		return nil, err
 	}
 	if body.Group != s.tag {
 		return nil, errors.New("group: the record is for another group")
 	}
 	sr := &signedRecord{Record: r, id: r.ID(), body: body}
-	var err error
 	if sr.signer, sr.anchor, err = s.signerOf(r); err != nil {
 		return nil, err
 	}

@@ -28,7 +28,19 @@ const (
 	maxMembers = 64  // devices of one group on the relay at once
 	maxCalls   = 16  // calls waiting for one device's answer
 	maxPairs   = 256 // joined connections of one group
-	maxSetups  = 256 // registrations and connections being set up at once
+)
+
+// Limits of the setups, which strangers can start: a registration is set
+// up before the relay knows its device, so the registrations being set up
+// are counted by the address and the network they come from, and apart
+// from the requests the registered devices send in their tunnels, which
+// strangers cannot reach and are counted by device.
+const (
+	maxSetups        = 256 // registrations being set up at once
+	maxSetupsAddress = 16  // of them from one IP address
+	maxSetupsNetwork = 64  // of them from one IPv4 /24 or IPv6 /64
+	maxRequests      = 256 // requests in the tunnels being read at once
+	maxRequestsOne   = 16  // of them from one device
 )
 
 // Timeouts: setupTimeout bounds a registration and a request line,
@@ -77,7 +89,12 @@ type Relay struct {
 	fromNet map[netip.Prefix]int          // and by network
 	byAddr  map[netip.Addr]*member
 	calls   map[string]*call // by ticket
-	setting int
+	// setting counts the registrations being set up, setupIP and setupNet
+	// them by address and network; requesting the requests being read.
+	setting    int
+	setupIP    map[netip.Addr]int
+	setupNet   map[netip.Prefix]int
+	requesting int
 	// records are each group's authority records, from all its members'
 	// registrations, in memory while the relay runs.
 	records map[string][]group.Record
@@ -99,6 +116,7 @@ type member struct {
 	watch   net.Conn          // the one that takes the notes
 	notes   chan note
 	calls   int // calls waiting for its answer
+	reading int // its requests being read
 	pairs   *int
 	bytes   *rate      // the group's copying, on an open relay
 	from    netip.Addr // the address it registered from
@@ -170,7 +188,8 @@ func Listen(cfg Config) (*Relay, error) {
 	}
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
-		records: map[string][]group.Record{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{}}
+		records: map[string][]group.Record{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
+		setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}}
 	if cfg.Open {
 		r.limits = cfg.Limits.withDefaults()
 	}
@@ -235,20 +254,44 @@ func (r *Relay) Stats() (groups, members int) {
 	return len(r.groups), len(r.byAddr)
 }
 
-// takeSlot counts a connection being set up; false when there are too many.
-func (r *Relay) takeSlot() bool {
+// takeSlot counts a registration being set up from the address from;
+// false when there are too many, from there or in all.
+func (r *Relay) takeSlot(from netip.Addr) bool {
+	nw := networkOf(from)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.setting >= maxSetups {
+	if r.setting >= maxSetups || r.setupIP[from] >= maxSetupsAddress || r.setupNet[nw] >= maxSetupsNetwork {
 		return false
 	}
 	r.setting++
+	r.setupIP[from]++
+	r.setupNet[nw]++
 	return true
 }
 
-func (r *Relay) freeSlot() {
+func (r *Relay) freeSlot(from netip.Addr) {
 	r.mu.Lock()
 	r.setting--
+	countDown(r.setupIP, from)
+	countDown(r.setupNet, networkOf(from))
+	r.mu.Unlock()
+}
+
+// takeRequestLocked counts a request of m being read; false when there
+// are too many, of m or in all.
+func (r *Relay) takeRequestLocked(m *member) bool {
+	if m.dropped || r.requesting >= maxRequests || m.reading >= maxRequestsOne {
+		return false
+	}
+	r.requesting++
+	m.reading++
+	return true
+}
+
+func (r *Relay) freeRequest(m *member) {
+	r.mu.Lock()
+	r.requesting--
+	m.reading--
 	r.mu.Unlock()
 }
 
@@ -419,49 +462,46 @@ func (r *Relay) acceptStreams() {
 			}
 			continue
 		}
-		if !r.takeSlot() {
+		// The tunnel address names the device; a connection is served
+		// only while its device is registered and within its share.
+		r.mu.Lock()
+		m := r.byAddr[addrOf(c)]
+		ok := m != nil && r.takeRequestLocked(m)
+		if ok {
+			m.streams[c] = true
+		}
+		r.mu.Unlock()
+		if !ok {
 			c.Close()
 			continue
 		}
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
-			r.serveStream(c)
+			r.serveStream(m, c)
 		}()
 	}
 }
 
-// serveStream reads a connection's request and does what it asks.
-func (r *Relay) serveStream(c net.Conn) {
-	from, _ := netip.ParseAddrPort(c.RemoteAddr().String())
-	r.mu.Lock()
-	m := r.byAddr[from.Addr()]
-	if m != nil {
-		m.streams[c] = true
-	}
-	r.mu.Unlock()
-	if m == nil {
-		r.freeSlot()
-		c.Close()
-		return
-	}
+// serveStream reads the request of m's connection c and does what it asks.
+func (r *Relay) serveStream(m *member, c net.Conn) {
 	var req request
 	if err := readLine(c, &req, setupTimeout); err != nil {
-		r.freeSlot()
+		r.freeRequest(m)
 		r.closeStream(m, c)
 		return
 	}
 	switch {
 	case req.Watch:
-		r.freeSlot()
+		r.freeRequest(m)
 		r.serveWatch(m, c)
 	case req.Dial != "":
 		r.serveDial(m, c, req.Dial)
 	case req.Answer != "":
-		r.freeSlot()
+		r.freeRequest(m)
 		r.serveAnswer(m, c, req.Answer)
 	default:
-		r.freeSlot()
+		r.freeRequest(m)
 		writeLine(c, note{Error: "an unknown request"}, noteTimeout)
 		r.closeStream(m, c)
 	}
@@ -563,7 +603,7 @@ func (r *Relay) serveDial(m *member, c net.Conn, to string) {
 		}
 	}
 	r.mu.Unlock()
-	r.freeSlot()
+	r.freeRequest(m)
 	if msg != "" {
 		refuse(msg)
 		return

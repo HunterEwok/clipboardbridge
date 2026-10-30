@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -189,10 +190,7 @@ func (b *CommandBody) check() error {
 	switch {
 	case b.V != recordVersion:
 		return fmt.Errorf("group: unknown command version %d", b.V)
-	case len(b.ID) != 32:
-		return errors.New("group: a command has no valid ID")
-	}
-	if _, err := hex.DecodeString(b.ID); err != nil {
+	case len(b.ID) != 32 || strings.Trim(b.ID, "0123456789abcdef") != "":
 		return errors.New("group: a command has no valid ID")
 	}
 	if b.Type != CommandPaste && (b.Enter || b.Kind != "" || b.Text != "") {
@@ -248,16 +246,8 @@ func (b *CommandBody) check() error {
 // caller keeps the replay cache.
 func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (CommandBody, error) {
 	var body CommandBody
-	if len(c.Body) > maxPasteBody {
-		return body, errors.New("group: the command is too large")
-	}
-	if err := json.Unmarshal(c.Body, &body); err != nil {
-		return body, fmt.Errorf("group: a command: %w", err)
-	}
-	if len(c.Body) > body.maxBody() {
-		return body, errors.New("group: the command is too large")
-	}
-	if err := body.check(); err != nil {
+	body, err := parseCommandBody(c.Body)
+	if err != nil {
 		return body, err
 	}
 	if body.Group != s.tag {
@@ -286,6 +276,28 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 	return body, nil
 }
 
+// parseCommandBody reads and checks a command's body, in the strict form
+// of signed bodies.
+func parseCommandBody(data []byte) (CommandBody, error) {
+	var body CommandBody
+	if len(data) > maxPasteBody {
+		return body, errors.New("group: the command is too large")
+	}
+	if err := checkStrict(data, "v", "type", "group", "by", "to", "id", "time_ms", "expires_ms"); err != nil {
+		return body, err
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return body, fmt.Errorf("group: a command: %w", err)
+	}
+	if err := body.checkBase64(data); err != nil {
+		return body, err
+	}
+	if len(data) > body.maxBody() {
+		return body, errors.New("group: the command is too large")
+	}
+	return body, body.check()
+}
+
 // CommandSigner returns the device whose admin key signed the command c,
 // which VerifyCommand took: the device that holds the group's root when
 // the root's own key signed it (root true), or the device whose record
@@ -309,6 +321,34 @@ func (s *Records) CommandSigner(c Record) (dev Device, root, ok bool) {
 		}
 	}
 	return Device{}, signer == anchor, false
+}
+
+// checkBase64 checks that the bytes of the hub order's clients in data,
+// the body b came from, are in the standard form of base64.
+func (b *CommandBody) checkBase64(data []byte) error {
+	if b.Hub == nil {
+		return nil
+	}
+	var raw struct {
+		Hub struct {
+			Clients []struct {
+				Key string `json:"key"`
+				PSK string `json:"psk"`
+			} `json:"clients"`
+		} `json:"hub"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("group: a command: %w", err)
+	}
+	for _, c := range raw.Hub.Clients {
+		if _, err := decodeStrictBase64(c.Key); err != nil {
+			return fmt.Errorf("group: a hub command: %w", err)
+		}
+		if _, err := decodeStrictBase64(c.PSK); err != nil {
+			return fmt.Errorf("group: a hub command: %w", err)
+		}
+	}
+	return nil
 }
 
 func (b *CommandBody) maxBody() int {
