@@ -169,7 +169,9 @@ Rules for workflows:
   once the iPhone app's CodeQL analysis passes on the tag (about 45 minutes),
   makes a draft release, with notes generated from the merged pull requests. The maintainer
   signs and publishes it on their Mac with `release-sign publish` ("Signed releases" below).
-  A tag `vX.Y.Z-rc.N` makes a pre-release, which `releases/latest` and so `get.sh` skip.
+  A tag `vX.Y.Z-rc.N` makes a pre-release, which `releases/latest` and so `get.sh` skip;
+  it needs no pull request first: its notes take CHANGELOG's *Unreleased*, and the Android apps
+  take the tag's version.
 - The archives are `clipboardbridge-<os>-<arch>.tar.gz` without the version, so that
   `releases/latest/download/` has fixed names for `get.sh`; each holds `clipboardbridge/` with the
   binary, `LICENSE`, `THIRD_PARTY_NOTICES` (the licenses of the Go modules, the copied code

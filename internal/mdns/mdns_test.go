@@ -817,6 +817,48 @@ func TestRefindAfterOutage(t *testing.T) {
 	}
 }
 
+func TestAnnounceOnPeerFound(t *testing.T) {
+	// A member found that was not among the peers may have lost this one
+	// in an outage and browse again only minutes later, after the queries
+	// it sent while off the network: this member announces itself once.
+	r, err := New(Config{ID: idA, Port: 4001, TXT: []string{"v=1"}, net: newHost()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &state{r: r}
+	t0 := time.Unix(1000, 0)
+	instance := name(idB + "." + ServiceName)
+	host := name("cb-" + idB + ".local.")
+	b := &dnsmessage.Message{Header: dnsmessage.Header{Response: true}, Answers: []dnsmessage.Resource{
+		{Header: dnsmessage.ResourceHeader{Name: name(ServiceName), Class: classIN, TTL: 4500}, Body: &dnsmessage.PTRResource{PTR: instance}},
+		{Header: dnsmessage.ResourceHeader{Name: instance, Class: classIN, TTL: 120}, Body: &dnsmessage.SRVResource{Port: 4002, Target: host}},
+		{Header: dnsmessage.ResourceHeader{Name: host, Class: classIN, TTL: 120}, Body: &dnsmessage.AResource{A: [4]byte{192, 168, 1, 11}}},
+	}}
+	s.cache.add(b, "eth0", t0)
+	s.updatePeers(t0)
+	if len(s.peers) != 1 || len(s.announce) != 1 || s.announce[0].left != 1 {
+		t.Fatalf("B found: peers %v, announcements %+v; want B and one announcement", s.peers, s.announce)
+	}
+	// Nothing more while B stays, and no second one while one is due.
+	s.cache.add(b, "eth0", t0.Add(time.Second))
+	s.updatePeers(t0.Add(time.Second))
+	if len(s.announce) != 1 {
+		t.Errorf("%d announcements with B known", len(s.announce))
+	}
+	// B lost and found again: one more.
+	s.announce = nil
+	s.cache.expire(t0.Add(5 * time.Minute))
+	s.updatePeers(t0.Add(5 * time.Minute))
+	if len(s.peers) != 0 || len(s.announce) != 0 {
+		t.Fatalf("B gone: peers %v, announcements %+v", s.peers, s.announce)
+	}
+	s.cache.add(b, "eth0", t0.Add(6*time.Minute))
+	s.updatePeers(t0.Add(6 * time.Minute))
+	if len(s.peers) != 1 || len(s.announce) != 1 {
+		t.Errorf("B found again: peers %v, announcements %+v; want B and one announcement", s.peers, s.announce)
+	}
+}
+
 func TestRefreshSchedule(t *testing.T) {
 	var c cache
 	t0 := time.Unix(1000, 0)
