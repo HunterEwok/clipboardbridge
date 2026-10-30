@@ -673,7 +673,7 @@ nav a[aria-current] { color: var(--accent); }
 .diagram .card.key, .diagram .card.srv { stroke: var(--chalk-yellow); }
 .diagram text { font-family: var(--f-hand); font-weight: 600; fill: var(--chalk-words); }
 .diagram .zone-t { fill: var(--chalk-yellow); font-size: 17px; letter-spacing: .02em; }
-.diagram .t { font-size: 19px; }
+.diagram .t { font-size: 17px; }
 .diagram .s { font-size: 15px; fill: var(--chalk-faint); }
 .diagram .lbl { font-size: 14px; }
 .diagram .note { font-size: 16px; font-style: normal; fill: var(--chalk-faint); }
