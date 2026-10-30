@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sync/atomic"
 	"syscall"
@@ -29,6 +30,11 @@ var pageFiles = func() []string {
 	}
 	return files
 }()
+
+// docPageName is a page of the documentation the language menu may send a
+// visitor back to; its characters cannot make an address other than the
+// site's own.
+var docPageName = regexp.MustCompile(`^docs/(guide/[a-z0-9-]+\.html)?$`)
 
 // chooser answers "/" with a redirect to a language of the site. It logs
 // no visitor: their address is used for the country and then forgotten.
@@ -76,8 +82,8 @@ func (c *chooser) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The redirect is built from the site's own names only, never from
 	// what the request says.
 	page := ""
-	if i := slices.Index(pageFiles, q.Get("p")); i >= 0 {
-		page = pageFiles[i]
+	if p := q.Get("p"); slices.Contains(pageFiles, p) || docPageName.MatchString(p) {
+		page = p
 	}
 	langs := c.languages()
 	if i := slices.Index(langs, q.Get("lang")); i >= 0 {

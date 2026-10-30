@@ -3,7 +3,7 @@
 
 The project's website at <https://cbb.tools>: three pages (the start page, download, and
 security and privacy) in English and every language of `l10n/` (Chinese, Hindi, Spanish, Russian, Arabic, Swahili, Hebrew), and the
-documentation at `/docs/` in English, built by
+documentation at `/docs/` (the index and the users' guides in every language, the rest in English), built by
 [`tools/site`](../tools/site/main.go) into plain HTML and CSS. It loads nothing from other
 sites. Its scripts are all served by the same server: its own `static/theme.js`, a few lines
 that put the reader's light or dark theme on the page before it is drawn, and
@@ -60,6 +60,20 @@ The headings keep GitHub's anchors, so the links `tools/repocheck` checks work o
 anchors may begin with a digit, which `.htmlvalidate.json` allows. Each page links to its
 source on GitHub. The documentation's pages are in the sitemap, and Lighthouse measures its
 index and its longest page, the protocol.
+
+### Translations
+
+The index and the pages of `docs/guide` open inside the site in every language. A page is
+`site/docs/<language>/guide/<page>.md`: the English page with its text translated and
+everything else unchanged (the same headings in the same order, the same links, pictures and
+code blocks; link texts and picture descriptions may be translated). The headings keep the
+English anchors in every language. `go run ./tools/site check` reports a translation that
+differs in shape, and `-strict` also one that follows an older page; after bringing a
+translation up to date, `go run ./tools/site docs-sync` renews its `source` line. A page not
+translated yet shows in English with a note. The index is read line by line through
+`l10n/<language>.json`. Every other page of `docs/` is English only: the index links to it on
+GitHub. The pictures are shared; the text inside them is translated in
+`tools/diagrams/l10n/<language>.json` and written to `docs/images/<language>/`.
 
 ## Previewing
 

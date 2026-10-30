@@ -165,6 +165,12 @@ var desktopTranslation = regexp.MustCompile(`^apps/desktop/frontend/l10n/[a-z]{2
 // the website.
 var siteTranslation = regexp.MustCompile(`^site/l10n/[a-z]{2,3}\.json$`)
 
+// docTranslation matches a translated page of the guide on the website
+// (site/docs/<language>/guide/), a translated picture of the documentation
+// (docs/images/<language>/) and a language's texts for the pictures
+// (tools/diagrams/l10n).
+var docTranslation = regexp.MustCompile(`^(site/docs/[a-z]{2,3}/.+\.md|docs/images/[a-z]{2,3}/[^/]+\.svg|tools/diagrams/l10n/[a-z]{2,3}\.json)$`)
+
 // storeTranslation matches the store texts of a locale in an Android
 // project (F-Droid's fastlane layout); the first group is its language.
 var storeTranslation = regexp.MustCompile(`(^|/)fastlane/metadata/android/([a-z]{2,3})(-[A-Za-z0-9]+)?/`)
@@ -175,7 +181,7 @@ func isTranslation(name string) bool {
 	if m := storeTranslation.FindStringSubmatch(name); m != nil && m[2] != "en" {
 		return true
 	}
-	return strings.HasSuffix(name, ".xcstrings") || androidTranslation.MatchString(name) || desktopTranslation.MatchString(name) || siteTranslation.MatchString(name)
+	return strings.HasSuffix(name, ".xcstrings") || androidTranslation.MatchString(name) || desktopTranslation.MatchString(name) || siteTranslation.MatchString(name) || docTranslation.MatchString(name)
 }
 
 // check returns the rule violations in one file; listed holds the paths of

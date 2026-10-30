@@ -13,8 +13,8 @@ import (
 	"fmt"
 	stdhtml "html"
 	"html/template"
+	"io"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -111,9 +111,10 @@ func loadLanguages(root string) ([]Language, error) {
 type page struct {
 	Lang  Language
 	Langs []Language
-	Page  string // the page's file name, "download.html"
-	Path  string // its path in links: "download.html", "" for the home page
-	Error bool   // an error page: not to be indexed
+	Page  string   // the page's file name, "download.html"
+	Path  string   // its path in links: "download.html", "" for the home page
+	Error bool     // an error page, or a page standing in for a missing translation: not to be indexed
+	Doc   *docView // the documentation's pages
 	Release
 }
 
@@ -177,6 +178,7 @@ type translator struct {
 	lang    Language
 	used    map[string]bool
 	missing map[string]bool
+	warn    []string // what is out of date or not translated yet, not an error
 }
 
 // placeholder is where a text takes an argument: a link, a command.
@@ -186,15 +188,7 @@ var placeholder = regexp.MustCompile(`%s`)
 // text is escaped; an argument is escaped too unless it is already HTML,
 // such as what link and code return.
 func (tr *translator) t(text string, args ...any) (template.HTML, error) {
-	tr.used[text] = true
-	out := text
-	if tr.lang.texts != nil {
-		if s, ok := tr.lang.texts[text]; ok && s != "" {
-			out = s
-		} else {
-			tr.missing[text] = true
-		}
-	}
+	out := tr.raw(text)
 	n := len(placeholder.FindAllStringIndex(out, -1))
 	if n != len(args) {
 		return "", fmt.Errorf("%s: %q has %d placeholders for %d arguments", tr.lang.Code, out, n, len(args))
@@ -205,6 +199,20 @@ func (tr *translator) t(text string, args ...any) (template.HTML, error) {
 		return html(args[i-1])
 	})
 	return template.HTML(escaped), nil
+}
+
+// raw returns the translation of text as it is, and records it as used,
+// or as missing when the language lacks it and the English stands in.
+func (tr *translator) raw(text string) string {
+	tr.used[text] = true
+	if tr.lang.texts == nil {
+		return text
+	}
+	if s, ok := tr.lang.texts[text]; ok && s != "" {
+		return s
+	}
+	tr.missing[text] = true
+	return text
 }
 
 // html returns v as HTML: as it is when it is HTML already, escaped
@@ -223,7 +231,8 @@ var funcs = template.FuncMap{
 	"code": func(s string) template.HTML {
 		return template.HTML("<code>" + template.HTMLEscapeString(s) + "</code>")
 	},
-	"link": link,
+	"link":      link,
+	"hasPrefix": strings.HasPrefix,
 	"dict": func(kv ...any) (map[string]any, error) {
 		if len(kv)%2 != 0 {
 			return nil, errors.New("dict: odd number of arguments")
@@ -329,6 +338,13 @@ func render(root string) (map[string][]byte, []*translator, error) {
 		}
 		return "", fmt.Errorf("asset %q: not hashed", name)
 	}}
+	ds, err := loadDocs(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	// docLangs are the languages each page of the documentation is in, in
+	// the order of the pages.
+	docLangs := map[string][]Language{}
 	var trs []*translator
 	var soon []soonLine
 	for _, lang := range langs {
@@ -351,12 +367,15 @@ func render(root string) (map[string][]byte, []*translator, error) {
 			return nil, nil, err
 		}
 		soon = append(soon, line)
-		for _, name := range append(slices.Clone(pages), errorPages...) {
+		parse := func(name string) (*template.Template, error) {
 			// chalk.html holds the chalk drawings, written by site/chalk.js.
-			tmpl, err := template.New("layout.html").Funcs(funcs).Funcs(perLang).Funcs(asset).ParseFiles(
+			return template.New("layout.html").Funcs(funcs).Funcs(perLang).Funcs(asset).ParseFiles(
 				filepath.Join(root, "templates", "layout.html"),
 				filepath.Join(root, "templates", "chalk.html"),
 				filepath.Join(root, "templates", name+".html"))
+		}
+		for _, name := range append(slices.Clone(pages), errorPages...) {
+			tmpl, err := parse(name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -366,6 +385,29 @@ func render(root string) (map[string][]byte, []*translator, error) {
 				return nil, nil, fmt.Errorf("%s/%s.html: %w", lang.Code, name, err)
 			}
 			out[lang.Code+"/"+name+".html"] = b.Bytes()
+		}
+		docTmpl, err := parse("doc")
+		if err != nil {
+			return nil, nil, err
+		}
+		outs, err := ds.pages(lang, tr, func(path string, d docView, translated bool) ([]byte, error) {
+			var b bytes.Buffer
+			p := page{Lang: lang, Langs: langs, Page: path, Path: path, Doc: &d, Error: !translated, Release: release}
+			err := docTmpl.Execute(&b, p)
+			return b.Bytes(), err
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, o := range outs {
+			file := o.Path
+			if strings.HasSuffix(file, "/") {
+				file += "index.html"
+			}
+			out[lang.Code+"/"+file] = o.HTML
+			if o.Translated {
+				docLangs[o.Path] = append(docLangs[o.Path], lang)
+			}
 		}
 	}
 	// Without the language chooser, "/" falls back to English.
@@ -379,12 +421,14 @@ func render(root string) (map[string][]byte, []*translator, error) {
 		return nil, nil, fmt.Errorf("soon.html: %w", err)
 	}
 	out["soon.html"] = b.Bytes()
-	docs, docURLs, err := renderDocs(root, asset)
-	if err != nil {
-		return nil, nil, err
+	for name, data := range ds.images {
+		out["docs/images/"+name] = data
 	}
-	maps.Copy(out, docs)
-	out["sitemap.xml"] = sitemap(langs, docURLs)
+	var entries []docEntry
+	for _, f := range ds.files {
+		entries = append(entries, docEntry{Path: docPath(f), Langs: docLangs[docPath(f)]})
+	}
+	out["sitemap.xml"] = sitemap(langs, entries)
 	out[".well-known/security.txt"] = securityTxt(release)
 	if out["site.webmanifest"], err = manifest(); err != nil {
 		return nil, nil, err
@@ -448,32 +492,44 @@ func gzipped(data []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// docEntry is a page of the documentation and the languages it is in.
+type docEntry struct {
+	Path  string
+	Langs []Language
+}
+
 // sitemap lists every page in every language, each with its translations
-// (hreflang), and the pages of the documentation, for search engines.
-func sitemap(langs []Language, docs []string) []byte {
+// (hreflang), for search engines. A page of the documentation is listed in
+// the languages it is translated into.
+func sitemap(langs []Language, docs []docEntry) []byte {
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n")
-	for _, name := range pages {
-		p := page{Path: pagePath(name)}
-		for _, l := range langs {
+	list := func(path string, in []Language) {
+		p := page{Path: path}
+		for _, l := range in {
 			fmt.Fprintf(&b, "<url><loc>%s</loc>", p.URL(l))
-			for _, alt := range langs {
+			for _, alt := range in {
 				fmt.Fprintf(&b, `<xhtml:link rel="alternate" hreflang="%s" href="%s"/>`, alt.Tag, p.URL(alt))
 			}
 			b.WriteString("</url>\n")
 		}
 	}
-	for _, u := range docs {
-		fmt.Fprintf(&b, "<url><loc>%s</loc></url>\n", u)
+	for _, name := range pages {
+		list(pagePath(name), langs)
+	}
+	for _, d := range docs {
+		list(d.Path, d.Langs)
 	}
 	b.WriteString("</urlset>\n")
 	return b.Bytes()
 }
 
 // check renders the site and reports every missing, unused or broken
-// translation.
-func check(root string) error {
+// translation. What is only out of date, a documentation page not
+// translated yet or following an older original, is printed to warn, and
+// counts as a problem when strict is set.
+func check(root string, strict bool, warn io.Writer) error {
 	_, trs, err := render(root)
 	if err != nil {
 		return err
@@ -481,6 +537,13 @@ func check(root string) error {
 	used := trs[0].used // English asks for every text
 	var problems []string
 	for _, tr := range trs[1:] {
+		for _, w := range tr.warn {
+			if strict {
+				problems = append(problems, w)
+			} else {
+				fmt.Fprintln(warn, "warning:", w)
+			}
+		}
 		for _, text := range sortedKeys(tr.missing) {
 			problems = append(problems, fmt.Sprintf("l10n/%s.json: no translation of %q", tr.lang.Code, text))
 		}
@@ -498,7 +561,7 @@ func check(root string) error {
 
 // build writes the site to dir: the pages and site/static.
 func build(root, dir string) error {
-	if err := check(root); err != nil {
+	if err := check(root, false, io.Discard); err != nil {
 		return err
 	}
 	files, _, err := render(root)
