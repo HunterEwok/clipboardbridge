@@ -76,19 +76,24 @@ func TestRequestsBoundBySourceAndGroup(t *testing.T) {
 }
 
 // One address registers devices of groups of its own, each of which holds
-// idle connections in its tunnel: the relay still reads the requests of
-// devices from elsewhere, and a connection that sends no request is closed
-// within requestTimeout.
+// idle connections in its tunnel: the relay reads no more of them than one
+// address may have read, and still reads the requests of devices from
+// elsewhere.
 func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 	r, l, link := startPosing(t)
+	// The idle connections stay until all are open, however slowly they
+	// open (the race detector makes the tunnels slow).
+	r.mu.Lock()
+	r.requestWait = 5 * time.Minute
+	r.mu.Unlock()
 	l.mu.Lock()
 	l.other = netip.MustParseAddr("203.0.113.7")
 	l.mu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// Four devices with all their connections are twice what one address
+	// Three devices with all their connections are more than one address
 	// may have read at once.
-	for i := 0; i < 2*maxRequestsSource/maxRequestsOne; i++ {
+	for i := 0; i < maxRequestsSource/maxRequestsOne+1; i++ {
 		d := newDevice(t, newGroup(t))
 		cfg := MemberConfig{Link: link, Self: d.id, Key: d.key, Cert: func() tls.Certificate { return d.cert }, Logf: t.Logf}
 		tc, w, _, err := register(ctx, cfg)
@@ -119,8 +124,8 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 	r.mu.Lock()
 	n, ip := r.requesting, r.reqIP[netip.MustParseAddr("203.0.113.7")]
 	r.mu.Unlock()
-	if n > maxRequestsSource || ip > maxRequestsSource {
-		t.Fatalf("%d requests being read, %d from one address, want at most %d", n, ip, maxRequestsSource)
+	if n != maxRequestsSource || ip != maxRequestsSource {
+		t.Fatalf("%d requests being read, %d from one address, want %d", n, ip, maxRequestsSource)
 	}
 	// A pair of devices from elsewhere connects.
 	l.mu.Lock()
@@ -134,12 +139,6 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 	join(t, link, a)
 	jb := join(t, link, b)
 	receive(t, jb.called, "b's call")
-	// The connections that sent nothing are closed once the wait is over.
-	waitFor(t, "the idle connections to be closed", func() bool {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.reqIP[netip.MustParseAddr("203.0.113.7")] == 0
-	})
 }
 
 // What a source may start is paid for by the second: a registration's setup

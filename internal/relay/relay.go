@@ -103,6 +103,9 @@ type Relay struct {
 	setupIP    map[netip.Addr]int
 	setupNet   map[netip.Prefix]int
 	requesting int
+	// requestWait is how long a connection in a tunnel may take to send
+	// its request line: requestTimeout, longer in tests.
+	requestWait time.Duration
 	// reqIP and reqNet count the requests being read by the address and the
 	// network the device registered from.
 	reqIP  map[netip.Addr]int
@@ -210,7 +213,7 @@ func Listen(cfg Config) (*Relay, error) {
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
 		records: map[string]*recordSet{}, tagLocks: map[string]*tagLock{}, allow: newAllowance(), now: time.Now,
 		reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
-		setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}}
+		setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}, requestWait: requestTimeout}
 	if cfg.Open {
 		r.limits = cfg.Limits.withDefaults()
 	}
@@ -510,6 +513,7 @@ func (r *Relay) acceptStreams() {
 		if ok {
 			m.streams[c] = true
 		}
+		wait := r.requestWait
 		r.mu.Unlock()
 		if !ok {
 			c.Close()
@@ -518,15 +522,16 @@ func (r *Relay) acceptStreams() {
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
-			r.serveStream(m, c)
+			r.serveStream(m, c, wait)
 		}()
 	}
 }
 
-// serveStream reads the request of m's connection c and does what it asks.
-func (r *Relay) serveStream(m *member, c net.Conn) {
+// serveStream reads the request of m's connection c, waiting for it at
+// most wait, and does what it asks.
+func (r *Relay) serveStream(m *member, c net.Conn, wait time.Duration) {
 	var req request
-	if err := readLine(c, &req, requestTimeout); err != nil {
+	if err := readLine(c, &req, wait); err != nil {
 		r.freeRequest(m)
 		r.closeStream(m, c)
 		return
