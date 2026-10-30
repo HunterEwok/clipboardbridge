@@ -462,6 +462,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The relay bounds the registrations being set up by the address and the network they come
+  from (16 and 64 of its 256), and counts the requests inside the tunnels apart from them,
+  at most 16 of each device's (docs/protocol.md, section 14).
+
 - The Android app is signed with a new release key from 0.6 on. Android installs an update
   only with the same key, so an APK of 0.3 to 0.5 has to be uninstalled before 0.6 is
   installed (the phone then joins its group again).

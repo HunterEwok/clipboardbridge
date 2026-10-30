@@ -2223,8 +2223,11 @@ ID, and a device's pseudonym changes with each period.
    loopback address and first tells the app the call's device and the connection's source
    port; the listener serves a connection only when the client certificate names the
    device told for its port, and closes any other.
-4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections;
-   256 registrations and requests being set up at a time.
+4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections.
+   Limits of the setups, on every relay: 256 registrations being set up at a time, at most 16
+   of them from one IP address and 64 from one network (an IPv4 /24 or an IPv6 /64); and,
+   counted apart, 256 requests inside the tunnels being read at a time, at most 16 of them
+   from one device. The relay closes a connection over a limit at once.
 5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address
    and 64 from one network (an IPv4 /24 or an IPv6 /64); and 1 MiB a second of copying for
    each group, both ways together, after a burst of two seconds' worth. A registration over
