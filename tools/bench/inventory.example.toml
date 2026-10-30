@@ -55,6 +55,19 @@ roles = ["member"]
 # reset: setup-docker.sh in a checkout of the repository on the host.
 setup = "~/clipboardbridge/tools/bench/setup-docker.sh"
 
+# A second member on the remote server, in a network namespace of its own:
+# its traffic goes out through a SOCKS5 proxy (here a VPN client's local
+# inbound), not the server's own network; without UDP through the proxy it
+# goes away from home with VLESS only.
+# tools/bench/setup-netns.sh prepares the namespace and starts the member.
+[device.remotevpn]
+os = "netns"
+ssh = "user@remote.example.net"
+roles = ["away"]
+# reset: setup-netns.sh on the host, after `setup-netns.sh setup remotevpn
+# 127.0.0.1:1080 TUN2SOCKS` once.
+setup = "/opt/cbbbench-netns/setup-netns.sh"
+
 [router]
 ssh = "root@router.lan"
 kind = "openwrt"

@@ -19,9 +19,18 @@ func serviceCmd(d *Device, action string) string {
 		return "/etc/init.d/clipboardbridge " + action
 	case "freebsd":
 		return "sudo -n service clipboardbridge " + action
+	case "netns":
+		return "sudo -n systemctl " + action + " " + netnsUnit(d)
 	}
 	return ""
 }
+
+// netnsDir is where setup-netns.sh keeps a namespace member's binary,
+// state, socket and the cbb that reaches it.
+func netnsDir(d *Device) string { return "/opt/cbbbench-netns/" + d.Name }
+
+// netnsUnit is the systemd unit of a namespace member's service.
+func netnsUnit(d *Device) string { return "cbbbench-" + d.Name }
 
 // rootPrefix runs a command as root on the device: sudo, or nothing for
 // the router's root and a fleet member, which run as root.

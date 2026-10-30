@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -25,7 +26,7 @@ type Inventory struct {
 // Device is one device under test.
 type Device struct {
 	Name      string   `toml:"-"`
-	OS        string   `toml:"os"`        // linux, linux-lite, darwin, windows, docker, openwrt, freebsd
+	OS        string   `toml:"os"`        // linux, linux-lite, darwin, windows, docker, netns, openwrt, freebsd
 	SSH       string   `toml:"ssh"`       // user@host; the user is the one signed in on the desktop
 	Clipboard string   `toml:"clipboard"` // wayland, x11, none, macos, windows
 	Roles     []string `toml:"roles"`     // member, hub, away
@@ -33,7 +34,7 @@ type Device struct {
 	VM        *VM      `toml:"vm"`
 	Container string   `toml:"container"` // os docker: the container's name on the host ssh reaches
 	Firewall  string   `toml:"firewall"`  // linux and windows, for reset: "yes" lets the installer open the member port, "no" leaves the firewall alone
-	Setup     string   `toml:"setup"`     // os docker, for reset: tools/bench/setup-docker.sh on the host
+	Setup     string   `toml:"setup"`     // os docker or netns, for reset: tools/bench/setup-docker.sh or setup-netns.sh on the host
 	Network   string   `toml:"-"`         // os fleet: the Docker network it started on
 	Env       []string `toml:"-"`         // os fleet: the environment of its commands, such as CBB_SOCKET
 }
@@ -56,8 +57,12 @@ type Host struct {
 	Service     string `toml:"service"`      // its systemd unit, which F7 stops and starts
 }
 
+// netnsName is a name a namespace's member may have: it ends up in an
+// interface's name, which Linux keeps to 15 bytes (cbbt- and the name).
+var netnsName = regexp.MustCompile(`^[a-z0-9]{1,10}$`)
+
 var (
-	knownOS        = []string{"linux", "linux-lite", "darwin", "windows", "docker", "openwrt", "freebsd"}
+	knownOS        = []string{"linux", "linux-lite", "darwin", "windows", "docker", "netns", "openwrt", "freebsd"}
 	knownClipboard = []string{"wayland", "x11", "none", "macos", "windows"}
 )
 
@@ -105,6 +110,20 @@ func LoadInventory(path string) (*Inventory, error) {
 			}
 		} else if d.Container != "" {
 			return nil, fmt.Errorf("device %s: container is only for os docker", name)
+		}
+		if d.OS == "netns" {
+			// A second member on a Linux host, in a network namespace of its
+			// own (setup-netns.sh): it has no desktop either, and its name
+			// names the namespace, the unit and the directory.
+			if d.Clipboard != "none" {
+				return nil, fmt.Errorf("device %s: a member in a namespace has no clipboard but cbb's; leave out clipboard", name)
+			}
+			if !netnsName.MatchString(name) {
+				return nil, fmt.Errorf("device %s: a device of os netns needs a name of 1 to 10 small letters and digits", name)
+			}
+			if d.Has("hub") {
+				return nil, fmt.Errorf("device %s: a member in a namespace keeps its keys in files; give the role hub to another device", name)
+			}
 		}
 	}
 	return &inv, nil

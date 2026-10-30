@@ -110,7 +110,7 @@ func archiveFor(d *Device, machine string) (string, error) {
 			return "", fmt.Errorf("%s: no FreeBSD build for the CPU %q", d.Name, machine)
 		}
 		return "clipboardbridge-freebsd-" + arch + ".tar.gz", nil
-	case "linux", "docker":
+	case "linux", "docker", "netns":
 		return "clipboardbridge-linux-" + arch + ".tar.gz", nil
 	case "linux-lite":
 		return "clipboardbridge-lite-linux-" + arch + ".tar.gz", nil
@@ -244,6 +244,20 @@ func resetDevice(ctx context.Context, r *Report, d *Device, b *Build, quick bool
 		}
 		_, err = RunFor(ctx, d, "sh "+d.Setup+" up "+dir+"/cbb", "", 5*time.Minute)
 		return err
+	case "netns":
+		if d.Setup == "" {
+			return fmt.Errorf("%s: set setup to the path of tools/bench/setup-netns.sh on its host in the inventory", d.Name)
+		}
+		if quick {
+			_, err := Run(ctx, d, "sudo -n sh "+d.Setup+" down "+d.Name+" && sudo -n systemctl start "+netnsUnit(d), "")
+			return noSudo(d, err)
+		}
+		dir, err := stage(ctx, d, b)
+		if err != nil {
+			return err
+		}
+		_, err = RunFor(ctx, d, "sudo -n sh "+d.Setup+" up "+d.Name+" "+dir+"/cbb", "", 2*time.Minute)
+		return noSudo(d, err)
 	case "openwrt", "freebsd":
 		return resetRouterOrBSD(ctx, r, d, b, quick)
 	case "windows":

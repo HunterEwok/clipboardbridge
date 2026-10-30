@@ -250,6 +250,8 @@ func stopCmd(d *Device) (stop, start string) {
 		return "Stop-Service clipboardbridge", "Start-Service clipboardbridge"
 	case "docker":
 		return "docker stop " + d.Container, "docker start " + d.Container
+	case "netns":
+		return "sudo -n systemctl stop " + netnsUnit(d), "sudo -n systemctl start " + netnsUnit(d)
 	}
 	return "", ""
 }

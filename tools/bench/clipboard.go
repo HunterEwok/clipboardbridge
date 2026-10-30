@@ -32,6 +32,10 @@ func cbbCmd(d *Device) string {
 		return `& "$env:ProgramFiles\clipboardbridge\cbb.exe"`
 	case "docker":
 		return "docker exec -i " + d.Container + " cbb"
+	case "netns":
+		// The service runs as root in its namespace, and its cbb reaches
+		// it there by its own socket.
+		return "sudo -n " + netnsDir(d) + "/cbb"
 	}
 	return "cbb"
 }

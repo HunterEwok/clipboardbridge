@@ -73,6 +73,26 @@ kind = "openwrt"
 		t.Fatal("a container name on a device that is not one")
 	}
 
+	os.WriteFile(path, []byte("[device.vpn]\nos = \"netns\"\nssh = \"a@b\"\nroles = [\"away\"]\n"), 0o600)
+	inv, err = LoadInventory(path)
+	if err != nil {
+		t.Fatalf("a member in a namespace: %v", err)
+	}
+	if vpn := inv.Device["vpn"]; cbbCmd(vpn) != "sudo -n /opt/cbbbench-netns/vpn/cbb" || serviceCmd(vpn, "restart") != "sudo -n systemctl restart cbbbench-vpn" {
+		t.Fatalf("a member in a namespace: %q, %q", cbbCmd(vpn), serviceCmd(vpn, "restart"))
+	}
+	for _, bad := range []string{
+		"[device.vpn]\nos = \"netns\"\nssh = \"a@b\"\nroles = [\"hub\"]\n",
+		"[device.vpn]\nos = \"netns\"\nssh = \"a@b\"\nclipboard = \"x11\"\n",
+		"[device.Remote-VPN]\nos = \"netns\"\nssh = \"a@b\"\n",
+		"[device.waytoolongname]\nos = \"netns\"\nssh = \"a@b\"\n",
+	} {
+		os.WriteFile(path, []byte(bad), 0o600)
+		if _, err := LoadInventory(path); err == nil {
+			t.Fatalf("took %q", bad)
+		}
+	}
+
 	os.WriteFile(path, []byte("[device.x]\nos = \"plan9\"\nssh = \"a@b\"\n"), 0o600)
 	if _, err := LoadInventory(path); err == nil || !strings.Contains(err.Error(), "plan9") {
 		t.Fatalf("an unknown os: %v", err)

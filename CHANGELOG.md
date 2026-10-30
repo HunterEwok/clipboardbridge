@@ -169,6 +169,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The bench's `faults` suite: a bad network at the hub, a blocked member port, a hung and a
   stopped service, a damaged `identity.json`, each taken back by a timer on the device;
   every error it expects is checked with `CBB_DEBUG=0` and `1`.
+- The bench's devices with `os = "netns"`: a second full member on a Linux host in a network
+  namespace of its own, whose only way out is a SOCKS5 proxy through tun2socks, such as a
+  VPN's local inbound, so that one server tests sync away from home both directly and
+  through the VPN (`tools/bench/setup-netns.sh`).
 - The bench's `fleet` suite: full members in containers on the controller, thrown away after
   each run, for the cases that need many devices or would harm the real ones: the pairing
   window, admins and their limits, freezing, removal, a takeover, two groups side by side,
