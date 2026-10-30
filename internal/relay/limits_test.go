@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -17,9 +18,10 @@ import (
 // can play connections from many addresses.
 type posing struct {
 	net.Listener
-	mu    sync.Mutex
-	as    map[uint16]netip.Addr // by the client's port
-	other netip.Addr            // for every other client
+	mu       sync.Mutex
+	as       map[uint16]netip.Addr // by the client's port
+	other    netip.Addr            // for every other client
+	accepted atomic.Int64
 }
 
 type posedConn struct {
@@ -41,20 +43,26 @@ func (l *posing) Accept() (net.Conn, error) {
 		a = l.other
 	}
 	l.mu.Unlock()
+	l.accepted.Add(1)
 	return posedConn{c, net.TCPAddrFromAddrPort(netip.AddrPortFrom(a, port))}, nil
 }
 
-// dialAs opens a connection to the relay that it takes as one from a.
+// dialAs opens a connection to the relay that it takes as one from a, and
+// waits until the relay accepted it: a backlog that fills up resets new
+// connections on some systems (FreeBSD, Windows) instead of holding them.
 func (l *posing) dialAs(t *testing.T, a netip.Addr) net.Conn {
 	t.Helper()
+	before := l.accepted.Load()
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	c, err := net.Dial("tcp", l.Addr().String())
 	if err != nil {
+		l.mu.Unlock()
 		t.Fatal(err)
 	}
 	l.as[netip.MustParseAddrPort(c.LocalAddr().String()).Port()] = a
+	l.mu.Unlock()
 	t.Cleanup(func() { c.Close() })
+	waitFor(t, "the relay to accept a connection", func() bool { return l.accepted.Load() > before })
 	return c
 }
 
