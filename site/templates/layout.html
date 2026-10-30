@@ -37,7 +37,7 @@
 <!-- Chalk: the line stays whole; its edge is a little uneven and soft, its
      body a touch lighter in places, and a faint dust lies around it. -->
 <filter id="chalk" x="-3%" y="-3%" width="106%" height="106%" color-interpolation-filters="sRGB">
-  <feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="3" result="n"/>
+  <feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="1" seed="3" result="n"/>
   <feDisplacementMap in="SourceGraphic" in2="n" scale="1.4" xChannelSelector="R" yChannelSelector="G" result="w"/>
   <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="21" result="g"/>
   <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -.9 1.35" result="m"/>
@@ -91,7 +91,8 @@
 <footer class="foot">
   <div class="wrap">
     <p>{{t "Clipboard Bridge is free software under the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/LICENSE" "GNU AGPL v3")}}
-       {{t "Status: early development."}}</p>
+       {{t "Status: early development."}}
+       <a href="/{{.Lang.Code}}/code-signing.html">{{t "Code signing policy"}}</a></p>
     <p>{{t "This site counts visits without cookies, and sets one cookie only when you pick a language: %s." (link (printf "/%s/privacy.html#site" .Lang.Code) (t "what it knows about you"))}}
        <a href="https://db-ip.com">{{t "IP Geolocation by DB-IP"}}</a></p>
   </div>

@@ -75,13 +75,19 @@
     // Each board but the first, drawing, table or commands, is written in
     // chalk once, as it first comes into view.
     var lively = window.matchMedia && window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+    // Until when the chalk's grain holds still: while a board is being
+    // drawn and while the page scrolls, so that the browser does not filter
+    // every board again at the same time and the motion stays smooth.
+    var still = 0;
+    var hold = function (ms) { still = Math.max(still, Date.now() + ms); };
     if ("IntersectionObserver" in window) {
       var boards = new IntersectionObserver(function (seen) {
         seen.forEach(function (e) {
           if (e.isIntersecting) {
             e.target.classList.add("drawn");
             boards.unobserve(e.target);
-            if (lively) setTimeout(function (f) { f.classList.add("alive"); }, 2200, e.target);
+            hold(1100);
+            if (lively) setTimeout(function (f) { f.classList.add("alive"); }, 1550, e.target);
           }
         });
       }, { threshold: 0.3 });
@@ -97,7 +103,9 @@
     // film. Not for those who ask for less motion.
     if (lively) {
       var hero = document.querySelector(".hero-board");
-      if (hero) setTimeout(function () { hero.classList.add("alive"); }, 3200);
+      if (hero) setTimeout(function () { hero.classList.add("alive"); }, 2250);
+      hold(1700);
+      window.addEventListener("scroll", function () { hold(250); }, { passive: true });
       var grain = document.querySelectorAll("#chalk feTurbulence, #chalk-words feTurbulence");
       var warp = document.querySelector("#chalk feDisplacementMap");
       var seen = 0, step = 0, shown = [];
@@ -113,7 +121,7 @@
         document.querySelectorAll(".frame").forEach(function (f) { watch.observe(f); });
       }
       setInterval(function () {
-        if (!seen || document.hidden) return;
+        if (!seen || document.hidden || Date.now() < still) return;
         step = (step + 1) % 3;
         grain.forEach(function (t, i) { t.setAttribute("seed", [3, 7, 11][step] + i * 18); });
         if (warp) warp.setAttribute("scale", [1.4, 1.9, 1.6][step]);

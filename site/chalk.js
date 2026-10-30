@@ -163,7 +163,11 @@ const line = (cls, d) => (d ? `<path class="${cls}" pathLength="1" d="${d}"/>` :
 // The parts the stylesheet moves come on their own: a path, or a group
 // ("g name") of them.
 const part = ([cls, d]) => (cls.startsWith("g ") ? `<g class="${cls.slice(2)}">${d.map(part).join("")}</g>` : line(cls, d));
-const lines = (d) => line("y link", d.links) + line("w", d.white) + line("y", d.yellow) + (d.parts || []).map(part).join("");
+// The still lines and the moving parts are groups of their own, each with
+// the chalk's filter: a moving part then makes the browser filter again
+// only its own small box, not the whole board, on every frame.
+const still = (d) => line("y link", d.links) + line("w", d.white) + line("y", d.yellow);
+const lines = (d) => (d.parts ? `<g>${still(d)}</g><g>${d.parts.map(part).join("")}</g>` : `<g>${still(d)}</g>`);
 const out = `<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!-- Written by chalk.js: the lines of the chalk drawings, without their
      labels, which the pages add in their own language. -->

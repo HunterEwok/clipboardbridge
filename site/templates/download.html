@@ -64,9 +64,11 @@ sudo sh "$(brew --prefix)/opt/clipboardbridge/share/clipboardbridge/packaging/ma
   <p>{{t "The installer checks the download, starts Clipboard Bridge and asks before it opens the firewall for it. Then run %s and scan its QR code in the app." (code "sudo cbb pair")}}
      {{t "All the ways and options: %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/install.md" (t "installing"))}}</p>
 
-  <h2>{{t "Checking a download"}}</h2>
+  <h2 id="check">{{t "Checking a download"}}</h2>
   <p>{{t "The installers check every file against the release's checksums. Each file also has a build attestation that ties it to this repository and the build that made it, which %s checks:" (code "gh attestation verify")}}</p>
   <pre><code>gh attestation verify clipboardbridge-linux-amd64.tar.gz --repo HunterEwok/clipboardbridge</code></pre>
+  <p>{{t "Free code signing provided by %s, certificate by %s." (link "https://about.signpath.io" "SignPath.io") (link "https://signpath.org" "SignPath Foundation")}}
+     {{t "Which programs are signed, and who approves it: %s." (link "code-signing.html" (t "Code signing policy"))}}</p>
 
   <div class="final">
     <h2>{{t "Next: make your group"}}</h2>
