@@ -20,7 +20,7 @@ import (
 // lighthousePages are the pages CI measures: the start page left to right
 // and right to left, the two other pages, and the documentation: its index
 // and its longest page.
-var lighthousePages = []string{"/en/", "/ar/", "/en/download.html", "/ru/privacy.html", "/docs/", "/docs/protocol.html"}
+var lighthousePages = []string{"/en/", "/ar/", "/en/download.html", "/ru/privacy.html", "/en/docs/", "/ru/docs/guide/how-it-works.html"}
 
 // lighthouseMin is the lowest median score each category may have; below
 // it, a category in lighthouseFail fails the check and any other only

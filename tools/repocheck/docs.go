@@ -79,7 +79,10 @@ const configRef = "docs/reference/config.md"
 // checkDocs checks the rules above in one file; files maps every checked
 // path to its content.
 func checkDocs(name string, data []byte, files map[string][]byte) []string {
-	if !strings.HasSuffix(name, ".md") {
+	// A translated page keeps the links of its English original, which
+	// the website resolves from the original's place; tools/site checks
+	// that it does.
+	if !strings.HasSuffix(name, ".md") || docTranslation.MatchString(name) {
 		return nil
 	}
 	var problems []string

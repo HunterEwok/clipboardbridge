@@ -5,7 +5,8 @@
 // part of it that is not a static file: the choice of language at "/".
 //
 //	site build [-out DIR]     write the site, one directory per language
-//	site check                fail if a page or a translation is broken
+//	site check [-strict]      fail if a page or a translation is broken
+//	site docs-sync            mark the translations of the guide as following the originals
 //	site serve [-dir DIR] [-geo FILE] [-addr ADDR] [-proxy] [-preview]
 //	site lighthouse [-dir DIR] [-runs N]   measure the built site (CI)
 //
@@ -41,7 +42,12 @@ func main() {
 		fs.Parse(os.Args[2:])
 		err = build("site", *out)
 	case "check":
-		err = check("site")
+		fs := flag.NewFlagSet("check", flag.ExitOnError)
+		strict := fs.Bool("strict", false, "fail on a documentation page that is not translated or follows an older original")
+		fs.Parse(os.Args[2:])
+		err = check("site", *strict, os.Stderr)
+	case "docs-sync":
+		err = syncDocs("site")
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
 		dir := fs.String("dir", "site/out", "the built site")
@@ -69,6 +75,6 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: site build [-out DIR] | site check | site serve [-dir DIR] [-geo FILE] [-addr ADDR] [-proxy] [-preview] | site lighthouse [-dir DIR] [-runs N]")
+	fmt.Fprintln(os.Stderr, "usage: site build [-out DIR] | site check [-strict] | site docs-sync | site serve [-dir DIR] [-geo FILE] [-addr ADDR] [-proxy] [-preview] | site lighthouse [-dir DIR] [-runs N]")
 	os.Exit(2)
 }

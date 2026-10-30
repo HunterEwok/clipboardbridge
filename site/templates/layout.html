@@ -68,7 +68,7 @@
     <nav aria-label="{{t "Main"}}">
       <a href="/{{.Lang.Code}}/download.html"{{if eq .Page "download.html"}} aria-current="page"{{end}}>{{t "Download"}}</a>
       <a href="/{{.Lang.Code}}/privacy.html"{{if eq .Page "privacy.html"}} aria-current="page"{{end}}>{{t "Privacy"}}</a>
-      <a href="/docs/">{{t "Docs"}}</a>
+      <a href="/{{.Lang.Code}}/docs/"{{if hasPrefix .Page "docs/"}} aria-current="page"{{end}}>{{t "Docs"}}</a>
       <a href="https://github.com/HunterEwok/clipboardbridge">GitHub</a>
     </nav>
     <details class="langs">
@@ -97,6 +97,6 @@
        <a href="https://db-ip.com">{{t "IP Geolocation by DB-IP"}}</a></p>
   </div>
 </footer>
-{{if ne .Page "download.html"}}<p class="dock"><a class="button accent go" href="/{{.Lang.Code}}/download.html" data-goatcounter-click="dock-download">{{t "Download for free"}}</a></p>
+{{if and (ne .Page "download.html") (not .Doc)}}<p class="dock"><a class="button accent go" href="/{{.Lang.Code}}/download.html" data-goatcounter-click="dock-download">{{t "Download for free"}}</a></p>
 {{end}}</body>
 </html>

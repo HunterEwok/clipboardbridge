@@ -52,6 +52,9 @@ func TestCheck(t *testing.T) {
 		},
 		{name: "a tray app translation", file: "apps/desktop/frontend/l10n/ru.json", content: `{"Fetch":"` + cyrillicWord + `"}`},
 		{name: "a website translation", file: "site/l10n/ru.json", content: `{"Download":"` + cyrillicWord + `"}`},
+		{name: "a translated guide page", file: "site/docs/ru/guide/keys.md", content: cyrillicWord + "\n"},
+		{name: "a translated picture", file: "docs/images/ru/group.svg", content: "<text>" + cyrillicWord + "</text>\n"},
+		{name: "the texts of the pictures", file: "tools/diagrams/l10n/ru.json", content: `{"Phone":"` + cyrillicWord + `"}`},
 		{name: "a store translation", file: "apps/android/app/fastlane/metadata/android/ru-RU/full_description.txt", content: cyrillicWord + "\n"},
 		{
 			name: "the English store text", file: "apps/android/app/fastlane/metadata/android/en-US/title.txt", content: cyrillicWord + "\n",

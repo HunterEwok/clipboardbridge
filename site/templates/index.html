@@ -113,7 +113,7 @@
       <strong>{{t "Add the computer."}}</strong> {{t "Run %s on the computer and scan its QR code in the app. That's your group." (code "sudo cbb pair")}}</li>
   </ol>
   <p>{{t "No computer? Make the group in the app, then open the app on each other phone and join from its start screen."}}
-     {{t "Step by step: the %s." (link "https://github.com/HunterEwok/clipboardbridge/blob/main/docs/guide/quickstart.md" (t "quick start"))}}</p>
+     {{t "Step by step: the %s." (link (printf "/%s/docs/guide/quickstart.html" .Lang.Code) (t "quick start"))}}</p>
 </section>
 
 <section class="wrap reveal" id="groups">
