@@ -1163,3 +1163,30 @@ func TestRegistrationUnderVerifiedRoot(t *testing.T) {
 		t.Fatal("the hub's registration was replaced")
 	}
 }
+
+// Handshakes that come over VLESS, from the loopback, spend the budget of
+// one network, so a flood of them leaves the budget of every other source.
+func TestVLESSScansApart(t *testing.T) {
+	cert, err := NewCert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := Listen(Config{Listen: "127.0.0.1:0", Cert: cert, VLESS: &VLESSConfig{Listen: "127.0.0.1:0", Site: "example.com", Dest: "127.0.0.1:1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for i := range 200 {
+		fakeReg(f, fmt.Sprintf("group %d", i), netip.AddrPortFrom(netip.MustParseAddr("198.51.100.1"), uint16(8000+i)))
+	}
+	_, pub := fakeReg(f, "victim", netip.MustParseAddrPort("198.51.100.2:8764"))
+	now := time.Now()
+	var nobody [32]byte
+	rand.Read(nobody[:])
+	for i := range 8000 {
+		f.route(netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(30000+i%1000)), initiation(nobody, uint32(i)), now)
+	}
+	if _, ok := f.route(netip.MustParseAddrPort("203.0.113.10:4000"), initiation(pub, 2), now); !ok {
+		t.Fatal("a client's handshake was dropped after a flood over VLESS")
+	}
+}

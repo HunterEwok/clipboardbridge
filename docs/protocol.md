@@ -2124,7 +2124,8 @@ Registrations, held or being set up, are bounded at 16 from one address and 64 f
 network, an IPv4 /24 or an IPv6 /64; the forwarder closes a connection past either limit
 at once. A handshake to a new group is checked against each registered group, so it costs
 one check per group. These checks are bounded at 500 000 a second for all sources together,
-and one network gets a sixteenth of that. A single handshake costs a network at most its
+and one network gets a sixteenth of that; the handshakes that come over VLESS, from the
+loopback, count as one network. A single handshake costs a network at most its
 whole budget, so one still passes now and then on a forwarder with more groups than that.
 
 ### What it keeps

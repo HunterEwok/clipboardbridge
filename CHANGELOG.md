@@ -462,6 +462,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The forwarder counts the handshakes that come over VLESS as one network against its
+  budget of checks, as it counts any other network's.
+
 - The forwarder checks a hub's registration under the root its member certificate verified
   to, which names the group, not under the first self-signed certificate the hub
   presented.
