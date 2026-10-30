@@ -616,6 +616,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The lite member writes its state files through a temporary file with a random name that
+  must not exist yet, and removes it when the write fails; `attest-status` gives up on
+  Google's list after 30 s instead of waiting for it without end.
 - A copied file's name made fit for every system no longer comes out one byte over the
   255-byte limit when it is that long, Windows reserves its base and it ends in a dot; a
   valid name of 255 bytes stays as it is. The same on computers and both phones.

@@ -39,6 +39,13 @@ import (
 // googleURL is Google's list; tests replace it.
 var googleURL = "https://android.googleapis.com/attestation/status"
 
+// client fetches the list, giving up after fetchTimeout, so that a server
+// that stops answering cannot hold the job that runs this.
+var (
+	fetchTimeout = 30 * time.Second
+	client       = &http.Client{Timeout: fetchTimeout}
+)
+
 var now = time.Now
 
 func main() {
@@ -106,7 +113,7 @@ func compareSerials(a, b string) int {
 // fetch returns the serial numbers Google's list revokes or suspends, in
 // order, and when it last changed.
 func fetch() ([]string, int64, error) {
-	resp, err := http.Get(googleURL)
+	resp, err := client.Get(googleURL)
 	if err != nil {
 		return nil, 0, err
 	}

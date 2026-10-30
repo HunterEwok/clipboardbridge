@@ -95,3 +95,35 @@ func TestMirror(t *testing.T) {
 		t.Error("a list with a bad serial number was taken")
 	}
 }
+
+// TestFetchGivesUp: a server that stops answering fails the fetch in time.
+func TestFetchGivesUp(t *testing.T) {
+	stop := make(chan struct{})
+	google := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-stop
+	}))
+	defer google.Close()
+	defer close(stop)
+	old, oldClient := googleURL, client
+	defer func() { googleURL, client = old, oldClient }()
+	googleURL = google.URL
+	client = &http.Client{Timeout: 200 * time.Millisecond}
+	if fetchTimeout <= 0 || oldClient.Timeout != fetchTimeout {
+		t.Errorf("the client's timeout is %v", oldClient.Timeout)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := fetch()
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("a fetch from a server that stopped answering succeeded")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fetch did not give up")
+	}
+}
