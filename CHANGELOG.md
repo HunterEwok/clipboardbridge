@@ -662,6 +662,17 @@ All notable changes to clipboardbridge are documented in this file. The format f
   from such a certificate. Real Keystore chains are unchanged; a chain in which a key's own
   leaf certificate signs another certificate now proves nothing. A root running an older
   version keeps accepting such chains until it is updated.
+- A command's result is shown with its reason cut to 256 bytes and its control characters
+  made spaces, on computers and both phones, so it always shows as plain text.
+- A content chunk whose length field is 2^31 or more is refused on the 32-bit builds
+  (Raspberry Pi 2 and 3, Pi Zero, mipsle routers, 386) as it already was on 64-bit ones,
+  instead of ending the program.
+- A received PNG or JPEG is decoded on a Windows member only when it fits in 2^25 pixels
+  (an 8K screen) and 128 MiB decoded, checked from its header before any pixel is read; it
+  was 2^28 pixels, which a small file could fill with gigabytes. A PNG is also turned into
+  the clipboard's bitmap by copying rows, not pixel by pixel. A bitmap on the Windows
+  clipboard with a header of 41 to 55 bytes and color masks is refused instead of ending
+  the agent.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.

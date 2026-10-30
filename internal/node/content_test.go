@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"io"
 	"strings"
@@ -165,6 +166,34 @@ func TestChunkFrames(t *testing.T) {
 	big := []byte{0x80, 0x10, 0, 0}
 	if _, err := readMessage(deadlineReader{bytes.NewReader(big)}, time.Second); err == nil {
 		t.Error("a binary frame of 1 MiB was read")
+	}
+}
+
+// A chunk's length is a uint32 on the wire: one that does not fit in the frame is
+// refused, on a 32-bit build too, where it must not turn negative.
+func TestDecodeChunkLength(t *testing.T) {
+	for _, n := range []uint32{0xFFFFFFFF, 0x80000000, 0x7FFFFFFF, 1 << 24, ChunkSize + 1, 5} {
+		b := make([]byte, chunkHead+4)
+		binary.BigEndian.PutUint32(b[sha256.Size+8:], n)
+		if _, err := decodeChunk(b); err == nil {
+			t.Errorf("a chunk of length %d in a frame with 4 bytes of data was decoded", n)
+		}
+		if _, err := decodeChunk(b[:chunkHead]); err == nil && n != 0 {
+			t.Errorf("a chunk of length %d in a frame without data was decoded", n)
+		}
+	}
+	b := make([]byte, chunkHead+4)
+	binary.BigEndian.PutUint32(b[sha256.Size+8:], 4)
+	if ch, err := decodeChunk(b); err != nil || len(ch.data) != 4 {
+		t.Errorf("a chunk that fits: %v, %d bytes", err, len(ch.data))
+	}
+	// The same frame as a message, from the first frame of a connection.
+	f := append([]byte{0x80, 0, 0, byte(chunkHead)}, make([]byte, chunkHead)...)
+	for i := 0; i < 4; i++ {
+		f[4+sha256.Size+8+i] = 0xFF
+	}
+	if _, err := readMessage(deadlineReader{bytes.NewReader(f)}, time.Second); err == nil {
+		t.Error("a chunk of length 0xFFFFFFFF was read")
 	}
 }
 

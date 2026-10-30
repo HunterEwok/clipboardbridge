@@ -396,7 +396,7 @@ class MemberNode(
                         }
                     }
                     is Member.Message.Result -> synchronized(lock) {
-                        val r = m.result
+                        val r = m.result.let { it.copy(reason = it.reason?.let(Member::cleanReason)) }
                         val w = waiting[r.id]
                         // A member the command went to so that it passes it on answers only with the receiver's result.
                         if (w != null && c.peer in w.via && (c.peer == w.peer || r.by == w.peer)) {

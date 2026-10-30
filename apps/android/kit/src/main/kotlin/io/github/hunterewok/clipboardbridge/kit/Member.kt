@@ -25,6 +25,31 @@ object Member {
     /** Whether a device in sync mode mode sends its own copies to the group by itself. */
     fun sends(mode: String?): Boolean = mode == null || mode == "shared" || mode == "send"
 
+    /** The longest reason a result carries, in UTF-8 bytes (section 15). */
+    const val MAX_REASON = 256
+
+    /**
+     * A result's reason made fit to show: a control character (escape
+     * included) becomes a space, and it is cut to [MAX_REASON] bytes at a
+     * character boundary. The member that answers is a peer, so the member
+     * that shows the reason cleans it.
+     */
+    fun cleanReason(s: String): String {
+        val out = StringBuilder()
+        var bytes = 0
+        var i = 0
+        while (i < s.length) {
+            val cp = s.codePointAt(i)
+            i += Character.charCount(cp)
+            val c = if (Character.getType(cp) == Character.CONTROL.toInt()) ' '.code else cp
+            val size = String(Character.toChars(c)).toByteArray(Charsets.UTF_8).size
+            if (bytes + size > MAX_REASON) break
+            out.appendCodePoint(c)
+            bytes += size
+        }
+        return out.toString()
+    }
+
     /** The ALPN protocol of member connections. */
     const val ALPN = "clipboardbridge/1"
 

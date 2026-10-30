@@ -238,6 +238,26 @@ public enum Member {
     /// Whether a device in sync mode mode sends its own copies to the group by itself.
     public static func sends(_ mode: String?) -> Bool { mode == nil || mode == "shared" || mode == "send" }
 
+    /// The longest reason a result carries, in UTF-8 bytes (section 15).
+    public static let maxReason = 256
+
+    /// A result's reason made fit to show: a control character (escape
+    /// included) becomes a space and it is cut to `maxReason` bytes at a
+    /// character boundary. The member that answers is a peer, so the member
+    /// that shows the reason cleans it.
+    public static func cleanReason(_ s: String) -> String {
+        var out = String.UnicodeScalarView()
+        var bytes = 0
+        for u in s.unicodeScalars {
+            let c: Unicode.Scalar = u.properties.generalCategory == .control ? " " : u
+            let size = String(c).utf8.count
+            if bytes + size > maxReason { break }
+            out.append(c)
+            bytes += size
+        }
+        return String(out)
+    }
+
     /// The answer to a command (section 15): its ID, "done", "refused" or
     /// "failed", and why for the last two.
     public struct CommandResult: Codable, Equatable, Sendable {

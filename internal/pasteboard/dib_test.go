@@ -160,3 +160,87 @@ func TestDecodeImage(t *testing.T) {
 		t.Error("a GIF decoded")
 	}
 }
+
+// A header of 41 to 55 bytes cannot hold color masks: it is refused, not
+// read past its end.
+func TestDecodeDIBShortHeaderWithMasks(t *testing.T) {
+	for _, comp := range []uint32{biBitfields, biAlphaBitfields} {
+		for hs := 41; hs < 56; hs++ {
+			for _, extra := range []int{0, 4, 16} {
+				dib := make([]byte, hs+extra)
+				le := binary.LittleEndian
+				le.PutUint32(dib, uint32(hs))
+				le.PutUint32(dib[4:], 1)
+				le.PutUint32(dib[8:], 1)
+				le.PutUint16(dib[14:], 32)
+				le.PutUint32(dib[16:], comp)
+				// The masks are three words, four with alpha, and lie inside the header.
+				n := 3
+				if comp == biAlphaBitfields {
+					n = 4
+				}
+				_, err := decodeDIB(dib)
+				if short := hs < 40+4*n; short && err == nil {
+					t.Errorf("comp %d, header %d, %d more bytes: decoded", comp, hs, extra)
+				}
+			}
+		}
+	}
+}
+
+func FuzzDecodeDIB(f *testing.F) {
+	f.Add(imageDIBV5(testImage()))
+	f.Add(header(1, 1, 32, biBitfields))
+	f.Fuzz(func(t *testing.T, dib []byte) {
+		if len(dib) > 1<<16 {
+			return
+		}
+		decodeDIB(dib)
+	})
+}
+
+// An image is refused by its size before it is decoded, whatever its file's
+// size: a solid PNG of a few hundred KB can hold billions of pixels.
+func TestDecodeImageBudget(t *testing.T) {
+	big := func(w, h int) []byte {
+		var b bytes.Buffer
+		// A palette image of one color: its rows compress to almost nothing.
+		img := image.NewPaletted(image.Rect(0, 0, w, h), color.Palette{color.Black})
+		if err := (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&b, img); err != nil {
+			t.Fatal(err)
+		}
+		return b.Bytes()
+	}
+	for name, d := range map[string][2]int{"16384 square": {16384, 16384}, "wide": {1 << 18, 1 << 10}} {
+		data := big(d[0], d[1])
+		if len(data) > 1<<20 {
+			t.Fatalf("%s: the PNG has %d bytes", name, len(data))
+		}
+		if _, err := decodeImage(clip.TypePNG, data); err == nil {
+			t.Errorf("%s: decoded", name)
+		}
+	}
+	if _, err := decodeImage(clip.TypePNG, big(4096, 2160)); err != nil {
+		t.Errorf("a 4K screenshot: %v", err)
+	}
+	// 16 bits a channel doubles what a pixel costs.
+	if int64(maxPixels)*decodedPixel(color.NRGBA64Model) <= maxDecodedBytes {
+		t.Error("a 16-bit image of the largest size is within the byte budget")
+	}
+}
+
+func TestImageDIBV5SubImage(t *testing.T) {
+	// The row copy of an NRGBA reads from its own origin.
+	img := testImage().SubImage(image.Rect(1, 0, 3, 2)).(*image.NRGBA)
+	got, err := decodeDIB(imageDIBV5(img))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	for y := range 2 {
+		for x := range 2 {
+			want.SetNRGBA(x, y, img.NRGBAAt(1+x, y))
+		}
+	}
+	samePixels(t, got, want)
+}

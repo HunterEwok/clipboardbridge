@@ -2378,7 +2378,9 @@ or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
 The sender sends the command on its own connection to the receiver, which answers with a
 `result`: its `id` is the command's, its `status` `done`, `refused` (the receiver does not take
 it) or `failed` (it took it and could not carry it out), and `reason` says why for the last
-two; a `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
+two. The reason is a peer's text: a member that shows it, or passes it to a program, first
+turns each control character (C0, DEL, C1) into a space and cuts it to 256 bytes at a
+character boundary. A `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
 commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
 (20 s for `hub`).
 

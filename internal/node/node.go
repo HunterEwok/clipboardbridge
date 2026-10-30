@@ -31,6 +31,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -995,8 +997,36 @@ type waiter struct {
 	got  chan Result
 }
 
+// MaxReason is the longest reason a result carries, in bytes.
+const MaxReason = 256
+
+// CleanReason makes a result's reason fit to show to a person, a terminal's
+// user among them: invalid UTF-8 becomes U+FFFD, a control character
+// (escape included) a space, and it is cut to MaxReason bytes at a character
+// boundary. The member that answers is a peer, so the member that shows the
+// reason cleans it.
+func CleanReason(s string) string {
+	s = strings.ToValidUTF8(s, "�")
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+	if len(s) > MaxReason {
+		s = s[:MaxReason]
+		// The text was valid, so only a character cut in half is not: at
+		// most 3 bytes go.
+		for !utf8.ValidString(s) {
+			s = s[:len(s)-1]
+		}
+	}
+	return s
+}
+
 // result passes a peer's result to the command sent to it that waits for it.
 func (n *Node) result(from group.DeviceID, r *Result) {
+	r.Reason = CleanReason(r.Reason)
 	n.mu.Lock()
 	w, ok := n.waiting[r.ID]
 	p, passed := n.passed[r.ID]
