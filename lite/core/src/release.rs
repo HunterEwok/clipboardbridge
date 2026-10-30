@@ -124,6 +124,36 @@ pub struct Seen {
     /// The revocation list's, which the lite member does not take but keeps.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub status_seq: u64,
+    /// The keys.json seq under which channel_seq and status_seq hold, as
+    /// Go's Seen: keys_seq when 0, as kept before. A newer keys.json, which
+    /// only a root signs, starts them again.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub channel_keys_seq: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub status_keys_seq: u64,
+}
+
+/// The most a channel seq may rise past the one held under the same
+/// keys.json, as Go's MaxSeqStep.
+pub const MAX_SEQ_STEP: u64 = 1 << 16;
+
+/// How far ahead of the device's clock a file may have been signed, when
+/// that clock reads 2026 or later, as Go's MaxAhead: a day.
+pub const MAX_AHEAD_MS: i64 = 24 * 3600 * 1000;
+
+/// 2026-01-01: before it the clock is not trusted to refuse files signed
+/// ahead of it.
+const PLAUSIBLE: i64 = 1_767_225_600_000;
+
+/// The seq a file signed under keys.json keys_seq may not go below, as Go's
+/// floor.
+fn floor(seq: u64, at: u64, seen_keys: u64, keys_seq: u64) -> u64 {
+    let at = if at == 0 { seen_keys } else { at };
+    if keys_seq > at { 0 } else { seq }
+}
+
+fn signed_ahead(time_ms: i64, now_ms: i64) -> bool {
+    now_ms >= PLAUSIBLE && time_ms > now_ms.saturating_add(MAX_AHEAD_MS)
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -289,6 +319,9 @@ pub fn verify_keys(f: &File, roots: &[&[u8]], now_ms: i64, seen: &Seen) -> Resul
     if now_ms >= k.expires_ms {
         return Err(Error::msg("keys.json has expired"));
     }
+    if signed_ahead(k.time_ms, now_ms) {
+        return Err(Error::msg("keys.json was signed ahead of this device's clock"));
+    }
     if k.seq < seen.keys_seq {
         return Err(Error::msg("keys.json is older than one already seen"));
     }
@@ -326,8 +359,15 @@ pub fn check(
     if now_ms >= c.expires_ms {
         return Err(Error::msg(format!("{name}.json has expired")));
     }
-    if c.seq < seen.channel_seq {
+    if signed_ahead(c.time_ms, now_ms) {
+        return Err(Error::msg(format!("{name}.json was signed ahead of this device's clock")));
+    }
+    let at = floor(seen.channel_seq, seen.channel_keys_seq, seen.keys_seq, k.seq);
+    if c.seq < at {
         return Err(Error::msg(format!("{name}.json is older than one already seen")));
+    }
+    if at > 0 && c.seq - at > MAX_SEQ_STEP {
+        return Err(Error::msg(format!("{name}.json is too far ahead of the one already seen")));
     }
     rel.verify(&spkis).map_err(|e| e.context("release.json is not valid"))?;
     if hex(&rel.hash()) != c.release_sha256 {
@@ -348,7 +388,18 @@ pub fn check(
     } else {
         r.version.clone()
     };
-    Ok((r, Seen { keys_seq: k.seq, channel_seq: c.seq, version, status_seq: seen.status_seq }))
+    let status_keys_seq = if seen.status_keys_seq == 0 { seen.keys_seq } else { seen.status_keys_seq };
+    Ok((
+        r,
+        Seen {
+            keys_seq: k.seq,
+            channel_seq: c.seq,
+            version,
+            status_seq: seen.status_seq,
+            channel_keys_seq: k.seq,
+            status_keys_seq,
+        },
+    ))
 }
 
 impl Release {

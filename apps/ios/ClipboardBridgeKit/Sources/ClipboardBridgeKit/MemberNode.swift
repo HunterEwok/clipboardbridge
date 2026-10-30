@@ -235,14 +235,16 @@ public actor MemberNode {
 
     /// Sends the member peer a command signed for it (section 15) and waits
     /// for its result, at most timeout seconds: on the connection to peer,
-    /// or, with via and without one, to every connected member, one of
-    /// which passes it on. It throws when it reaches no member, the
-    /// connection to peer ends first or no result comes in time.
-    public func command(_ command: Member.Record, to peer: String, timeout: TimeInterval = 10, via: Bool = false) async throws -> Member.CommandResult {
+    /// or, without one, to the connected members in via, the group's hubs,
+    /// one of which passes it on. The other members never get it: a
+    /// command's body, a paste's text among it, is signed but not
+    /// encrypted. It throws when it reaches no member, the connection to
+    /// peer ends first or no result comes in time.
+    public func command(_ command: Member.Record, to peer: String, timeout: TimeInterval = 10, via: [String] = []) async throws -> Member.CommandResult {
         guard let id = Commands.id(of: command) else { throw Failure.refused("the command has no ID") }
         let helloed = conns.filter { $0.value.peer != nil && $0.value.peerRole != nil }
         var to = helloed.filter { $0.value.peer == peer }
-        if to.isEmpty, via { to = helloed }
+        if to.isEmpty { to = helloed.filter { via.contains($0.value.peer ?? "") } }
         guard !to.isEmpty else { throw Failure.notConnected }
         let w = Waiter()
         waiting[id] = (peer, Set(to.keys), w)

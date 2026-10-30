@@ -21,6 +21,12 @@ use crate::{print, println};
 /// bytes, a text to type may be longer.
 const MAX_LINE: usize = 256;
 
+/// Whether the console has the type command: it types any text on the
+/// keyboard for whatever reaches the console, a program on the computer at
+/// the USB port among them, so only a build with the feature console-type
+/// has it.
+const TYPE_COMMAND: bool = cfg!(feature = "console-type");
+
 /// What the console asks of the rest of the firmware.
 pub trait Board {
     /// How the network is doing, in a line.
@@ -181,7 +187,11 @@ impl Console {
                 println!("  ble on|off    make the board a Bluetooth LE keyboard, or not; restarts");
                 println!("  ble pair      let a TV, tablet or computer find the Bluetooth keyboard for 2 minutes");
                 println!("  ble forget    forget every host the Bluetooth keyboard is paired with; restarts");
-                println!("  type TEXT     type TEXT on the Bluetooth host if one is connected, else the USB keyboard");
+                if TYPE_COMMAND {
+                    println!(
+                        "  type TEXT     type TEXT on the Bluetooth host if one is connected, else the USB keyboard"
+                    );
+                }
                 println!("  flash         restart into download mode, for espflash");
             }
             (Some("status"), None, _) => {
@@ -337,6 +347,11 @@ impl Console {
                 },
                 _ => println!("A rate is {} to {} characters a second.", RATES.start(), RATES.end()),
             },
+            (Some("type"), Some(_), _) if !TYPE_COMMAND => {
+                println!(
+                    "This firmware's console does not type; a build with the feature console-type has the type command."
+                );
+            }
             (Some("type"), Some(_), _) => {
                 let text = line["type".len()..].trim_start();
                 let (layout, rate) = match store {

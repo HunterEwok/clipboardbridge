@@ -208,18 +208,20 @@ class MemberNode(
 
     /**
      * Sends the member peer a command signed for it (section 15) and waits
-     * for its result, at most timeoutMS: on the connection to peer, or, with
-     * via and without one, to every connected member, one of which passes it
-     * on. It throws when it reaches no member, the connection to peer ends
-     * first or no result comes in time.
+     * for its result, at most timeoutMS: on the connection to peer, or,
+     * without one, to the connected members in via, the group's hubs, one of
+     * which passes it on. The other members never get it: a command's body,
+     * a paste's text among it, is signed but not encrypted. It throws when
+     * it reaches no member, the connection to peer ends first or no result
+     * comes in time.
      */
-    fun command(peer: String, command: Member.Record, timeoutMS: Long = 10_000, via: Boolean = false): Member.CommandResult {
+    fun command(peer: String, command: Member.Record, timeoutMS: Long = 10_000, via: Collection<String> = emptyList()): Member.CommandResult {
         val id = Commands.idOf(command) ?: throw IllegalArgumentException("the command has no ID")
         val got = CompletableFuture<Member.CommandResult>()
         val direct: Boolean
         synchronized(lock) {
             val helloed = conns.filter { it.peer != null && it.peerRole != null }
-            val to = helloed.firstOrNull { it.peer == peer }?.let { listOf(it) } ?: if (via) helloed else emptyList()
+            val to = helloed.firstOrNull { it.peer == peer }?.let { listOf(it) } ?: helloed.filter { it.peer in via }
             if (to.isEmpty()) throw ProtocolException("the device is not connected")
             direct = to.size == 1 && to[0].peer == peer
             waiting[id] = Waiting(peer, to.mapNotNull { it.peer }.toSet(), got)
@@ -229,7 +231,7 @@ class MemberNode(
         try {
             return got.get(timeoutMS, TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {
-            if (!direct) throw ProtocolException("the device did not answer in time: it is not connected to this one, and no member connected to it passed the command on")
+            if (!direct) throw ProtocolException("the device did not answer in time: it is not connected to this one, and no hub of the group connected to it passed the command on")
             throw ProtocolException("the device did not answer in time")
         } catch (e: ExecutionException) {
             throw ProtocolException("the connection to the device closed before it answered")

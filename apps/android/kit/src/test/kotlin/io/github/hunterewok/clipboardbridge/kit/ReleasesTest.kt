@@ -20,12 +20,15 @@ class ReleasesTest {
         val roots = v.getValue("roots").jsonArray.map { b64(it.jsonPrimitive.content) }
         val now = v.getValue("now_ms").jsonPrimitive.long
         val cases = v.getValue("vectors").jsonArray.map { it.jsonObject }
-        assertEquals(30, cases.size)
+        assertEquals(33, cases.size)
         for (c in cases) {
             val name = c.str("name")
             val file = { k: String -> Releases.File.fromJson(c.getValue(k).jsonObject) }
             val s = c.getValue("seen").jsonObject
-            val seen = Releases.Seen(s.optLong("keys_seq") ?: 0, s.optLong("channel_seq") ?: 0, s.optString("version") ?: "")
+            val seen = Releases.Seen(
+                s.optLong("keys_seq") ?: 0, s.optLong("channel_seq") ?: 0, s.optString("version") ?: "",
+                channelKeysSeq = s.optLong("channel_keys_seq") ?: 0,
+            )
             val got = runCatching { Releases.check(file("keys"), file("channel"), file("release"), roots, v.str("channel"), now, seen) }
             assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
             got.getOrNull()?.let { (r, next) ->
@@ -44,12 +47,12 @@ class ReleasesTest {
         val roots = v.getValue("roots").jsonArray.map { b64(it.jsonPrimitive.content) }
         val now = v.getValue("now_ms").jsonPrimitive.long
         val cases = v.getValue("status").jsonArray.map { it.jsonObject }
-        assertEquals(15, cases.size)
+        assertEquals(18, cases.size)
         for (c in cases) {
             val name = c.str("name")
             val file = { k: String -> Releases.File.fromJson(c.getValue(k).jsonObject) }
             val s = c.getValue("seen").jsonObject
-            val seen = Releases.Seen(s.optLong("keys_seq") ?: 0, statusSeq = s.optLong("status_seq") ?: 0)
+            val seen = Releases.Seen(s.optLong("keys_seq") ?: 0, statusSeq = s.optLong("status_seq") ?: 0, statusKeysSeq = s.optLong("status_keys_seq") ?: 0)
             val got = runCatching { Releases.checkStatus(file("keys"), file("status"), roots, now, seen) }
             assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
             got.getOrNull()?.let { (st, next) ->

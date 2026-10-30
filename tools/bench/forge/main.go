@@ -140,7 +140,7 @@ func run(state, signerDir string, to group.DeviceID, addr, system string, cases 
 	send := func(name string, cmd group.Record, cmdID string) {
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		res, err := n.SendCommand(cctx, to, cmd, cmdID, false)
+		res, err := n.SendCommand(cctx, to, cmd, cmdID, nil)
 		switch {
 		case err != nil:
 			fmt.Printf("%s: no answer: %v\n", name, err)

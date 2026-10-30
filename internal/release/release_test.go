@@ -165,7 +165,11 @@ func makeVectors(t *testing.T) vectors {
 	add("a release where the channel file belongs", keys, rel, rel, first, "")
 	add("keys.json where the channel file belongs", keys, keys, rel, first, "")
 	add("an older keys.json", keys, ch, rel, Seen{KeysSeq: 4}, "")
-	add("an older channel file", keys, ch, rel, Seen{ChannelSeq: 8}, "")
+	add("an older channel file", keys, ch, rel, Seen{KeysSeq: 3, ChannelSeq: 8}, "")
+	add("an older channel file under an older keys.json", keys, ch, rel, Seen{KeysSeq: 2, ChannelSeq: 1 << 62, ChannelKeys: 2}, "0.6.0")
+	add("a channel file far past the one seen", keys, sign(t, channelBody("stable", 7+MaxSeqStep+1, nowMS-1000, 30*day, rel, "0.6.0"), rk1), rel,
+		Seen{KeysSeq: 3, ChannelSeq: 7, ChannelKeys: 3}, "")
+	add("a channel file signed two days ahead", keys, sign(t, channelBody("stable", 8, nowMS+2*day.Milliseconds(), 30*day, rel, "0.6.0"), rk1), rel, first, "")
 	add("an older version", keys, ch, rel, Seen{Version: "0.6.1"}, "")
 	add("another release than the channel names", keys, ch, other1, first, "")
 	add("the channel names another version", keys, sign(t, channelBody("stable", 7, nowMS-1000, 30*day, rel, "0.6.1"), rk1), rel, first, "")
@@ -191,7 +195,11 @@ func makeVectors(t *testing.T) vectors {
 	good := sign(t, statusBody(40, nowMS-3600_000, 8*day, revoked...), sk)
 	addStatus("valid", keysStatus, good, first, true)
 	addStatus("the same again", keysStatus, good, Seen{KeysSeq: 5, StatusSeq: 40}, true)
-	addStatus("an older list", keysStatus, good, Seen{StatusSeq: 41}, false)
+	addStatus("an older list", keysStatus, good, Seen{KeysSeq: 5, StatusSeq: 41}, false)
+	addStatus("an older list under an older keys.json", keysStatus, good, Seen{KeysSeq: 4, StatusSeq: 1 << 62, StatusKeys: 4}, true)
+	addStatus("a list far past the one seen", keysStatus, sign(t, statusBody(40+MaxSeqStep+1, nowMS-3600_000, 8*day, revoked...), sk),
+		Seen{KeysSeq: 5, StatusSeq: 40, StatusKeys: 5}, false)
+	addStatus("a list signed two days ahead", keysStatus, sign(t, statusBody(41, nowMS+2*day.Milliseconds(), 8*day, revoked...), sk), first, false)
 	addStatus("an older keys.json", keysStatus, good, Seen{KeysSeq: 6}, false)
 	addStatus("signed by a release key", keysStatus, sign(t, statusBody(40, nowMS-3600_000, 8*day, revoked...), rk1), first, false)
 	addStatus("signed by a root", keysStatus, sign(t, statusBody(40, nowMS-3600_000, 8*day, revoked...), root1), first, false)
@@ -232,7 +240,7 @@ func TestReleaseVectors(t *testing.T) {
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatal(err)
 	}
-	if len(v.Vectors) != 30 || len(v.Status) != 15 {
+	if len(v.Vectors) != 33 || len(v.Status) != 18 {
 		t.Fatalf("the file has %d vectors and %d of the list", len(v.Vectors), len(v.Status))
 	}
 	for _, c := range v.Status {
@@ -282,13 +290,15 @@ func TestCheckErrors(t *testing.T) {
 		return vector{}
 	}
 	for name, want := range map[string]error{
-		"keys.json expired":                 ErrExpired,
-		"the channel expired":               ErrExpired,
-		"an older version":                  ErrRollback,
-		"an older keys.json":                ErrRollback,
-		"release.json altered":              ErrSignature,
-		"keys.json signed by a release key": ErrSignature,
-		"the channel signed by a root":      ErrSignature,
+		"keys.json expired":                    ErrExpired,
+		"the channel expired":                  ErrExpired,
+		"an older version":                     ErrRollback,
+		"an older keys.json":                   ErrRollback,
+		"a channel file far past the one seen": ErrJump,
+		"a channel file signed two days ahead": ErrJump,
+		"release.json altered":                 ErrSignature,
+		"keys.json signed by a release key":    ErrSignature,
+		"the channel signed by a root":         ErrSignature,
 	} {
 		c := at(name)
 		_, _, err := Check(c.Keys, c.Channel, c.Release, v.Roots, v.Name, now, c.Seen)
@@ -301,7 +311,7 @@ func TestCheckErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seen != (Seen{KeysSeq: 3, ChannelSeq: 7, Version: "0.6.0"}) {
+	if seen != (Seen{KeysSeq: 3, ChannelSeq: 7, Version: "0.6.0", ChannelKeys: 3, StatusKeys: 2}) {
 		t.Errorf("seen = %+v", seen)
 	}
 	if !r.Direct("0.4.0") || !r.Direct("0.5.3") || r.Direct("0.3.9") {

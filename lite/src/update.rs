@@ -789,7 +789,7 @@ mod tests {
         // An older channel file than one seen.
         let dir = tmp("older");
         publish(&dir, "0.6.1", 1, None);
-        let mut st = State { seen: Seen { channel_seq: 2, ..Seen::default() }, ..State::default() };
+        let mut st = State { seen: Seen { keys_seq: 1, channel_seq: 2, ..Seen::default() }, ..State::default() };
         let (res, installs, _) = run(&dir, "0.6.0", "", &mut st);
         assert!(res.is_err() && installs.is_empty());
         // A signature that fails.

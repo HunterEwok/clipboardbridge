@@ -78,6 +78,11 @@ type Config struct {
 	// battery reports whether the machine has a battery, for the holder
 	// priority; hasBattery if nil.
 	battery func() bool
+	// peerOf tells who is at the other end of a control connection, and
+	// atScreen whether that user may take a target's remote pastes; the
+	// system's if nil (peer.go).
+	peerOf   func(net.Conn) peer
+	atScreen func(peer, string) verdict
 	// fallbackAfter is how long a full member waits for one with a lower
 	// device ID to dial it before it dials that one; fallbackDial if zero.
 	fallbackAfter time.Duration
@@ -210,9 +215,14 @@ type Service struct {
 	adminCAsUnder  map[group.DeviceID]group.KeyHash // the root this root last sent each admin a new admin CA under
 	pendingAdminCA []byte                           // an admin CA that came before the records that make it valid
 	// commands holds the IDs of the commands carried out, until they
-	// expire, so that none is carried out twice.
+	// expire, so that none is carried out twice; the cache starts empty, so
+	// a command signed before startedMS is refused.
 	commands map[string]time.Time
-	online   map[group.DeviceID]bool
+	// keys holds the grants of the remote pastes handed to desktop
+	// sessions, for the uinput helper (keysGrant).
+	keys      map[string]*keysGrant
+	startedMS int64
+	online    map[group.DeviceID]bool
 	// unreached holds the members at home that could not connect to this
 	// one and synced only because it dialed them back (cbb status).
 	unreached map[group.DeviceID]bool
@@ -322,6 +332,12 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.battery == nil {
 		cfg.battery = hasBattery
 	}
+	if cfg.peerOf == nil {
+		cfg.peerOf = connPeer
+	}
+	if cfg.atScreen == nil {
+		cfg.atScreen = atScreen
+	}
 	if cfg.fallbackAfter == 0 {
 		cfg.fallbackAfter = fallbackDial
 	}
@@ -329,7 +345,8 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.runner = actions.System()
 	}
 	s := &Service{cfg: cfg, logf: cfg.Logf, dialers: map[group.DeviceID]*dialer{}, watchers: map[*watcher]bool{}, restart: make(chan struct{}, 1),
-		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery()}
+		seen: map[group.DeviceID]time.Time{}, online: map[group.DeviceID]bool{}, unreached: map[group.DeviceID]bool{}, battery: cfg.battery(),
+		startedMS: cfg.now().UnixMilli()}
 	if s.cfg.runner == nil {
 		// A Mac and Windows run the presets in the signed-in user's
 		// session, through the agent.

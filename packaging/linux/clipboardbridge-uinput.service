@@ -6,8 +6,12 @@
 # graphical session on the screen, where the desktop offers no other way
 # (GNOME and KDE without the RemoteDesktop portal's dialog). It presses
 # them only for the user of the active session on seat0, never on a login
-# or lock screen. Installed and started by install.sh --uinput. It needs no
-# capability: /dev/uinput belongs to root.
+# or lock screen, and only for a remote paste that the service handed to
+# that session, which the helper asks the service about on its control
+# socket. Installed and started by install.sh --uinput. It needs no
+# capability: /dev/uinput belongs to root, and the group clipboardbridge
+# lets it reach the control socket and give its own socket to the desktop
+# connectors.
 [Unit]
 Description=Clipboard Bridge remote paste keys (uinput)
 Documentation=https://github.com/HunterEwok/clipboardbridge
@@ -21,6 +25,7 @@ Restart=on-failure
 RestartSec=5s
 RuntimeDirectory=clipboardbridge-keys
 RuntimeDirectoryMode=0755
+SupplementaryGroups=clipboardbridge
 CapabilityBoundingSet=
 NoNewPrivileges=yes
 ProtectSystem=strict

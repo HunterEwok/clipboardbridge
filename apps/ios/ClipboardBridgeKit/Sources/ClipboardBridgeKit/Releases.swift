@@ -96,19 +96,55 @@ public enum Releases {
     }
 
     /// What a device keeps between checks: the highest sequence numbers and
-    /// version it has taken.
+    /// version it has taken. A channel or status seq holds only under the
+    /// keys.json that certified its signer (channel_keys_seq,
+    /// status_keys_seq; keys_seq when absent, as kept before), as Go's Seen:
+    /// a newer keys.json, which only a root signs, starts them again.
     public struct Seen: Codable, Equatable, Sendable {
         public var keys_seq: UInt64 = 0
         public var channel_seq: UInt64 = 0
         public var version: String? = nil
         public var status_seq: UInt64? = nil
+        public var channel_keys_seq: UInt64? = nil
+        public var status_keys_seq: UInt64? = nil
 
-        public init(keys_seq: UInt64 = 0, channel_seq: UInt64 = 0, version: String? = nil, status_seq: UInt64? = nil) {
+        public init(keys_seq: UInt64 = 0, channel_seq: UInt64 = 0, version: String? = nil, status_seq: UInt64? = nil,
+                    channel_keys_seq: UInt64? = nil, status_keys_seq: UInt64? = nil) {
             self.keys_seq = keys_seq
             self.channel_seq = channel_seq
             self.version = version
             self.status_seq = status_seq
+            self.channel_keys_seq = channel_keys_seq
+            self.status_keys_seq = status_keys_seq
         }
+    }
+
+    /// The most a channel or status seq may rise past the one held under
+    /// the same keys.json, as Go's MaxSeqStep.
+    public static let maxSeqStep: UInt64 = 1 << 16
+
+    /// How far ahead of the device's clock a file may have been signed, when
+    /// that clock reads 2026 or later: a day.
+    public static let maxAheadMS: Int64 = 24 * 3600 * 1000
+
+    /// 2026-01-01: before it the clock is not trusted to refuse files signed
+    /// ahead of it.
+    static let plausible: Int64 = 1_767_225_600_000
+
+    /// The seq a file signed under keys.json keysSeq may not go below, as
+    /// Go's floor.
+    static func seqFloor(_ seq: UInt64, at: UInt64?, seenKeys: UInt64, keysSeq: UInt64) -> UInt64 {
+        let at = (at ?? 0) == 0 ? seenKeys : at!
+        return keysSeq > at ? 0 : seq
+    }
+
+    static func checkSeq(_ seq: UInt64, floor: UInt64) throws {
+        guard seq >= floor else { throw Refused("the file is older than one already seen") }
+        guard floor == 0 || seq - floor <= maxSeqStep else { throw Refused("the file is too far ahead of the one already seen") }
+    }
+
+    static func signedAhead(_ timeMS: Int64, nowMS: Int64) -> Bool {
+        nowMS >= plausible && timeMS > nowMS + maxAheadMS
     }
 
     /// The body of attest-status.json: the serial numbers Google's list
@@ -276,7 +312,8 @@ public enum Releases {
             let c = try decodeChannel(channel.body)
             guard c.channel == name else { throw Refused("the file is for the channel \"\(c.channel)\"") }
             guard nowMS < c.expires_ms else { throw Refused("the file has expired") }
-            guard c.seq >= seen.channel_seq else { throw Refused("the file is older than one already seen") }
+            guard !signedAhead(c.time_ms, nowMS: nowMS) else { throw Refused("the file was signed ahead of this device's clock") }
+            try checkSeq(c.seq, floor: seqFloor(seen.channel_seq, at: seen.channel_keys_seq, seenKeys: seen.keys_seq, keysSeq: k.seq))
             return c
         }
         let r = try within("release.json") {
@@ -291,7 +328,9 @@ public enum Releases {
         }
         var version = r.version
         if let s = seen.version, !s.isEmpty, compare(s, r.version) > 0 { version = s }
-        return (r, Seen(keys_seq: k.seq, channel_seq: c.seq, version: version, status_seq: seen.status_seq))
+        let statusKeys = (seen.status_keys_seq ?? 0) == 0 ? seen.keys_seq : seen.status_keys_seq!
+        return (r, Seen(keys_seq: k.seq, channel_seq: c.seq, version: version, status_seq: seen.status_seq,
+                        channel_keys_seq: k.seq, status_keys_seq: statusKeys == 0 ? nil : statusKeys))
     }
 
     static func verifyKeys(_ keys: File, roots: [Data], nowMS: Int64, seen: Seen) throws -> Keys {
@@ -299,6 +338,7 @@ public enum Releases {
             try keys.verify(roots)
             let k = try decodeKeys(keys.body)
             guard nowMS < k.expires_ms else { throw Refused("the file has expired") }
+            guard !signedAhead(k.time_ms, nowMS: nowMS) else { throw Refused("the file was signed ahead of this device's clock") }
             guard k.seq >= seen.keys_seq else { throw Refused("the file is older than one already seen") }
             return k
         }
@@ -323,12 +363,15 @@ public enum Releases {
                 }
             }
             guard nowMS < st.expires_ms else { throw Refused("the file has expired") }
-            guard st.seq >= (seen.status_seq ?? 0) else { throw Refused("the file is older than one already seen") }
+            guard !signedAhead(st.time_ms, nowMS: nowMS) else { throw Refused("the file was signed ahead of this device's clock") }
+            try checkSeq(st.seq, floor: seqFloor(seen.status_seq ?? 0, at: seen.status_keys_seq, seenKeys: seen.keys_seq, keysSeq: k.seq))
             return st
         }
         var next = seen
+        if (seen.channel_keys_seq ?? 0) == 0, seen.keys_seq != 0 { next.channel_keys_seq = seen.keys_seq }
         next.keys_seq = k.seq
         next.status_seq = st.seq
+        next.status_keys_seq = k.seq
         return (st, next)
     }
 }

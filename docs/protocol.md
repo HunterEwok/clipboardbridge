@@ -454,6 +454,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `key_store` | string or absent | where the sender's keys live: `file`, `hardware` or `rootless` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
 | `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
 | `release_seq` | integer or absent | the `seq` of the channel file of the newest signed release the sender holds (section 16, "In the group"); absent when it holds none, and from a member before 0.6 |
+| `release_keys_seq` | integer or absent | with `release_seq`: the `seq` of that release's `keys.json`; absent from a member before 0.6, which a receiver reads as 0 |
 | `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
 
 ### Device
@@ -542,7 +543,8 @@ them, by hash, and gets them in binary frames. The Go code is `internal/node/con
   of the part from `offset`. `length` is 1 to 1 MiB; a receiver drops a get that is not
   valid. A member MUST serve only parts it holds whole and has checked against their
   `sha256`. `length` 0 cancels every get of that part from the sender: what is queued is
-  dropped and the range being served ends with its next chunk. A receiver keeps at most 64
+  dropped and the range being served ends with its next chunk; a cancel of a part that is
+  neither queued nor served changes nothing, and a receiver MUST NOT keep anything of it. A receiver keeps at most 64
   gets per connection and closes a connection that asks for more.
 - `{"t":"missing","get":{...}}` answers a get for a part the member does not hold whole, or
   that it could not read, and ends that fetch.
@@ -1007,7 +1009,7 @@ Next to it the service listens on the **admin socket** `admin.sock` (on Windows
 `run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
-`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices` and `watch` (with
+`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices`, `release`, `release-get`, `keys` (from root only) and `watch` (with
 the watcher's `copied`, `clipboard`, `injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
 all, and MUST be the only way to them. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
@@ -1054,6 +1056,7 @@ Header fields (all omitted when empty):
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
+| `keys` | string | `inject` to a `desktop` watcher: the grant that its desktop connector hands the uinput helper; `keys`: that grant |
 | `keyboard` | object | `keyboard on`: the Bluetooth keyboard's settings, `{layout?, rate?, pastes?}`; in `status`, also `{on?, connected?, visible_until_ms?, problem?}` |
 | `status` | object | for `status` |
 | `devices` | array | reserved |
@@ -1103,6 +1106,7 @@ A connection carries one request: the service reads the first message and dispat
 | `actions-off` | `{device}` or `{all}` | `{status, done}`: every quick action is turned off on that device, or on every device of the group, through signed commands; this device's own at once. Only on an admin's admin socket |
 | `release` | payload = the release in JSON, `{keys, channel, release}`, the three files of section 16 that `cbb update` fetched | `{done}`: the service checks the release as a `release` message (section 16, "In the group"), keeps it when it is newer than the one it holds, and passes it on to its peers |
 | `release-file` | `{value, part}`: the archive's SHA-256 and its `size`, then its bytes in `data` messages | `{done}`: `cbb update` hands the service an archive of the release it holds (section 16), which keeps it only whole and matching its hash, to pass on to its peers. Only on the admin socket |
+| `keys` | `{name, value, keys}`: `paste` or `enter`, a user ID, and the grant of an `inject` | `{done}` when the service handed that inject to a `desktop` watcher of that user and it is not answered yet, and `name` is its paste keys the first time or, after them, its Enter the first time when the command set `enter`; otherwise an error. Only from root (the uinput helper), on the control socket |
 | `release-get` | `{value}`: an archive's SHA-256 | `{part}`, its bytes in `data` answers, then `{done}`: the archive of the held release, from this device or fetched from its peers |
 | `watch` | `{kind, via, inject?, paste_only?, act?, images?, files?}` + payload = what the clipboard holds now (may be empty) | `{"op":"reply"}` without `done`; then the watcher protocol below |
 
@@ -1149,8 +1153,9 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   presets to the agent of the user signed in, waiting up to 20 s; on Linux it asks logind
   itself.
 - Service to watcher, for remote paste, only to a watcher whose watch request named an
-  `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`, and `name`, the
-  sender's device name). The watcher checks
+  `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`, `name`, the
+  sender's device name, and for a `desktop` watcher `keys`, the grant for the uinput
+  helper). The watcher checks
   that its session is active and not locked, puts the text in, presses Enter when `enter`
   is set, clears the clipboard after a `secret`, shows a notification with the sender, and
   answers `injected` with the same `seq`: no `error` when it did, or `error` (and `detail`),
@@ -1164,6 +1169,20 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   switches and the targets of the connected watchers as `paste: {on, enter, console,
   targets}`.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
+- The socket's group is for the clipboard, while a remote paste and an action go to one
+  user's screen or console. So the service MUST read the user at the other end of a watcher
+  that offers an `inject` target or `act` from the system (`SO_PEERCRED` on Linux,
+  `LOCAL_PEERCRED` on a Mac and FreeBSD, on Windows the process at the other end, from
+  `SIO_AF_UNIX_GETPEERPID`, with its user and session) and hand it a paste or an action only
+  when that user may take it: root and the service's own user (on Windows the system and
+  the service's account) take every target, and `console` only they; `desktop` and `act` go
+  to the user of an active session (logind's sessions on Linux and FreeBSD, the owner of
+  `/dev/console` on a Mac, an active Windows session), and `tmux` to a user with a session
+  (logind's, which counts one over SSH). A watcher whose user the system does not name gets
+  none. Where the system does not tell who is at the screen (Linux or FreeBSD without
+  logind), a paste goes to any target, but a `secret` to none, and the member refuses it
+  with a reason that says so. The lite member checks its `tmux`, `console` and `desktop`
+  watchers the same way. Members before 0.6 hand pastes to any watcher.
 - A watcher MUST check right before it injects keys that its session is active and not
   locked, and refuse otherwise; a watcher MUST NOT run an action's `command` through a
   shell.
@@ -2338,7 +2357,11 @@ commands, such as one before 0.5, ignores the message, so the sender gives up af
 (20 s for `hub`).
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
-`action`, `actions-off` or `away-off` command to every member it is connected to (a `hub` command only goes directly). A member
+`action`, `actions-off` or `away-off` command to the group's hubs it is connected to (the
+root and the admins, "Several hubs" in section 11), and to no other member: a command's body,
+a paste's text among it, is signed but not encrypted, and the hubs are the devices the user
+gave admin powers. A `hub` command only goes directly. Senders before 0.6 send it to every
+member they are connected to, and a member that is not a hub still passes it on. A member
 that gets a command whose `to` is another device passes it on, unchanged, only when it is
 connected to that device and has not passed that `id` before (it keeps the IDs until the
 command expires, at most 4096), and passes the receiver's `result` back to the member it
@@ -2358,7 +2381,11 @@ The receiver MUST take a command only when:
   (section 10, rule 8) signs only `paste-off`, `actions-off`, `away-off` and `action`;
 - `expires_ms` is after its clock and `time_ms` at most 60 s ahead of it;
 - its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
-  until they expire (at most 4096 at a time).
+  until they expire (at most 4096 at a time);
+- `time_ms` is not before the time the receiver started. The replay cache lives in memory
+  and starts empty, so a command carried out before a restart would otherwise be taken
+  again; a refused one is sent again with a new `id`. Members before 0.6 take such
+  a command within its lifetime.
 
 A body is at most 64 KiB, a `paste` command's 2 MiB (the sender writes the text without
 JSON's escapes of `<`, `>` and `&`). A `mode` command with an unknown mode is refused. One that is taken sets the mode, saves it
@@ -2486,16 +2513,26 @@ A device that looks for an update fetches `keys.json`, the channel file of its c
 the `release.json` that names, and MUST take the release only when:
 
 1. `keys.json` verifies under a pinned root key, decodes as a `keys` body, has not expired,
-   and its `seq` is not below the highest the device has taken;
+   is not signed more than a day ahead of the device's clock (`time_ms`), and its `seq` is
+   not below the highest the device has taken;
 2. the channel file verifies under a release or channel key of that `keys.json`, decodes as a `channel`
-   body for the device's channel, has not expired, and its `seq` is not below the highest
-   taken;
+   body for the device's channel, has not expired, is not signed more than a day ahead of
+   the device's clock, and its `seq` is not below the highest taken under the same or an
+   older `keys.json`: a `keys.json` with a higher `seq` than the one the device took its
+   highest channel file under lets the channel's `seq` start again;
 3. `release.json` verifies under a release key of that `keys.json`, the SHA-256 of its body
    is `release_sha256`, its `version` and `channel` are the channel file's, and its version is
    not below the highest the device has taken.
 
-The device then MUST keep the highest `keys` and channel `seq` and version it has taken, so
-that nobody can give it older files later. A file it downloads MUST have the size and
+A channel file's `seq` MUST also be at most 65 536 above the highest taken (when that still
+counts), so that one file signed with a far `seq` cannot hold a device above every file
+signed after it. A device whose clock reads before 2026 skips the checks of `time_ms`, as its
+clock is unset. `attest-status.json` (section 17) is checked the same way as a channel file,
+under its `keys.json`.
+
+The device then MUST keep the highest `keys` and channel `seq` and version it has taken, and
+the `keys` `seq` under which it took its channel file, so that nobody can give it older files
+later; a version before 0.6 checks no signed files. A file it downloads MUST have the size and
 SHA-256 that `release.json` lists, and a program inside an archive the SHA-256 that its
 `binaries` entry lists, before the device installs it. A device below `min_from` updates to `min_from` first.
 A release key that is lost or stolen is dropped from the next `keys.json`; a device that has
@@ -2508,12 +2545,14 @@ release when any device of its group has checked, and one without internet acces
 it too (D-69). The signatures make the peers untrusted: a member checks what a peer sends as
 it checks what it downloads.
 
-- A member's hello carries `release_seq`, the channel `seq` of the release it holds. After a
-  peer's hello, a member that holds a release with a higher `seq` sends it, when the peer is
+- A member's hello carries `release_seq` and `release_keys_seq`, the channel and `keys.json`
+  `seq` of the release it holds. After a peer's hello, a member that holds a newer release
+  sends it (one whose `keys.json` has a higher `seq`, or the same `keys.json` and a channel
+  file with a higher `seq`), when the peer is
   a `full` or `lite` member (phones update from their stores), a `release` message: `{"t":"release","release":{"keys":...,"channel":...,"release":...}}`.
 - A member MUST take a `release` only when its three files pass the check above for the `stable`
-  channel, with the highest `keys` and channel `seq` of the release it holds, and its channel
-  `seq` is higher. It keeps the files (`release.json` in the service's state directory) and
+  channel, with the `keys` and channel `seq` of the release it holds, and it is newer in the
+  same order. It keeps the files (`release.json` in the service's state directory) and
   sends them on to its other peers; it drops one that fails, and logs why. A held release
   whose channel file has expired is not sent.
 - `cbb update` hands the files it fetched and checked to the service on this computer
@@ -2676,8 +2715,8 @@ serial number the last one revoked until its maintainer looks.
 
 - The group's root fetches both files when the group starts and once a day (a root phone
   when evidence comes, at most once a day), and takes the
-  list when it passes the checks of section 16 and its `seq` is not below the last it took
-  (kept in the state directory). The request is the same for every device and names none.
+  list when it passes the checks of section 16, its `seq` checked as there under the
+  `keys.json` it came with (kept in the state directory). The request is the same for every device and names none.
 - The root checks every chain against the list it holds. A chain with a revoked
   certificate proves nothing: the root keeps the last evidence of each peer and, when it
   takes a new list, checks it again; a device recorded as `proven` whose chain is now

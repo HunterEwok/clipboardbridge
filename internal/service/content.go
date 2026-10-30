@@ -50,6 +50,17 @@ type contentStore struct {
 	current map[[sha256.Size]byte]bool      // the parts of the current copy, kept
 	old     map[[sha256.Size]byte]time.Time // the parts of replaced copies: when they were replaced
 	copies  map[[sha256.Size]byte]int64     // the size of the last copy each part was in
+	// partials are the ".part" files that fetches left for a later one to
+	// continue, and fetching the fetches writing one now.
+	partials map[[sha256.Size]byte]leftPart
+	fetching map[[sha256.Size]byte]int
+}
+
+// A leftPart is a ".part" file no fetch writes: its size, and when the
+// last fetch left it.
+type leftPart struct {
+	size int64
+	at   time.Time
 }
 
 // openContent empties the cache in dir and returns it.
@@ -60,7 +71,8 @@ func openContent(dir string, now func() time.Time) (*contentStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	return &contentStore{dir: dir, now: now, whole: map[[sha256.Size]byte]int64{}, current: map[[sha256.Size]byte]bool{}, old: map[[sha256.Size]byte]time.Time{}, copies: map[[sha256.Size]byte]int64{}}, nil
+	return &contentStore{dir: dir, now: now, whole: map[[sha256.Size]byte]int64{}, current: map[[sha256.Size]byte]bool{}, old: map[[sha256.Size]byte]time.Time{}, copies: map[[sha256.Size]byte]int64{},
+		partials: map[[sha256.Size]byte]leftPart{}, fetching: map[[sha256.Size]byte]int{}}, nil
 }
 
 func (c *contentStore) path(sum [sha256.Size]byte) string {
@@ -146,6 +158,32 @@ func (c *contentStore) sweep(limit int64) {
 
 func (c *contentStore) sweepLocked(now time.Time, limit int64) {
 	var total int64
+	// What fetches left goes contentKeep after no copy needs it, and
+	// oldest first past twice the limit; what a fetch writes stays.
+	for sum, p := range c.partials {
+		if c.fetching[sum] > 0 {
+			continue
+		}
+		if !c.current[sum] && now.Sub(p.at) >= contentKeep {
+			c.removePartLocked(sum)
+			continue
+		}
+		total += p.size
+	}
+	for total > 2*limit {
+		var oldest [sha256.Size]byte
+		var at time.Time
+		for sum, p := range c.partials {
+			if c.fetching[sum] == 0 && (at.IsZero() || p.at.Before(at)) {
+				oldest, at = sum, p.at
+			}
+		}
+		if at.IsZero() {
+			break
+		}
+		total -= c.partials[oldest].size
+		c.removePartLocked(oldest)
+	}
 	for sum, size := range c.whole {
 		total += size
 		if _, ok := c.old[sum]; !ok && !c.current[sum] {
@@ -174,13 +212,25 @@ func (c *contentStore) removeLocked(sum [sha256.Size]byte) {
 	delete(c.old, sum)
 	delete(c.whole, sum)
 	delete(c.copies, sum)
+	delete(c.partials, sum)
 	os.Remove(c.path(sum))
 	os.Remove(c.path(sum) + ".part")
 }
 
+func (c *contentStore) removePartLocked(sum [sha256.Size]byte) {
+	delete(c.partials, sum)
+	os.Remove(c.path(sum) + ".part")
+}
+
 // partial opens the file a part is fetched into, keeping what an earlier
-// fetch left, and returns how much that is, with its hash so far.
+// fetch left, and returns how much that is, with its hash so far. The
+// caller calls fetchEnded when the fetch ends, and leave first when it
+// ends without the whole part.
 func (c *contentStore) partial(sum [sha256.Size]byte) (*os.File, int64, hashWriter, error) {
+	c.mu.Lock()
+	c.fetching[sum]++
+	delete(c.partials, sum)
+	c.mu.Unlock()
 	h := sha256.New()
 	f, err := os.OpenFile(c.path(sum)+".part", os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
@@ -192,6 +242,30 @@ func (c *contentStore) partial(sum [sha256.Size]byte) (*os.File, int64, hashWrit
 		return nil, 0, nil, err
 	}
 	return f, have, h, nil
+}
+
+// leave closes the ".part" of a fetch that ended without the whole part,
+// for a later fetch to continue; the sweep counts it and ages it out.
+func (c *contentStore) leave(f *os.File, sum [sha256.Size]byte) {
+	var size int64
+	if fi, err := f.Stat(); err == nil {
+		size = fi.Size()
+	}
+	f.Close()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, err := os.Stat(c.path(sum) + ".part"); err == nil {
+		c.partials[sum] = leftPart{size: size, at: c.now()}
+	}
+}
+
+// fetchEnded ends a fetch that partial began.
+func (c *contentStore) fetchEnded(sum [sha256.Size]byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.fetching[sum]--; c.fetching[sum] <= 0 {
+		delete(c.fetching, sum)
+	}
 }
 
 // hashWriter is a running SHA-256.

@@ -177,6 +177,18 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Status: s.status(), Done: true}, nil)
+	case control.OpKeys:
+		// The uinput helper runs as root with no capability, so it reaches
+		// the control socket through its group, not the admin socket.
+		if p := s.cfg.peerOf(c); !p.known || !p.privileged() {
+			fail(c, errors.New("only the uinput helper, as root, asks for a paste's keys"))
+			return
+		}
+		if err := s.takeKeys(m.Keys, m.Name, m.Value); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
 	case control.OpRemote:
 		if err := s.remote(ctx, m); err != nil {
 			fail(c, err)
@@ -926,6 +938,7 @@ type watcher struct {
 	files     bool         // and files
 	html      bool         // and formatted text
 	injects   chan *inject // remote pastes for it
+	peer      peer         // its user, read when it offers a target or the actions
 }
 
 // board says whether the watcher holds a clipboard: the tmux and console
@@ -973,6 +986,20 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 		s.logf("cbb: a watcher offers the paste target %q, which is not known", m.Inject)
 	}
 	w.pasteOnly, w.act, w.images, w.files, w.html = m.PasteOnly, m.Act, m.Images, m.Files, m.HTML
+	if w.inject != "" || w.act {
+		w.peer = s.cfg.peerOf(c)
+		// Whether the user is at the screen is asked at each paste; a user
+		// the system does not name, or a console helper that is not root,
+		// never takes one.
+		if w.inject != "" && (!w.peer.known || w.inject == targetConsole && !w.peer.privileged()) {
+			s.logf("cbb: a watcher offers the paste target %s as %s, which may not take it; it gets no remote pastes", w.inject, w.peer)
+			w.inject = ""
+		}
+		if w.act && !w.peer.known {
+			s.logf("cbb: a watcher offers to run the quick actions as %s; it runs none", w.peer)
+			w.act = false
+		}
+	}
 	s.mu.Lock()
 	eng := s.eng
 	if eng == nil {
@@ -1013,6 +1040,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 		delete(injected, seq)
 		injMu.Unlock()
 		if in != nil {
+			s.endKeys(in.keys)
 			res.ID = in.body.ID
 			in.done <- res
 		}
@@ -1083,10 +1111,11 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			}
 		case in := <-w.injects:
 			injSeq++
+			in.keys = s.grantKeys(in, w)
 			injMu.Lock()
 			injected[injSeq] = in
 			injMu.Unlock()
-			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By)}
+			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By), Keys: in.keys}
 			if in.body.Type == group.CommandAction {
 				h = control.Header{Op: control.OpAct, Seq: injSeq, Name: in.body.Action, Command: in.command}
 			}

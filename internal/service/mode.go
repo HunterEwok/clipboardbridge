@@ -111,6 +111,9 @@ func hasMedia(e *clip.Engine) bool {
 // far more than any admin sends.
 const maxCommandIDs = 4096
 
+// errSignedBeforeStart refuses a command signed before the service started.
+var errSignedBeforeStart = errors.New("this device started after the command was signed, so it may have carried it out already; send it again")
+
 // command carries out a command a member sent (docs/protocol.md, section
 // 15): one that an admin signed for this device in its group, that has not
 // expired and was not carried out before.
@@ -135,6 +138,11 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 	s.recMu.Unlock()
 	if err != nil {
 		return refused(err)
+	}
+	if body.TimeMS < s.startedMS {
+		// It may have been carried out before the restart, which the
+		// replay cache does not remember.
+		return refused(errSignedBeforeStart)
 	}
 	res := node.Result{ID: body.ID}
 	s.mu.Lock()
@@ -222,7 +230,7 @@ func (s *Service) setModeOn(ctx context.Context, target, name string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, true)
+	res, err := nd.SendCommand(ctx, group.DeviceID(d.ID), cmd, body.ID, s.hubOrder())
 	if err != nil {
 		return fmt.Errorf("setting the sync mode of %s: %w", d.Name, err)
 	}

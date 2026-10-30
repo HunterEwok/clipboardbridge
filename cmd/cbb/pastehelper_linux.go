@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
 	"github.com/HunterEwok/clipboardbridge/internal/consolepaste"
@@ -45,6 +46,13 @@ func runUinputHelper(ctx context.Context, stderr io.Writer) int {
 		return fail(stderr, fmt.Errorf("%w (is the uinput module loaded?)", err))
 	}
 	defer kbd.Close()
+	// The desktop connectors reach the helper as they reach the service:
+	// through the group of the service's control socket.
+	fi, err := os.Stat(control.SocketPath())
+	if err != nil {
+		return fail(stderr, fmt.Errorf("the service's control socket: %w (is clipboardbridge running?)", err))
+	}
+	gid := int(fi.Sys().(*syscall.Stat_t).Gid)
 	if err := os.MkdirAll(filepath.Dir(uinput.Socket), 0o755); err != nil {
 		return fail(stderr, err)
 	}
@@ -54,9 +62,13 @@ func runUinputHelper(ctx context.Context, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	defer os.Remove(uinput.Socket)
-	// Any user may connect: the helper presses the keys only for the user
-	// of the session on the screen, by the caller's credentials.
-	if err := os.Chmod(uinput.Socket, 0o666); err != nil {
+	// The helper presses the keys only for a remote paste that the service
+	// handed to the session on the screen, by the caller's credentials and
+	// the service's grant.
+	if err := os.Chown(uinput.Socket, 0, gid); err != nil {
+		return fail(stderr, err)
+	}
+	if err := os.Chmod(uinput.Socket, 0o660); err != nil {
 		return fail(stderr, err)
 	}
 	logf("cbb: pressing the keys of remote pastes for the active session, at %s", uinput.Socket)

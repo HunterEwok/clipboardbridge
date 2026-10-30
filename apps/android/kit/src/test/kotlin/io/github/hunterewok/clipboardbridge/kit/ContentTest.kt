@@ -156,7 +156,9 @@ class ContentTest {
             "" to "_",
             ".." to "_",
             "tab\there" to "tab_here",
-            "x".repeat(300) to "x".repeat(254),
+            "x".repeat(300) to "x".repeat(255),
+            "CON." + "a".repeat(249) + ".x" to "CON_." + "a".repeat(249),
+            "a".repeat(254) + "." to "a".repeat(254),
         )) {
             val got = Media.cleanName(given)
             assertEquals(want, got, given)

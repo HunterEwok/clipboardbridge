@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -297,6 +298,10 @@ func (r sessionRunner) run(ctx context.Context, name string, command []string) e
 	s.mu.Unlock()
 	if len(ws) == 0 {
 		return &actions.Refusal{Reason: "nobody is signed in here with Clipboard Bridge's agent running, and the actions run in the user's session"}
+	}
+	ws = slices.DeleteFunc(ws, func(w *watcher) bool { return s.mayTake(w.peer, targetAct) != allowed })
+	if len(ws) == 0 {
+		return &actions.Refusal{Reason: "Clipboard Bridge's agent runs here only as users who are not signed in at the screen, and the actions run in that user's session"}
 	}
 	body := group.CommandBody{Type: group.CommandAction, Action: name}
 	var reasons []string

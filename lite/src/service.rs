@@ -24,6 +24,7 @@ use crate::hlc::{self, Clock, Timestamp};
 use crate::identity::Identity;
 use crate::identity::Stored as _;
 use crate::node::{Node, WriteReq};
+use crate::peer;
 use crate::records::Records;
 use crate::records::Stored as _;
 use crate::remotepaste;
@@ -52,9 +53,9 @@ const RESTART_AFTER: Duration = Duration::from_millis(500);
 /// The targets a watcher offers for remote paste, as its watch request
 /// names them (docs/protocol.md, section 8). The lite member has no desktop
 /// of its own, but a full member's desktop connector may watch it.
-const DESKTOP: &str = "desktop";
-const TMUX: &str = "tmux";
-const CONSOLE: &str = "console";
+pub(crate) const DESKTOP: &str = "desktop";
+pub(crate) const TMUX: &str = "tmux";
+pub(crate) const CONSOLE: &str = "console";
 
 /// How long a watcher may take to put a paste in; typing takes TYPE_WAIT
 /// more for each byte, as on a full member.
@@ -90,6 +91,8 @@ struct Watcher {
     /// It holds a clipboard: tmux, the console and paste-only watchers do
     /// not, so they get no writes and report no copies.
     board: bool,
+    /// Its user, read when it offers a target (peer.rs).
+    uid: Option<u32>,
     tx: SyncSender<ToWatcher>,
 }
 
@@ -122,6 +125,9 @@ struct Service {
     /// The replay cache: the IDs of the commands carried out, until they
     /// expire, in milliseconds since the Unix epoch.
     commands: Mutex<HashMap<String, i64>>,
+    /// When the service started: the replay cache starts empty, so a
+    /// command signed before is refused.
+    started_ms: i64,
     log: Arc<dyn Fn(&str) + Send + Sync>,
 }
 
@@ -159,6 +165,7 @@ pub fn run(cfg: Config) -> Result<()> {
         pending: Mutex::new(None),
         state_dir: cfg.state_dir.clone(),
         commands: Mutex::new(HashMap::new()),
+        started_ms: uptime::wall_ms(),
         log: log.clone(),
     });
     let only = crate::interfaces::only();
@@ -458,6 +465,15 @@ impl Service {
             Ok(b) => b,
             Err(e) => return refused("", e.message().to_string()),
         };
+        if body.time_ms < self.started_ms {
+            // It may have been carried out before the restart, which the
+            // replay cache does not remember.
+            return refused(
+                &body.id,
+                "this device started after the command was signed, so it may have carried it out already; send it again"
+                    .into(),
+            );
+        }
         {
             let mut seen = self.commands.lock().unwrap();
             seen.retain(|_, exp| *exp > now);
@@ -727,10 +743,10 @@ impl Service {
         }
         let (targets, console, term) = {
             let ws = self.watchers.lock().unwrap();
-            let targets: Vec<(String, SyncSender<ToWatcher>)> = order
+            let targets: Vec<(String, Option<u32>, SyncSender<ToWatcher>)> = order
                 .iter()
                 .flat_map(|t| ws.iter().filter(move |w| w.target == *t))
-                .map(|w| (w.target.clone(), w.tx.clone()))
+                .map(|w| (w.target.clone(), w.uid, w.tx.clone()))
                 .collect();
             let console = ws.iter().any(|w| w.target == CONSOLE);
             (targets, console, console || ws.iter().any(|w| w.target == TMUX))
@@ -744,6 +760,32 @@ impl Service {
                 "nothing on this device can paste: no tmux or console helper of Clipboard Bridge runs here"
             }
             .into();
+            return res;
+        }
+        // Only the user at the screen takes them, and a secret only where
+        // the system tells who that is.
+        let secret = body.paste_kind == "secret";
+        let mut why = "";
+        let targets: Vec<(String, SyncSender<ToWatcher>)> = targets
+            .into_iter()
+            .filter(|(t, uid, _)| match peer::may_take(*uid, t, peer::at_screen) {
+                peer::Verdict::Allowed => true,
+                peer::Verdict::Unchecked if !secret => true,
+                peer::Verdict::Unchecked => {
+                    why = "this device cannot tell which user is at its screen, so it takes no secret pastes; send it as a paste or a typed text";
+                    false
+                }
+                peer::Verdict::Refused => {
+                    if why.is_empty() {
+                        why = "the paste targets here run as users who are not at the screen";
+                    }
+                    false
+                }
+            })
+            .map(|(t, _, tx)| (t, tx))
+            .collect();
+        if targets.is_empty() {
+            res.reason = why.into();
             return res;
         }
         let wait = if body.mode == "type" { INJECT_WAIT + TYPE_WAIT * text.len() as u32 } else { INJECT_WAIT };
@@ -1023,13 +1065,23 @@ impl Service {
                 return;
             }
         };
-        let target = match m.header.inject.as_str() {
+        let mut target = match m.header.inject.as_str() {
             t @ ("" | DESKTOP | TMUX | CONSOLE) => t.to_string(),
             t => {
                 (self.log)(&format!("cbb: a watcher offers the paste target {t:?}, which is not known"));
                 String::new()
             }
         };
+        // Whether the user is at the screen is asked at each paste; a user
+        // the system does not name, or a console helper that is not root,
+        // never takes one.
+        let uid = if target.is_empty() { None } else { peer::uid(&out) };
+        if !target.is_empty() && (uid.is_none() || target == CONSOLE && !uid.is_some_and(peer::privileged)) {
+            (self.log)(&format!(
+                "cbb: a watcher offers the paste target {target} as a user that may not take it; it gets no remote pastes"
+            ));
+            target.clear();
+        }
         let board = !m.header.paste_only && target != TMUX && target != CONSOLE;
         if board && let (Ok(text), Ok(kind)) = (String::from_utf8(m.payload), kind_of(&m.header.kind)) {
             node.engine.clipboard_is(&text, kind);
@@ -1049,7 +1101,7 @@ impl Service {
             let _ = tx.try_send(ToWatcher::Write(w));
         }
         let id = self.next_watcher.fetch_add(1, Ordering::SeqCst);
-        self.watchers.lock().unwrap().push(Watcher { id, target: target.clone(), board, tx });
+        self.watchers.lock().unwrap().push(Watcher { id, target: target.clone(), board, uid, tx });
         let waiting: Arc<Mutex<Waiting>> = Arc::default();
         {
             let waiting = waiting.clone();

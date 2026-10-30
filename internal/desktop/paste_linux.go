@@ -42,8 +42,8 @@ func closeKeys(k keyboard) {
 }
 
 // keysHelper is the uinput helper (internal/uinput), which presses the
-// keys for the user of the active session.
-type keysHelper struct{ socket string }
+// keys for the user of the active session under the grant of the inject.
+type keysHelper struct{ socket, grant string }
 
 // newKeysHelper returns the helper when install.sh --uinput installed it,
 // or nil.
@@ -54,12 +54,13 @@ func newKeysHelper() keyboard {
 	return keysHelper{socket: uinput.Socket}
 }
 
-func (k keysHelper) ready() error { return nil }
-func (k keysHelper) paste() error { return k.ask("paste") }
-func (k keysHelper) enter() error { return k.ask("enter") }
+func (k keysHelper) withGrant(g string) keyboard { k.grant = g; return k }
+func (k keysHelper) ready() error                { return nil }
+func (k keysHelper) paste() error                { return k.ask("paste") }
+func (k keysHelper) enter() error                { return k.ask("enter") }
 
 func (k keysHelper) ask(req string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return uinput.Ask(ctx, k.socket, req)
+	return uinput.Ask(ctx, k.socket, req, k.grant)
 }

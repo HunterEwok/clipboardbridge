@@ -47,7 +47,9 @@ xtensa-lx = { git = "https://github.com/esp-rs/esp-hal", rev = "8a70d09fe0065d53
 # board is the firmware for the Nano ESP32: the console and the log on its
 # USB port (the chip's USB serial), Wi-Fi. qemu is the test build for
 # Espressif's QEMU instead: the console on UART0, no Wi-Fi, no esp-hal init
-# and a fixed pseudo-random generator, never for a real chip.
+# and a fixed pseudo-random generator, never for a real chip. console-type
+# adds the console's type command, which types any text on the keyboard for
+# whatever reaches the console; the default build has none.
 default = ["board"]
 board = [
   "esp-println/jtag-serial",
@@ -64,7 +66,8 @@ board = [
   "dep:static_cell",
   "dep:trouble-host",
 ]
-qemu = ["esp-println/uart"]
+qemu = ["esp-println/uart", "console-type"]
+console-type = []
 
 [profile.dev]
 opt-level = "s"

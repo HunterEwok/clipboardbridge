@@ -312,6 +312,15 @@ func TestPublish(t *testing.T) {
 	if take([]string{"-new", filepath.Join(other, "stable.json"), "-releases", g.dir, g.channel()}) == nil {
 		t.Error("took a renewal of another release")
 	}
+	// So is one far past the branch's.
+	far := t.TempDir()
+	call(t, extend, "-key", "file:"+k.channel, "-out", far, "-from", g.channel(), "-releases", g.dir)
+	g.file(far, "stable.json", &o)
+	o.Seq = c.Seq + maxTakeStep + 1
+	write(t, filepath.Join(far, "stable.json"), must(json.Marshal(must(signWith(must(signer("file:"+k.channel)), o)))))
+	if take([]string{"-new", filepath.Join(far, "stable.json"), "-releases", g.dir, g.channel()}) == nil {
+		t.Error("took a renewal far past the branch's")
+	}
 
 	// A pre-release gets no channel file; answering no leaves a draft.
 	g.draft("v0.7.0-rc.1")

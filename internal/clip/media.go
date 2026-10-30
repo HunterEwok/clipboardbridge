@@ -212,18 +212,23 @@ func CleanName(name string) string {
 		}
 		b.WriteRune(r)
 	}
-	name = b.String()
-	for len(name) > MaxName {
+	// What the fixes below add can take the name past MaxName, so the
+	// name loses characters at its end until the fixed name fits.
+	for name = b.String(); ; {
+		if name == "" || name == "." || name == ".." {
+			return "_"
+		}
+		if fixed := fixName(name); len(fixed) <= MaxName {
+			return fixed
+		}
 		_, n := utf8.DecodeLastRuneInString(name)
 		name = name[:len(name)-n]
 	}
-	if name == "" || name == "." || name == ".." {
-		return "_"
-	}
-	if len(name) == MaxName {
-		_, n := utf8.DecodeLastRuneInString(name)
-		name = name[:len(name)-n]
-	}
+}
+
+// fixName gives a reserved name "_" after its base and one that ends in a
+// dot or a space "_" after it.
+func fixName(name string) string {
 	if reserved(name) {
 		// CON.txt becomes CON_.txt: Windows reserves the base with any
 		// extension.

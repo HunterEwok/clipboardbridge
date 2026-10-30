@@ -25,6 +25,7 @@ import (
 // tools/release-sign drill does.
 type releaseSigner struct {
 	root, key *ecdsa.PrivateKey
+	keysSeq   uint64 // the seq of the keys.json it signs; 1 when 0
 }
 
 func newReleaseSigner(t *testing.T) *releaseSigner {
@@ -64,7 +65,7 @@ func (s *releaseSigner) signArchive(t *testing.T, version string, seq uint64, da
 	}
 	at := time.Now().Add(-time.Minute).UnixMilli()
 	life := (30 * 24 * time.Hour).Milliseconds()
-	keys, err := release.Sign(release.Keys{V: 1, Type: release.TypeKeys, Seq: 1, TimeMS: at, ExpiresMS: at + life,
+	keys, err := release.Sign(release.Keys{V: 1, Type: release.TypeKeys, Seq: max(s.keysSeq, 1), TimeMS: at, ExpiresMS: at + life,
 		Keys: []release.Key{{Key: key, Name: "test"}}}, s.root)
 	if err != nil {
 		t.Fatal(err)
@@ -129,6 +130,35 @@ func TestReleaseSpreads(t *testing.T) {
 	pc = restartService(t, &h, pc)
 	if got := pc.status(t).Release; got != "0.6.1" {
 		t.Errorf("pc holds %q after a restart", got)
+	}
+}
+
+// A release under a newer keys.json, which only a root signs, is newer
+// than the one held whatever its channel file's seq, so a channel file
+// signed far ahead holds the group only until the root signs keys.json
+// again.
+func TestReleaseUnderNewKeys(t *testing.T) {
+	signer := newReleaseSigner(t)
+	roots := signer.roots(t)
+	withRoots := func(c *Config) { c.ReleaseRoots = roots }
+	var h hub
+	pi := startWith(t, &h, "pi", "linux", withRoots)
+	pc := startWith(t, &h, "pc", "linux", withRoots)
+	pairWith(t, pi, pc)
+	waitFor(t, "pc is connected", func() bool { return len(pi.status(t).Peers) == 1 })
+
+	if _, err := pi.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.1", 1<<40))); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "pc holds 0.6.1", func() bool { return pc.status(t).Release == "0.6.1" })
+	signer.keysSeq = 2
+	if _, err := pi.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.2", 1))); err != nil {
+		t.Fatalf("pi refused a release under a newer keys.json: %v", err)
+	}
+	waitFor(t, "pc holds 0.6.2", func() bool { return pc.status(t).Release == "0.6.2" })
+	signer.keysSeq = 1
+	if _, err := pc.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.3", 1<<40+1))); err == nil {
+		t.Error("pc took a release under an older keys.json")
 	}
 }
 

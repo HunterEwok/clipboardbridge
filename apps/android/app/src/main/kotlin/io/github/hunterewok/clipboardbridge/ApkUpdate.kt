@@ -89,7 +89,8 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
     }
 
     /** What the last check took; the version is left out, as cbb update does, so that a channel may go back to an older release. */
-    private fun seen(): Releases.Seen = Releases.Seen(prefs.getLong(KEYS_SEQ, 0), prefs.getLong(CHANNEL_SEQ, 0))
+    private fun seen(): Releases.Seen =
+        Releases.Seen(prefs.getLong(KEYS_SEQ, 0), prefs.getLong(CHANNEL_SEQ, 0), channelKeysSeq = prefs.getLong(CHANNEL_KEYS_SEQ, 0))
 
     /** Checks once a day while [automatic] is on, and installs a newer release it finds. */
     fun runIfDue() {
@@ -152,7 +153,7 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
         val named = Releases.named(channel) ?: throw Releases.Refused("$CHANNEL_FILE names no valid release")
         val release = file(get(url(base, RELEASE_FILE, named), Releases.MAX_BODY), RELEASE_FILE)
         val (r, next) = Releases.check(keys, channel, release, roots, CHANNEL, System.currentTimeMillis(), seen())
-        prefs.edit().putLong(KEYS_SEQ, next.keysSeq).putLong(CHANNEL_SEQ, next.channelSeq).apply()
+        prefs.edit().putLong(KEYS_SEQ, next.keysSeq).putLong(CHANNEL_SEQ, next.channelSeq).putLong(CHANNEL_KEYS_SEQ, next.channelKeysSeq).apply()
         if (Releases.compare(r.version, installed) <= 0) {
             found = null
             return null
@@ -266,6 +267,7 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
         private const val FAILED = "failed"
         private const val KEYS_SEQ = "keysSeq"
         private const val CHANNEL_SEQ = "channelSeq"
+        private const val CHANNEL_KEYS_SEQ = "channelKeysSeq"
 
         /** F-Droid's client, which updates the F-Droid build. */
         const val FDROID = "org.fdroid.fdroid"

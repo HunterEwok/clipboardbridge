@@ -141,12 +141,14 @@ class CommandsTest {
         waitUntil { a.peers == 1 && b.peers == 1 && hub.peers == 2 }
         val c = Commands.mode(ib, "own", "tag", ia, Instant.now(), SoftwareSigner())
         assertFailsWith<MemberNode.ProtocolException> { a.command(ib, c) }
-        val r = a.command(ib, c, via = true)
+        // Only through the hubs.
+        assertFailsWith<MemberNode.ProtocolException> { a.command(ib, c, via = listOf("d")) }
+        val r = a.command(ib, c, via = listOf("d", ih))
         assertEquals("done", r.status)
         assertEquals(ib, r.by)
         assertEquals(listOf("b"), synchronized(got) { got.toList() })
         // The hub passes the same command on once only.
-        assertFailsWith<MemberNode.ProtocolException> { a.command(ib, c, timeoutMS = 300, via = true) }
+        assertFailsWith<MemberNode.ProtocolException> { a.command(ib, c, timeoutMS = 300, via = listOf(ih)) }
         assertEquals(listOf("b"), synchronized(got) { got.toList() })
         a.closeAll()
         b.closeAll()

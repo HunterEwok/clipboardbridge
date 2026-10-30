@@ -72,8 +72,39 @@ object Releases {
         }
     }
 
-    /** What a device keeps between checks: the highest sequence numbers and version it has taken. */
-    data class Seen(val keysSeq: Long = 0, val channelSeq: Long = 0, val version: String = "", val statusSeq: Long = 0)
+    /**
+     * What a device keeps between checks: the highest sequence numbers and version it has taken. A
+     * channel or status seq holds only under the keys.json that certified its signer
+     * ([channelKeysSeq], [statusKeysSeq]; [keysSeq] when 0, as kept before), as Go's Seen: a newer
+     * keys.json, which only a root signs, starts them again.
+     */
+    data class Seen(
+        val keysSeq: Long = 0,
+        val channelSeq: Long = 0,
+        val version: String = "",
+        val statusSeq: Long = 0,
+        val channelKeysSeq: Long = 0,
+        val statusKeysSeq: Long = 0,
+    )
+
+    /** The most a channel or status seq may rise past the one held under the same keys.json, as Go's MaxSeqStep. */
+    const val MAX_SEQ_STEP = 1L shl 16
+
+    /** How far ahead of the device's clock a file may have been signed, when that clock reads 2026 or later: a day. */
+    const val MAX_AHEAD_MS = 24L * 3600 * 1000
+
+    /** 2026-01-01: before it the clock is not trusted to refuse files signed ahead of it. */
+    private const val PLAUSIBLE = 1_767_225_600_000L
+
+    /** The seq a file signed under keys.json [keysSeq] may not go below, as Go's floor. */
+    private fun floor(seq: Long, at: Long, seenKeys: Long, keysSeq: Long): Long = if (keysSeq > (if (at == 0L) seenKeys else at)) 0 else seq
+
+    private fun checkSeq(seq: Long, floor: Long) {
+        if (seq < floor) throw Refused("the file is older than one already seen")
+        if (floor > 0 && seq - floor > MAX_SEQ_STEP) throw Refused("the file is too far ahead of the one already seen")
+    }
+
+    private fun signedAhead(timeMS: Long, nowMS: Long): Boolean = nowMS >= PLAUSIBLE && timeMS > nowMS + MAX_AHEAD_MS
 
     /** The body of attest-status.json: the serial numbers Google's list revokes, as AndroidAttestation.Policy takes them. */
     class Status(val seq: Long, val timeMS: Long, val expiresMS: Long, val sourceMS: Long, val androidRevoked: List<String>)
@@ -120,7 +151,7 @@ object Releases {
     }
 
     /** The keys of keys.json by use; a key of a use this reader does not know signs nothing. */
-    private class Keys(val seq: Long, val expiresMS: Long, val uses: List<Pair<String, ByteArray>>) {
+    private class Keys(val seq: Long, val timeMS: Long, val expiresMS: Long, val uses: List<Pair<String, ByteArray>>) {
         fun spkis(use: String): List<ByteArray> = uses.filter { it.first == use }.map { it.second }
     }
 
@@ -138,7 +169,7 @@ object Releases {
             if (p256PublicKey(spki) == null) throw Refused("a key is not P-256")
             (k.optString("use") ?: USE_RELEASE) to spki
         }
-        return Keys(seq, expires, uses)
+        return Keys(seq, o.optLong("time_ms") ?: 0, expires, uses)
     }
 
     private fun decodeRelease(body: ByteArray): Release {
@@ -198,7 +229,8 @@ object Releases {
             if (parseVersion(rel) == null || !SHA256.matches(hash)) throw Refused("the channel file names no valid release")
             if (c != name) throw Refused("the file is for the channel \"$c\"")
             if (nowMS >= expires) throw Refused("the file has expired")
-            if (seq < seen.channelSeq) throw Refused("the file is older than one already seen")
+            if (signedAhead(o.optLong("time_ms") ?: 0, nowMS)) throw Refused("the file was signed ahead of this device's clock")
+            checkSeq(seq, floor(seen.channelSeq, seen.channelKeysSeq, seen.keysSeq, k.seq))
             Triple(seq, rel, hash)
         } catch (e: Refused) {
             fail("$name.json", e)
@@ -214,7 +246,7 @@ object Releases {
             fail("release.json", e)
         }
         val version = if (seen.version.isNotEmpty() && compare(seen.version, r.version) > 0) seen.version else r.version
-        return r to Seen(k.seq, cSeq, version, seen.statusSeq)
+        return r to Seen(k.seq, cSeq, version, seen.statusSeq, k.seq, if (seen.statusKeysSeq == 0L) seen.keysSeq else seen.statusKeysSeq)
     }
 
     /**
@@ -229,6 +261,7 @@ object Releases {
         keys.verify(roots)
         decodeKeys(keys.body).also {
             if (nowMS >= it.expiresMS) throw Refused("the file has expired")
+            if (signedAhead(it.timeMS, nowMS)) throw Refused("the file was signed ahead of this device's clock")
             if (it.seq < seen.keysSeq) throw Refused("the file is older than one already seen")
         }
     } catch (e: Refused) {
@@ -257,11 +290,17 @@ object Releases {
                 if (!SERIAL.matches(s) || (i > 0 && !serialLess(list[i - 1], s))) throw Refused("\"$s\" is not a serial number in order")
             }
             if (nowMS >= expires) throw Refused("the file has expired")
-            if (seq < seen.statusSeq) throw Refused("the file is older than one already seen")
+            if (signedAhead(o.optLong("time_ms") ?: 0, nowMS)) throw Refused("the file was signed ahead of this device's clock")
+            checkSeq(seq, floor(seen.statusSeq, seen.statusKeysSeq, seen.keysSeq, k.seq))
             Status(seq, o.optLong("time_ms") ?: 0, expires, o.optLong("source_ms") ?: 0, list)
         } catch (e: Refused) {
             fail("attest-status.json", e)
         }
-        return st to seen.copy(keysSeq = k.seq, statusSeq = st.seq)
+        return st to seen.copy(
+            keysSeq = k.seq,
+            statusSeq = st.seq,
+            statusKeysSeq = k.seq,
+            channelKeysSeq = if (seen.channelKeysSeq == 0L) seen.keysSeq else seen.channelKeysSeq,
+        )
     }
 }

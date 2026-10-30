@@ -247,3 +247,51 @@ func TestFetchStall(t *testing.T) {
 	delete(c.fetches, sum)
 	c.fetchMu.Unlock()
 }
+
+// TestCancelsOfOtherParts: while a part is served, a cancel of a part that
+// is neither queued nor served is not kept, so the peer's cancels hold at
+// most one count for each part it asked for.
+func TestCancelsOfOtherParts(t *testing.T) {
+	var store memContent
+	p := store.put(random(t, 16<<20))
+	srv := newMember(t, Full, withContent(&store), withTimers(time.Second, 60*time.Second))
+	r := rawPeer(t, srv, newMember(t, Full))
+	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
+	waitPeers(t, srv, 1)
+	for i := range 4 {
+		r.send(&message{Type: typeGet, Get: &Get{SHA256: p.SHA256, Offset: int64(i) * getWindow, Length: getWindow}})
+	}
+	var c *conn
+	deadline := time.Now().Add(5 * time.Second)
+	for c == nil || !c.serving.isRunning() {
+		if time.Now().After(deadline) {
+			t.Fatal("the part is not served")
+		}
+		srv.mu.Lock()
+		for _, cc := range srv.conns {
+			c = cc
+		}
+		srv.mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
+	}
+	for i := range 1000 {
+		var other [sha256.Size]byte
+		other[0], other[1] = byte(i), byte(i>>8)
+		r.send(&message{Type: typeGet, Get: &Get{SHA256: other[:]}})
+	}
+	r.send(&message{Type: typeGet, Get: &Get{SHA256: p.SHA256}})
+	time.Sleep(300 * time.Millisecond)
+	c.serving.mu.Lock()
+	n := len(c.serving.cancels)
+	c.serving.mu.Unlock()
+	if n > 1 {
+		t.Errorf("the cancels hold %d parts, want at most the one served", n)
+	}
+}
+
+// isRunning reports whether the connection's server runs.
+func (s *serving) isRunning() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running
+}

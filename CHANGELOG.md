@@ -134,7 +134,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the store.
 - The Nano ESP32's USB port as a keyboard (`usb keyboard` on its console): a boot keyboard
   and a serial port for the console on the chip's OTG controller, `type TEXT` with the
-  layout active on the host (`layout us` or `ru`) at a set rate, and `flash` to restart into
+  layout active on the host (`layout us` or `ru`) at a set rate (only in a build with the
+  feature `console-type`, which the default firmware leaves out), and `flash` to restart into
   download mode. A text with characters the layout cannot type is refused, naming them. The
   layouts' key tables are in the protocol core (`cbb_core::keyboard`). Remote paste through
   the keyboard follows the board's sync.
@@ -298,7 +299,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   uinput` in the `clipboardbridge-uinput` unit: a virtual keyboard that presses only
   Shift+Insert and Enter for the desktop connector of the session on the screen, so that
   remote paste works on GNOME and KDE without the portal's dialog. It presses them only for
-  the user of the active graphical session, and never on a login or lock screen.
+  a remote paste that the service took under the paste switches and handed to that
+  session, asking the service for each, only for the user of the active graphical session,
+  and never on a login or lock screen; its socket is open to the service's group only.
 - Remote paste on Windows: the clipboard agent pastes into the window with the focus
   through the clipboard and Ctrl+V, or types any character with SendInput's Unicode keys.
   It refuses on the lock screen and under an administrator prompt, and when the window with
@@ -471,10 +474,33 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A member keeps nothing of a peer's cancel of a part it neither queued nor serves for that
+  peer (docs/protocol.md, section 4).
+
+- The content cache counts what fetches that stopped short left toward twice the device's
+  limit, and deletes it 10 minutes after no copy needs it, as it deletes the parts of
+  replaced copies.
+
+- Remote pastes and quick actions go only to a paste target or an agent of the user at the
+  screen: the service reads the user at the other end of the control socket from the
+  system, gives the console target only to root, the desktop and the actions only to the
+  user of an active session, and tmux to a user with a session; where the system does not
+  tell who is at the screen, as without logind, it takes no `secret` paste. The same in the
+  lite member (docs/protocol.md, section 8).
+
+- Signed release files: a channel file's and `attest-status.json`'s `seq` is compared only
+  with the files taken under the same `keys.json`, so a new `keys.json` lets it start again;
+  a `seq` more than 65 536 above the one taken, and a file signed more than a day ahead of
+  the device's clock, are refused; members pass a release on by its `keys.json` first
+  (`release_keys_seq` in the hello), and `release-sign take` refuses a renewed channel file
+  more than 16 past the branch's. The same in Go, the lite member and both phone kits
+  (docs/protocol.md, section 16).
+
 - The website's chalk is written about 30% faster (a board in about a second) and moves more
   smoothly: the chalk filter is on each table cell and on a drawing's moving parts apart, the
   panes under living boards are tinted rather than blurred, the underline grows by a
   transform, and the chalk's grain holds still while a board is drawn or the page scrolls.
+
 - A member refuses an event more than 7 days ahead of its own wall clock, whatever events it
   took before, in Go, the lite member and both phone kits (docs/protocol.md, section 5).
 
@@ -600,6 +626,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The lite member writes its state files through a temporary file with a random name that
+  must not exist yet, and removes it when the write fails; `attest-status` gives up on
+  Google's list after 30 s instead of waiting for it without end.
+- A copied file's name made fit for every system no longer comes out one byte over the
+  255-byte limit when it is that long, Windows reserves its base and it ends in a dot; a
+  valid name of 255 bytes stays as it is. The same on computers and both phones.
+- An admin's command for a device it is not connected to, such as a remote paste, now goes
+  only through the group's hubs (the root and the admins), not through every member, on
+  computers and both phone apps.
+- A device that restarts no longer carries out again a command it took just before the
+  restart: computers, phones and the lite member refuse a command signed before they
+  started, and the reason asks the sender to send it again.
 - A pairing window or an invitation on an admin failed every joiner with "wrong code" once
   the admin's certificates changed while it was open, as when the root sends a new admin
   its admin CA again right after making it an admin; the window now presents the

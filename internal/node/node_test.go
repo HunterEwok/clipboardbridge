@@ -1153,10 +1153,22 @@ func TestCommandsPassThroughAMember(t *testing.T) {
 	cmd := group.Record{Body: body}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := a.SendCommand(ctx, b.id.ID, cmd, id, false); err == nil {
+	if _, err := a.SendCommand(ctx, b.id.ID, cmd, id, nil); err == nil {
 		t.Error("a command went to a member that is not connected, without via")
 	}
-	res, err := a.SendCommand(ctx, b.id.ID, cmd, id, true)
+	// A member that is not one of the hubs never gets it.
+	other := group.DeviceID("not the hub")
+	short, stop := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer stop()
+	if _, err := a.SendCommand(short, b.id.ID, cmd, id, []group.DeviceID{other}); err == nil {
+		t.Error("a command for b reached it through a member that is not one of the hubs")
+	}
+	select {
+	case who := <-got:
+		t.Fatalf("%s got a command that should have gone to the hubs only", who)
+	default:
+	}
+	res, err := a.SendCommand(ctx, b.id.ID, cmd, id, []group.DeviceID{other, hub.id.ID})
 	if err != nil || res.Status != ResultDone || res.ID != id {
 		t.Fatalf("the command through the hub: %+v, %v", res, err)
 	}
@@ -1164,9 +1176,9 @@ func TestCommandsPassThroughAMember(t *testing.T) {
 		t.Errorf("%s carried out the command", who)
 	}
 	// The same command again is passed on once only.
-	short, stop := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	short, stop = context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer stop()
-	if _, err := a.SendCommand(short, b.id.ID, cmd, id, true); err == nil {
+	if _, err := a.SendCommand(short, b.id.ID, cmd, id, []group.DeviceID{hub.id.ID}); err == nil {
 		t.Error("the hub passed the same command on twice")
 	}
 	select {
@@ -1196,10 +1208,10 @@ func releaseSet(t *testing.T, seq uint64) *ReleaseSet {
 	return &ReleaseSet{Keys: signed.File{Body: []byte("{}")}, Channel: signed.File{Body: body}, Release: signed.File{Body: []byte("{}")}}
 }
 
-func (r *releaseStore) Current() (*ReleaseSet, uint64) {
+func (r *releaseStore) Current() (*ReleaseSet, ReleaseOrder) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.cur, r.seq
+	return r.cur, ReleaseOrder{Channel: r.seq}
 }
 
 func (r *releaseStore) Add(_ group.DeviceID, s ReleaseSet) bool {

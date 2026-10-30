@@ -78,13 +78,25 @@ func TestManifestValidate(t *testing.T) {
 }
 
 func TestNames(t *testing.T) {
-	for _, name := range []string{"a.txt", "R\u00e9sum\u00e9 2026.pdf", "con", "LPT9.log", "a.", "a ", "", ".", "..", "a/b", "a:b", "tab\there", strings.Repeat("\u00e9", 200), "\xff"} {
+	for _, name := range []string{"a.txt", "R\u00e9sum\u00e9 2026.pdf", "con", "LPT9.log", "a.", "a ", "", ".", "..", "a/b", "a:b", "tab\there", strings.Repeat("\u00e9", 200), "\xff",
+		// Near the limit: a reserved base and a dot at the end both add to it.
+		"CON." + strings.Repeat("a", 249) + ".x", "con." + strings.Repeat("a", 250) + ".", strings.Repeat("a", 254) + ".", strings.Repeat("a", 255), strings.Repeat("\u00e9", 127) + " "} {
 		clean := CleanName(name)
 		if err := CheckName(clean); err != nil {
 			t.Errorf("CleanName(%q) = %q: %v", name, clean, err)
 		}
 		if CheckName(name) == nil && clean != name {
 			t.Errorf("CleanName(%q) = %q, changed a valid name", name, clean)
+		}
+	}
+	// The same as the kits' tests.
+	for given, want := range map[string]string{
+		strings.Repeat("x", 300):                 strings.Repeat("x", 255),
+		"CON." + strings.Repeat("a", 249) + ".x": "CON_." + strings.Repeat("a", 249),
+		strings.Repeat("a", 254) + ".":           strings.Repeat("a", 254),
+	} {
+		if got := CleanName(given); got != want {
+			t.Errorf("CleanName(%q) = %q, want %q", given, got, want)
 		}
 	}
 	for _, name := range []string{"CON", "nul.txt", "com1", "Lpt3.doc"} {
