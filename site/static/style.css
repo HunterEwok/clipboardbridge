@@ -668,6 +668,8 @@ nav a[aria-current] { color: var(--accent); }
 .diagram .surface { padding: 12px; }
 .diagram svg { filter: url(#chalk); }
 .diagram .bg { fill: none; }
+/* The picture's rectangles are named like the site's own panes (.card, .note, .badge): none of their cut corners, glass or padding applies to them. */
+.diagram :is(.card, .note, .badge) { clip-path: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0; margin: 0; border: 0; }
 .diagram .zone { fill: none; stroke: var(--chalk-rule); stroke-width: 2; }
 .diagram .card { fill: none; stroke: var(--chalk); stroke-width: 3; }
 .diagram .card.key, .diagram .card.srv { stroke: var(--chalk-yellow); }
