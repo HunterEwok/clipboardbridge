@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: bfd0846e196a -->
 # Kusakinisha
 
 Clipboard Bridge huendeshwa kama huduma ndogo ya chinichini kwenye kila kompyuta. Amri yake ni `cbb`. Kila njia iliyo hapa chini husakinisha programu ile ile; chagua unayopenda.

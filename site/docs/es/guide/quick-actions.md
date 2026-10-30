@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 6884007eb15c -->
 # Acciones rápidas
 
 Para quien quiere bloquear, suspender o reiniciar un ordenador desde un teléfono u otro ordenador del grupo. Un administrador ejecuta la acción con una pulsación o un comando; el dispositivo solo la ejecuta si su propio usuario activó esa acción allí.

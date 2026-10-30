@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: ec14d31afe67 -->
 # Pegado remoto
 
 Para quien quiere poner un texto en una app de otro dispositivo: una contraseña en el formulario de inicio de sesión de un televisor, un comando en la terminal de un servidor, una dirección en un ordenador al otro lado de la habitación. Un administrador del grupo envía el texto, y aterriza donde esté el foco de ese dispositivo, pegado o escrito tecla a tecla.

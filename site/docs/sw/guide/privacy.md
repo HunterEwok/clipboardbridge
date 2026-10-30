@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 9fde2fa70c1b -->
 # Faragha: nani anaona nini
 
 Kwa yeyote anayetaka kujua nini kinatoka kwenye vifaa vyake. Clipboard Bridge haina akaunti, wingu wala telemetria: unachonakili huenda kwenye vifaa vya kikundi chako tu, kimesimbwa mwisho hadi mwisho. Ukurasa huu unaorodhesha kila kitu kingine ambacho mtu aliye nje ya kikundi anaweza kuona, na jinsi ya kukizima.

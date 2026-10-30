@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: e3f44a3e70d3 -->
 # Jinsi inavyofanya kazi
 
 Ukurasa huu unaeleza Clipboard Bridge kwa picha: nani yumo kwenye kikundi, jinsi vifaa vinavyopatana nyumbani, na kila njia ambayo vinaweza kuendelea kuwasiliana vikiwa mbali. Kanuni kamili ziko kwenye [muundo](../design.md); huzihitaji ili kuutumia.

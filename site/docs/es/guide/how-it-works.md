@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: e3f44a3e70d3 -->
 # Cómo funciona
 
 Esta página explica Clipboard Bridge con imágenes: quién forma parte de un grupo, cómo se encuentran los dispositivos en casa y todas las formas en que pueden seguir en contacto cuando están fuera. Las reglas exactas están en el [diseño](../design.md); no las necesitas para usarlo.

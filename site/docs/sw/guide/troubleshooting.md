@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 931b83ed0988 -->
 # Wakati kitu hakifanyi kazi
 
 Anza na `cbb status` kwenye kifaa chenye tatizo: kinasema kama huduma inaendesha, kiko kwenye kikundi gani, ni wanachama gani wameunganishwa na hali ya usawazishaji nje ya nyumbani. Kila ujumbe ni mfupi; `CBB_DEBUG=1 cbb status` (kwenye Windows kwanza `$env:CBB_DEBUG = "1"`) huonyesha kosa la msingi chini yake. Kumbukumbu ya huduma daima ina maelezo: kwenye Linux `journalctl -u clipboardbridge`, na ya kiunganishi cha eneo-kazi iko kwenye jarida la kikao, `journalctl --user`; mifumo mingine iko katika [faili na kumbukumbu](../reference/devices.md#files-and-logs). Swichi ya maelezo ya kila sehemu, ikiwemo programu na visakinishi, iko katika [ujumbe wa makosa na maelezo](../reference/errors.md).

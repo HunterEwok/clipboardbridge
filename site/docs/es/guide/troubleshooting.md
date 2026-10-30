@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 931b83ed0988 -->
 # Cuando algo no funciona
 
 Empieza con `cbb status` en el dispositivo que falla: dice si el servicio está en marcha, en qué grupo está, qué miembros están conectados y el estado de la sincronización fuera de casa. Cada mensaje es corto; `CBB_DEBUG=1 cbb status` (en Windows, antes `$env:CBB_DEBUG = "1"`) muestra debajo el error subyacente. El registro del servicio siempre tiene los detalles: en Linux `journalctl -u clipboardbridge`, y el del conector de escritorio está en el diario de la sesión, `journalctl --user`; los demás sistemas están en [archivos y registros](../reference/devices.md#files-and-logs). El interruptor de detalles de cada parte, incluidas las apps y los instaladores, está en [mensajes de error y detalles](../reference/errors.md).

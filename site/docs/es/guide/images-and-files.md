@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: abde0b7cf4b6 -->
 # Imágenes, archivos y texto con formato
 
 Para quien copia algo más que texto sin formato. Una imagen, archivos de un gestor de archivos o texto con su formato, copiados en un dispositivo, pueden pegarse en los demás tal cual.

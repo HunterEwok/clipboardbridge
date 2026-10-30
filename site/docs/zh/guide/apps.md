@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 3a3178c99395 -->
 # 应用
 
 Clipboard Bridge 有适用于手机、手表和桌面的应用。手机应用保管群组；桌面应用是进入电脑上已在运行的服务的一扇窗口。

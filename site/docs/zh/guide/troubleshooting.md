@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 931b83ed0988 -->
 # 出了问题怎么办
 
 先在出问题的设备上运行 `cbb status`：它会告诉你服务是否在运行、在哪个群组里、哪些成员已连接，以及离家同步的状态。每条消息都很简短；`CBB_DEBUG=1 cbb status`（在 Windows 上先运行 `$env:CBB_DEBUG = "1"`）会在它下面显示底层的错误。服务的日志里总有详细信息：在 Linux 上是 `journalctl -u clipboardbridge`，桌面连接器的日志在会话的日志里，用 `journalctl --user`；其他系统见[文件和日志](../reference/devices.md#files-and-logs)。包括应用和安装程序在内，每个部分的详细信息开关见[错误消息和详细信息](../reference/errors.md)。

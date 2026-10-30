@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: abde0b7cf4b6 -->
 # Picha, faili na maandishi yenye muundo
 
 Kwa mtu yeyote anayenakili zaidi ya maandishi matupu. Picha, faili kutoka kwenye kidhibiti faili au maandishi yenye muundo wake, vilivyonakiliwa kwenye kifaa kimoja, vinaweza kubandikwa kwenye vingine kama vilivyo.

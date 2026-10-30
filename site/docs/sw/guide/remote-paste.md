@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: ec14d31afe67 -->
 # Kubandika kwa mbali
 
 Kwa yeyote anayetaka kuweka maandishi kwenye programu ya kifaa kingine: nenosiri kwenye fomu ya kuingia ya televisheni, amri kwenye terminal ya seva, anwani kwenye kompyuta iliyo upande wa pili wa chumba. Msimamizi wa kikundi hutuma maandishi, nayo hutua mahali ambapo mwelekeo wa kifaa hicho upo, yakibandikwa au kuandikwa herufi kwa herufi.

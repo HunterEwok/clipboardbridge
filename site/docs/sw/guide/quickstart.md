@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: abd3fbd1818b -->
 # Kuanza haraka
 
 Clipboard Bridge huipa simu yako na kompyuta zako ubao mmoja wa kunakili: unanakili kwenye kimoja na kubandika kwenye kingine. Vifaa huunda **kikundi** kwenye mtandao wako wa nyumbani. Simu hushikilia ufunguo wa kikundi na kuruhusu kila kifaa kipya kuingia, kwa hiyo hakuna anayeweza kujiunga bila wewe.

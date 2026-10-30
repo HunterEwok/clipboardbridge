@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: e3f44a3e70d3 -->
 # 工作原理
 
 本页用图示说明 Clipboard Bridge：群组里有哪些设备，它们在家里如何找到彼此，以及离家后有哪些方式保持联系。确切的规则见[设计文档](../design.md)；使用时并不需要了解它们。

@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: eefa7c24bd75 -->
 # Si se pierde o roban un dispositivo
 
 Para quien ha perdido un teléfono, un ordenador u otro dispositivo del grupo. Quítalo del grupo en cuanto puedas; los demás dispositivos siguen en el grupo y continúan sincronizando.

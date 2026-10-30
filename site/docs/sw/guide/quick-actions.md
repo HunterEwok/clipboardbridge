@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 6884007eb15c -->
 # Vitendo vya haraka
 
 Kwa yeyote anayetaka kufunga, kulaza au kuwasha upya kompyuta kutoka kwenye simu au kompyuta nyingine ya kikundi. Msimamizi huendesha kitendo kwa mguso mmoja au amri moja; kifaa hukiendesha tu ikiwa mtumiaji wake mwenyewe aliwasha kitendo hicho hapo.

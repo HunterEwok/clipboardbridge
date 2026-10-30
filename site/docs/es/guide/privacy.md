@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 9fde2fa70c1b -->
 # Privacidad: quién ve qué
 
 Para quien quiere saber qué sale de sus dispositivos. Clipboard Bridge no tiene cuentas, ni nube, ni telemetría: lo que copias va solo a los dispositivos de tu grupo, cifrado de extremo a extremo. Esta página enumera todo lo demás que alguien ajeno al grupo puede ver, y cómo desactivarlo.

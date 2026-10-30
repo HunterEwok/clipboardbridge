@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: 04610b7181a2 -->
 # Teclados y televisores
 
 Para quien quiere escribir una contraseña larga, un enlace o una búsqueda en un televisor, una tableta, una consola o un ordenador que no tiene nada de Clipboard Bridge. Un dispositivo de tu grupo escribe allí el texto como teclado o como mando a distancia del televisor, cuando tú lo pulsas o cuando un administrador envía un pegado remoto.

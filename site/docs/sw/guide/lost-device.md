@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- source: eefa7c24bd75 -->
 # Kifaa kikipotea au kuibwa
 
 Kwa yeyote ambaye simu, kompyuta au kifaa kingine cha kikundi chake kimepotea. Kiondoe kwenye kikundi haraka iwezekanavyo; vifaa vingine hubaki kwenye kikundi na kuendelea kusawazisha.
