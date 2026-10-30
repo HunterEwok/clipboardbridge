@@ -226,7 +226,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   chalk's grain shifts as in a hand-drawn film; each movement eases in and out), off for those who ask for less motion; one small
   script of its own, and every page works without it. A link's picture in each language; a
   print style. Error pages (404, 5xx) in the visitor's language, Open Graph, canonical and
-  hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
+  hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over
   HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation. Visits are counted
   by GoatCounter on the same server, without cookies and without storing addresses. Until the
   launch the site is closed: everyone sees "the website opens soon", and a secret link opens
