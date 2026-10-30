@@ -129,6 +129,7 @@ func (f *Forwarder) serverTLS(cert tls.Certificate) *tls.Config {
 type presented struct {
 	tag    string
 	member bool
+	root   *x509.Certificate // with a member certificate: the root its chain verified to
 }
 
 // groupOf checks the certificates a hub presented. A hub that registers
@@ -163,7 +164,8 @@ func groupOf(certs []*x509.Certificate, now time.Time) (presented, error) {
 		return presented{}, fmt.Errorf("forward: the hub's certificate: %w", err)
 	}
 	c := chains[0]
-	return presented{tag: group.Tag(c[len(c)-1]), member: true}, nil
+	root := c[len(c)-1]
+	return presented{tag: group.Tag(root), member: true, root: root}, nil
 }
 
 // acceptRegistrations takes the hubs' TLS connections.
@@ -364,7 +366,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	if p.member {
 		// The records are checked outside the lock: their signatures take
 		// time.
-		if records, err = authority(cs.PeerCertificates, c, adminMsg, f.memory.records(tag)); err != nil {
+		if records, err = authority(cs.PeerCertificates[0], p.root, c, adminMsg, f.memory.records(tag)); err != nil {
 			return refuse(err.Error())
 		}
 	}
@@ -478,16 +480,10 @@ func SignAdmin(key crypto.Signer, cs tls.ConnectionState, wgKey []byte) ([]byte,
 // the records the hub sent and those the group's last registration left
 // (known). It returns the records to keep for the group: the forwarder
 // keeps them in memory while the group stays registered, so a removed admin
-// that registers next cannot leave them out. It knows the group only by the
-// root the hub presented first, the group CA in ForwarderCertificate.
-func authority(certs []*x509.Certificate, c claim, msg []byte, known []group.Record) ([]group.Record, error) {
-	var groupCA *x509.Certificate
-	for _, cert := range certs[1:] {
-		if cert.IsCA && cert.CheckSignatureFrom(cert) == nil {
-			groupCA = cert
-			break
-		}
-	}
+// that registers next cannot leave them out. It knows the group only by its
+// group CA, the root the hub's member certificate verified to, whose tag
+// names the group.
+func authority(leaf, groupCA *x509.Certificate, c claim, msg []byte, known []group.Record) ([]group.Record, error) {
 	if groupCA == nil {
 		return nil, errors.New("the hub presented no root")
 	}
@@ -521,17 +517,17 @@ func authority(certs []*x509.Certificate, c claim, msg []byte, known []group.Rec
 			break
 		}
 	}
-	if signer == nil && memberOfAuthority(recs, certs[0]) {
-		signer = certs[0]
+	if signer == nil && memberOfAuthority(recs, leaf) {
+		signer = leaf
 	}
 	if signer == nil {
 		return nil, errors.New("only the group's root or an admin may register it, and this hub is neither")
 	}
-	s, leaf := group.KeyHashOf(signer), group.KeyHashOf(certs[0])
-	if recs.Revoked(s) || recs.Revoked(leaf) {
+	s, l := group.KeyHashOf(signer), group.KeyHashOf(leaf)
+	if recs.Revoked(s) || recs.Revoked(l) {
 		return nil, errors.New("the hub was removed from its group")
 	}
-	if recs.Frozen(s) || recs.Frozen(leaf) {
+	if recs.Frozen(s) || recs.Frozen(l) {
 		return nil, errors.New("the hub is a frozen admin of its group")
 	}
 	return recs.AuthorityRecords(), nil

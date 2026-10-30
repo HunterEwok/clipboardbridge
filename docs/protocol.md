@@ -2027,7 +2027,8 @@ close the connection beyond that; a sender MUST stay below it.
      registers later, while the group's own hub is away, cannot leave its revocation out,
      until the forwarder restarts; it writes none of them to disk. Past 100,000 groups it
      forgets the one that registered least recently. The group CA for these records is the
-     first self-signed certificate the hub presented.
+     root the hub's member certificate verified to in step 2, whose tag names the group; a
+     self-signed certificate the hub presents besides counts for nothing.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
      a plain hub leaves them out. A hub whose clients come over VLESS adds the group's VLESS
      user ID as `vless` (section 11, "VLESS").

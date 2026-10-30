@@ -462,6 +462,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The forwarder checks a hub's registration under the root its member certificate verified
+  to, which names the group, not under the first self-signed certificate the hub
+  presented.
+
 - Every member reads the bodies of records and commands in one strict form of JSON: exact
   lower-case member names, none twice, valid UTF-8, no null, integers only, the common
   fields required, base64 in its one form (docs/protocol.md, Conventions, "Signed bodies").
