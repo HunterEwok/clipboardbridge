@@ -14,7 +14,8 @@ import java.util.Base64
 /**
  * Checks an Android Key Attestation chain, as Go's internal/attest
  * CheckAndroid does (docs/protocol.md, section 17): the leaf certifies the
- * key and carries the Keystore's description of it, and the chain leads to
+ * key and carries the Keystore's description of it, every certificate that
+ * signs another is a CA that may sign it, and the chain leads to
  * one of Google's attestation roots. testdata/interop/go-attest.json keeps
  * the two in step.
  */
@@ -48,6 +49,9 @@ object AndroidAttestation {
     private const val BOOT_SELF_SIGNED = 1
     private const val TAG_ROOT_OF_TRUST = 704
 
+    /** keyCertSign's index in X509Certificate.getKeyUsage. */
+    private const val KEY_CERT_SIGN = 5
+
     /**
      * Checks [chain] (DER certificates, leaf first) for the key [spki] made
      * with [challenge]; throws [Invalid] when it proves nothing.
@@ -69,6 +73,16 @@ object AndroidAttestation {
                 throw Invalid("certificate $i is not signed by the next")
             }
             if (serials[i] in policy.revoked) throw Invalid("certificate $i (${serials[i]}) is revoked", revoked = true)
+            if (i == 0) return@forEachIndexed // the leaf signs nothing and says nothing of provisioning
+            // Every other certificate signed the one before it: it must be a CA
+            // that may sign certificates, with a path length that fits.
+            val pathLen = c.basicConstraints // -1 without a CA, Int.MAX_VALUE for a CA without a limit
+            if (pathLen < 0) throw Invalid("certificate $i signs another and is not a CA")
+            val usage = c.keyUsage
+            if (usage != null && !(usage.size > KEY_CERT_SIGN && usage[KEY_CERT_SIGN])) {
+                throw Invalid("certificate $i signs another and may not sign certificates")
+            }
+            if (pathLen < i - 1) throw Invalid("certificate $i allows $pathLen CAs below it, the chain has ${i - 1}")
             if (OID_PROVISIONING in c.oids()) rkp = true
         }
         val last = certs.last()

@@ -656,6 +656,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   Android kit took it for 0 and the lite member refused it. The phone kits also refuse such
   numbers in the other messages they read, as the lite member does. A member from before still takes `-0` in a
   body that a current member refuses; no current signer writes one.
+- Checking an Android key attestation (Go, the iPhone app's kit and the Android kit) now
+  requires every certificate that signs another one in the chain to be a CA that may sign
+  certificates, with a path length that fits, and takes the Remote Key Provisioning mark only
+  from such a certificate. Real Keystore chains are unchanged; a chain in which a key's own
+  leaf certificate signs another certificate now proves nothing. A root running an older
+  version keeps accepting such chains until it is updated.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.

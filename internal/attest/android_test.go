@@ -119,6 +119,67 @@ func makeChainUnder(t *testing.T, rootKey crypto.Signer, d description, rkp bool
 	return chain{certs: [][]byte{leafDER, attDER}, key: key, root: root.RawSubjectPublicKeyInfo, att: attKey, attC: att}
 }
 
+// chainOpts shapes the certificates of makeChainOpts.
+type chainOpts struct {
+	attUsage    x509.KeyUsage // the attestation key's key usage; certificate signing when 0
+	attNotCA    bool          // the attestation key's certificate is no CA
+	attPathLen  int           // its path length, unlimited when negative
+	middle      bool          // a CA between the attestation key and the leaf
+	leafRKP     bool          // the provisioning extension on the leaf
+	attRKPAbove bool          // the extension on the attestation key's certificate
+}
+
+// makeChainOpts makes a chain [leaf, (middle,) attestation key] under a new
+// root, shaped by o.
+func makeChainOpts(t *testing.T, d description, o chainOpts) chain {
+	t.Helper()
+	rootKey, attKey, midKey, key := newKey(t), newKey(t), newKey(t), newKey(t)
+	ca := &x509.Certificate{Subject: pkix.Name{CommonName: "root"}, IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	root, _ := issue(t, ca, rootKey.Public(), nil, rootKey)
+	usage := o.attUsage
+	if usage == 0 {
+		usage = x509.KeyUsageCertSign
+	}
+	inter := &x509.Certificate{Subject: pkix.Name{CommonName: "attestation key"}, IsCA: !o.attNotCA, BasicConstraintsValid: true, KeyUsage: usage,
+		MaxPathLen: o.attPathLen, MaxPathLenZero: o.attPathLen == 0}
+	if o.attRKPAbove {
+		inter.ExtraExtensions = []pkix.Extension{{Id: oidProvisioning, Value: []byte{0xa0, 0x00}}}
+	}
+	att, attDER := issue(t, inter, &attKey.PublicKey, root, rootKey)
+	certs := [][]byte{attDER}
+	parent, parentKey := att, attKey
+	if o.middle {
+		mid := &x509.Certificate{Subject: pkix.Name{CommonName: "middle"}, IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign, MaxPathLen: -1}
+		c, der := issue(t, mid, &midKey.PublicKey, att, attKey)
+		certs = append([][]byte{der}, certs...)
+		parent, parentKey = c, midKey
+	}
+	leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "Android Keystore Key"}, KeyUsage: x509.KeyUsageDigitalSignature,
+		ExtraExtensions: []pkix.Extension{{Id: oidKeyDescription, Value: d.der(t)}}}
+	if o.leafRKP {
+		leaf.ExtraExtensions = append(leaf.ExtraExtensions, pkix.Extension{Id: oidProvisioning, Value: []byte{0xa0, 0x00}})
+	}
+	_, leafDER := issue(t, leaf, &key.PublicKey, parent, parentKey)
+	return chain{certs: append([][]byte{leafDER}, certs...), key: key, root: root.RawSubjectPublicKeyInfo, att: attKey, attC: att}
+}
+
+// makeLeafSigned makes the chain of a genuine key whose own leaf signs a
+// certificate for another key claiming d: [certificate, genuine leaf,
+// attestation key]. The genuine leaf is no CA.
+func makeLeafSigned(t *testing.T, d description) chain {
+	t.Helper()
+	genuine := makeChain(t, d, false)
+	genuineLeaf, err := x509.ParseCertificate(genuine.certs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := newKey(t)
+	tmpl := &x509.Certificate{Subject: pkix.Name{CommonName: "Android Keystore Key"}, KeyUsage: x509.KeyUsageDigitalSignature,
+		ExtraExtensions: []pkix.Extension{{Id: oidKeyDescription, Value: d.der(t)}}}
+	_, der := issue(t, tmpl, &other.PublicKey, genuineLeaf, genuine.key)
+	return chain{certs: [][]byte{der, genuine.certs[0], genuine.certs[1]}, key: other, root: genuine.root, att: genuine.att, attC: genuine.attC}
+}
+
 func spki(t *testing.T, k *ecdsa.PrivateKey) []byte {
 	b, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
 	if err != nil {
@@ -187,6 +248,46 @@ func TestCheckAndroidInvalid(t *testing.T) {
 		if err := f(); !errors.Is(err, ErrInvalid) || errors.Is(err, ErrRevoked) != (name == "revoked") {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+}
+
+// A certificate that signs another must be a CA that may sign it, with a
+// path length that fits; the provisioning extension counts on a CA only.
+func TestCheckAndroidIssuers(t *testing.T) {
+	ch := []byte("challenge")
+	d := description{levelStrongBox, levelStrongBox, ch, true, bootVerified, false}
+	for _, c := range []struct {
+		name   string
+		chain  func() chain
+		strict bool
+		ok     bool
+		rkp    bool
+	}{
+		{"a genuine leaf signs another", func() chain { return makeLeafSigned(t, d) }, false, false, false},
+		{"an issuer that is no CA", func() chain { return makeChainOpts(t, d, chainOpts{attNotCA: true, attPathLen: -1}) }, false, false, false},
+		{"an issuer that may not sign", func() chain {
+			return makeChainOpts(t, d, chainOpts{attUsage: x509.KeyUsageDigitalSignature, attPathLen: -1})
+		}, false, false, false},
+		{"a path length that is too short", func() chain { return makeChainOpts(t, d, chainOpts{middle: true, attPathLen: 0}) }, false, false, false},
+		{"a path length that fits", func() chain { return makeChainOpts(t, d, chainOpts{middle: true, attPathLen: 1}) }, false, true, false},
+		{"no path length", func() chain { return makeChainOpts(t, d, chainOpts{middle: true, attPathLen: -1}) }, false, true, false},
+		{"a path length of zero over the leaf", func() chain { return makeChainOpts(t, d, chainOpts{attPathLen: 0}) }, false, true, false},
+		{"provisioning on the leaf", func() chain { return makeChainOpts(t, d, chainOpts{leafRKP: true, attPathLen: -1}) }, true, true, false},
+		{"provisioning on a CA", func() chain { return makeChainOpts(t, d, chainOpts{attRKPAbove: true, attPathLen: -1}) }, true, true, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			k := c.chain()
+			r, err := CheckAndroid(k.certs, spki(t, k.key), ch, Policy{Strict: c.strict, Roots: [][]byte{k.root}})
+			if (err == nil) != c.ok || (err != nil && !errors.Is(err, ErrInvalid)) {
+				t.Fatalf("CheckAndroid = %+v, %v", r, err)
+			}
+			if err != nil {
+				return
+			}
+			if r.RKP != c.rkp || (r.Store == StoreProven) != (!c.strict || c.rkp) {
+				t.Errorf("got %+v", r)
+			}
+		})
 	}
 }
 

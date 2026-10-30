@@ -40,7 +40,7 @@ final class AndroidAttestationTests: XCTestCase {
         for c in v.challenges {
             XCTAssertEqual(try Attestation.challenge(groupTag: c.group_tag, memberKey: c.member_key ?? Data(), salt: c.salt), c.challenge, c.group_tag)
         }
-        XCTAssertEqual(v.vectors.count, 23)
+        XCTAssertEqual(v.vectors.count, 30)
         for c in v.vectors {
             let policy = AndroidAttestation.Policy(strict: c.strict ?? false, revoked: Set(c.revoked ?? []), roots: c.roots)
             let got = Result { try AndroidAttestation.check(chain: c.chain, spki: c.spki, challenge: c.challenge, policy: policy) }

@@ -2678,7 +2678,11 @@ hellos, once per connection:
 
 Only the group's root acts on it; every other member MUST ignore it, as it ignores a `format`
 or `key` it does not know. The root MUST check that `group_tag` is absent or the group's own, that
-the chain leads to one of Google's attestation roots without a revoked certificate, that the
+the chain leads to one of Google's attestation roots without a revoked certificate, that every
+certificate but the leaf, each of which signs the one before it, is a CA (BasicConstraints
+`cA`), has the `keyCertSign` key usage when it has a key usage, and has a path length (when it
+has one) that allows the CAs below it, that the extension of Remote Key Provisioning counts only
+on such a certificate (never on the leaf), that the
 leaf certifies the key of the sender's TLS certificate and carries the challenge made with
 `group_tag`, an empty member key and `salt`, and reads the leaf's key description:
 

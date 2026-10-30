@@ -32,7 +32,7 @@ class AndroidAttestationTest {
             assertContentEquals(c.bytes("challenge"), Attestation.challenge(c.str("group_tag"), key, c.bytes("salt")))
         }
         val cases = v.getValue("vectors").jsonArray.map { it.jsonObject }
-        assertEquals(23, cases.size)
+        assertEquals(30, cases.size)
         for (c in cases) {
             val name = c.str("name")
             val policy = AndroidAttestation.Policy(c.flag("strict"), c.list("revoked")?.toSet() ?: emptySet(), c.list("roots")?.map(::b64))
