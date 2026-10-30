@@ -131,12 +131,11 @@ impl Clock {
         st.last
     }
 
-    /// Whether remote is more than MAX_AHEAD ahead of this clock: of its wall
-    /// time or the latest timestamp it issued or observed, whichever is
-    /// later. A clock that reads before 2026 refuses nothing.
+    /// Whether remote is more than MAX_AHEAD ahead of this clock's wall
+    /// time, as Go's Ahead: the timestamps it issued or observed do not move
+    /// that limit. A clock that reads before 2026 refuses nothing.
     pub fn ahead(&self, remote: Timestamp) -> bool {
-        let st = self.state.lock();
-        let reference = (self.now)().max(st.last.wall);
+        let reference = (self.now)();
         reference >= PLAUSIBLE && remote.wall > reference.saturating_add(MAX_AHEAD)
     }
 

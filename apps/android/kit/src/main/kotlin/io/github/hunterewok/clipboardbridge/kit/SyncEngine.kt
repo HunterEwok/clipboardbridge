@@ -46,13 +46,13 @@ class HybridClock(
     }
 
     /**
-     * Whether r is more than [MAX_AHEAD_MS] ahead of this clock: of its wall
-     * time or the latest timestamp, whichever is later. A clock that reads
-     * before 2026 refuses nothing.
+     * Whether r is more than [MAX_AHEAD_MS] ahead of this clock's wall time,
+     * as Go's Ahead: the timestamps it issued or observed do not move that
+     * limit. A clock that reads before 2026 refuses nothing.
      */
     @Synchronized
     fun ahead(r: Member.Timestamp): Boolean {
-        val ref = maxOf(wallMS(), last.wall)
+        val ref = wallMS()
         return ref >= PLAUSIBLE && r.wall > ref + MAX_AHEAD_MS
     }
 

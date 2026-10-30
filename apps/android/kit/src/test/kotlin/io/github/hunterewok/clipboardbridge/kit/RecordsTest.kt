@@ -147,6 +147,37 @@ class RecordsTest {
         }
     }
 
+    /**
+     * testdata/interop/go-authority.json, from Go's TestGoAuthorityVectors: a
+     * device is an admin, with the role and store of that record, only by a
+     * record a root's own key signed, and a removed admin's records no
+     * longer decide a device's entry.
+     */
+    @Test
+    fun goAuthority() {
+        val v = Interop.read("go-authority.json").jsonObject
+        val set = RecordSet()
+        fun check(name: String) {
+            val want = v.getValue(name).jsonArray.map { it.jsonObject }
+            val got = set.devices
+            assertEquals(want.map { it.str("id") }, got.map { it.id }, name)
+            for ((w, g) in want.zip(got)) {
+                assertEquals(w.str("name"), g.name, name)
+                assertEquals(w.getValue("admin").jsonPrimitive.boolean, g.admin, g.name)
+                assertEquals(w["admin_key"]?.jsonPrimitive?.content, g.adminKey?.let { java.util.Base64.getEncoder().encodeToString(it) }, g.name)
+                assertEquals(w.str("role"), g.role, g.name)
+                assertEquals(w.str("store"), g.store, g.name)
+            }
+        }
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
+        check("devices")
+        assertEquals(v.getValue("other_revoked").jsonPrimitive.boolean, set.isRevoked(b64(v.str("other"))))
+        val later = v.getValue("later").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+        assertEquals(later.size, set.addAll(later, b64(v.str("group_ca"))).size)
+        check("devices_later")
+    }
+
     /** An admin computer freezing another (go-freeze.json, docs/protocol.md section 10, rule 4), as Go's TestGoFreezeVectors writes it. */
     @Test
     fun goFreeze() {

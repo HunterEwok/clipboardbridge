@@ -9,7 +9,8 @@
 // after it, even when the wall clocks of the devices differ.
 //
 // A clock ahead moves every member's hybrid clock forward with it, up to
-// MaxAhead: a timestamp further ahead of the receiver is refused (Ahead),
+// MaxAhead: a timestamp further ahead of the receiver's wall clock is
+// refused (Ahead),
 // and none passes MaxWall, the same on every member. Events that depend on
 // each other stay in order; while the hybrid clocks are ahead of real time,
 // copies made independently are ordered by the logical counter until real
@@ -152,13 +153,14 @@ const MaxAhead = 7 * 24 * time.Hour
 // that has not set its time yet (2026-01-01).
 const plausible = 1767225600000
 
-// Ahead reports whether remote is more than MaxAhead ahead of this clock:
-// of its wall time or the latest timestamp it issued or observed, whichever
-// is later. A clock that reads before 2026 refuses nothing.
+// Ahead reports whether remote is more than MaxAhead ahead of this clock's
+// wall time. The timestamps it issued or observed do not move that limit,
+// so a chain of timestamps, each within MaxAhead of the last, cannot carry
+// the clock further ahead. A clock that reads before 2026 refuses nothing.
 func (c *Clock) Ahead(remote Timestamp) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ref := max(c.now().UnixMilli(), c.last.Wall)
+	ref := c.now().UnixMilli()
 	return ref >= plausible && remote.Wall > ref+MaxAhead.Milliseconds()
 }
 

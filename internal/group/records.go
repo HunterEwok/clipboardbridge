@@ -1031,7 +1031,7 @@ func (s *Records) eval() *evaluation {
 			for _, k := range r.body.Keys {
 				byRoot[k] = append(byRoot[k], r)
 			}
-		case r.body.Type == RecordDevice && r.body.Admin != nil:
+		case r.body.Type == RecordDevice && r.body.Admin != nil && ev.rootSigned(r):
 			privileged[*r.body.Admin] = true
 		}
 		if r.signer != r.anchor {
@@ -1309,12 +1309,18 @@ type Device struct {
 
 // Devices returns the devices list: the latest device record that counts
 // for each device among those whose key is not revoked, sorted by name and
-// then ID. The "latest" record of a device is the one with the largest
-// time, then the largest record ID, so every member picks the same one. A
+// then ID. The "latest" record of a device is one whose signer is not
+// revoked before one whose signer is, then the one with the largest time,
+// then the largest record ID, so every member picks the same one. A device
+// is an admin only by the latest of its counting records that a known
+// root's own key signed, which also gives an admin its role, store, kind and
+// proof: an admin's record names no admin and gives no admin its powers. A
 // device whose records name more than one key stays listed while any of
 // them is not revoked, so none of its keys hides behind a revoked one.
 func (s *Records) Devices() []Device {
+	ev := s.eval()
 	latest := map[DeviceID]*signedRecord{}
+	certified := map[DeviceID]*signedRecord{} // the latest a known root's own key signed
 	first := map[DeviceID]int64{}
 	keys := map[DeviceID][]KeyHash{}
 	on := s.onPath()
@@ -1330,27 +1336,35 @@ func (s *Records) Devices() []Device {
 		if t, ok := first[d]; !ok || r.body.TimeMS < t {
 			first[d] = r.body.TimeMS
 		}
-		if cur, ok := latest[d]; !ok || newer(r, cur) {
+		if cur, ok := latest[d]; !ok || s.Revoked(cur.signer) && !s.Revoked(r.signer) || s.Revoked(cur.signer) == s.Revoked(r.signer) && newer(r, cur) {
 			latest[d] = r
+		}
+		if cur, ok := certified[d]; ev.rootSigned(r) && (!ok || newer(r, cur)) {
+			certified[d] = r
 		}
 	}
 	var out []Device
 	for id, r := range latest {
+		// a is the record that says what powers the device has.
+		a, admin := r, (*KeyHash)(nil)
+		if c := certified[id]; c != nil && c.body.Admin != nil {
+			a, admin = c, c.body.Admin
+		}
 		out = append(out, Device{
 			ID:       id,
 			Name:     r.body.Name,
-			Role:     role(r.body.Role),
+			Role:     role(a.body.Role),
 			OS:       osOf(r.body),
 			Key:      *r.body.Key,
-			Store:    StoreOf(r.body.Store, role(r.body.Role)),
-			Kind:     r.body.Kind,
-			Proof:    r.body.Proof,
-			Admin:    r.body.Admin != nil && !s.Revoked(*r.body.Admin) && !s.Frozen(*r.body.Admin),
-			AdminKey: r.body.Admin,
+			Store:    StoreOf(a.body.Store, role(a.body.Role)),
+			Kind:     a.body.Kind,
+			Proof:    a.body.Proof,
+			Admin:    admin != nil && !s.Revoked(*admin) && !s.Frozen(*admin),
+			AdminKey: admin,
 			Keys:     keys[id],
 			By:       r.body.By,
 			Since:    time.UnixMilli(first[id]),
-			Frozen:   s.Frozen(*r.body.Key) || r.body.Admin != nil && s.Frozen(*r.body.Admin),
+			Frozen:   s.Frozen(*r.body.Key) || admin != nil && s.Frozen(*admin),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

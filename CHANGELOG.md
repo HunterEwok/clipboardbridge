@@ -466,6 +466,21 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A member refuses an event more than 7 days ahead of its own wall clock, whatever events it
+  took before, in Go, the lite member and both phone kits (docs/protocol.md, section 5).
+
+- A device is an admin, and an admin has its role and store, only by a `device` record a
+  root's own key signed, in Go, the lite member and both phone kits; a removed admin's records
+  no longer decide the name of a device it admitted (docs/protocol.md, section 10). An admin
+  that the root never made one is no longer listed as an admin, a hub or a command's signer.
+
+- The member port holds at most 32 connections to the iPhone endpoints and the profile at a
+  time, 4 from one address, and closes one idle for 30 s.
+
+- A device bounds what it reads from a relay's watch: a note's length, the list of devices
+  online, the calls it answers at once, and the form of a call's name and ticket
+  (docs/protocol.md, section 14).
+
 - The forwarder counts the handshakes that come over VLESS as one network against its
   budget of checks, as it counts any other network's.
 

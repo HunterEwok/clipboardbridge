@@ -57,12 +57,12 @@ public final class HybridClock: @unchecked Sendable {
     /// 2026-01-01: before it the clock is not trusted to refuse anything.
     static let plausible: UInt64 = 1_767_225_600_000
 
-    /// Whether r is more than `maxAheadMS` ahead of this clock: of its wall
-    /// time or the latest timestamp, whichever is later. A clock that reads
-    /// before 2026 refuses nothing.
+    /// Whether r is more than `maxAheadMS` ahead of this clock's wall time,
+    /// as Go's Ahead: the timestamps it issued or observed do not move that
+    /// limit. A clock that reads before 2026 refuses nothing.
     public func ahead(_ r: Member.Timestamp) -> Bool {
         lock.withLock {
-            let ref = max(wallMS(), last.wall)
+            let ref = wallMS()
             return ref >= Self.plausible && r.wall > ref + Self.maxAheadMS
         }
     }

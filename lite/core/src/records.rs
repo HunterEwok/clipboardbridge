@@ -864,7 +864,8 @@ impl Records {
                 for k in &r.body.keys {
                     by_root.entry(*k).or_default().push(r);
                 }
-            } else if r.body.kind == "device" {
+            } else if r.body.kind == "device" && ev.root_signed(r) {
+                // Only a root's own record makes a key an admin's.
                 if let Some(a) = r.body.admin {
                     privileged.insert(a);
                 }
@@ -1094,10 +1095,14 @@ impl Records {
 
     /// The devices list: the latest device record that counts for each
     /// device among those whose key is not revoked, sorted by name and then
-    /// ID.
+    /// ID, as Go's Devices: the latest is one whose signer is not revoked
+    /// before one whose signer is, then by time and record ID; a device is
+    /// an admin, with that record's role and store, only by the latest of its
+    /// records that a known root's own key signed.
     pub fn devices(&self) -> Vec<Device> {
         let on: Vec<KeyHash> = self.path().iter().map(Cert::key_hash).collect();
         let mut latest: BTreeMap<&str, &Signed> = BTreeMap::new();
+        let mut certified: BTreeMap<&str, &Signed> = BTreeMap::new();
         let mut keys: BTreeMap<&str, Vec<KeyHash>> = BTreeMap::new();
         // By record ID, as Go, so the keys come in the same order; a device
         // whose records name more than one key stays listed while any of
@@ -1111,26 +1116,38 @@ impl Records {
             if !ks.contains(&key) {
                 ks.push(key);
             }
-            let newer = latest
-                .get(r.body.device.as_str())
-                .is_none_or(|cur| (r.body.time_ms, r.record.id()) > (cur.body.time_ms, cur.record.id()));
-            if newer {
+            // A signer that stands sorts after one that is revoked.
+            let order = |r: &Signed| (!self.revoked(&r.signer), r.body.time_ms, r.record.id());
+            if latest.get(r.body.device.as_str()).is_none_or(|cur| order(r) > order(cur)) {
                 latest.insert(&r.body.device, r);
+            }
+            let root_signed = self.ev().root_signed(r);
+            if root_signed
+                && certified
+                    .get(r.body.device.as_str())
+                    .is_none_or(|cur| (r.body.time_ms, r.record.id()) > (cur.body.time_ms, cur.record.id()))
+            {
+                certified.insert(&r.body.device, r);
             }
         }
         let mut out: Vec<Device> = latest
             .into_iter()
-            .map(|(id, r)| Device {
-                id: id.to_string(),
-                name: r.body.name.clone(),
-                role: role(&r.body.role).to_string(),
-                os: os_of(&r.body).to_string(),
-                key: r.body.key.unwrap(),
-                store: store_of(&r.body.store, role(&r.body.role)).to_string(),
-                admin: r.body.admin.is_some_and(|a| !self.revoked(&a) && !self.frozen(&a)),
-                admin_key: r.body.admin,
-                frozen: self.frozen(&r.body.key.unwrap()) || r.body.admin.is_some_and(|a| self.frozen(&a)),
-                keys: keys.remove(id).unwrap_or_default(),
+            .map(|(id, r)| {
+                // a is the record that says what powers the device has.
+                let c = certified.get(id).copied().filter(|c| c.body.admin.is_some());
+                let (a, admin) = (c.unwrap_or(r), c.and_then(|c| c.body.admin));
+                Device {
+                    id: id.to_string(),
+                    name: r.body.name.clone(),
+                    role: role(&a.body.role).to_string(),
+                    os: os_of(&r.body).to_string(),
+                    key: r.body.key.unwrap(),
+                    store: store_of(&a.body.store, role(&a.body.role)).to_string(),
+                    admin: admin.is_some_and(|a| !self.revoked(&a) && !self.frozen(&a)),
+                    admin_key: admin,
+                    frozen: self.frozen(&r.body.key.unwrap()) || admin.is_some_and(|a| self.frozen(&a)),
+                    keys: keys.remove(id).unwrap_or_default(),
+                }
             })
             .collect();
         out.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));

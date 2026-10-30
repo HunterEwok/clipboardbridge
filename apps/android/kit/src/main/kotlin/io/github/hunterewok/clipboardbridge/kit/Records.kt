@@ -559,7 +559,8 @@ class RecordSet {
             for (e in entries) {
                 if (e.body.type == "revoke" && rootSigned(e)) {
                     for (key in e.body.keys.orEmpty()) byRoot.getOrPut(Key(key)) { mutableListOf() }.add(e)
-                } else if (e.body.type == "device") {
+                } else if (e.body.type == "device" && rootSigned(e)) {
+                    // Only a root's own record makes a key an admin's.
                     e.body.admin?.let { privileged.add(Key(it)) }
                 }
                 if (e.signer != e.anchor) privileged.add(e.signer)
@@ -802,7 +803,13 @@ class RecordSet {
         get() {
             val ev = Eval(this)
             val latest = mutableMapOf<String, Entry>()
+            val certified = mutableMapOf<String, Entry>() // the latest a known root's own key signed
             val keys = mutableMapOf<String, MutableList<ByteArray>>()
+            fun newer(e: Entry, cur: Entry): Boolean = if (e.body.timeMS != cur.body.timeMS) {
+                e.body.timeMS > cur.body.timeMS
+            } else {
+                compareBytes(Records.id(e.record), Records.id(cur.record)) >= 0
+            }
             for (e in ev.entries.sortedBy { it.id.hex }) { // by record ID, as Go, so the keys come in the same order
                 val b = e.body
                 if (b.type != "device") continue
@@ -811,24 +818,26 @@ class RecordSet {
                 if (!ev.counts(e) || Key(k) in ev.revoked) continue
                 val ks = keys.getOrPut(d) { mutableListOf() }
                 if (ks.none { it.contentEquals(k) }) ks.add(k)
+                // One whose signer is not revoked comes after one whose signer
+                // is, then the newer, as Go's Devices.
                 val cur = latest[d]
-                if (cur != null) {
-                    val newer = if (b.timeMS != cur.body.timeMS) {
-                        b.timeMS > cur.body.timeMS
-                    } else {
-                        compareBytes(Records.id(e.record), Records.id(cur.record)) >= 0
-                    }
-                    if (!newer) continue
-                }
-                latest[d] = e
+                val stands = e.signer !in ev.revoked
+                if (cur == null || stands && cur.signer in ev.revoked || stands == (cur.signer !in ev.revoked) && newer(e, cur)) latest[d] = e
+                val c = certified[d]
+                if (ev.rootSigned(e) && (c == null || newer(e, c))) certified[d] = e
             }
             return latest.mapNotNull { (d, e) ->
                 val key = e.body.key ?: return@mapNotNull null
-                val admin = e.body.admin?.let { Key(it) }
+                // a is the record that says what powers the device has: only
+                // a root's own record makes it an admin.
+                val c = certified[d]?.takeIf { it.body.admin != null }
+                val a = c ?: e
+                val adminHash = c?.body?.admin
+                val admin = adminHash?.let { Key(it) }
                 Device(
-                    d, e.body.name ?: d, Records.role(e.body.role), key, admin?.let { it !in ev.revoked && !ev.frozen(it) } ?: false, e.body.admin,
+                    d, e.body.name ?: d, Records.role(a.body.role), key, admin?.let { it !in ev.revoked && !ev.frozen(it) } ?: false, adminHash,
                     Records.os(e.body), ev.frozen(Key(key)) || (admin != null && ev.frozen(admin)), keys[d].orEmpty(),
-                    Records.storeOf(e.body.store, Records.role(e.body.role)), e.body.kind, e.body.proof,
+                    Records.storeOf(a.body.store, Records.role(a.body.role)), a.body.kind, a.body.proof,
                 )
             }.sortedWith(compareBy({ it.name }, { it.id }))
         }

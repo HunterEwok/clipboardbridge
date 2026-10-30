@@ -4,6 +4,7 @@
 package relay
 
 import (
+	"bufio"
 	"context"
 	"crypto/ecdh"
 	"crypto/tls"
@@ -164,6 +165,7 @@ type session struct {
 	online  []string
 	dialers map[string]context.CancelFunc
 	through int
+	calls   int // the calls being answered
 }
 
 // errNewCredential ends a registration when what the member registers
@@ -282,10 +284,10 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 		return fmt.Errorf("the relay's tunnel does not answer: %w", err)
 	}
 	defer s.stopDialers()
-	dec := json.NewDecoder(watch)
+	notes := bufio.NewReaderSize(watch, 4<<10)
 	for {
 		var n note
-		if err := dec.Decode(&n); err != nil {
+		if err := readNote(notes, &n); err != nil {
 			if ctx.Err() != nil {
 				return errors.New("the relay ended the registration")
 			}
@@ -293,15 +295,72 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 		}
 		switch {
 		case n.Online != nil:
+			// The relay holds at most maxMembers devices of a group, and
+			// names them by device ID or pseudonym; a relay that says
+			// otherwise is not one to trust.
+			if len(*n.Online) > maxMembers || slices.ContainsFunc(*n.Online, func(p string) bool { return !validName(p) }) {
+				return errors.New("the relay's watch sent a list of devices that is not valid")
+			}
 			s.setOnline(ctx, *n.Online)
 		case n.Call != "" && n.Ticket != "":
+			if !validName(n.Call) || !validTicket(n.Ticket) || !s.takeCall() {
+				continue
+			}
 			s.wg.Add(1)
 			go func() {
 				defer s.wg.Done()
+				defer s.endCall()
 				s.answer(ctx, n.Call, n.Ticket)
 			}()
 		}
 	}
+}
+
+// takeCall counts a call being answered; false when there are as many
+// as the relay keeps waiting for one device.
+func (s *session) takeCall() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.calls >= maxCalls {
+		return false
+	}
+	s.calls++
+	return true
+}
+
+func (s *session) endCall() {
+	s.mu.Lock()
+	s.calls--
+	s.mu.Unlock()
+}
+
+// readNote reads one note from the watch, a line of at most maxLine bytes.
+func readNote(r *bufio.Reader, n *note) error {
+	var line []byte
+	for {
+		part, more, err := r.ReadLine()
+		if err != nil {
+			return err
+		}
+		if len(line)+len(part) > maxLine {
+			return errors.New("relay: a line too long")
+		}
+		line = append(line, part...)
+		if !more {
+			return json.Unmarshal(line, n)
+		}
+	}
+}
+
+// validName reports whether s is a device's name at the relay: its device
+// ID, 32 lowercase hex characters, or its pseudonym, 64.
+func validName(s string) bool {
+	return (len(s) == 32 || len(s) == 64) && strings.Trim(s, "0123456789abcdef") == ""
+}
+
+// validTicket reports whether s is a call's ticket: 16 bytes in hex.
+func validTicket(s string) bool {
+	return len(s) == 32 && strings.Trim(s, "0123456789abcdef") == ""
 }
 
 // register runs the registration's setup and returns its connection, which
