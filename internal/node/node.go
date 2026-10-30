@@ -1475,6 +1475,9 @@ func (c *conn) writer() {
 		return put(f, deadline)
 	}
 	send := func(o outgoing, deadline bool) bool {
+		if o.result != nil && o.result.Written != nil {
+			defer close(o.result.Written)
+		}
 		m, err := c.message(o)
 		if err != nil {
 			c.n.cfg.Logf("node: to %s: %v", c.id, err)

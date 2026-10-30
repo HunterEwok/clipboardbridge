@@ -203,6 +203,10 @@ type Result struct {
 	// which the old hub passes to each client with the client's own
 	// preshared key (docs/protocol.md, section 11, "Moving the hub").
 	Tunnel *TunnelOffer `json:"tunnel,omitempty"`
+	// Written, if set, is closed once the result has been written to the
+	// peer that sent the command, or could not be: a command that ends
+	// the connection, as away-off does, waits for it.
+	Written chan struct{} `json:"-"`
 }
 
 // The statuses of a Result.

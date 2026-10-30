@@ -29,6 +29,11 @@ const actionWait = 20 * time.Second
 // admin's request, so that the result reaches the sender first.
 const restartAfter = 500 * time.Millisecond
 
+// resultWait bounds the wait for a result to be written before what comes
+// after it, such as a restart, happens anyway: the connection that brought
+// the command may have ended.
+const resultWait = 10 * time.Second
+
 // ErrRestart is what Run returns when an admin had the service restart:
 // systemd, launchd and the Windows service manager start it again after a
 // failure.
@@ -82,12 +87,18 @@ func (s *Service) runAction(body group.CommandBody, a actions.Action) node.Resul
 			res.Status, res.Reason = node.ResultFailed, "the service is not running"
 			return res
 		}
-		time.AfterFunc(restartAfter, func() {
+		res.Written = make(chan struct{})
+		go func() {
+			select {
+			case <-res.Written:
+			case <-time.After(resultWait):
+			}
+			time.Sleep(restartAfter)
 			select {
 			case s.restart <- struct{}{}:
 			default:
 			}
-		})
+		}()
 		return res
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), actionWait)

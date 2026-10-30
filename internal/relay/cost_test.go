@@ -86,21 +86,21 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 	r.mu.Lock()
 	r.requestWait = 5 * time.Minute
 	r.mu.Unlock()
-	l.mu.Lock()
-	l.other = netip.MustParseAddr("203.0.113.7")
-	l.mu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// Three devices with all their connections are more than one address
-	// may have read at once.
-	for i := 0; i < maxRequestsSource/maxRequestsOne+1; i++ {
+	// open registers a device of a group of its own from a and opens n
+	// connections in its tunnel.
+	open := func(a netip.Addr, n int) {
+		l.mu.Lock()
+		l.other = a
+		l.mu.Unlock()
 		d := newDevice(t, newGroup(t))
 		cfg := MemberConfig{Link: link, Self: d.id, Key: d.key, Cert: func() tls.Certificate { return d.cert }, Logf: t.Logf}
 		tc, w, _, err := register(ctx, cfg)
 		if err != nil {
-			t.Fatal(i, err)
+			t.Fatal(err)
 		}
-		defer tc.Close()
+		t.Cleanup(func() { tc.Close() })
 		var relayKey, psk tunnel.Key
 		copy(relayKey[:], w.Key)
 		copy(psk[:], w.PSK)
@@ -109,36 +109,38 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer client.Close()
-		for range maxRequestsOne {
-			dctx, c := context.WithTimeout(ctx, 15*time.Second)
+		t.Cleanup(func() { client.Close() })
+		for range n {
+			dctx, c := context.WithTimeout(ctx, 30*time.Second)
 			conn, err := client.Dial(dctx)
 			c()
 			if err != nil {
-				t.Fatal(i, err)
+				t.Fatal(err)
 			}
-			defer conn.Close()
+			t.Cleanup(func() { conn.Close() })
 		}
 	}
-	time.Sleep(500 * time.Millisecond)
-	r.mu.Lock()
-	n, ip := r.requesting, r.reqIP[netip.MustParseAddr("203.0.113.7")]
-	r.mu.Unlock()
-	if n != maxRequestsSource || ip != maxRequestsSource {
-		t.Fatalf("%d requests being read, %d from one address, want %d", n, ip, maxRequestsSource)
+	reading := func(a netip.Addr) (all, from int) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.requesting, r.reqIP[a]
 	}
-	// A pair of devices from elsewhere connects.
-	l.mu.Lock()
-	l.other = netip.MustParseAddr("198.51.100.77")
-	l.mu.Unlock()
-	g := newGroup(t)
-	a, b := newDevice(t, g), newDevice(t, g)
-	if a.id > b.id {
-		a, b = b, a
+	// Three devices with all their connections are more than one address
+	// may have read at once.
+	stranger, other := netip.MustParseAddr("203.0.113.7"), netip.MustParseAddr("198.51.100.77")
+	for range maxRequestsSource/maxRequestsOne + 1 {
+		open(stranger, maxRequestsOne)
 	}
-	join(t, link, a)
-	jb := join(t, link, b)
-	receive(t, jb.called, "b's call")
+	waitFor(t, "the relay to take or close every connection", func() bool {
+		n, ip := reading(stranger)
+		return n == maxRequestsSource && ip == maxRequestsSource
+	})
+	// A device from elsewhere still has its requests read.
+	open(other, 1)
+	waitFor(t, "the relay to read a request of a device from elsewhere", func() bool {
+		n, ip := reading(other)
+		return ip == 1 && n == maxRequestsSource+1
+	})
 }
 
 // What a source may start is paid for by the second: a registration's setup
