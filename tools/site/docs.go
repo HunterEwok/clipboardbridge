@@ -99,9 +99,11 @@ func loadDocs(root string) (*docSet, error) {
 		ds.guides[file] = true
 	}
 	for _, f := range ds.files {
-		if ds.english[f], err = os.ReadFile(filepath.Join(repo, filepath.FromSlash(f))); err != nil {
+		data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(f)))
+		if err != nil {
 			return nil, err
 		}
+		ds.english[f] = lf(data)
 	}
 	images := filepath.Join(repo, "docs", "images")
 	err = filepath.WalkDir(images, func(p string, d fs.DirEntry, err error) error {
@@ -121,7 +123,14 @@ func (ds *docSet) translation(lang, file string) ([]byte, error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
-	return data, err
+	return lf(data), err
+}
+
+// lf turns the line ends of a Markdown file into LF: a Windows checkout may
+// have Git's CR LF in them, which must change neither the hash of a page
+// nor the lines the index is read by.
+func lf(data []byte) []byte {
+	return bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 }
 
 // sourceMark is the line of a translation that names the version of the
