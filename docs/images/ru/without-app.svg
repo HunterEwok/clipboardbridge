@@ -56,6 +56,6 @@
 <text class="lbl pair" x="405" y="144.0" text-anchor="middle">шестизначный код</text>
 <rect class="lbl-bg" x="341.4" y="39.0" width="127.3" height="22" rx="11.0"/>
 <text class="lbl pair" x="405" y="54.0" text-anchor="middle">шестизначный код</text>
-<rect class="lbl-bg" x="310.6" y="219.0" width="188.9" height="22" rx="11.0"/>
-<text class="lbl pair" x="405" y="234.0" text-anchor="middle">профиль и быстрая команда</text>
+<rect class="lbl-bg" x="338.2" y="219.0" width="133.6" height="22" rx="11.0"/>
+<text class="lbl pair" x="405" y="234.0" text-anchor="middle">профиль и команда</text>
 </svg>

@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- On the website the pictures of the documentation are drawn in chalk on a board in a walnut
+  frame, like every other picture of the site, in every language, and are drawn in once as
+  they come into view. The files in `docs/images` are unchanged, so GitHub shows them as before.
 - The users' guides (`docs/guide`) in Chinese, Hindi, Spanish, Russian, Arabic, Swahili and
   Hebrew, opening inside the website's own layout with its header and language menu, with
   the text inside their pictures translated; the index's descriptions are translated too.
@@ -477,6 +480,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `clipboardbridge.sh`.
 
 ### Changed
+
+- On the website the columns of a documentation table are sized by what is in them, and a
+  heading wraps only where it must, not at its middle.
 
 - A member keeps nothing of a peer's cancel of a part it neither queued nor serves for that
   peer (docs/protocol.md, section 4).
