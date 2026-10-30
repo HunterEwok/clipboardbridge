@@ -2058,8 +2058,11 @@ close the connection beyond that; a sender MUST stay below it.
      or member certificate the records revoke or freeze. It keeps the merged authority
      records in memory after the registration ends, so a removed or demoted admin that
      registers later, while the group's own hub is away, cannot leave its revocation out,
-     until the forwarder restarts; it writes none of them to disk. Past 100,000 groups it
-     forgets the one that registered least recently. The group CA for these records is the
+     until the forwarder restarts; it writes none of them to disk. It refuses a registration
+     whose merged authority records come to more than 256 KiB, so it never keeps part of a
+     group's records. It keeps at most 32 MiB of records for all groups, and past that or
+     100,000 groups it forgets the one that registered least recently; the records of a
+     group that is registered now are never forgotten. The group CA for these records is the
      root the hub's member certificate verified to in step 2, whose tag names the group; a
      self-signed certificate the hub presents besides counts for nothing.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");

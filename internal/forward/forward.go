@@ -287,8 +287,9 @@ func Listen(cfg Config) (*Forwarder, error) {
 		byAddr: map[netip.AddrPort]map[*reg]int{}, byInit: map[int][]*reg{},
 		sources: map[netip.Addr]*bucket{}, netScans: map[netip.Prefix]*bucket{},
 		fromAddr: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
-		done: make(chan struct{}), memory: newMemory(),
+		done: make(chan struct{}),
 	}
+	f.memory = newMemory(f.registered)
 	if f.versions, err = newVersions(cfg.StateFile, cfg.Cert.PrivateKey); err != nil {
 		udp.Close()
 		tcp.Close()
@@ -817,6 +818,15 @@ func (b *bucket) full(now time.Time) bool {
 // device or address is in it.
 type Stats struct {
 	Groups, Sessions, Waiting int
+}
+
+// registered reports whether a hub of the group is registered now. The
+// memory calls it with its own lock held, so nothing may call the memory
+// while holding f.mu.
+func (f *Forwarder) registered(tag string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.regs[tag] != nil
 }
 
 // Stats returns what the forwarder holds now.

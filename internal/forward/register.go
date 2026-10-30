@@ -369,6 +369,9 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		if records, err = authority(cs.PeerCertificates[0], p.root, c, adminMsg, f.memory.records(tag)); err != nil {
 			return refuse(err.Error())
 		}
+		if !fits(records) {
+			return refuse("the group's authority records are too large for this forwarder")
+		}
 	}
 	f.mu.Lock()
 	if o := f.regs[tag]; o != old {

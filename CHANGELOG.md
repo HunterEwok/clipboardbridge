@@ -626,6 +626,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The forwarder bounds what it remembers of the groups that registered with records and are
+  gone: 32 MiB in all, the group kept least recently forgotten first and the records of a
+  group that is registered now never. It refuses a registration whose authority records
+  come to more than 256 KiB, rather than keep part of them; a group that registers again no
+  longer costs time in proportion to the square of its records. Hubs see the refusal as an
+  ordinary one; nothing else on the wire changes.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.
