@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The website's code signing policy (`/code-signing.html`), which SignPath Foundation asks
+  for: who signs the Windows programs and who approves it, linked from the download page and
+  from every page's footer. The privacy page now says what the programs send outside the
+  group and who is responsible for the policy; while the site is closed, these three pages
+  stay open in every language.
 - The project's release root keys: two P-256 keys made on two YubiKeys, with the PIN and a
   touch for every signature, in `internal/release/roots` with Yubico's attestation that
   they were made on the keys. `get.sh`, `get.ps1`, `cbb update`, the lite member's
@@ -227,7 +232,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   chalk's grain shifts as in a hand-drawn film; each movement eases in and out), off for those who ask for less motion; one small
   script of its own, and every page works without it. A link's picture in each language; a
   print style. Error pages (404, 5xx) in the visitor's language, Open Graph, canonical and
-  hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over HTTP/3,
+  hreflang links, `sitemap.xml`, `robots.txt` and schema.org data for search engines. nginx with its ACME module serves it over
   HTTP/2 and HTTP/1.1 (`site/deploy`), and CI checks every translation. Visits are counted
   by GoatCounter on the same server, without cookies and without storing addresses. Until the
   launch the site is closed: everyone sees "the website opens soon", and a secret link opens
@@ -490,6 +495,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (`release_keys_seq` in the hello), and `release-sign take` refuses a renewed channel file
   more than 16 past the branch's. The same in Go, the lite member and both phone kits
   (docs/protocol.md, section 16).
+
+- The website's chalk is written about 30% faster (a board in about a second) and moves more
+  smoothly: the chalk filter is on each table cell and on a drawing's moving parts apart, the
+  panes under living boards are tinted rather than blurred, the underline grows by a
+  transform, and the chalk's grain holds still while a board is drawn or the page scrolls.
 
 - A member refuses an event more than 7 days ahead of its own wall clock, whatever events it
   took before, in Go, the lite member and both phone kits (docs/protocol.md, section 5).

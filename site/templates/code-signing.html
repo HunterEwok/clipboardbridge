@@ -1,0 +1,32 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+{{define "title"}}{{t "Code signing policy"}}: Clipboard Bridge{{end}}
+{{define "description"}}{{t "How the Windows programs of Clipboard Bridge are signed, who may approve a signature, and what the programs send."}}{{end}}
+
+{{define "content"}}
+<section class="wrap page">
+  <h1>{{t "Code signing policy"}}</h1>
+  <p class="lead">{{t "Free code signing provided by %s, certificate by %s." (link "https://about.signpath.io" "SignPath.io") (link "https://signpath.org" "SignPath Foundation")}}</p>
+
+  <h2>{{t "What is signed"}}</h2>
+  <ul>
+    <li>{{t "The Windows programs of each release, %s and %s, are signed with the SignPath Foundation's certificate. The first release signed this way is the first after the Foundation accepts the project; until then they are not signed." (code "cbb.exe") (code "cbbw.exe")}}</li>
+    <li>{{t "Only what GitHub Actions builds from the release's tag in %s is signed, never a program built on someone's own computer." (link "https://github.com/HunterEwok/clipboardbridge" "HunterEwok/clipboardbridge")}}</li>
+    <li>{{t "Every file of a release, signed or not, is listed in the release's checksums and has a build attestation: see %s." (link "download.html#check" (t "checking a download"))}}</li>
+  </ul>
+
+  <h2>{{t "Team roles"}}</h2>
+  <ul>
+    <li>{{t "Committers and reviewers: %s." (link "https://github.com/HunterEwok" "HunterEwok")}}</li>
+    <li>{{t "Approvers: %s, who approves each signing request by hand." (link "https://github.com/HunterEwok" "HunterEwok")}}</li>
+  </ul>
+
+  <h2>{{t "Privacy"}}</h2>
+  <p>{{t "Clipboard Bridge sends what you copy only to the devices of your group. Anything else it sends, to whom, and how to turn it off, is in %s." (link "privacy.html#programs" (t "the privacy policy"))}}</p>
+
+  <div class="final">
+    <h2>{{t "Try it on your devices"}}</h2>
+    <p>{{t "It takes a few minutes and costs nothing."}}</p>
+    <p class="actions"><a class="button accent go" href="download.html">{{t "Download for free"}}</a></p>
+  </div>
+</section>
+{{end}}
