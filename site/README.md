@@ -30,7 +30,7 @@ every way to download is shown. It also has error pages (`404`, `50x`) in every 
   what is true today: no invented reviews or numbers, and what is planned says so.
 - The design is art deco on wool felt, in a dark theme and a light one; its colours are
   tokens at the top of `static/style.css`, the light theme's in a block of its own. The
-  theme follows the system until the reader picks one with the button in the header. Motion is CSS only, 0.2 to 0.6 s, and off under
+  theme follows the system until the reader picks one with the button in the header. Motion is CSS only, 0.2 to 0.6 s (a board's chalk is written in about a second), and off under
   `prefers-reduced-motion`. Buttons are at least 44 px high.
 - The pictures and the tables are chalk on boards in walnut frames. The chalk lines are drawn
   once by rough.js: change `chalk.js` and run `npm run chalk`, which writes
