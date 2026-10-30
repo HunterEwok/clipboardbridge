@@ -11,8 +11,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The website's code signing policy (`/code-signing.html`), which SignPath Foundation asks
   for: who signs the Windows programs and who approves it, linked from the download page and
   from every page's footer. The privacy page now says what the programs send outside the
-  group and who is responsible for the policy; while the site is closed, these three pages
-  stay open in every language.
+  group and who is responsible for the policy.
 - The project's release root keys: two P-256 keys made on two YubiKeys, with the PIN and a
   touch for every signature, in `internal/release/roots` with Yubico's attestation that
   they were made on the keys. `get.sh`, `get.ps1`, `cbb update`, the lite member's
