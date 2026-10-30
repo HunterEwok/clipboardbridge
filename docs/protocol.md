@@ -1008,7 +1008,7 @@ Next to it the service listens on the **admin socket** `admin.sock` (on Windows
 `run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
-`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices` and `watch` (with
+`copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices`, `release`, `release-get` and `watch` (with
 the watcher's `copied`, `clipboard`, `injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
 all, and MUST be the only way to them. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
@@ -1165,6 +1165,20 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   switches and the targets of the connected watchers as `paste: {on, enter, console,
   targets}`.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
+- The socket's group is for the clipboard, while a remote paste and an action go to one
+  user's screen or console. So the service MUST read the user at the other end of a watcher
+  that offers an `inject` target or `act` from the system (`SO_PEERCRED` on Linux,
+  `LOCAL_PEERCRED` on a Mac and FreeBSD, on Windows the process at the other end, from
+  `SIO_AF_UNIX_GETPEERPID`, with its user and session) and hand it a paste or an action only
+  when that user may take it: root and the service's own user (on Windows the system and
+  the service's account) take every target, and `console` only they; `desktop` and `act` go
+  to the user of an active session (logind's sessions on Linux and FreeBSD, the owner of
+  `/dev/console` on a Mac, an active Windows session), and `tmux` to a user with a session
+  (logind's, which counts one over SSH). A watcher whose user the system does not name gets
+  none. Where the system does not tell who is at the screen (Linux or FreeBSD without
+  logind), a paste goes to any target, but a `secret` to none, and the member refuses it
+  with a reason that says so. The lite member checks its `tmux`, `console` and `desktop`
+  watchers the same way. Members before 0.6 hand pastes to any watcher.
 - A watcher MUST check right before it injects keys that its session is active and not
   locked, and refuse otherwise; a watcher MUST NOT run an action's `command` through a
   shell.

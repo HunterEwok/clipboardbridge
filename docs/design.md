@@ -214,7 +214,10 @@ and lifetimes. The installer enables what the device needs.
   goes to the admin socket `admin.sock` next to it, mode 0600 (on Windows a directory that
   only the system and administrators enter), so only root reaches it (D-62). A program that
   runs as a user of the group, a browser exploit for example, cannot admit a device of its
-  own, remove one, or turn on sync away from home. Each message is a JSON header on one line followed by the raw text.
+  own, remove one, or turn on sync away from home. Nor does it get another user's remote
+  pastes and actions: the service reads the user of each paste target and agent from the
+  system and hands them only to the user at the screen, the console only to root
+  (docs/protocol.md, section 8). Each message is a JSON header on one line followed by the raw text.
   Commands send one request and read the answers; a desktop connector keeps its connection
   open to receive writes and report copies. Its watch request carries what the clipboard
   holds; a write that no connector got, such as the group's text at boot, goes to the next

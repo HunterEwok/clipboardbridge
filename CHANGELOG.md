@@ -466,6 +466,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Remote pastes and quick actions go only to a paste target or an agent of the user at the
+  screen: the service reads the user at the other end of the control socket from the
+  system, gives the console target only to root, the desktop and the actions only to the
+  user of an active session, and tmux to a user with a session; where the system does not
+  tell who is at the screen, as without logind, it takes no `secret` paste. The same in the
+  lite member (docs/protocol.md, section 8).
+
 - Signed release files: a channel file's and `attest-status.json`'s `seq` is compared only
   with the files taken under the same `keys.json`, so a new `keys.json` lets it start again;
   a `seq` more than 65 536 above the one taken, and a file signed more than a day ahead of

@@ -159,6 +159,11 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 		}
 		return res
 	}
+	ws, why := s.screenUsers(ws, body.Kind == "secret")
+	if len(ws) == 0 {
+		res.Reason = why
+		return res
+	}
 	var reasons []string
 	for _, w := range ws {
 		in := &inject{body: body, text: text, done: make(chan node.Result, 1)}
@@ -180,6 +185,29 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 	}
 	res.Reason = joinReasons(reasons)
 	return res
+}
+
+// screenUsers keeps the watchers whose users may take their target's
+// pastes now, and a secret paste only where the system tells who is at the
+// screen; why says why none is left.
+func (s *Service) screenUsers(ws []*watcher, secret bool) (kept []*watcher, why string) {
+	for _, w := range ws {
+		switch s.mayTake(w.peer, w.inject) {
+		case allowed:
+			kept = append(kept, w)
+		case unchecked:
+			if !secret {
+				kept = append(kept, w)
+				continue
+			}
+			why = "this device cannot tell which user is at its screen, so it takes no secret pastes; send it as a paste or a typed text"
+		default:
+			if why == "" {
+				why = "the paste targets here run as users who are not at the screen"
+			}
+		}
+	}
+	return kept, why
 }
 
 func joinReasons(rs []string) string {

@@ -78,6 +78,11 @@ type Config struct {
 	// battery reports whether the machine has a battery, for the holder
 	// priority; hasBattery if nil.
 	battery func() bool
+	// peerOf tells who is at the other end of a control connection, and
+	// atScreen whether that user may take a target's remote pastes; the
+	// system's if nil (peer.go).
+	peerOf   func(net.Conn) peer
+	atScreen func(peer, string) verdict
 	// fallbackAfter is how long a full member waits for one with a lower
 	// device ID to dial it before it dials that one; fallbackDial if zero.
 	fallbackAfter time.Duration
@@ -321,6 +326,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.battery == nil {
 		cfg.battery = hasBattery
+	}
+	if cfg.peerOf == nil {
+		cfg.peerOf = connPeer
+	}
+	if cfg.atScreen == nil {
+		cfg.atScreen = atScreen
 	}
 	if cfg.fallbackAfter == 0 {
 		cfg.fallbackAfter = fallbackDial

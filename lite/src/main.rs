@@ -23,6 +23,7 @@ mod next;
 mod node;
 mod pair;
 mod pastehelper;
+mod peer;
 mod records;
 mod remotepaste;
 mod rootless;
