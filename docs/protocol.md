@@ -543,7 +543,8 @@ them, by hash, and gets them in binary frames. The Go code is `internal/node/con
   of the part from `offset`. `length` is 1 to 1 MiB; a receiver drops a get that is not
   valid. A member MUST serve only parts it holds whole and has checked against their
   `sha256`. `length` 0 cancels every get of that part from the sender: what is queued is
-  dropped and the range being served ends with its next chunk. A receiver keeps at most 64
+  dropped and the range being served ends with its next chunk; a cancel of a part that is
+  neither queued nor served changes nothing, and a receiver MUST NOT keep anything of it. A receiver keeps at most 64
   gets per connection and closes a connection that asks for more.
 - `{"t":"missing","get":{...}}` answers a get for a part the member does not hold whole, or
   that it could not read, and ends that fetch.

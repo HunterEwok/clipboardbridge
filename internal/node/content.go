@@ -124,10 +124,12 @@ type serving struct {
 	mu      sync.Mutex
 	gets    []served
 	running bool
-	// cancels counts the peer's cancels of each part, so that a range
-	// queued before a cancel ends with its next chunk, while one asked for
-	// after it goes on.
+	// cancels counts the peer's cancels of each part queued or served, so
+	// that a range queued before a cancel ends with its next chunk, while
+	// one asked for after it goes on; current is the part being served.
+	// A cancel of any other part changes nothing, so it is not counted.
 	cancels map[[sha256.Size]byte]int
+	current [sha256.Size]byte
 }
 
 // served is a get waiting to be served, with the part's cancels when it
@@ -169,8 +171,9 @@ func (c *conn) get(g Get) {
 				kept = append(kept, q)
 			}
 		}
+		queued := len(kept) < len(s.gets)
 		s.gets = kept
-		if s.running {
+		if s.running && (queued || s.current == sum) {
 			if s.cancels == nil {
 				s.cancels = make(map[[sha256.Size]byte]int)
 			}
@@ -225,6 +228,7 @@ func (c *conn) serve() {
 		}
 		g := s.gets[0]
 		s.gets = s.gets[1:]
+		s.current = [sha256.Size]byte(g.SHA256)
 		s.mu.Unlock()
 		sum := [sha256.Size]byte(g.SHA256)
 		r, size, ok := c.n.cfg.Content.Open(sum)

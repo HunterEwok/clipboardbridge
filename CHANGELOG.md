@@ -466,6 +466,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A member keeps nothing of a peer's cancel of a part it neither queued nor serves for that
+  peer (docs/protocol.md, section 4).
+
 - The content cache counts what fetches that stopped short left toward twice the device's
   limit, and deletes it 10 minutes after no copy needs it, as it deletes the parts of
   replaced copies.
