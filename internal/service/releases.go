@@ -36,12 +36,18 @@ type heldRelease struct {
 // (docs/protocol.md, section 16, "In the group").
 type releaseStore struct{ s *Service }
 
-func (r releaseStore) Current() (*node.ReleaseSet, uint64) {
+func (r releaseStore) Current() (*node.ReleaseSet, node.ReleaseOrder) {
 	h := r.s.heldRelease()
 	if h == nil {
-		return nil, 0
+		return nil, node.ReleaseOrder{}
 	}
-	return &h.set, h.seen.ChannelSeq
+	return &h.set, h.order()
+}
+
+// order is where the release stands: a release under a newer keys.json
+// is newer whatever its channel file's seq.
+func (h *heldRelease) order() node.ReleaseOrder {
+	return node.ReleaseOrder{Keys: h.seen.KeysSeq, Channel: h.seen.ChannelSeq}
 }
 
 func (r releaseStore) Add(from group.DeviceID, set node.ReleaseSet) bool {
@@ -129,7 +135,7 @@ func (s *Service) takeRelease(set node.ReleaseSet) (bool, error) {
 	}
 	s.relMu.Lock()
 	defer s.relMu.Unlock()
-	if s.rel != nil && h.seen.ChannelSeq <= s.rel.seen.ChannelSeq && s.cfg.now().UnixMilli() < s.rel.expiresMS {
+	if s.rel != nil && !h.order().After(s.rel.order()) && s.cfg.now().UnixMilli() < s.rel.expiresMS {
 		return false, nil
 	}
 	data, err := json.Marshal(set)

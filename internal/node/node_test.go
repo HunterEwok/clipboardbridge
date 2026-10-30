@@ -1196,10 +1196,10 @@ func releaseSet(t *testing.T, seq uint64) *ReleaseSet {
 	return &ReleaseSet{Keys: signed.File{Body: []byte("{}")}, Channel: signed.File{Body: body}, Release: signed.File{Body: []byte("{}")}}
 }
 
-func (r *releaseStore) Current() (*ReleaseSet, uint64) {
+func (r *releaseStore) Current() (*ReleaseSet, ReleaseOrder) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.cur, r.seq
+	return r.cur, ReleaseOrder{Channel: r.seq}
 }
 
 func (r *releaseStore) Add(_ group.DeviceID, s ReleaseSet) bool {

@@ -278,6 +278,9 @@ type helloBody struct {
 	// ReleaseSeq is the seq of the channel file of the signed release
 	// the sender holds; 0 for none.
 	ReleaseSeq uint64 `json:"release_seq,omitempty"`
+	// ReleaseKeys is the seq of that release's keys.json; 0 for none, and
+	// from a member before 0.6.
+	ReleaseKeys uint64 `json:"release_keys_seq,omitempty"`
 }
 
 // helloOut is the hello this member sends: the engine's hello, the digest
@@ -317,8 +320,19 @@ type helloOut struct {
 	// Media tells that this member serves the content of media events.
 	Media bool `json:"media,omitempty"`
 	// ReleaseSeq is the seq of the channel file of the signed release
-	// this member holds, so that a peer sends only a newer one.
-	ReleaseSeq uint64 `json:"release_seq,omitempty"`
+	// this member holds, and ReleaseKeys that of its keys.json, so that a
+	// peer sends only a newer one.
+	ReleaseSeq  uint64 `json:"release_seq,omitempty"`
+	ReleaseKeys uint64 `json:"release_keys_seq,omitempty"`
+}
+
+// ReleaseOrder is where a signed release stands among others: the seq of
+// its keys.json, then that of its channel file.
+type ReleaseOrder struct{ Keys, Channel uint64 }
+
+// After reports whether o is newer than p.
+func (o ReleaseOrder) After(p ReleaseOrder) bool {
+	return o.Keys > p.Keys || o.Keys == p.Keys && o.Channel > p.Channel
 }
 
 // ReleaseSet is a signed release as members pass it to each other: the

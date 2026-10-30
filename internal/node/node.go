@@ -201,9 +201,10 @@ type CredentialStore interface {
 // (docs/protocol.md, section 16, "In the group"). Its methods are called
 // from connection goroutines.
 type ReleaseStore interface {
-	// Current returns the release it holds and the seq of its channel
-	// file; nil and 0 for none.
-	Current() (*ReleaseSet, uint64)
+	// Current returns the release it holds and where it stands: the seq
+	// of its keys.json, then that of its channel file, which a newer
+	// keys.json starts again; nil and zero for none.
+	Current() (*ReleaseSet, ReleaseOrder)
 	// Add takes a release a peer sent and reports whether it checks out
 	// and is newer than the one held, and so goes on to the other peers.
 	Add(from group.DeviceID, r ReleaseSet) bool
@@ -1359,7 +1360,8 @@ func (c *conn) message(o outgoing) (*message, error) {
 			out.Records = c.n.cfg.Records.Digest()
 		}
 		if st := c.n.cfg.Releases; st != nil {
-			_, out.ReleaseSeq = st.Current()
+			_, o := st.Current()
+			out.ReleaseKeys, out.ReleaseSeq = o.Keys, o.Channel
 		}
 		if k := c.n.tunnelKey.Load(); k != nil {
 			out.TunnelKey, out.TunnelPSK = k[0], k[1]
@@ -1566,7 +1568,7 @@ func (c *conn) reader() error {
 				}
 			}
 			if st := c.n.cfg.Releases; st != nil {
-				if r, seq := st.Current(); r != nil && seq > extra.ReleaseSeq && takesRelease(c.role()) {
+				if r, o := st.Current(); r != nil && o.After(ReleaseOrder{extra.ReleaseKeys, extra.ReleaseSeq}) && takesRelease(c.role()) {
 					c.enqueue(outgoing{release: r})
 				}
 			}

@@ -466,6 +466,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Signed release files: a channel file's and `attest-status.json`'s `seq` is compared only
+  with the files taken under the same `keys.json`, so a new `keys.json` lets it start again;
+  a `seq` more than 65 536 above the one taken, and a file signed more than a day ahead of
+  the device's clock, are refused; members pass a release on by its `keys.json` first
+  (`release_keys_seq` in the hello), and `release-sign take` refuses a renewed channel file
+  more than 16 past the branch's. The same in Go, the lite member and both phone kits
+  (docs/protocol.md, section 16).
+
 - A member refuses an event more than 7 days ahead of its own wall clock, whatever events it
   took before, in Go, the lite member and both phone kits (docs/protocol.md, section 5).
 

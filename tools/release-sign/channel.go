@@ -156,6 +156,10 @@ func extend(args []string) error {
 	return nil
 }
 
+// maxTakeStep is how far past the branch's channel file take accepts a
+// renewed one: the weekly timer signs one more each time.
+const maxTakeStep = 16
+
 // take replaces the channel file in a checkout of the branch channel with
 // the one cbb.tools renewed, when that one checks out, names the same
 // release and is newer: the channel workflow.
@@ -184,10 +188,19 @@ func take(args []string) error {
 	case n.Seq <= c.Seq:
 		fmt.Fprintf(stdout, "the branch's %s.json %d is the newest\n", stableChannel, c.Seq)
 		return nil
+	case n.Seq > c.Seq+maxTakeStep:
+		// extend signs the branch's seq and one more; a file further ahead
+		// was not signed from the branch, and would hold every device that
+		// took it above the files signed after.
+		return fmt.Errorf("the renewed %s.json %d is more than %d past the branch's %d", stableChannel, n.Seq, maxTakeStep, c.Seq)
 	case n.Release != c.Release || n.ReleaseSHA256 != c.ReleaseSHA256:
 		return fmt.Errorf("the renewed %s.json names %s, the branch's %s: only release-sign publish changes the release", stableChannel, n.Release, c.Release)
 	}
-	if _, _, err := release.Check(keys, ch, rel, pinnedRoots(), stableChannel, now(), release.Seen{ChannelSeq: c.Seq}); err != nil {
+	var ks release.Keys
+	if err := json.Unmarshal(keys.Body, &ks); err != nil {
+		return err
+	}
+	if _, _, err := release.Check(keys, ch, rel, pinnedRoots(), stableChannel, now(), release.Seen{KeysSeq: ks.Seq, ChannelSeq: c.Seq}); err != nil {
 		return fmt.Errorf("the renewed %s.json: %w", stableChannel, err)
 	}
 	if err := writeFile(filepath.Join(dir, stableChannel+".json"), ch); err != nil {

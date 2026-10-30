@@ -162,11 +162,63 @@ func (s Status) Revoked() map[string]bool {
 
 // Seen is what a device keeps between checks so that nobody can take it
 // back: the highest sequence numbers and the highest version it has taken.
+// A channel or status seq holds only under the keys.json that certified
+// the key that signed it (ChannelKeys, StatusKeys; KeysSeq when 0, as
+// kept before): a newer keys.json, which only a root signs, starts them
+// again, so a lost channel or status key cannot hold a device at a seq no
+// later file reaches.
 type Seen struct {
-	KeysSeq    uint64 `json:"keys_seq"`
-	ChannelSeq uint64 `json:"channel_seq"`
-	Version    string `json:"version,omitempty"`
-	StatusSeq  uint64 `json:"status_seq,omitempty"`
+	KeysSeq     uint64 `json:"keys_seq"`
+	ChannelSeq  uint64 `json:"channel_seq"`
+	Version     string `json:"version,omitempty"`
+	StatusSeq   uint64 `json:"status_seq,omitempty"`
+	ChannelKeys uint64 `json:"channel_keys_seq,omitempty"`
+	StatusKeys  uint64 `json:"status_keys_seq,omitempty"`
+}
+
+// MaxSeqStep is the most a channel or status seq may rise past the one a
+// device holds under the same keys.json: far more than the files signed in
+// a keys.json's lifetime, far less than the range of seq.
+const MaxSeqStep = 1 << 16
+
+// MaxAhead is how far ahead of a device's clock a file may have been
+// signed, when that clock reads 2026 or later.
+const MaxAhead = 24 * time.Hour
+
+// plausible is a wall time before which a device's clock is not trusted
+// to refuse files signed ahead of it (2026-01-01).
+const plausible = 1767225600000
+
+// floor returns the seq a file signed under keys.json keysSeq may not go
+// below: seq, set under the keys.json at (seen's KeysSeq when 0), or none
+// under a newer keys.json.
+func floor(seq, at, seenKeys, keysSeq uint64) uint64 {
+	if at == 0 {
+		at = seenKeys
+	}
+	if keysSeq > at {
+		return 0
+	}
+	return seq
+}
+
+// checkSeq refuses a seq below the floor, or one that rises more than
+// MaxSeqStep past it.
+func checkSeq(seq, floor uint64) error {
+	switch {
+	case seq < floor:
+		return ErrRollback
+	case floor > 0 && seq-floor > MaxSeqStep:
+		return ErrJump
+	}
+	return nil
+}
+
+// signedAhead reports whether a file stamped timeMS was signed more than
+// MaxAhead ahead of now.
+func signedAhead(timeMS int64, now time.Time) bool {
+	ms := now.UnixMilli()
+	return ms >= plausible && timeMS > ms+MaxAhead.Milliseconds()
 }
 
 var (
@@ -177,6 +229,10 @@ var (
 	ErrExpired = errors.New("release: the file has expired")
 	// ErrRollback is returned for a file older than one already taken.
 	ErrRollback = errors.New("release: the file is older than one already seen")
+	// ErrJump is returned for a file whose seq rises more than MaxSeqStep
+	// past the one taken, or that was signed more than MaxAhead ahead of
+	// the device's clock.
+	ErrJump = errors.New("release: the file is too far ahead of the one already seen")
 )
 
 // Sign signs body with key. The body's type and version are set by the
@@ -439,6 +495,9 @@ func VerifyKeys(f File, roots [][]byte, now time.Time, seen Seen) (Keys, error) 
 	if now.UnixMilli() >= k.ExpiresMS {
 		return Keys{}, ErrExpired
 	}
+	if signedAhead(k.TimeMS, now) {
+		return Keys{}, ErrJump
+	}
 	if k.Seq < seen.KeysSeq {
 		return Keys{}, ErrRollback
 	}
@@ -475,14 +534,20 @@ func CheckStatus(keys, status File, roots [][]byte, now time.Time, seen Seen) (S
 	if err != nil {
 		return Status{}, seen, fmt.Errorf("attest-status.json: %w", err)
 	}
-	switch {
-	case now.UnixMilli() >= s.ExpiresMS:
+	if now.UnixMilli() >= s.ExpiresMS {
 		return Status{}, seen, fmt.Errorf("attest-status.json: %w", ErrExpired)
-	case s.Seq < seen.StatusSeq:
-		return Status{}, seen, fmt.Errorf("attest-status.json: %w", ErrRollback)
+	}
+	if signedAhead(s.TimeMS, now) {
+		return Status{}, seen, fmt.Errorf("attest-status.json: %w", ErrJump)
+	}
+	if err := checkSeq(s.Seq, floor(seen.StatusSeq, seen.StatusKeys, seen.KeysSeq, k.Seq)); err != nil {
+		return Status{}, seen, fmt.Errorf("attest-status.json: %w", err)
 	}
 	next := seen
-	next.KeysSeq, next.StatusSeq = k.Seq, s.Seq
+	next.KeysSeq, next.StatusSeq, next.StatusKeys = k.Seq, s.Seq, k.Seq
+	if next.ChannelKeys == 0 {
+		next.ChannelKeys = seen.KeysSeq
+	}
 	return s, next, nil
 }
 
@@ -507,8 +572,11 @@ func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, 
 		return Release{}, seen, fmt.Errorf("%s.json: release: the file is for the channel %q", name, c.Channel)
 	case now.UnixMilli() >= c.ExpiresMS:
 		return Release{}, seen, fmt.Errorf("%s.json: %w", name, ErrExpired)
-	case c.Seq < seen.ChannelSeq:
-		return Release{}, seen, fmt.Errorf("%s.json: %w", name, ErrRollback)
+	case signedAhead(c.TimeMS, now):
+		return Release{}, seen, fmt.Errorf("%s.json: %w", name, ErrJump)
+	}
+	if err := checkSeq(c.Seq, floor(seen.ChannelSeq, seen.ChannelKeys, seen.KeysSeq, k.Seq)); err != nil {
+		return Release{}, seen, fmt.Errorf("%s.json: %w", name, err)
 	}
 	if err := rel.verify(k.spkis(UseRelease)); err != nil {
 		return Release{}, seen, fmt.Errorf("release.json: %w", err)
@@ -526,7 +594,10 @@ func Check(keys, channel, rel File, roots [][]byte, name string, now time.Time, 
 	if seen.Version != "" && Compare(r.Version, seen.Version) < 0 {
 		return Release{}, seen, fmt.Errorf("release.json: %w", ErrRollback)
 	}
-	next := Seen{KeysSeq: k.Seq, ChannelSeq: c.Seq, Version: r.Version, StatusSeq: seen.StatusSeq}
+	next := Seen{KeysSeq: k.Seq, ChannelSeq: c.Seq, Version: r.Version, StatusSeq: seen.StatusSeq, ChannelKeys: k.Seq, StatusKeys: seen.StatusKeys}
+	if next.StatusKeys == 0 {
+		next.StatusKeys = seen.KeysSeq
+	}
 	if seen.Version != "" && Compare(seen.Version, r.Version) > 0 {
 		next.Version = seen.Version
 	}

@@ -454,6 +454,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `key_store` | string or absent | where the sender's keys live: `file`, `hardware` or `rootless` (section 17); shown, never trusted, except by the root that makes the sender an admin; absent from a member before 0.6, and a receiver ignores another value |
 | `actions` | array or absent | the names of the sender's quick actions that are on (section 15), at most 64, for the admins' buttons; a receiver drops a name that is not valid; absent from a member before 0.6 and from one with none on. A change shows at the next connection |
 | `release_seq` | integer or absent | the `seq` of the channel file of the newest signed release the sender holds (section 16, "In the group"); absent when it holds none, and from a member before 0.6 |
+| `release_keys_seq` | integer or absent | with `release_seq`: the `seq` of that release's `keys.json`; absent from a member before 0.6, which a receiver reads as 0 |
 | `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
 
 ### Device
@@ -2486,16 +2487,26 @@ A device that looks for an update fetches `keys.json`, the channel file of its c
 the `release.json` that names, and MUST take the release only when:
 
 1. `keys.json` verifies under a pinned root key, decodes as a `keys` body, has not expired,
-   and its `seq` is not below the highest the device has taken;
+   is not signed more than a day ahead of the device's clock (`time_ms`), and its `seq` is
+   not below the highest the device has taken;
 2. the channel file verifies under a release or channel key of that `keys.json`, decodes as a `channel`
-   body for the device's channel, has not expired, and its `seq` is not below the highest
-   taken;
+   body for the device's channel, has not expired, is not signed more than a day ahead of
+   the device's clock, and its `seq` is not below the highest taken under the same or an
+   older `keys.json`: a `keys.json` with a higher `seq` than the one the device took its
+   highest channel file under lets the channel's `seq` start again;
 3. `release.json` verifies under a release key of that `keys.json`, the SHA-256 of its body
    is `release_sha256`, its `version` and `channel` are the channel file's, and its version is
    not below the highest the device has taken.
 
-The device then MUST keep the highest `keys` and channel `seq` and version it has taken, so
-that nobody can give it older files later. A file it downloads MUST have the size and
+A channel file's `seq` MUST also be at most 65 536 above the highest taken (when that still
+counts), so that one file signed with a far `seq` cannot hold a device above every file
+signed after it. A device whose clock reads before 2026 skips the checks of `time_ms`, as its
+clock is unset. `attest-status.json` (section 17) is checked the same way as a channel file,
+under its `keys.json`.
+
+The device then MUST keep the highest `keys` and channel `seq` and version it has taken, and
+the `keys` `seq` under which it took its channel file, so that nobody can give it older files
+later; a version before 0.6 checks no signed files. A file it downloads MUST have the size and
 SHA-256 that `release.json` lists, and a program inside an archive the SHA-256 that its
 `binaries` entry lists, before the device installs it. A device below `min_from` updates to `min_from` first.
 A release key that is lost or stolen is dropped from the next `keys.json`; a device that has
@@ -2508,12 +2519,14 @@ release when any device of its group has checked, and one without internet acces
 it too (D-69). The signatures make the peers untrusted: a member checks what a peer sends as
 it checks what it downloads.
 
-- A member's hello carries `release_seq`, the channel `seq` of the release it holds. After a
-  peer's hello, a member that holds a release with a higher `seq` sends it, when the peer is
+- A member's hello carries `release_seq` and `release_keys_seq`, the channel and `keys.json`
+  `seq` of the release it holds. After a peer's hello, a member that holds a newer release
+  sends it (one whose `keys.json` has a higher `seq`, or the same `keys.json` and a channel
+  file with a higher `seq`), when the peer is
   a `full` or `lite` member (phones update from their stores), a `release` message: `{"t":"release","release":{"keys":...,"channel":...,"release":...}}`.
 - A member MUST take a `release` only when its three files pass the check above for the `stable`
-  channel, with the highest `keys` and channel `seq` of the release it holds, and its channel
-  `seq` is higher. It keeps the files (`release.json` in the service's state directory) and
+  channel, with the `keys` and channel `seq` of the release it holds, and it is newer in the
+  same order. It keeps the files (`release.json` in the service's state directory) and
   sends them on to its other peers; it drops one that fails, and logs why. A held release
   whose channel file has expired is not sent.
 - `cbb update` hands the files it fetched and checked to the service on this computer
@@ -2676,8 +2689,8 @@ serial number the last one revoked until its maintainer looks.
 
 - The group's root fetches both files when the group starts and once a day (a root phone
   when evidence comes, at most once a day), and takes the
-  list when it passes the checks of section 16 and its `seq` is not below the last it took
-  (kept in the state directory). The request is the same for every device and names none.
+  list when it passes the checks of section 16, its `seq` checked as there under the
+  `keys.json` it came with (kept in the state directory). The request is the same for every device and names none.
 - The root checks every chain against the list it holds. A chain with a revoked
   certificate proves nothing: the root keeps the last evidence of each peer and, when it
   takes a new list, checks it again; a device recorded as `proven` whose chain is now
