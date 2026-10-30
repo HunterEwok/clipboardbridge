@@ -19,11 +19,12 @@ import (
 )
 
 // Users that the tests' fake system names: one at the screen, one that is
-// not, and one it cannot tell about.
+// not, and one it cannot tell about. They are far from the uids of real
+// accounts, so none is the test's own, which counts as the service's.
 const (
-	uidAtScreen = 1000
-	uidAway     = 1001
-	uidUnknown  = 1002
+	uidAtScreen = 2_000_000_000 + iota
+	uidAway
+	uidUnknown
 )
 
 // fakeUsers gives each control connection the user next holds, and tells
@@ -219,7 +220,9 @@ func TestKeysGrant(t *testing.T) {
 		_, err := deck.do(t, control.Header{Op: control.OpKeys, Name: req, Value: strconv.Itoa(uid), Keys: grant}, "")
 		return err
 	}
-	keys := func(grant, req string, uid int) error { return keysAs(peer{known: true, uid: 0}, grant, req, uid) }
+	// root on Unix, the system's account on Windows
+	root := peer{known: true, uid: 0, sid: "S-1-5-18"}
+	keys := func(grant, req string, uid int) error { return keysAs(root, grant, req, uid) }
 	w := deck.dial(t)
 	defer w.Close()
 	if _, err := w.Do(&control.Message{Header: control.Header{Op: control.OpWatch, Inject: targetDesktop}}); err != nil {
