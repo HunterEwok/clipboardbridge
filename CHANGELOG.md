@@ -639,6 +639,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   are read as before.
 - The release workflow run by hand from `main` builds the OpenWrt feed: it named the
   package's version after the branch, which apk refuses.
+- A forwarder keeps the handshake budgets of clients that come over VLESS apart for each
+  group's VLESS user ID, which its side of VLESS now tells it, so the clients of one group no
+  longer use up those of the other groups. Its tables of sources and networks drop the entry
+  used least recently when full, instead of refusing new clients. Clients and hubs need no
+  change.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.

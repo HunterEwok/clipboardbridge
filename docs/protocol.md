@@ -2142,10 +2142,13 @@ listens on TCP (`-vless-listen`, port 443 by default) for VLESS inside REALITY:
 - A connection that is not a client's, by REALITY's check, gets the borrowed site's own
   TLS and answers, from port 443 of that site.
 - Only the VLESS user IDs of registered hubs that asked for VLESS are let in. A client's
-  UDP packets, whatever address the client names, go to the forwarder's own UDP port from
-  a loopback address and are routed there as any client's; the answers go back the same
-  way. The per-source handshake limit does not apply to them: each comes from a client its
-  group's ID let in, and its group's limits do.
+  UDP packets, whatever address the client names, go to the forwarder's own UDP port, from
+  a port of the forwarder's own address for each of the client's flows, and are routed
+  there as any client's; the answers go back the same way, and a TCP stream goes nowhere.
+  The forwarder knows which group's ID each of those ports serves, and the per-source
+  handshake limit and the per-network budget of "Limits" count what comes over VLESS by
+  that ID, as one source and one network for each group; a client's own group's limits
+  apply as to any client.
 - The forwarder keeps no log of VLESS either.
 
 ### Limits
@@ -2160,9 +2163,12 @@ Registrations, held or being set up, are bounded at 16 from one address and 64 f
 network, an IPv4 /24 or an IPv6 /64; the forwarder closes a connection past either limit
 at once. A handshake to a new group is checked against each registered group, so it costs
 one check per group. These checks are bounded at 500 000 a second for all sources together,
-and one network gets a sixteenth of that; the handshakes that come over VLESS, from the
-loopback, count as one network. A single handshake costs a network at most its
+and one network gets a sixteenth of that; the handshakes that come over VLESS count as one
+network for each group's VLESS user ID. A single handshake costs a network at most its
 whole budget, so one still passes now and then on a forwarder with more groups than that.
+The tables of sources and networks hold at most four entries per group; when full, a new
+entry replaces the one used least recently (its owner starts again with a full budget), so
+forged addresses cannot keep a real client out.
 
 ### What it keeps
 

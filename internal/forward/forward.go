@@ -23,6 +23,7 @@
 package forward
 
 import (
+	"container/list"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -96,27 +97,28 @@ type Forwarder struct {
 	limits Limits
 	logf   func(string, ...any)
 
-	mu       sync.Mutex
-	regs     map[string]*reg // by group tag
-	memory   *memory         // the authority records of the groups that register with them
-	versions *versions       // the newest credential of each group that registers with one
-	byID     map[uint64]*reg // by registration ID, for hellos
-	byHubEP  map[netip.AddrPort]*reg
-	pending  map[clientKey]pending
-	byHubIdx map[uint32]*session
-	byClient map[clientKey]*session
-	byAddr   map[netip.AddrPort]map[*reg]int // client addresses and the groups they have handshakes and sessions with
-	byInit   map[int][]*reg                  // obfuscated groups by the size of their handshake initiation
-	sources  map[netip.Addr]*bucket
-	scans    *bucket                  // ScanRate
-	netScans map[netip.Prefix]*bucket // NetworkScanRate
-	fromAddr map[netip.Addr]int       // registrations held or being set up, by address
-	fromNet  map[netip.Prefix]int     // and by network
-	setting  int                      // registrations being set up
-	mask     [32]byte                 // the key of the hellos' mask, given to every hub
-	vless    *vless.Server
-	vlessCfg *VLESSConfig
-	byVLESS  map[string]*reg // by the group's VLESS user ID
+	mu        sync.Mutex
+	regs      map[string]*reg // by group tag
+	memory    *memory         // the authority records of the groups that register with them
+	versions  *versions       // the newest credential of each group that registers with one
+	byID      map[uint64]*reg // by registration ID, for hellos
+	byHubEP   map[netip.AddrPort]*reg
+	pending   map[clientKey]pending
+	byHubIdx  map[uint32]*session
+	byClient  map[clientKey]*session
+	byAddr    map[netip.AddrPort]map[*reg]int // client addresses and the groups they have handshakes and sessions with
+	byInit    map[int][]*reg                  // obfuscated groups by the size of their handshake initiation
+	sources   *lru[sourceKey, *bucket]        // SourceRate
+	scans     *bucket                         // ScanRate
+	netScans  *lru[scanKey, *bucket]          // NetworkScanRate
+	fromAddr  map[netip.Addr]int              // registrations held or being set up, by address
+	fromNet   map[netip.Prefix]int            // and by network
+	setting   int                             // registrations being set up
+	mask      [32]byte                        // the key of the hellos' mask, given to every hub
+	vless     *vless.Server
+	vlessUser func(netip.AddrPort) (string, bool) // vless.Server.User
+	vlessCfg  *VLESSConfig
+	byVLESS   map[string]*reg // by the group's VLESS user ID
 
 	closeOnce sync.Once
 	done      chan struct{}
@@ -285,7 +287,7 @@ func Listen(cfg Config) (*Forwarder, error) {
 		regs: map[string]*reg{}, byID: map[uint64]*reg{}, byHubEP: map[netip.AddrPort]*reg{},
 		pending: map[clientKey]pending{}, byHubIdx: map[uint32]*session{}, byClient: map[clientKey]*session{},
 		byAddr: map[netip.AddrPort]map[*reg]int{}, byInit: map[int][]*reg{},
-		sources: map[netip.Addr]*bucket{}, netScans: map[netip.Prefix]*bucket{},
+		sources: newLRU[sourceKey, *bucket](4 * limits.Groups), netScans: newLRU[scanKey, *bucket](4 * limits.Groups),
 		fromAddr: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
 		done: make(chan struct{}),
 	}
@@ -329,7 +331,7 @@ func Listen(cfg Config) (*Forwarder, error) {
 			tcp.Close()
 			return nil, fmt.Errorf("forward: %w", err)
 		}
-		f.vlessCfg, f.byVLESS = v, map[string]*reg{}
+		f.vlessCfg, f.byVLESS, f.vlessUser = v, map[string]*reg{}, f.vless.User
 	}
 	f.tlsCfg = f.serverTLS(cfg.Cert)
 	return f, nil
@@ -531,21 +533,45 @@ func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initia
 	return netip.AddrPort{}, false
 }
 
-// sourceLocked charges a handshake to the address it came from; false
-// drops it. It bounds what one address may make the forwarder look for.
-// What comes over VLESS comes from the loopback, from a client its group's
-// VLESS user ID let in, and is charged to that group alone.
-func (f *Forwarder) sourceLocked(from netip.AddrPort, now time.Time) bool {
-	if f.vless != nil && from.Addr().IsLoopback() {
-		return true
+// sourceKey is what the per-source handshake limit counts: an address,
+// or for what comes over VLESS the group's VLESS user ID, since all of it
+// comes from the forwarder's own address.
+type sourceKey struct {
+	addr netip.Addr
+	user string
+}
+
+// scanKey is the same for the budget of one network.
+type scanKey struct {
+	net  netip.Prefix
+	user string
+}
+
+// userOf returns the VLESS user ID of the group whose client a packet from
+// the address came from over VLESS, "" for any other packet. The
+// forwarder's side of VLESS sends each client's packets from a port of
+// their own and knows whose they are.
+func (f *Forwarder) userOf(from netip.AddrPort) string {
+	if f.vlessUser == nil {
+		return ""
 	}
-	src := f.sources[from.Addr()]
-	if src == nil {
-		if len(f.sources) >= 4*f.limits.Groups {
-			return false
-		}
+	u, _ := f.vlessUser(from)
+	return u
+}
+
+// sourceLocked charges a handshake to the address it came from, or what
+// came over VLESS to the group whose user ID let its client in; false
+// drops it. It bounds what one address, or the clients of one group over
+// VLESS, may make the forwarder look for. The table keeps at most 4 per
+// group and drops the source used least recently when it is full; a
+// source that falls out starts again with a full bucket, so forged
+// addresses cannot keep a real one out.
+func (f *Forwarder) sourceLocked(from netip.AddrPort, now time.Time) bool {
+	k := sourceKey{addr: from.Addr(), user: f.userOf(from)}
+	src, ok := f.sources.get(k)
+	if !ok {
 		src = newBucket(f.limits.SourceRate, now)
-		f.sources[from.Addr()] = src
+		f.sources.add(k, src)
 	}
 	return src.take(1, now)
 }
@@ -567,17 +593,16 @@ func network(a netip.Addr) netip.Prefix {
 // budget of all sources and to that of its network; false drops it. One
 // handshake costs a network at most its whole budget, so it still passes
 // now and then on a forwarder with more groups than the budget. What comes
-// over VLESS, from the loopback, counts as one network, so its clients
-// cannot spend the budget of the others.
+// over VLESS has the budget of a network for each
+// group's VLESS user ID, so the clients of one group cannot spend that of
+// the others. The table is bounded and drops the budget used least
+// recently like sourceLocked's.
 func (f *Forwarder) scanLocked(from netip.AddrPort, n int, now time.Time) bool {
-	p := network(from.Addr())
-	b := f.netScans[p]
-	if b == nil {
-		if len(f.netScans) >= 4*f.limits.Groups {
-			return false
-		}
+	k := scanKey{net: network(from.Addr()), user: f.userOf(from)}
+	b, ok := f.netScans.get(k)
+	if !ok {
 		b = newBucket(f.limits.NetworkScanRate, now)
-		f.netScans[p] = b
+		f.netScans.add(k, b)
 	}
 	cost := min(float64(n), 2*f.limits.NetworkScanRate)
 	if !b.take(cost, now) {
@@ -764,16 +789,8 @@ func (f *Forwarder) sweepAt(now time.Time) {
 			f.dropSessionLocked(s)
 		}
 	}
-	for a, b := range f.sources {
-		if b.full(now) {
-			delete(f.sources, a)
-		}
-	}
-	for p, b := range f.netScans {
-		if b.full(now) {
-			delete(f.netScans, p)
-		}
-	}
+	f.sources.sweep(func(b *bucket) bool { return b.full(now) })
+	f.netScans.sweep(func(b *bucket) bool { return b.full(now) })
 }
 
 // unpendLocked forgets a handshake that waited for the hub.
@@ -793,6 +810,58 @@ func (r *reg) take(n int, now time.Time) bool {
 type bucket struct {
 	rate, tokens float64
 	at           time.Time
+}
+
+// lru is a table of at most max entries that drops the one used least
+// recently when a new one comes, so that a flood of new keys cannot keep a
+// genuine one out.
+type lru[K comparable, V any] struct {
+	m   map[K]*list.Element
+	l   *list.List // front: most recently used
+	max int
+}
+
+type lruEntry[K comparable, V any] struct {
+	k K
+	v V
+}
+
+func newLRU[K comparable, V any](max int) *lru[K, V] {
+	return &lru[K, V]{m: map[K]*list.Element{}, l: list.New(), max: max}
+}
+
+func (t *lru[K, V]) len() int { return len(t.m) }
+
+func (t *lru[K, V]) get(k K) (v V, ok bool) {
+	e := t.m[k]
+	if e == nil {
+		return v, false
+	}
+	t.l.MoveToFront(e)
+	return e.Value.(*lruEntry[K, V]).v, true
+}
+
+// add stores v under k, which is not in the table.
+func (t *lru[K, V]) add(k K, v V) {
+	if t.max > 0 && len(t.m) >= t.max {
+		if e := t.l.Back(); e != nil {
+			delete(t.m, e.Value.(*lruEntry[K, V]).k)
+			t.l.Remove(e)
+		}
+	}
+	t.m[k] = t.l.PushFront(&lruEntry[K, V]{k, v})
+}
+
+// sweep deletes the entries whose value drop says so.
+func (t *lru[K, V]) sweep(drop func(V) bool) {
+	for e := t.l.Back(); e != nil; {
+		prev := e.Prev()
+		if en := e.Value.(*lruEntry[K, V]); drop(en.v) {
+			delete(t.m, en.k)
+			t.l.Remove(e)
+		}
+		e = prev
+	}
 }
 
 func newBucket(rate float64, now time.Time) *bucket {

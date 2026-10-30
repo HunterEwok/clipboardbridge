@@ -33,15 +33,14 @@ import (
 	"github.com/xtls/xray-core/app/dispatcher"
 	xlog "github.com/xtls/xray-core/app/log"
 	"github.com/xtls/xray-core/app/proxyman"
-	"github.com/xtls/xray-core/common/geodata"
 	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/inbound"
+	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/proxy"
 	"github.com/xtls/xray-core/proxy/dokodemo"
-	"github.com/xtls/xray-core/proxy/freedom"
 	xvless "github.com/xtls/xray-core/proxy/vless"
 	vlessin "github.com/xtls/xray-core/proxy/vless/inbound"
 	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
@@ -91,6 +90,7 @@ func PublicKey(key [32]byte) ([]byte, error) {
 type Server struct {
 	inst  *core.Instance
 	users proxy.UserManager
+	out   *toForwarder
 	port  uint16
 	site  string // REALITY's key for what it learns of the site: Dest and server name
 }
@@ -140,25 +140,23 @@ func Listen(cfg ServerConfig) (*Server, error) {
 		LimitFallbackDownload: &reality.LimitFallback{},
 	})
 	// Whatever a client asks for, its packets go to the forwarder's UDP
-	// port, which Xray lets through only by name since it is a private
-	// address; nothing else, and no TCP stream, which would reach the
-	// forwarder's registrations.
-	to, err := geodata.ParseIPRules([]string{cfg.To.Addr().String()})
-	if err != nil {
-		return nil, fmt.Errorf("vless: %w", err)
-	}
-	out := &freedom.Config{
-		DestinationOverride: &freedom.DestinationOverride{Server: endpoint(cfg.To)},
-		FinalRules: []*freedom.FinalRuleConfig{
-			{Action: freedom.RuleAction_Allow, Networks: []xnet.Network{xnet.Network_UDP}, PortList: ports(cfg.To.Port()), Ip: to},
-			{Action: freedom.RuleAction_Block},
-		},
-	}
-	inst, err := start(inboundHandler(inboundTag, listen, stream, &vlessin.Config{Decryption: "none"}), out)
+	// port and nowhere else, and no TCP stream, which would reach the
+	// forwarder's registrations (toForwarder).
+	out := &toForwarder{to: cfg.To}
+	inst, err := start(inboundHandler(inboundTag, listen, stream, &vlessin.Config{Decryption: "none"}), nil)
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{inst: inst, port: listen.Port(), site: cfg.Dest + " " + cfg.ServerName}
+	om, _ := inst.GetFeature(outbound.ManagerType()).(outbound.Manager)
+	if om == nil {
+		inst.Close()
+		return nil, errors.New("vless: no outbound manager")
+	}
+	if err := om.AddHandler(context.Background(), out); err != nil {
+		inst.Close()
+		return nil, fmt.Errorf("vless: %w", err)
+	}
+	s := &Server{inst: inst, out: out, port: listen.Port(), site: cfg.Dest + " " + cfg.ServerName}
 	m, _ := inst.GetFeature(inbound.ManagerType()).(inbound.Manager)
 	if m == nil {
 		inst.Close()
@@ -207,6 +205,11 @@ func (s *Server) Ready(ctx context.Context) error {
 
 // Port returns the TCP port the server listens on.
 func (s *Server) Port() uint16 { return s.port }
+
+// User returns the VLESS user ID of the group whose client a packet that
+// reached the forwarder from the address came from: the forwarder's side
+// sends each client's packets from a port of their own.
+func (s *Server) User(from netip.AddrPort) (string, bool) { return s.out.user(from) }
 
 // AddUser lets in the clients of the group whose user ID is id.
 func (s *Server) AddUser(id string) error {
@@ -307,7 +310,8 @@ func inboundHandler(tag string, listen netip.AddrPort, stream *internet.StreamCo
 	}
 }
 
-// start runs Xray with one inbound and one outbound, logging nothing.
+// start runs Xray with one inbound and one outbound, or none for one that
+// is added afterwards, logging nothing.
 func start(in *core.InboundHandlerConfig, out proto.Message, outStream ...*internet.StreamConfig) (*core.Instance, error) {
 	sender := &proxyman.SenderConfig{}
 	if len(outStream) > 0 {
@@ -320,8 +324,10 @@ func start(in *core.InboundHandlerConfig, out proto.Message, outStream ...*inter
 			serial.ToTypedMessage(&proxyman.InboundConfig{}),
 			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
 		},
-		Inbound:  []*core.InboundHandlerConfig{in},
-		Outbound: []*core.OutboundHandlerConfig{{SenderSettings: serial.ToTypedMessage(sender), ProxySettings: serial.ToTypedMessage(out)}},
+		Inbound: []*core.InboundHandlerConfig{in},
+	}
+	if out != nil {
+		cfg.Outbound = []*core.OutboundHandlerConfig{{SenderSettings: serial.ToTypedMessage(sender), ProxySettings: serial.ToTypedMessage(out)}}
 	}
 	inst, err := core.New(cfg)
 	if err != nil {
