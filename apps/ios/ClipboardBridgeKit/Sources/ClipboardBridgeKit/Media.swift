@@ -150,13 +150,21 @@ public enum Media {
             let bad = u.value < 0x20 || (0x7f...0x9f).contains(u.value) || "/\\:*?\"<>|".unicodeScalars.contains(u)
             scalars.append(bad ? "_" : u)
         }
-        while String(scalars).utf8.count > maxName { scalars.removeLast() }
-        var name = String(scalars)
-        if name.isEmpty || name == "." || name == ".." { return "_" }
-        if name.utf8.count == maxName {
+        // What fixName adds can take the name past maxName, so the name
+        // loses characters at its end until the fixed name fits.
+        while true {
+            let name = String(scalars)
+            if name.isEmpty || name == "." || name == ".." { return "_" }
+            let fixed = fixName(name)
+            if fixed.utf8.count <= maxName { return fixed }
             scalars.removeLast()
-            name = String(scalars)
         }
+    }
+
+    /// Gives a reserved name "_" after its base and one that ends in a dot
+    /// or a space "_" after it.
+    private static func fixName(_ given: String) -> String {
+        var name = given
         if reserved(name) {
             // CON.txt becomes CON_.txt: Windows reserves the base with any
             // extension.

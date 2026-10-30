@@ -615,6 +615,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A copied file's name made fit for every system no longer comes out one byte over the
+  255-byte limit when it is that long, Windows reserves its base and it ends in a dot; a
+  valid name of 255 bytes stays as it is. The same on computers and both phones.
 - An admin's command for a device it is not connected to, such as a remote paste, now goes
   only through the group's hubs (the root and the admins), not through every member, on
   computers and both phone apps.

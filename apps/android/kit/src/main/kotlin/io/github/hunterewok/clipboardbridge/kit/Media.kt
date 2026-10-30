@@ -137,14 +137,21 @@ object Media {
             val bad = cp in 0xd800..0xdfff || cp < 0x20 || cp == 0x7f || cp in 0x80..0x9f || (cp < 0x80 && cp.toChar() in "/\\:*?\"<>|")
             if (bad) sb.append('_') else sb.appendCodePoint(cp)
         }
+        // What fixName adds can take the name past MAX_NAME, so the name
+        // loses characters at its end until the fixed name fits.
         var name = sb.toString()
-        fun dropLast() {
+        while (true) {
+            if (name.isEmpty() || name == "." || name == "..") return "_"
+            val fixed = fixName(name)
+            if (fixed.toByteArray().size <= MAX_NAME) return fixed
             val cp = name.codePointBefore(name.length)
             name = name.substring(0, name.length - Character.charCount(cp))
         }
-        while (name.toByteArray().size > MAX_NAME) dropLast()
-        if (name.isEmpty() || name == "." || name == "..") return "_"
-        if (name.toByteArray().size == MAX_NAME) dropLast()
+    }
+
+    /** Gives a reserved name "_" after its base and one that ends in a dot or a space "_" after it. */
+    private fun fixName(given: String): String {
+        var name = given
         // CON.txt becomes CON_.txt: Windows reserves the base with any extension.
         if (reserved(name)) name = name.substringBefore('.') + "_" + if ('.' in name) "." + name.substringAfter('.') else ""
         if (name.endsWith('.') || name.endsWith(' ')) name += "_"
