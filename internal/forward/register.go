@@ -336,7 +336,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		if cred, err = credentialed(cs.PeerCertificates[0], c.Credentials, time.Now()); err != nil {
 			return refuse(err.Error())
 		}
-		if err := f.versions.check(cred); err != nil {
+		if err := f.versions.check(cred, remoteAddr(raw)); err != nil {
 			return refuse(err.Error())
 		}
 		// A period's tag is the group's own choice: it never meets a tag
@@ -368,6 +368,9 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		// time.
 		if records, err = authority(cs.PeerCertificates[0], p.root, c, adminMsg, f.memory.records(tag)); err != nil {
 			return refuse(err.Error())
+		}
+		if !fits(records) {
+			return refuse("the group's authority records are too large for this forwarder")
 		}
 	}
 	f.mu.Lock()
@@ -416,7 +419,13 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	f.mu.Unlock()
 	if p.member {
 		f.memory.keep(tag, records)
-	} else if err := f.versions.keep(cred); err != nil {
+	} else if err := f.versions.keep(cred, remoteAddr(raw)); errors.Is(err, errTableFull) {
+		// Another registration took the room meanwhile.
+		f.mu.Lock()
+		f.dropRegLocked(r)
+		f.mu.Unlock()
+		return refuse(err.Error())
+	} else if err != nil {
 		f.logf("forward: keeping the state: %v", err)
 	}
 	if err := enc.Encode(a); err != nil {
@@ -427,6 +436,15 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	}
 	raw.SetDeadline(time.Time{})
 	return r, nil
+}
+
+// remoteAddr is the address a connection came from, the zero address if it
+// has none.
+func remoteAddr(c net.Conn) netip.Addr {
+	if ta, ok := c.RemoteAddr().(*net.TCPAddr); ok {
+		return ta.AddrPort().Addr().Unmap()
+	}
+	return netip.Addr{}
 }
 
 // credentialed checks a hub that registers with a credential: the
