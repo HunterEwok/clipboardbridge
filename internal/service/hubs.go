@@ -297,21 +297,37 @@ func (s *Service) tryHub(ctx context.Context, run *tunRun, nd *node.Node, h tunn
 	return false
 }
 
+// hubClient is what dialAny needs of a tunnel client.
+type hubClient interface {
+	SetEndpoint(ep netip.AddrPort) error
+	Dial(ctx context.Context) (net.Conn, error)
+	Received() uint64
+}
+
+// dialWindow is how long a try through a client may go without a word from
+// the hub, and dialWindows how many such windows it may take in all.
+var (
+	dialWindow  = handshakeTimeout
+	dialWindows = 6
+)
+
 // dialAny points each client at ep and dials the hub through all of them
-// at once, for up to handshakeTimeout; the first connection wins, with its
-// client, and the other tries end. A client that has made its WireGuard
-// handshake by then gets another handshakeTimeout for the connection: on a
-// slow way, such as VLESS on a busy machine, the handshake can take most of
-// the time, and starting over would throw it away and meet the same wait
-// again.
-func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.Conn, *tunnel.Client, error) {
+// at once; the first connection wins, with its client, and the other tries
+// end. A try ends when its client has had nothing from the hub for a
+// dialWindow, or after dialWindows of them: on a slow way, such as VLESS on
+// a busy machine, the handshake and the connection each can take most of a
+// window, and starting over would throw away what got through and meet the
+// same wait again, while a hub that does not answer still ends the try in
+// one window.
+func dialAny[C hubClient](ctx context.Context, cs []C, ep netip.AddrPort) (net.Conn, C, error) {
 	dctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type result struct {
-		c    *tunnel.Client
+		c    C
 		conn net.Conn
 		err  error
 	}
+	window, windows := dialWindow, dialWindows
 	results := make(chan result, len(cs))
 	for _, c := range cs {
 		go func() {
@@ -321,14 +337,26 @@ func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.C
 			}
 			cctx, cancel := context.WithCancel(dctx)
 			defer cancel()
-			t := time.AfterFunc(handshakeTimeout, func() {
-				if !c.Handshaked() {
-					cancel()
-					return
+			done := make(chan struct{})
+			defer close(done)
+			go func() {
+				t := time.NewTicker(window)
+				defer t.Stop()
+				seen := c.Received()
+				for range windows {
+					select {
+					case <-done:
+						return
+					case <-t.C:
+					}
+					n := c.Received()
+					if n == seen {
+						break
+					}
+					seen = n
 				}
-				time.AfterFunc(handshakeTimeout, cancel)
-			})
-			defer t.Stop()
+				cancel()
+			}()
 			conn, err := c.Dial(cctx)
 			results <- result{c, conn, err}
 		}()
@@ -350,7 +378,8 @@ func dialAny(ctx context.Context, cs []*tunnel.Client, ep netip.AddrPort) (net.C
 	if won.conn != nil {
 		return won.conn, won.c, nil
 	}
-	return nil, nil, errors.Join(errs...)
+	var none C
+	return nil, none, errors.Join(errs...)
 }
 
 // tunReport keeps what went wrong for status, while run is the tunnel at

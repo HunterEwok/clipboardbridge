@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -360,20 +361,23 @@ func (c *Client) Dial(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
-// Handshaked tells whether the client has made a WireGuard handshake with
-// the hub, so that packets pass both ways even if a connection through the
-// tunnel has not been set up yet.
-func (c *Client) Handshaked() bool {
+// Received returns how many bytes of WireGuard's the client has had from
+// the hub, handshake answers included: it grows while the hub answers, even
+// before a connection through the tunnel is set up.
+func (c *Client) Received() uint64 {
 	cfg, err := c.dev.IpcGet()
 	if err != nil {
-		return false
+		return 0
 	}
+	var n uint64
 	for line := range strings.SplitSeq(cfg, "\n") {
-		if v, ok := strings.CutPrefix(line, "last_handshake_time_sec="); ok && v != "0" {
-			return true
+		if v, ok := strings.CutPrefix(line, "rx_bytes="); ok {
+			if b, err := strconv.ParseUint(v, 10, 64); err == nil {
+				n += b
+			}
 		}
 	}
-	return false
+	return n
 }
 
 // HubKey returns the hub's public key the client was started with.
