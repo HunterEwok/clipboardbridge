@@ -274,10 +274,10 @@ class CommandsTest {
         assertEquals("a [2Jb ]52;c;ZXZpbA== c", Member.cleanReason("a\u001b[2Jb\u001b]52;c;ZXZpbA==\u0007c"))
         assertEquals("a b c ", Member.cleanReason("a\nb\tc\r"))
         assertEquals("a b", Member.cleanReason("a\u009bb"))
-        assertEquals("экран заблокирован", Member.cleanReason("экран заблокирован"))
+        assertEquals("écran verrouillé", Member.cleanReason("écran verrouillé"))
         assertEquals(Member.MAX_REASON, Member.cleanReason("a".repeat(1000)).toByteArray().size)
         // A character that would cross the limit goes whole.
-        assertEquals("a".repeat(Member.MAX_REASON - 1), Member.cleanReason("a".repeat(Member.MAX_REASON - 1) + "я"))
-        assertTrue(Member.cleanReason("я".repeat(300)).toByteArray().size <= Member.MAX_REASON)
+        assertEquals("a".repeat(Member.MAX_REASON - 1), Member.cleanReason("a".repeat(Member.MAX_REASON - 1) + "é"))
+        assertTrue(Member.cleanReason("é".repeat(300)).toByteArray().size <= Member.MAX_REASON)
     }
 }

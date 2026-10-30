@@ -292,11 +292,11 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(Member.cleanReason("a\u{1b}[2Jb\u{1b}]52;c;ZXZpbA==\u{07}c"), "a [2Jb ]52;c;ZXZpbA== c")
         XCTAssertEqual(Member.cleanReason("a\nb\tc\r"), "a b c ")
         XCTAssertEqual(Member.cleanReason("a\u{9b}b"), "a b")
-        XCTAssertEqual(Member.cleanReason("экран заблокирован"), "экран заблокирован")
+        XCTAssertEqual(Member.cleanReason("écran verrouillé"), "écran verrouillé")
         XCTAssertEqual(Member.cleanReason(String(repeating: "a", count: 1000)).utf8.count, Member.maxReason)
         // A character that would cross the limit goes whole.
-        XCTAssertEqual(Member.cleanReason(String(repeating: "a", count: Member.maxReason - 1) + "я"),
+        XCTAssertEqual(Member.cleanReason(String(repeating: "a", count: Member.maxReason - 1) + "é"),
                        String(repeating: "a", count: Member.maxReason - 1))
-        XCTAssertLessThanOrEqual(Member.cleanReason(String(repeating: "я", count: 300)).utf8.count, Member.maxReason)
+        XCTAssertLessThanOrEqual(Member.cleanReason(String(repeating: "é", count: 300)).utf8.count, Member.maxReason)
     }
 }

@@ -23,7 +23,7 @@ func TestCleanReason(t *testing.T) {
 		"newline, tab":  {"a\nb\tc\r", "a b c "},
 		"C1 control":    {"a\u009bb", "a b"},
 		"invalid UTF-8": {"a\xffb", "a�b"},
-		"text kept":     {"экран заблокирован", "экран заблокирован"},
+		"text kept":     {"écran verrouillé", "écran verrouillé"},
 	} {
 		if got := CleanReason(c.in); got != c.want {
 			t.Errorf("%s: %q, want %q", name, got, c.want)
@@ -34,11 +34,11 @@ func TestCleanReason(t *testing.T) {
 		t.Errorf("a long reason has %d bytes", len(long))
 	}
 	// A character cut by the limit goes whole.
-	cut := CleanReason(strings.Repeat("a", MaxReason-1) + "я")
+	cut := CleanReason(strings.Repeat("a", MaxReason-1) + "é")
 	if !utf8.ValidString(cut) || cut != strings.Repeat("a", MaxReason-1) {
 		t.Errorf("a character at the limit: %q", cut[len(cut)-3:])
 	}
-	if got := CleanReason(strings.Repeat("я", MaxReason)); len(got) > MaxReason || !utf8.ValidString(got) {
+	if got := CleanReason(strings.Repeat("é", MaxReason)); len(got) > MaxReason || !utf8.ValidString(got) {
 		t.Errorf("a long reason of 2-byte characters has %d bytes", len(got))
 	}
 }

@@ -84,7 +84,6 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 	l.other = netip.MustParseAddr("203.0.113.7")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var idle []*tunnel.Client
 	for i := 0; i < DefaultOpenLimits.PerAddress; i++ {
 		d := newDevice(t, newGroup(t))
 		cfg := MemberConfig{Link: link, Self: d.id, Key: d.key, Cert: func() tls.Certificate { return d.cert }, Logf: t.Logf}
@@ -102,7 +101,6 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer client.Close()
-		idle = append(idle, client)
 		for range maxRequestsOne {
 			dctx, c := context.WithTimeout(ctx, 5*time.Second)
 			conn, err := client.Dial(dctx)
