@@ -25,7 +25,8 @@
 # runs in the host's namespace, where it reaches the proxy, and its TUN
 # interface is moved into the member's namespace as the only way out, so
 # nothing of the member reaches the host's own network. The namespace
-# resolves names over TCP (use-vc), which any SOCKS proxy carries.
+# resolves names over TCP (use-vc), which any SOCKS proxy carries, and
+# reaches IPv4 and IPv6 addresses alike, so a name's AAAA does not hang.
 set -eu
 
 base=/opt/cbbbench-netns
@@ -71,8 +72,10 @@ until ip link show $link >/dev/null 2>&1; do
 done
 ip link set $link netns $ns
 ip -n $ns addr add 198.18.0.1/15 dev $link
+ip -n $ns -6 addr add fd00:cbb::1/64 dev $link nodad
 ip -n $ns link set $link up
 ip -n $ns route add default dev $link
+ip -n $ns -6 route add default dev $link
 EOF
 	chmod 0755 "$dir/net-up"
 	# The bench's cbb: in the namespace, at the member's own socket.
@@ -94,7 +97,7 @@ Wants=network-online.target
 ExecStartPre=-/usr/bin/ip netns delete $ns
 ExecStartPre=/usr/bin/ip netns add $ns
 ExecStartPre=/usr/bin/ip -n $ns link set lo up
-ExecStart=$dir/bin/tun2socks -device tun://$link -proxy socks5://$socks -loglevel warning
+ExecStart=$dir/bin/tun2socks -device tun://$link -proxy socks5://$socks -loglevel warn
 ExecStartPost=$dir/net-up
 ExecStopPost=-/usr/bin/ip netns delete $ns
 Restart=on-failure
