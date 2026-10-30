@@ -21,8 +21,15 @@ version=${tag#v}
 root=$(cd "$(dirname "$0")/.." && pwd)
 repo=https://github.com/HunterEwok/clipboardbridge
 
-# The version's section, without its heading, up to the next one.
-changes=$(awk -v v="$version" '
+# The version's section, without its heading, up to the next one. A
+# pre-release (v1.2.3-rc.1) without a section of its own takes Unreleased: the
+# changes since the last release, which the release pull request moves under
+# its version.
+section=$version
+case $version in
+*-*) grep -q "^## \[$version\]" "$root/CHANGELOG.md" || section=Unreleased ;;
+esac
+changes=$(awk -v v="$section" '
 	index($0, "## [" v "]") == 1 { on = 1; next }
 	on && /^## \[/ { exit }
 	on && /^\[[^]]*\]: / { next } # the link definitions at the end of the file

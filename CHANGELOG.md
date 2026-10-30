@@ -636,6 +636,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- After a long outage two members find each other again within seconds both ways: the
+  one that lost the other earlier sent its quick browse queries while it was off the
+  network and could wait minutes for the next one. A member now announces itself once when
+  it finds a member it did not have.
+- A pre-release tag (`vX.Y.Z-rc.N`) gets its notes from CHANGELOG's *Unreleased*; it
+  failed at the end of the release for want of a section of its own.
 - The forwarder bounds what it remembers of the groups that registered with records and are
   gone: 32 MiB in all, the group kept least recently forgotten first and the records of a
   group that is registered now never. It refuses a registration whose authority records

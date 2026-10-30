@@ -500,8 +500,14 @@ func TestByeEndsTheConnectionAtOnce(t *testing.T) {
 	mac, pi := newMember(t, Full), newMember(t, Full)
 	cd, sd := link(t, mac, pi)
 	waitPeers(t, pi, 1)
-	if len(pi.engine.Skews()) != 1 {
-		t.Fatal("the engine does not count the connection")
+	// The peer shows in Peers once its hello is read, a moment before the
+	// engine takes the hello in.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(pi.engine.Skews()) != 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("the engine does not count the connection")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	start := time.Now()
 	mac.Close()
