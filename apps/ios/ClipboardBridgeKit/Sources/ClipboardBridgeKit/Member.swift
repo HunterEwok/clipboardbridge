@@ -628,7 +628,7 @@ public enum Member {
     /// hello object does not decode is an error; an event that does not
     /// decode is .event(nil).
     public static func decode(body: Data) throws -> Message {
-        guard let w = try? JSONDecoder().decode(WireIn.self, from: body) else { throw WireError.notAMessage }
+        guard Strict.integersOnly(body), let w = try? JSONDecoder().decode(WireIn.self, from: body) else { throw WireError.notAMessage }
         switch w.t {
         case "hello":
             guard let r = w.role, let role = Role(rawValue: r) else { throw WireError.badHello("unknown role") }

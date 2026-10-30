@@ -48,8 +48,9 @@ these words depends on it.
     without escapes, and no object has the same name twice. Names match exactly: `Type` is
     not `type`.
   - No value is `null`; a field that is not there is left out.
-  - Every number is an integer written as `-?(0|[1-9][0-9]*)`, without a fraction or an
-    exponent, from -2^63 to 2^63-1.
+  - Every number is an integer written as `0` or `-?[1-9][0-9]*`, without a fraction or an
+    exponent, from -2^63 to 2^63-1; `-0` is not one, since some JSON readers take it for 0
+    and others for a float.
   - A `\u` escape names a UTF-16 code unit; a surrogate MUST be one half of a pair, the high
     half followed at once by the low half.
   - The fields every body of its kind has are there: `v`, `type`, `group` and `time_ms` in a
@@ -522,7 +523,9 @@ file's path does not go through another file. Each name in a path is valid UTF-8
 bytes, not `.` or `..`, without control characters (C0, DEL, C1) or `/ \ : * ? " < > |`, not
 ending in a dot or a space, and not a name Windows reserves (`CON`, `PRN`, `AUX`, `NUL`,
 `COM1` to `COM9`, `LPT1` to `LPT9`, in any case, before the first dot), so that every system
-can hold a received copy. A receiver MUST refuse a manifest that breaks any of these rules,
+can hold a received copy. Every number in a manifest is an integer written as in signed
+bodies (Conventions, "Signed bodies"): no `-0`, fraction or exponent. A receiver MUST refuse a
+manifest that breaks any of these rules,
 and MUST NOT follow or create links when it writes a copy of files. The Go code is
 `internal/clip/media.go`.
 

@@ -274,6 +274,71 @@
       "name": "a root without a certificate",
       "body": "eyJ2IjoxLCJ0eXBlIjoicm9vdCIsImdyb3VwIjoiMDAxMTIyMzM0NDU1NjY3NyIsInRpbWVfbXMiOjEsInJvb3QiOiIifQ==",
       "valid": false
+    },
+    {
+      "name": "a time of zero",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": true
+    },
+    {
+      "name": "a time of negative zero",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6LTAsImRldmljZSI6IjAwMTEyMjMzNDQ1NTY2Nzc4ODk5YWFiYmNjZGRlZWZmIiwibmFtZSI6IkxhcHRvcCIsInJvbGUiOiJmdWxsIiwib3MiOiJsaW51eCIsImtleSI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In0=",
+      "valid": false
+    },
+    {
+      "name": "a time of negative zeros",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6LTAwLCJkZXZpY2UiOiIwMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZiIsIm5hbWUiOiJMYXB0b3AiLCJyb2xlIjoiZnVsbCIsIm9zIjoibGludXgiLCJrZXkiOiJCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjPSJ9",
+      "valid": false
+    },
+    {
+      "name": "a time of zeros",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MDAsImRldmljZSI6IjAwMTEyMjMzNDQ1NTY2Nzc4ODk5YWFiYmNjZGRlZWZmIiwibmFtZSI6IkxhcHRvcCIsInJvbGUiOiJmdWxsIiwib3MiOiJsaW51eCIsImtleSI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In0=",
+      "valid": false
+    },
+    {
+      "name": "a time of zero with an exponent",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MGUwLCJkZXZpY2UiOiIwMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZiIsIm5hbWUiOiJMYXB0b3AiLCJyb2xlIjoiZnVsbCIsIm9zIjoibGludXgiLCJrZXkiOiJCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjPSJ9",
+      "valid": false
+    },
+    {
+      "name": "a time of negative zero with a fraction",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6LTAuMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": false
+    },
+    {
+      "name": "a time of negative zero with an exponent",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6LTBlMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": false
+    },
+    {
+      "name": "a time of a minus sign",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6LSwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": false
+    },
+    {
+      "name": "a time of a plus sign",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6KzEsImRldmljZSI6IjAwMTEyMjMzNDQ1NTY2Nzc4ODk5YWFiYmNjZGRlZWZmIiwibmFtZSI6IkxhcHRvcCIsInJvbGUiOiJmdWxsIiwib3MiOiJsaW51eCIsImtleSI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In0=",
+      "valid": false
+    },
+    {
+      "name": "a negative zero in an unknown nested object",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0iLCJsYXRlciI6eyJhIjp7ImIiOi0wfX19",
+      "valid": false
+    },
+    {
+      "name": "a negative zero in an unknown array",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0iLCJsYXRlciI6WzEsLTBdfQ==",
+      "valid": false
+    },
+    {
+      "name": "a zero in an unknown nested object",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0iLCJsYXRlciI6eyJhIjp7ImIiOjB9fX0=",
+      "valid": true
+    },
+    {
+      "name": "a negative number in an unknown nested object",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0iLCJsYXRlciI6eyJhIjp7ImIiOi0xMH19fQ==",
+      "valid": true
     }
   ],
   "commands": [
@@ -341,6 +406,36 @@
       "name": "enter on paste-off",
       "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6MTAwMCwiZXhwaXJlc19tcyI6MjAwMDAsImVudGVyIjp0cnVlfQ==",
       "valid": false
+    },
+    {
+      "name": "an expiry of negative zero",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6MTAwMCwiZXhwaXJlc19tcyI6LTB9",
+      "valid": false
+    },
+    {
+      "name": "an expiry of negative zeros",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6MTAwMCwiZXhwaXJlc19tcyI6LTAwfQ==",
+      "valid": false
+    },
+    {
+      "name": "an expiry of zero with an exponent",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6MTAwMCwiZXhwaXJlc19tcyI6MGUwfQ==",
+      "valid": false
+    },
+    {
+      "name": "an expiry of negative zero with a fraction",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6MTAwMCwiZXhwaXJlc19tcyI6LTAuMH0=",
+      "valid": false
+    },
+    {
+      "name": "a time of negative zero",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6LTAsImV4cGlyZXNfbXMiOjIwMDAwfQ==",
+      "valid": false
+    },
+    {
+      "name": "a negative zero in an unknown nested object",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6MTAwMCwiZXhwaXJlc19tcyI6MjAwMDAsImxhdGVyIjp7ImEiOlt7ImIiOi0wfV19fQ==",
+      "valid": false
     }
   ],
   "manifests": [
@@ -368,6 +463,61 @@
       "name": "a folder with a size",
       "body": "eyJzaXplIjozLCJwYXJ0cyI6W3sicGF0aCI6ImQiLCJkaXIiOnRydWUsInNpemUiOjF9LHsicGF0aCI6ImQvZiIsInNpemUiOjMsInNoYTI1NiI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In1dfQ==",
       "valid": false
+    },
+    {
+      "name": "a file of no bytes",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjowLCJzaGEyNTYiOiJCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjPSJ9XX0=",
+      "valid": true
+    },
+    {
+      "name": "a file of negative zero bytes",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjotMCwic2hhMjU2IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifV19",
+      "valid": false
+    },
+    {
+      "name": "a file of negative zeros",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjotMDAsInNoYTI1NiI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In1dfQ==",
+      "valid": false
+    },
+    {
+      "name": "a file of zeros",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjowMCwic2hhMjU2IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifV19",
+      "valid": false
+    },
+    {
+      "name": "a file of zero with an exponent",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjowZTAsInNoYTI1NiI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In1dfQ==",
+      "valid": false
+    },
+    {
+      "name": "a file of negative zero with a fraction",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjotMC4wLCJzaGEyNTYiOiJCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjPSJ9XX0=",
+      "valid": false
+    },
+    {
+      "name": "a file of zero with a fraction",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjowLjAsInNoYTI1NiI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In1dfQ==",
+      "valid": false
+    },
+    {
+      "name": "a file of one with a fraction",
+      "body": "eyJzaXplIjoxLCJwYXJ0cyI6W3sicGF0aCI6ImYiLCJzaXplIjoxLjAsInNoYTI1NiI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In1dfQ==",
+      "valid": false
+    },
+    {
+      "name": "a manifest of negative zero bytes",
+      "body": "eyJzaXplIjotMCwicGFydHMiOlt7InBhdGgiOiJmIiwic2l6ZSI6MCwic2hhMjU2IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifV19",
+      "valid": false
+    },
+    {
+      "name": "a manifest of negative zero bytes with a folder",
+      "body": "eyJzaXplIjotMCwicGFydHMiOlt7InBhdGgiOiJkIiwiZGlyIjp0cnVlfV19",
+      "valid": false
+    },
+    {
+      "name": "a manifest of zero bytes with a folder",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImQiLCJkaXIiOnRydWV9XX0=",
+      "valid": true
     }
   ]
 }

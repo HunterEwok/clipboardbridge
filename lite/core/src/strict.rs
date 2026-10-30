@@ -211,7 +211,8 @@ impl Parser<'_> {
         Ok(())
     }
 
-    /// -?(0|[1-9][0-9]*), in the range of i64.
+    /// -?[1-9][0-9]*|0, in the range of i64; "-0" is refused (serde_json
+    /// reads it as a float, other readers as 0).
     fn integer(&mut self) -> Step {
         let start = self.i;
         if self.peek() == Some(b'-') {
@@ -226,6 +227,9 @@ impl Parser<'_> {
         }
         if self.b[digits] == b'0' && self.i > digits + 1 {
             return Err("a number has a leading zero");
+        }
+        if self.b[digits] == b'0' && digits > start {
+            return Err("a number is a negative zero");
         }
         if matches!(self.peek(), Some(b'.' | b'e' | b'E')) {
             return Err("a number is not an integer");

@@ -644,6 +644,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   longer use up those of the other groups. Its tables of sources and networks drop the entry
   used least recently when full, instead of refusing new clients. Clients and hubs need no
   change.
+- Every member reads a record, a command and a media manifest with a number written `-0`
+  alike: all refuse it, as they refuse a fraction or an exponent, where before Go and the
+  Android kit took it for 0 and the lite member refused it. The phone kits also refuse such
+  numbers in the other messages they read, as the lite member does. A member from before still takes `-0` in a
+  body that a current member refuses; no current signer writes one.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.
