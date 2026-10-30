@@ -632,6 +632,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   come to more than 256 KiB, rather than keep part of them; a group that registers again no
   longer costs time in proportion to the square of its records. Hubs see the refusal as an
   ordinary one; nothing else on the wire changes.
+- The forwarder keeps what it remembers of a group's credentials until the newest one has
+  expired, instead of forgetting the oldest group when its table fills: a period tag new to
+  the table is refused when the table, or 256 entries of one network, are full, and the
+  table is written to its state file a moment after a change (and when the forwarder
+  stops), no longer under the lock of every registration. State files from earlier versions
+  are read as before.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.

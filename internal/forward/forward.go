@@ -295,6 +295,7 @@ func Listen(cfg Config) (*Forwarder, error) {
 		tcp.Close()
 		return nil, fmt.Errorf("forward: the state file: %w", err)
 	}
+	f.versions.logf = logf
 	if f.limits.ScanRate <= 0 {
 		f.limits.ScanRate = DefaultLimits.ScanRate
 	}
@@ -382,6 +383,9 @@ func (f *Forwarder) Close() error {
 			r.raw.Close()
 		}
 		f.mu.Unlock()
+		if err := f.versions.flush(); err != nil {
+			f.logf("forward: keeping the state: %v", err)
+		}
 	})
 	return nil
 }
