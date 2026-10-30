@@ -462,6 +462,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A member refuses an event more than 7 days ahead of its own wall clock, whatever events it
+  took before, in Go, the lite member and both phone kits (docs/protocol.md, section 5).
+
 - A device is an admin, and an admin has its role and store, only by a `device` record a
   root's own key signed, in Go, the lite member and both phone kits; a removed admin's records
   no longer decide the name of a device it admitted (docs/protocol.md, section 10). An admin

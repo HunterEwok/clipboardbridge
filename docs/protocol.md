@@ -585,8 +585,10 @@ numbers in decimal separated by a dot, with no sign or spaces, for example
 `1761024000000.3`. Order: by `wall`, then by `logical`. The zero timestamp sorts first and
 MUST be refused in an event.
 
-An event whose `wall` is more than 7 days (MaxAhead) ahead of the receiver's reference, the
-later of its wall clock and `last.wall`, MUST be refused: as a message it changes nothing (Go and
+An event whose `wall` is more than 7 days (MaxAhead) ahead of the receiver's wall clock MUST
+be refused, whatever `last.wall` is, so a chain of events, each within MaxAhead of the one
+before, cannot carry the clocks further ahead (members before 0.6 measured from the later of
+the wall clock and `last.wall`): as a message it changes nothing (Go and
 the lite member answer it with an error), and as a hello's current event it is taken as no
 current event while the connection stays. Otherwise one device with a wrong date, or a removed
 member, could hold every clock of the group at MaxWall for good. A device whose reference is

@@ -643,3 +643,20 @@ fn strict() {
         assert_eq!(got.is_ok(), valid, "manifest {name:?}: {:?}", got.err());
     }
 }
+
+/// The timestamps a clock took do not move how far ahead it takes the next
+/// one (hlc-ahead.json, as Go's TestAheadVectors writes it).
+#[test]
+fn hlc_ahead() {
+    let v = vectors("hlc-ahead.json");
+    assert_eq!(v["max_ahead"].as_i64(), Some(crate::hlc::MAX_AHEAD));
+    let now = v["now"].as_i64().unwrap();
+    let c = crate::hlc::Clock::new(Box::new(move || now), Timestamp::default(), None);
+    for w in v["accepted"].as_array().unwrap() {
+        let ts = Timestamp { wall: w.as_i64().unwrap(), logical: 0 };
+        assert!(!c.ahead(ts), "{w} refused");
+        c.observe(ts);
+    }
+    let refused = Timestamp { wall: v["refused"].as_i64().unwrap(), logical: 0 };
+    assert!(c.ahead(refused), "taken after a chain of timestamps ahead");
+}
