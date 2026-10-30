@@ -294,9 +294,13 @@ jobs:
           mkdir -m 700 "$key" "$RUNNER_TEMP/feed"
           (umask 077 && printf '%s\n' "$FEED_KEY" >"$key/private.pem")
           trap 'rm -rf "$key"' EXIT
+          # A run by hand from main builds the feed as v0.0.0-rc.1, as CI's
+          # openwrt job does: apk takes no version named after a branch.
+          tag=$GITHUB_REF_NAME
+          if [ "$GITHUB_REF_TYPE" != tag ]; then tag=v0.0.0-rc.1; fi
           docker run --rm -v "$RUNNER_TEMP/dist:/dist:ro" -v "$PWD:/src:ro" -v "$key:/key:ro" -v "$RUNNER_TEMP/feed:/feed" \
             alpine:3.23@sha256:3d67941fed5ae436b2bb9791cb3f50a252441c7706bbc5b4e738936df8ff8306 \
-            sh /src/packaging/openwrt/feed.sh "$GITHUB_REF_NAME" /dist /feed /key/private.pem
+            sh /src/packaging/openwrt/feed.sh "$tag" /dist /feed /key/private.pem
           openssl ec -in "$key/private.pem" -pubout -out "$RUNNER_TEMP/feed/clipboardbridge.pem" 2>/dev/null
           mkdir -p "$RUNNER_TEMP/out"
           tar -czf "$RUNNER_TEMP/out/openwrt-feed.tar.gz" -C "$RUNNER_TEMP/feed" .
