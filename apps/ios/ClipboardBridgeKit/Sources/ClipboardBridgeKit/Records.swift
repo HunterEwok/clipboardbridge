@@ -565,7 +565,8 @@ public struct RecordSet: Codable, Equatable, Sendable {
             for e in entries {
                 if e.body.type == "revoke" && rootSigned(e) {
                     for key in e.body.keys ?? [] { byRoot[key, default: []].append(e) }
-                } else if e.body.type == "device", let a = e.body.admin {
+                } else if e.body.type == "device", rootSigned(e), let a = e.body.admin {
+                    // Only a root's own record makes a key an admin's.
                     privileged.insert(a)
                 }
                 if e.signer != e.anchor { privileged.insert(e.signer) }
@@ -791,29 +792,43 @@ public struct RecordSet: Codable, Equatable, Sendable {
     /// and its signer is not revoked, or every revocation of the signer
     /// keeps the device's key. A device whose records name more than one
     /// key stays listed while any of them is not revoked, as Go's
-    /// Records.Devices.
+    /// Records.Devices: one whose signer is not revoked comes after one
+    /// whose signer is, and a device is an admin, with that record's role
+    /// and store, only by the latest of its records a known root's own key
+    /// signed.
     public var devices: [Device] {
         let ev = Eval(self)
-        var latest: [String: (Member.Record, Records.Body)] = [:]
+        var latest: [String: Entry] = [:]
+        var certified: [String: Entry] = [:] // the latest a known root's own key signed
         var keys: [String: [Data]] = [:]
+        func newer(_ e: Entry, _ cur: Entry) -> Bool {
+            e.body.time_ms != cur.body.time_ms ? e.body.time_ms > cur.body.time_ms
+                : Records.id(e.record).lexicographicallyPrecedes(Records.id(cur.record)) == false
+        }
         // By record ID, as Go, so the keys come in the same order.
         for e in ev.entries.sorted(by: { $0.id.lexicographicallyPrecedes($1.id) }) where e.body.type == "device" {
-            let (r, b) = (e.record, e.body)
-            guard ev.counts(e), let d = b.device, let k = b.key, !ev.revoked.contains(k) else { continue }
+            guard ev.counts(e), let d = e.body.device, let k = e.body.key, !ev.revoked.contains(k) else { continue }
             if !(keys[d] ?? []).contains(k) { keys[d, default: []].append(k) }
+            if ev.rootSigned(e), certified[d].map({ newer(e, $0) }) ?? true { certified[d] = e }
+            let stands = !ev.revoked.contains(e.signer)
             if let cur = latest[d] {
-                let newer = b.time_ms != cur.1.time_ms ? b.time_ms > cur.1.time_ms
-                    : Records.id(r).lexicographicallyPrecedes(Records.id(cur.0)) == false
-                if !newer { continue }
+                let curStands = !ev.revoked.contains(cur.signer)
+                if !(stands && !curStands || stands == curStands && newer(e, cur)) { continue }
             }
-            latest[d] = (r, b)
+            latest[d] = e
         }
-        return latest.compactMap { d, rb -> Device? in
-            guard let key = rb.1.key else { return nil }
-            return Device(id: d, name: rb.1.name ?? d, role: Records.role(rb.1.role), os: Records.os(rb.1), key: key,
-                          admin: rb.1.admin.map { !ev.revoked.contains($0) && !ev.frozen($0) } ?? false, adminKey: rb.1.admin,
-                          frozen: ev.frozen(key) || rb.1.admin.map(ev.frozen) ?? false, keys: keys[d] ?? [key],
-                          store: Records.store(rb.1.store, role: Records.role(rb.1.role)), kind: rb.1.kind, proof: rb.1.proof)
+        return latest.compactMap { d, e -> Device? in
+            let b = e.body
+            guard let key = b.key else { return nil }
+            // a is the record that says what powers the device has: only a
+            // root's own record makes it an admin.
+            let c = certified[d].flatMap { $0.body.admin == nil ? nil : $0.body }
+            let a = c ?? b
+            let admin = c?.admin
+            return Device(id: d, name: b.name ?? d, role: Records.role(a.role), os: Records.os(b), key: key,
+                          admin: admin.map { !ev.revoked.contains($0) && !ev.frozen($0) } ?? false, adminKey: admin,
+                          frozen: ev.frozen(key) || admin.map(ev.frozen) ?? false, keys: keys[d] ?? [key],
+                          store: Records.store(a.store, role: Records.role(a.role)), kind: a.kind, proof: a.proof)
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }
 

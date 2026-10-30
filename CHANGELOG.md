@@ -462,6 +462,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A device is an admin, and an admin has its role and store, only by a `device` record a
+  root's own key signed, in Go, the lite member and both phone kits; a removed admin's records
+  no longer decide the name of a device it admitted (docs/protocol.md, section 10). An admin
+  that the root never made one is no longer listed as an admin, a hub or a command's signer.
+
 - The member port holds at most 32 connections to the iPhone endpoints and the profile at a
   time, 4 from one address, and closes one idle for 30 s.
 

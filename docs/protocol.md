@@ -1381,7 +1381,8 @@ set.
    names it in `admin`, and every `revoke` record from a known root's own key that names
    that root keeps it. Any other admin CA is a **computer's**: its key sits in a file. The
    **admin and root keys** are the keys of every root the set knows, every `admin` in a
-   `device` record and every admin CA that signed a record.
+   `device` record that a known root's own key signed, and every admin CA that signed a
+   record. An `admin` in a record an admin CA signed makes no key an admin's.
 3. The **revoked set**, in strata that do not depend on each other in a circle:
    - a `revoke` record signed by a known root's own key counts;
    - an admin or root key that a `revoke` record from a known root's own key, or an admin
@@ -1550,12 +1551,20 @@ after every member runs this version:
    `old_keys`; until then `cbb status` marks it (`old_keys` in the `devices` answer) and
    `cbb revoke` refuses to remove it.
 
-The devices list is, for each device, the `device` record that counts with the largest
-`time_ms` (then the largest record ID) among those whose key is not revoked, so a device
-whose records name more than one key stays listed while any of them stands. Removing a device
-revokes every key that its counting records name and that is not revoked yet, and the key of
-its connection. A device is an admin when its
-record names an admin CA whose key is neither revoked nor frozen. The **root** is the phone or computer whose
+The devices list is, for each device, the `device` record that counts, among those whose key
+is not revoked, whose signer's key is not revoked if any such record counts, with the largest
+`time_ms` (then the largest record ID). So a device whose records name more than one key stays
+listed while any of them stands, and the records of a removed admin, which still count for the
+devices it admitted, no longer decide their names. Removing a device revokes every key that its
+counting records name and that is not revoked yet, and the key of its connection. Only a
+known root's own key gives a device powers: of the device's counting records that such a key
+signed, the one with the largest `time_ms` (then the largest record ID) decides. A device is
+an admin when that record names an admin CA whose key is neither revoked nor frozen; an
+admin's `role`, `store`, `kind` and `proof`, which decide what its commands may do (section
+15) and where it serves as a hub (section 11), are that record's too. A later record from the
+root without `admin` demotes it. An `admin` in a record an admin CA signed counts for nothing.
+Members before 0.6 took `admin`, `role` and `store` from the device's latest record, whoever
+signed it, so they may list as an admin a device that newer members do not. The **root** is the phone or computer whose
 own `device` record (`by` = `device`, role `phone` or `full`) the current root's key signed,
 the latest of them; a peer is the root only when its certificate's key is the one that
 record names, since a device ID alone proves nothing; a legacy group has none, and there every Linux and Windows member that
@@ -2016,8 +2025,8 @@ close the connection beyond that; a sender MUST stay below it.
      phone as the hub", D-64), leaves `admin` and `admin_sig` out. The forwarder then takes
      the hub when the records make its member certificate's device, with that
      certificate's key, the group's root (the latest `device` record of its own that the
-     current root signed) or an admin that is not frozen (the latest counting `device`
-     record of that device names the key and an admin CA). Go hubs (`internal/forward`) and
+     current root signed) or an admin that is not frozen (the devices list, section 10,
+     names it an admin with that key). Go hubs (`internal/forward`) and
      the phones' hub (`mobile/cbbtun`) do this; any other hub is refused as before.
    - `records` are the group's authority records: the path records (section 6, the Welcome; section 10, rule 7), every record
      that is not a `device` record, and of the `device` records a root signed with its own key
@@ -2380,7 +2389,8 @@ on there, and then:
 
 - unless the signer is of a kind the user allowed for it, when the user named kinds: `root`
   (the root's own key signed it), `phone`, `computer` or `watch` (the role of the signer's
-  device, the device record whose `admin` is the signer's admin CA, or the root's own device);
+  device, the device record whose `admin` is the signer's admin CA, or the root's own device;
+  only a record a known root's own key signed says either: section 10, the devices list);
 - for `reboot` and `shutdown`, unless that device's record says its keys are in hardware
   (`store` `hardware` or `proven`), or the user allowed keys in files for that action;
 - beyond one a second and 30 a minute from one signer.

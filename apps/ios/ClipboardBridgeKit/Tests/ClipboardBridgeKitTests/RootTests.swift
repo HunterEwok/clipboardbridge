@@ -258,6 +258,43 @@ final class RootTests: XCTestCase {
         for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
     }
 
+    /// Reads testdata/interop/go-authority.json, from Go's
+    /// TestGoAuthorityVectors: a device is an admin, with the role and store
+    /// of that record, only by a record a root's own key signed, and a
+    /// removed admin's records no longer decide a device's entry.
+    func testGoAuthority() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Device: Decodable { var id: String, name: String, admin: Bool, admin_key: Data?, role: String, store: String }
+            var group_ca: Data
+            var records: [Member.Record]
+            var devices: [Device]
+            var other: Data
+            var other_revoked: Bool
+            var later: [Member.Record]
+            var devices_later: [Device]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-authority.json")))
+        var set = RecordSet()
+        func check(_ want: [V.Device]) {
+            let got = set.devices
+            XCTAssertEqual(got.map(\.id), want.map(\.id))
+            for (g, w) in zip(got, want) {
+                XCTAssertEqual(g.name, w.name)
+                XCTAssertEqual(g.admin, w.admin, g.name)
+                XCTAssertEqual(g.adminKey, w.admin_key, g.name)
+                XCTAssertEqual(g.role, w.role, g.name)
+                XCTAssertEqual(g.store, w.store, g.name)
+            }
+        }
+        XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
+        check(v.devices)
+        XCTAssertEqual(set.revoked.contains(v.other), v.other_revoked)
+        XCTAssertEqual(set.addAll(v.later, groupCA: v.group_ca).count, v.later.count)
+        check(v.devices_later)
+    }
+
     /// An admin computer freezing another (go-freeze.json, docs/protocol.md
     /// section 10, rule 4), as Go's TestGoFreezeVectors writes it.
     func testGoFreeze() throws {

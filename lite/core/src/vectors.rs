@@ -270,6 +270,37 @@ fn go_admins() {
     assert_eq!(s.digest(), v["digest"].as_str().unwrap());
 }
 
+/// A device is an admin, with the role and store of that record, only by a
+/// record a root's own key signed, and a removed admin's records no longer
+/// decide a device's entry (go-authority.json, as Go's
+/// TestGoAuthorityVectors writes it).
+#[test]
+fn go_authority() {
+    let v = vectors("go-authority.json");
+    let mut s = Records::new(&cert(&v["group_ca"]));
+    let check = |s: &Records, want: &Value| {
+        let got = s.devices();
+        let want = want.as_array().unwrap();
+        assert_eq!(got.len(), want.len());
+        for (g, w) in got.iter().zip(want) {
+            assert_eq!(g.id, w["id"].as_str().unwrap());
+            assert_eq!(g.name, w["name"].as_str().unwrap());
+            assert_eq!(g.admin, w["admin"].as_bool().unwrap(), "{}", g.name);
+            assert_eq!(g.admin_key.map(|k| k.to_vec()), w.get("admin_key").map(bytes), "{}", g.name);
+            assert_eq!(g.role, w["role"].as_str().unwrap(), "{}", g.name);
+            assert_eq!(g.store, w["store"].as_str().unwrap(), "{}", g.name);
+        }
+    };
+    let (_, errs) = s.add_all(&records(&v["records"]));
+    assert!(errs.is_empty(), "{errs:?}");
+    check(&s, &v["devices"]);
+    let other: KeyHash = bytes(&v["other"]).try_into().unwrap();
+    assert_eq!(s.revoked(&other), v["other_revoked"].as_bool().unwrap());
+    let (_, errs) = s.add_all(&records(&v["later"]));
+    assert!(errs.is_empty(), "{errs:?}");
+    check(&s, &v["devices_later"]);
+}
+
 /// An admin computer freezing another (docs/protocol.md, section 10, rule
 /// 4), as Go's TestGoFreezeVectors writes it.
 #[test]
