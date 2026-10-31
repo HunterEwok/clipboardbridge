@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/HunterEwok/clipboardbridge/internal/jsonnum"
 )
 
 // maxStrictDepth bounds how deeply a signed body nests arrays and objects.
@@ -42,35 +44,6 @@ func checkStrict(b []byte, required ...string) error {
 	for _, n := range required {
 		if !names[n] {
 			return fmt.Errorf("group: a signed body has no %s", n)
-		}
-	}
-	return nil
-}
-
-// IntegersOnly reports whether every number in b, outside its strings, is
-// an integer written as in a signed body: -?[1-9][0-9]*|0 in the range of
-// an int64, so never "-0", a fraction or an exponent. Readers differ on
-// those (Go takes "-0" for 0, serde_json for a float), so the member
-// protocol's frames and manifests pass this first, members a reader does
-// not know included. It only scans: whether b is JSON is for the decoder.
-func IntegersOnly(b []byte) error {
-	for i := 0; i < len(b); {
-		switch c := b[i]; {
-		case c == '"':
-			for i++; i < len(b) && b[i] != '"'; i++ {
-				if b[i] == '\\' {
-					i++
-				}
-			}
-			i++
-		case c == '-' || c >= '0' && c <= '9':
-			p := strictParser{b: b, i: i}
-			if err := p.integer(); err != nil {
-				return err
-			}
-			i = p.i
-		default:
-			i++
 		}
 	}
 	return nil
@@ -285,30 +258,13 @@ func (p *strictParser) literal(s string) error {
 	return nil
 }
 
-// integer reads -?[1-9][0-9]*|0 and checks that it fits in an int64. "-0"
-// is refused: some JSON readers take it for a float, others for 0.
+// integer reads an integer as jsonnum.Integer does.
 func (p *strictParser) integer() error {
-	start := p.i
-	if p.b[p.i] == '-' {
-		p.i++
+	end, err := jsonnum.Integer(p.b, p.i)
+	if err != nil {
+		return err
 	}
-	digits := p.i
-	for p.i < len(p.b) && p.b[p.i] >= '0' && p.b[p.i] <= '9' {
-		p.i++
-	}
-	switch {
-	case p.i == digits:
-		return errors.New("a number has no digits")
-	case p.b[digits] == '0' && p.i > digits+1:
-		return errors.New("a number has a leading zero")
-	case p.b[digits] == '0' && digits > start:
-		return errors.New("a number is a negative zero")
-	case p.i < len(p.b) && (p.b[p.i] == '.' || p.b[p.i] == 'e' || p.b[p.i] == 'E'):
-		return errors.New("a number is not an integer")
-	}
-	if _, err := strconv.ParseInt(string(p.b[start:p.i]), 10, 64); err != nil {
-		return errors.New("a number is out of range")
-	}
+	p.i = end
 	return nil
 }
 

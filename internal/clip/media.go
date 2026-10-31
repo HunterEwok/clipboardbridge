@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/jsonnum"
 )
 
 // Images and files (design.md, "Images and files"; docs/protocol.md,
@@ -57,7 +57,7 @@ type Manifest struct {
 // the lite member's reader for a float, so the members would not read one
 // manifest alike.
 func (m *Manifest) UnmarshalJSON(data []byte) error {
-	if err := group.IntegersOnly(data); err != nil {
+	if err := jsonnum.IntegersOnly(data); err != nil {
 		return fmt.Errorf("clip: a manifest: %w", err)
 	}
 	type plain Manifest
