@@ -109,7 +109,12 @@ environment secret**.
   links, the old name, the command reference with every flag, the environment variables,
   the ports, the index of the documentation), and the design
   tokens (`go run ./tools/tokens -check`);
-- **test**: `go test -race` on Linux x86-64, Linux ARM64 and macOS;
+- **test**: `go test -race` on Linux x86-64, Linux ARM64, macOS and Windows, each with its
+  own files' coverage;
+- **go coverage**: Go's tests across packages with `-coverpkg`, the desktop clipboards, the
+  uinput keyboard, mDNS beside avahi and the e2e built with `-cover`;
+- **coverage**: the coverage of every part that ran, in the run's summary, held to
+  `tools/coverage/floor.json` ([testing](testing.md#coverage));
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every Linux and Windows target, static
   on Linux, including ARMv6 for the Raspberry Pi Zero W; the macOS targets on macOS runners
   with cgo, for the pasteboard agent (see the Build section of [the design](design.md#build));

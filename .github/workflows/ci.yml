@@ -100,7 +100,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       # The runner's Windows session has a clipboard that the tests may overwrite.
       CBB_TEST_CLIPBOARD: ${{ matrix.os == 'windows-latest' && '1' || '' }}
@@ -119,7 +119,9 @@ jobs:
           sudo apt-get install -y -q swtpm
           echo CBB_TPM_REQUIRED=1 >>"$GITHUB_ENV"
       - name: go test
-        run: go test -race ./...
+        # bash: PowerShell splits -coverprofile=cover-go.out at the dot.
+        shell: bash
+        run: go test -race -coverprofile=cover-go.out ./...
       # int is 32 bits there, as on the Raspberry Pi's armv7 and the routers'
       # mips, and 386 runs on the runner without an emulator.
       - name: go test of the member protocol on a 32-bit build
@@ -127,6 +129,125 @@ jobs:
         run: go test ./internal/node
         env:
           GOARCH: "386"
+      # Each system's own files (Windows, macOS) for the coverage summary; the
+      # coverage job measures across packages on Linux.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-go-${{ matrix.os }}
+          path: cover-go.out
+          retention-days: 7
+
+  # Go's test coverage across packages (a test of internal/service counts for
+  # internal/group too), with the TPM, the desktop clipboards and the e2e's
+  # programs built with -cover; the coverage job sums it up.
+  gocover:
+    name: go coverage
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COVERPKG: ./cmd/...,./internal/...,./mobile/...
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: swtpm, sway, Xvfb and the clipboard tools
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends swtpm sway wl-clipboard xvfb xclip xterm foot >/dev/null
+      - name: go test across packages
+        env:
+          CBB_TPM_REQUIRED: "1"
+        run: go test -coverpkg="$COVERPKG" -coverprofile=cover-go-all.out ./cmd/... ./internal/... ./mobile/...
+      - name: the desktop clipboards under headless sway and Xvfb
+        run: |
+          go test -c -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/desktop.test" ./internal/desktop
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg"
+          mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+          WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman sway >"$RUNNER_TEMP/sway.log" 2>&1 &
+          Xvfb :5 -screen 0 640x480x24 >"$RUNNER_TEMP/xvfb.log" 2>&1 &
+          for _ in $(seq 1 100); do
+            WAYLAND_DISPLAY=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -name 'wayland-[0-9]' -printf '%f\n' | head -n 1)
+            [ -n "$WAYLAND_DISPLAY" ] && [ -e /tmp/.X11-unix/X5 ] && break
+            sleep 0.1
+          done
+          export WAYLAND_DISPLAY DISPLAY=:5
+          CBB_TEST_WAYLAND=1 CBB_TEST_X11=1 "$RUNNER_TEMP/desktop.test" -test.coverprofile=cover-go-desktop.out
+      - name: the uinput keyboard against the kernel
+        run: |
+          go test -c -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/uinput.test" ./internal/uinput
+          sudo modprobe uinput
+          sudo CBB_TEST_UINPUT=1 "$RUNNER_TEMP/uinput.test" -test.run TestKeyboard -test.coverprofile="$PWD/cover-go-uinput.out"
+          sudo chown "$(id -u)" cover-go-uinput.out
+      - name: mDNS beside avahi-daemon in a container
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go test -c -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/mdns.test" ./internal/mdns
+          mkdir -p "$RUNNER_TEMP/mdns-cover"
+          docker run --rm -v "$RUNNER_TEMP/mdns.test:/t/mdns.test:ro" -v "$RUNNER_TEMP/mdns-cover:/out" debian:stable-slim sh -euc '
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq avahi-daemon avahi-utils dbus >/dev/null
+            mkdir -p /run/dbus
+            dbus-daemon --system --fork
+            avahi-daemon --daemonize --no-chroot
+            sleep 2
+            CBB_TEST_AVAHI=1 /t/mdns.test -test.run "TestAvahi|TestSystemNetwork" -test.coverprofile=/out/cover.out
+          '
+          sudo cp "$RUNNER_TEMP/mdns-cover/cover.out" cover-go-mdns.out
+          sudo chown "$(id -u)" cover-go-mdns.out
+      - name: the e2e with a cbb built with -cover
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/cbb" ./cmd/cbb
+          CBB_E2E_COVERDIR="$RUNNER_TEMP/e2e-cover" sh tools/e2e/e2e.sh "$RUNNER_TEMP/cbb"
+          sudo chown -R "$(id -u)" "$RUNNER_TEMP/e2e-cover"
+          go tool covdata textfmt -i "$RUNNER_TEMP/e2e-cover" -o cover-go-e2e.out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-go-linux-all
+          path: cover-go-*.out
+          retention-days: 7
+
+  # Sums up the coverage of every part that ran (docs/testing.md, "Coverage")
+  # and fails when one falls below its floor in tools/coverage/floor.json.
+  coverage:
+    name: coverage
+    needs: [changes, test, gocover, kit, android, lite]
+    if: always() && needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-*
+          path: cov
+          merge-multiple: true
+      - name: the summary, and the floors
+        run: |
+          set --
+          # Go is measured when the run across packages is there; the test
+          # job alone (a change to tools/) does not measure the service.
+          if [ -f cov/cover-go-all.out ]; then
+            for f in cov/cover-go*.out; do set -- "$@" -go "$f"; done
+          fi
+          [ -f cov/coverage-rust.json ] && set -- "$@" -llvm rust-core=cov/coverage-rust.json -llvm rust-lite=cov/coverage-rust.json
+          [ -f cov/coverage-swift-kit.json ] && set -- "$@" -llvm swift-kit=cov/coverage-swift-kit.json
+          [ -f cov/jacocoTestReport.xml ] && set -- "$@" -jacoco kotlin-kit=cov/jacocoTestReport.xml
+          go run ./tools/coverage -floor tools/coverage/floor.json -summary "$GITHUB_STEP_SUMMARY" "$@"
 
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('/v{0}', matrix.goarm) || '' }})
@@ -1176,7 +1297,8 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: apps/ios/ClipboardBridgeKit
         run: |
-          swift test
+          swift test --enable-code-coverage
+          cp "$(swift test --show-codecov-path)" "$GITHUB_WORKSPACE/coverage-swift-kit.json"
           swift build --product clipboardbridge-interop
           cp "$(swift build --show-bin-path)/clipboardbridge-interop" "$GITHUB_WORKSPACE/clipboardbridge-interop"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -1195,6 +1317,12 @@ jobs:
           security set-keychain-settings ci.keychain
           CBB_SWIFT_INTEROP_TLS="$PWD/clipboardbridge-interop" go test -timeout 3m ./internal/pair -run 'TestSwiftMemberAdmitsGoJoinerTLS|TestSwiftHubAdmitsInvitedGoJoiner' -v
           CBB_SWIFT_INTEROP_TLS="$PWD/clipboardbridge-interop" go test -timeout 3m ./internal/node -run TestSwiftMemberTLS -v
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: runner.os == 'macOS'
+        with:
+          name: coverage-swift-kit
+          path: coverage-swift-kit.json
+          retention-days: 7
 
   app:
     name: iPhone app
@@ -1398,7 +1526,12 @@ jobs:
       - name: the protocol core's tests
         working-directory: apps/android
         # The kit writes what it signs for the Go tests, as the Swift kit does.
-        run: CBB_INTEROP_OUT="$GITHUB_WORKSPACE/interop-out" ./gradlew --no-daemon -p kit test
+        run: CBB_INTEROP_OUT="$GITHUB_WORKSPACE/interop-out" ./gradlew --no-daemon -p kit test jacocoTestReport
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-kotlin-kit
+          path: apps/android/kit/build/reports/jacoco/test/jacocoTestReport.xml
+          retention-days: 7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -1508,7 +1641,7 @@ jobs:
           persist-credentials: false
       - name: the Rust toolchain, and a cross compiler for the Raspberry Pi
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy --target aarch64-unknown-linux-gnu,arm-unknown-linux-musleabihf
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy,llvm-tools-preview --target aarch64-unknown-linux-gnu,arm-unknown-linux-musleabihf
           rustup default stable
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
@@ -1518,8 +1651,15 @@ jobs:
         run: |
           cargo clippy --locked --workspace --all-targets -- -D warnings
           cargo clippy --locked -p clipboardbridge-embassy --features host --all-targets -- -D warnings
-      - name: cargo test (the interop vectors in testdata/interop too)
-        run: cargo test --locked --workspace
+      - name: cargo-llvm-cov, for the tests' coverage
+        run: cargo install --locked cargo-llvm-cov@0.9.1
+      - name: cargo test (the interop vectors in testdata/interop too), with coverage
+        run: cargo llvm-cov --locked --workspace --json --summary-only --output-path "$GITHUB_WORKSPACE/coverage-rust.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-rust
+          path: coverage-rust.json
+          retention-days: 7
       - name: cargo build
         run: |
           cargo build --locked --release
@@ -1993,7 +2133,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, fdroid, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker, differential]
+    needs: [changes, check, website, test, gocover, coverage, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, fdroid, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker, differential]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

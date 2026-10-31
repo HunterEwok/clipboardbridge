@@ -70,6 +70,20 @@ func main() {
 		}
 		return
 	}
+	if flag.NArg() > 0 && fuzzCase(flag.Arg(0)) {
+		if err := runFuzz(*state, group.DeviceID(*to), *addr, *socket, flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && probeCase(flag.Arg(0)) {
+		if err := runProbe(flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if flag.NArg() > 0 && mdnsCase(flag.Arg(0)) {
 		if err := runMDNS(*addr, flag.Arg(0)); err != nil {
 			fmt.Fprintln(os.Stderr, "forge:", err)
