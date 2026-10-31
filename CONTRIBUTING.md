@@ -49,6 +49,9 @@ The maintainer follows these rules; they are written down to keep the history co
   *Unreleased*.
 - **Go code.** `gofmt`, `go vet`, `staticcheck` and `govulncheck` pass, and tests cover the
   change.
+- **Tests.** A change keeps every test function of every language; one that replaces a test
+  keeps its name. `go run ./tools/repocheck -tests-since origin/main` lists the tests a
+  branch lost, and CI runs it against the pull request's base.
 - **Installers.** Every platform has the same three: a one-line `get` that downloads a
   release and checks it against `SHA256SUMS`, an `install` for an unpacked archive, and an
   `uninstall` that the install leaves on the machine. `get.sh` serves Linux and macOS,
@@ -154,6 +157,13 @@ mobile/cbbtun/bind.sh ios Cbbtun.xcframework   # macOS with Xcode
 
 The Android app's build runs `bind.sh` itself (the `bindTunnel` task), so building the app
 needs Go besides the Android SDK and its NDK.
+
+The differential run of all four implementations (Go, Rust, JDK 17 and Docker for the Swift
+container; [docs/differential.md](docs/differential.md)):
+
+```sh
+sh .github/differential.sh 1 20000 500 /tmp/differential
+```
 
 Cross tests between Go and Swift: Swift tests write vectors that Go reads, and the other way.
 

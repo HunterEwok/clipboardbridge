@@ -55,6 +55,10 @@ watch's state, content hashes, join QR codes and a CPace exchange.
 A change to the wire format changes the vectors in the same pull request, together with
 [the protocol](protocol.md) and every implementation.
 
+The [differential run](differential.md) changes these bodies and record sets at random and
+checks that all four implementations still read them alike; a case they read differently
+becomes a vector here.
+
 ## Cross tests
 
 - The Swift kit's `clipboardbridge-interop` and the Kotlin kit's (built by `./gradlew -p kit

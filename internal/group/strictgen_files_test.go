@@ -31,6 +31,9 @@ const (
 	// refuses.
 	genP256Compressed = `"MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgACisTU0kiulUla1IJnCzjqGjJXTjaRtYjaMBcnJkhyA7s="`
 	genSHA            = `"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"`
+	// The P-256 key above with one byte of its point changed, so that the
+	// point is not on the curve.
+	genP256OffCurve = `"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEisTU0kiulUla1IJnCzjqGjJXTjaRtYjaMBcnJkhyA7t34yvhwHB6/8QmvZ+ZzjvjhygF8oLcfmRq6a/qgoX/FA=="`
 )
 
 // genFileVectors are the vectors of strict-files.json.
@@ -57,6 +60,7 @@ func genKeyValues() []genValue {
 	return []genValue{
 		bad("of a P-384 key", genP384),
 		bad("of a compressed point", genP256Compressed),
+		bad("of a point not on the curve", genP256OffCurve),
 		bad("with stray bits", genP256Stray),
 		bad("without padding", strings.TrimRight(genP256, `="`)+`"`),
 		bad("not a key", genB64(32, 7)),
@@ -210,6 +214,7 @@ func releaseKinds() []genKind {
 		bad("of 9", keyList(9)),
 		bad("of an empty use", `[`+key(`,"use":""`)+`]`),
 		bad("of a compressed key", `[{"key":`+genP256Compressed+`,"name":"k"}]`),
+		bad("of a key not on the curve", `[{"key":`+genP256OffCurve+`,"name":"k"}]`),
 		bad("empty", `[]`),
 		bad("of a P-384 key", `[{"key":`+genP384+`,"name":"k"}]`),
 		bad("of a key with stray bits", `[{"key":`+genP256Stray+`,"name":"k"}]`),

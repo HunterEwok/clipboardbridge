@@ -3,6 +3,7 @@
 
 package io.github.hunterewok.clipboardbridge.kit
 
+import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -57,11 +58,25 @@ private val P256_SPKI_PREFIX = byteArrayOf(
 /** The P-256 public key of a SubjectPublicKeyInfo, or null for anything else. */
 internal fun p256PublicKey(spki: ByteArray): PublicKey? {
     if (spki.size != 91 || !spki.copyOf(P256_SPKI_PREFIX.size).contentEquals(P256_SPKI_PREFIX)) return null
+    // The JDK's KeyFactory takes a point that is not on the curve; Go, Rust and Swift refuse it.
+    if (!onP256(spki.copyOfRange(27, 59), spki.copyOfRange(59, 91))) return null
     return try {
         KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(spki))
     } catch (e: java.security.GeneralSecurityException) {
         null
     }
+}
+
+private val P256_P = BigInteger("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff", 16)
+private val P256_B = BigInteger("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b", 16)
+
+/** Whether (x, y), big-endian, is a point of P-256: both below p and y^2 = x^3 - 3x + b mod p. */
+private fun onP256(xb: ByteArray, yb: ByteArray): Boolean {
+    val x = BigInteger(1, xb)
+    val y = BigInteger(1, yb)
+    if (x >= P256_P || y >= P256_P) return false
+    val right = x.pow(3).subtract(x.multiply(BigInteger.valueOf(3))).add(P256_B).mod(P256_P)
+    return y.multiply(y).mod(P256_P) == right
 }
 
 /** Whether sig (DER) is an ECDSA SHA-256 signature by spki over data. */

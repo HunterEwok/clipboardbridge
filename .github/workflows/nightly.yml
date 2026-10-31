@@ -1,0 +1,114 @@
+# Nightly: the differential comparison of the four implementations with a
+# fresh seed and more cases than a pull request's run, and the native fuzz
+# targets of the readers of network input (docs/differential.md). It only
+# reads the repository; a failure prints the cases, which become vectors of
+# testdata/interop.
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  differential:
+    name: differential, a fresh seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: a corpus of a fresh seed, read by all four
+        run: |
+          seed=$(date +%s)
+          echo "seed $seed: go run ./tools/difffuzz gen -seed $seed -n 200000 -sets 5000 makes the same corpus"
+          sh .github/differential.sh "$seed" 200000 5000 "$RUNNER_TEMP/differential"
+      - name: the cases read differently
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: differential
+          path: ${{ runner.temp }}/differential/failures.jsonl
+          if-no-files-found: ignore
+
+  go-fuzz:
+    name: go fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { package: ./internal/group, target: FuzzRecordBody }
+          - { package: ./internal/group, target: FuzzCommand }
+          - { package: ./internal/relay, target: FuzzRelayWire }
+          - { package: ./internal/forward, target: FuzzForwardWire }
+          - { package: ./internal/pasteboard, target: FuzzDecodeDIB }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: fuzz for ten minutes
+        env:
+          PKG: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+        run: go test "$PKG" -run '^$' -fuzz "^$TARGET\$" -fuzztime 10m
+      - name: the input that failed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-fuzz-${{ matrix.target }}
+          path: "**/testdata/fuzz/"
+          if-no-files-found: ignore
+
+  cargo-fuzz:
+    name: cargo fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [record_body, command, credential, release, wire]
+    defaults:
+      run:
+        working-directory: lite/core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz --locked
+      - name: seeds from the interop vectors
+        working-directory: .
+        run: go run ./tools/difffuzz seeds -o lite/core/fuzz/corpus
+      - name: fuzz for ten minutes
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo +nightly fuzz run "$TARGET" "fuzz/corpus/$TARGET" -- -max_total_time=600 -rss_limit_mb=2048
+      - name: the input that failed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-fuzz-${{ matrix.target }}
+          path: lite/core/fuzz/artifacts/
+          if-no-files-found: ignore

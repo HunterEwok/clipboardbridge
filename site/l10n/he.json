@@ -190,6 +190,8 @@
   "Security and privacy": "אבטחה ופרטיות",
   "Security audit": "ביקורת אבטחה",
   "The servers' budget": "התקציב של השרתים",
+  "Differential fuzzing": "פאזינג דיפרנציאלי",
+  "the four implementations reading changed bodies and record sets alike, in CI and nightly": "ארבעת המימושים קוראים באותו אופן גופים וקבוצות רשומות ששונו, ב-CI ובכל לילה",
   "Security policy": "מדיניות אבטחה",
   "Set up in three steps": "הגדרה בשלושה צעדים",
   "Settings and environment variables": "הגדרות ומשתני סביבה",

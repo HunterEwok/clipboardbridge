@@ -190,6 +190,8 @@
   "Security and privacy": "安全与隐私",
   "Security audit": "安全审计",
   "The servers' budget": "服务器的预算",
+  "Differential fuzzing": "差分模糊测试",
+  "the four implementations reading changed bodies and record sets alike, in CI and nightly": "四种实现以相同方式读取被修改的消息体和记录集，在 CI 中及每晚运行",
   "Security policy": "安全政策",
   "Set up in three steps": "三步完成设置",
   "Settings and environment variables": "设置和环境变量",

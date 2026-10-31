@@ -1,0 +1,36 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+# The differential comparison of the four implementations
+# (docs/differential.md): a corpus from tools/difffuzz, the verdict test of
+# each of Go, the lite member's Rust core, the Kotlin kit and the Swift kit
+# (Swift in its container, as the phone kit job runs it on Linux), then the
+# comparison, which fails on any case they read differently and writes
+# those cases to OUT/failures.jsonl.
+#
+# Usage: differential.sh SEED BODIES SETS OUT, from the repository's root.
+set -eu
+
+seed=$1
+bodies=$2
+sets=$3
+out=$(mkdir -p "$4" && cd "$4" && pwd)
+root=$(pwd)
+
+go run ./tools/difffuzz gen -seed "$seed" -n "$bodies" -sets "$sets" -o "$out/corpus.jsonl"
+export CBB_VERDICTS="$out/corpus.jsonl"
+
+CBB_VERDICTS_OUT="$out/go-group.txt" go test ./internal/group -run '^TestVerdicts$' -count=1
+CBB_VERDICTS_OUT="$out/go-release.txt" go test ./internal/release -run '^TestVerdicts$' -count=1
+(cd lite/core && CBB_VERDICTS_OUT="$out/rust.txt" cargo test --locked --release --lib records::verdicts)
+# --rerun: Gradle does not see the corpus change between runs.
+(cd apps/android && CBB_VERDICTS_OUT="$out/kotlin.txt" ./gradlew --no-daemon -q -p kit test --tests '*.VerdictTest' --rerun)
+docker run --rm -v "$root:/src" -v "$out:/out" -w /src/apps/ios/ClipboardBridgeKit \
+	-e CBB_VERDICTS=/out/corpus.jsonl -e CBB_VERDICTS_OUT=/out/swift.txt swift:6.2-noble \
+	swift test --filter VerdictTests
+
+# Manifests are read differently until 0.7 makes their form strict
+# (docs/roadmap.md): their differences are printed, not counted.
+go run ./tools/difffuzz compare -corpus "$out/corpus.jsonl" -failures "$out/failures.jsonl" -report-only manifest \
+	go="$out/go-group.txt,$out/go-release.txt" rust="$out/rust.txt" kotlin="$out/kotlin.txt" swift="$out/swift.txt"

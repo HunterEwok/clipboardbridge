@@ -1441,3 +1441,7 @@ impl Records {
         Ok(s)
     }
 }
+
+#[cfg(test)]
+#[path = "verdicts.rs"]
+mod verdicts;
