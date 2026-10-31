@@ -41,27 +41,51 @@ these words depends on it.
 - **Signed bodies.** The body of a record (section 10) and of a command (section 15) is
   signed as bytes and passed on unchanged, so every member MUST read it alike. A receiver
   MUST refuse a body that breaks any of these rules, before it reads a field, and so MUST
-  a signer's own code before it signs:
-  - The body is one JSON object in UTF-8 (RFC 3629: no overlong forms, no surrogates), with
-    nothing but whitespace (space, tab, CR, LF) around it; no byte order mark.
-  - Every member name, at every depth, is 1 to 64 of `a`-`z`, `0`-`9` and `_`, written
-    without escapes, and no object has the same name twice. Names match exactly: `Type` is
-    not `type`.
-  - No value is `null`; a field that is not there is left out.
-  - Every number is an integer written as `0` or `-?[1-9][0-9]*`, without a fraction or an
-    exponent, from -2^63 to 2^63-1; `-0` is not one, since some JSON readers take it for 0
-    and others for a float.
-  - A `\u` escape names a UTF-16 code unit; a surrogate MUST be one half of a pair, the high
-    half followed at once by the low half.
+  a signer's own code before it signs. Each rule has a name, which the vectors cite:
+  - `form/object`: the body is one JSON object in UTF-8, with nothing but whitespace (space,
+    tab, CR, LF; not a form feed) around it; no byte order mark, no comma after the last
+    member, nothing after the object.
+  - `form/utf8`: the bytes are UTF-8 as RFC 3629 has it: no overlong forms, no surrogates,
+    nothing above U+10FFFF, no cut or stray continuation bytes.
+  - `form/names`: every member name, at every depth, is 1 to 64 of `a`-`z`, `0`-`9` and
+    `_`, written without escapes, and no object has the same name twice, even with the same
+    value. Names match exactly: `Type` is not `type`.
+  - `form/null`: no value is `null`, at any depth; a field that is not there is left out.
+  - `form/numbers`: every number, at any depth, is an integer written as `0` or
+    `-?[1-9][0-9]*`, without a fraction, an exponent or a plus sign, from -2^63 to 2^63-1;
+    `-0` is not one, since some JSON readers take it for 0 and others for a float.
+  - `form/strings`: a string holds no raw control character (below U+0020); its escapes are
+    `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t` and `\u` with four hex digits of either case;
+    a `\u` escape names a UTF-16 code unit, and a surrogate MUST be one half of a pair, the
+    high half followed at once by the low half. Escaped control characters are taken here;
+    a field's own row may refuse them.
+  - `form/depth`: arrays and objects nest at most 16 deep below the body's object.
+  - `form/unknown`: a member the body's kind does not know is ignored, whatever its value, but
+    it still follows every rule above.
   - The fields every body of its kind has are there: `v`, `type`, `group` and `time_ms` in a
     record; `v`, `type`, `group`, `by`, `to`, `id`, `time_ms` and `expires_ms` in a command.
   - Bytes are standard base64 with padding in its one form: decoding and encoding again
-    gives the same string (no line breaks, no missing padding, zero bits after the last
-    byte).
+    gives the same string (no line breaks, no missing padding, no base64url, zero bits
+    after the last byte).
 
-  Fields a receiver does not know are still ignored. Go's `checkStrict`, the lite member's
-  `strict`, and `Strict` in both phone kits implement these rules; every one of them gives the
-  same verdict on the vectors in `testdata/interop/strict.json`.
+  A receiver checks a body in this order: its size (`size/records`, 8 KiB, section 10;
+  `size/commands`, section 15) before anything else; then these rules; then each field
+  against its row in the tables of its kind ("Record fields" in section 10, "The command"
+  in section 15); then the group, the signature and the rules of evaluation. A body that
+  fails a step is refused there, so a member never verifies a signature over a body it
+  cannot read alike, and never evaluates a record whose fields another member reads
+  otherwise. Go's `checkStrict`, the lite member's `strict`, and `Strict` in both phone kits
+  implement these rules. Every one of them gives the same verdict on the vectors in
+  `testdata/interop/strict.json`, written by hand, and in
+  `testdata/interop/strict-generated.json`, which Go's `TestStrictGenerated` writes from
+  these rules and the tables: a valid body of every kind and, for every field, the body
+  without it, with a value of each other JSON type, `null`, written twice, its name in upper
+  case or escaped, its numbers or strings in each form these rules refuse (for the fields every
+  kind of a section has, on one kind only), and the values at the ends of its row's range. Each vector names its rule (`form/...`, `size/...`, or
+  `records/<type>/<field>`, `commands/<type>/<field>` and `manifests/<field>` for a row of a
+  table) and whether a member takes the body; a vector with `pad` has `pad` bytes `a`
+  inserted at the offset `pad_at` of its body. The tests fail when the file is not what the
+  tables give, and when any implementation reads a vector otherwise.
 - **Time.** Times on the wire are Unix milliseconds (`_ms`), and durations integer
   milliseconds, unless a field says otherwise. Local durations (ages, windows, timeouts) are
   measured on a clock that counts the time the machine sleeps and does not jump when the
@@ -529,7 +553,9 @@ ending in a dot or a space, and not a name Windows reserves (`CON`, `PRN`, `AUX`
 `COM1` to `COM9`, `LPT1` to `LPT9`, in any case, before the first dot), so that every system
 can hold a received copy. Every number in a manifest is an integer written as in signed
 bodies (Conventions, "Signed bodies"): no `-0`, fraction or exponent. A receiver MUST refuse a
-manifest that breaks any of these rules,
+manifest that breaks any of these rules (the vectors of
+`strict-generated.json` cite them as `manifests/size` and `manifests/parts`; a manifest is no
+signed body, so only its numbers have the strict form),
 and MUST NOT follow or create links when it writes a copy of files. The Go code is
 `internal/clip/media.go`.
 
@@ -1373,6 +1399,36 @@ padding (RFC 4648, section 4), as everywhere in JSON in this document. A key has
 `admin`, each of `keys` and `keep`) and a record ID (each of `records`) is 32 bytes, so 44
 characters of base64.
 
+#### Record fields
+
+The exact rule for a record's body, after the strict form (Conventions, "Signed bodies"):
+each row is a field, its JSON type, and its values. A field of this table has its type in
+every record, also in a type that does not use it, so a `revoke` record with `"name": 5`
+or `"keys": ["x"]` is refused; one with `"name": "Laptop"` is taken, and the name means
+nothing there. A field the table does not name is ignored (`form/unknown`). The column
+"Needed in" names the types that are refused without the field; the vectors cite a row as
+`records/<type>/<field>`.
+
+| Field | JSON type | Needed in | Values |
+|-------|-----------|-----------|--------|
+| `v` | integer | every type | exactly `1` |
+| `type` | string | every type | `device`, `revoke`, `root`, `freeze` or `thaw`, exactly |
+| `group` | string | every type | compared with the member's group tag (rule 1), not here |
+| `time_ms` | integer | every type | any, from -2^63 to 2^63-1: informative only |
+| `by` | string | none | informative here; rule 2 compares it with `device` |
+| `device` | string | `device` | a device ID: exactly 32 of `0`-`9` and `a`-`f` once its escapes are read |
+| `name` | string | `device` | 1 to 64 bytes of UTF-8 once its escapes are read, without a control character (U+0000 to U+001F, U+007F to U+009F); other characters, such as U+00A0, U+200B or U+2028, are taken |
+| `role` | string | `device` | `full`, `phone`, `lite`, `shortcut`, `watch`, or of records made before, `linux`, `mac` and `iphone`, exactly |
+| `os` | string | none | `linux`, `windows`, `macos`, `ios`, `android`, `watchos`, `wearos`, `none`, or `""`, which is the same as leaving it out, exactly |
+| `key` | string | `device` | a key hash: 32 bytes in base64 |
+| `admin` | string | none | a key hash |
+| `store` | string | none | any; one the reader does not know counts as none (section 17) |
+| `kind`, `proof` | string | none | any; their meaning is in section 17 |
+| `keys` | array of strings | `revoke`, `freeze`, with one entry at least | key hashes; a hash may be there twice |
+| `keep` | array of strings | none | key hashes, none at all too |
+| `root` | string | `root`, not empty | bytes in base64, any length; the certificate is read when the record is verified |
+| `records` | array of strings | `thaw`, with one entry at least | record IDs, 32 bytes in base64 |
+
 A receiver MUST drop an envelope whose `body` is longer than 8 KiB before it checks
 anything else, and a body that is not valid: one that breaks the rules of signed bodies
 (Conventions), `v` other than 1, an unknown `type`, a key hash or record ID that is not 32
@@ -2182,13 +2238,17 @@ and 256 registrations being set up at a time. A group that reaches a limit loses
 own packets. Another forwarder SHOULD bound each group and each source likewise, so that no
 group or network can starve the others.
 
-Registrations, held or being set up, are bounded at 16 from one address and 64 from one
-network, an IPv4 /24 or an IPv6 /64; the forwarder closes a connection past either limit
-at once. A handshake to a new group is checked against each registered group, so it costs
-one check per group. These checks are bounded at 500 000 a second for all sources together,
-and one network gets a sixteenth of that; the handshakes that come over VLESS count as one
-network for each group's VLESS user ID. A single handshake costs a network at most its
-whole budget, so one still passes now and then on a forwarder with more groups than that.
+Registrations, held or being set up, are bounded at 16 from one address, 64 from one
+network, an IPv4 /24 or an IPv6 /64, and 256 from one wide network, an IPv4 /16 or an IPv6
+/48; the forwarder closes a connection past any of them at once. A handshake to a new group
+is checked against each registered group, so it costs one check per group. These checks are
+bounded at 500 000 a second for all sources together, and one network gets a sixteenth of
+that. A single handshake costs a network at most its whole budget, so one still passes now
+and then on a forwarder with more groups than that. A handshake from an address that has a
+handshake or a session with a group is checked against those groups first, without that
+budget. A client over VLESS reaches only the hub of the group that registered its VLESS
+user ID: its handshakes are checked against that group alone, also without the budget, and
+the forwarder passes its packets to no other group.
 The tables of sources and networks hold at most four entries per group; when full, a new
 entry replaces the one used least recently (its owner starts again with a full budget), so
 forged addresses cannot keep a real client out.
@@ -2201,10 +2261,10 @@ under HMAC-SHA256 of the period's tag, the version of its newest hubs' credentia
 HMAC-SHA256 of the tag and the SHA-256 of the period key, with a counter and the expiry of
 the last credential it saw (`expires`, Unix milliseconds; a file without it is read as 35
 days from the start, and never more than 35 days from when it was kept). An entry is kept until that expiry, since forgetting it sooner would
-let an older credential of the period pass. The table holds at most 100,000 periods and one
-network (an IPv4 /24 or an IPv6 /64) at most 256 of those it added; a tag new to the table
-is refused while either is full and nothing has expired, and no entry is ever dropped to
-make room. The file is written at most 2 s after a change, and when the forwarder stops,
+let an older credential of the period pass. The table holds at most 100,000 periods, one
+network (an IPv4 /24 or an IPv6 /64) at most 256 of those it added and one wide network (an
+IPv4 /16 or an IPv6 /48) at most 1024; a tag new to the table is refused while any of these
+is full and nothing has expired, and no entry is ever dropped to make room. The file is written at most 2 s after a change, and when the forwarder stops,
 outside the lock the lookups use. The HMAC key is
 HMAC-SHA256 under the forwarder's private key (PKCS #8) of `clipboardbridge forwarder
 state`, so the file names no group by itself, and a period lasts about a month, so the file
@@ -2323,21 +2383,24 @@ ID, and a device's pseudonym changes with each period.
    device told for its port, and closes any other.
 4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections.
    Limits of the setups, on every relay: 256 registrations being set up at a time, at most 16
-   of them from one IP address and 64 from one network (an IPv4 /24 or an IPv6 /64), each
-   setup also paid for by the second: an address may start 16 a second and a network 64,
-   with a burst; and, counted apart, 256 requests inside the tunnels being read at a time,
-   at most 16 of them from one device, 32 from one group, 32 from the devices that
-   registered from one IP address and 64 from one network. A connection in a tunnel sends
+   of them from one IP address, 64 from one network (an IPv4 /24 or an IPv6 /64) and 128
+   from one wide network (an IPv4 /16 or an IPv6 /48), each setup also paid for by the
+   second: an address may start 16 a second, a network 64 and a wide network 256, with a
+   burst; and, counted apart, 256 requests inside the tunnels being read at a time, at most
+   16 of them from one device, 32 from one group, 32 from the devices that registered from
+   one IP address, 64 from one network and 64 from one wide network. A connection in a tunnel sends
    its request line within 5 s. The relay closes a connection over a limit at once.
    A device, in turn, ends its watch on a note longer than 64 KiB or an `online` list of
    more than 64 names or with a name that is not a device ID or a pseudonym (32 or 64
    lowercase hex characters), and leaves unanswered a call with such a name, a ticket that
    is not 32 lowercase hex characters, or past 16 calls it is answering at once.
-5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address
-   and 64 from one network (an IPv4 /24 or an IPv6 /64); and 1 MiB a second of copying for
-   each group, both ways together, after a burst of two seconds' worth. It keeps at most
-   256 KiB of a group's authority records and 128 MiB of all groups' records, and refuses a
-   registration that would take it past either rather than keep part of them. It verifies
+5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address,
+   64 from one network (an IPv4 /24 or an IPv6 /64) and 256 from one wide network (an IPv4
+   /16 or an IPv6 /48); and 1 MiB a second of copying for each group, both ways together,
+   after a burst of two seconds' worth. It keeps at most 256 KiB of a group's authority
+   records, 1 MiB of the records one network brought and 4 MiB of those one wide network
+   brought, and 128 MiB of all groups' records, and refuses a registration that would take
+   it past any of them rather than keep part of them. It verifies
    a record once, when it first gets it, and keeps the verified set, so a group's later
    registrations that send the same records cost no checks; each new record is charged to
    what the address and network that sent it may start by the second. A registration over
@@ -2378,17 +2441,31 @@ signed bodies (Conventions):
 | `v` | integer | `1` |
 | `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or `away-off` |
 | `group` | string | the group tag |
-| `by` | string | the signer's device ID: a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device, or, when they show none, names a device they show (a computer takes a legacy group CA's command that names a `full` member, since each holds that key) |
-| `to` | string | the receiver's device ID |
+| `by` | string | the signer's device ID (32 of `0`-`9` and `a`-`f`): a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device, or, when they show none, names a device they show (a computer takes a legacy group CA's command that names a `full` member, since each holds that key) |
+| `to` | string | the receiver's device ID (32 of `0`-`9` and `a`-`f`) |
 | `id` | string | 128 random bits as 32 lowercase hex characters; IDs compare as byte strings |
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch, not negative |
-| `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
+| `expires_ms` | integer | after `time_ms`, at most 30 000 ms later: from `time_ms` + 1 to `time_ms` + 30 000 |
 | `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send`; in a `paste` command: `paste` (the clipboard and the paste keys) or `type` (key by key) |
 | `enter` | bool | in a `paste` command: press Enter after the text |
 | `kind` | string | in a `paste` command: `text` or `secret` |
 | `text` | string | in a `paste` command: the text, not empty, at most 1 MiB of UTF-8 for `paste` and 4 KiB for `type` |
 | `action` | string | in an `action` command: the action's name, 1 to 32 of `a`-`z`, `0`-`9` and `-`, starting with a letter; in no other command |
 | `hub` | object | in a `hub` command: `forwarder` (`endpoint`, `key`) or absent, `endpoints` (at most 8 with the forwarder's) or absent, at least one of the two, and `clients`, at most 256 of `{device, key, psk}` (base64, 32 bytes each, no device twice) |
+
+The exact rule, after the strict form: each field of this table has its JSON type in every
+command. A command is refused without `mode` in `mode` and `paste`, `hub` in `hub`, `kind`
+and `text` in `paste`, and `action` in `action`. In a command of another type these fields
+are absent or empty: `mode`, `kind`, `text` and `action` `""`, `enter` `false`, and `hub`
+absent, since even `{}` is an order. `mode` in a `mode` command is any string that is not
+empty here; the receiver answers a mode it does not know with an error. `paste`'s `mode`
+and `kind` are exactly the values above. The 1 MiB and 4 KiB of `text` count the bytes of
+UTF-8 once its escapes are read. In `hub`, `forwarder` has `endpoint` and `key`, strings
+that are not empty; `endpoints` holds at most 8 strings (the forwarder does not count among
+them) and, without a forwarder, one at least; each of `clients` has `device`, a device ID,
+and `key` and `psk`, 32 bytes each in base64. A body is at most 64 KiB, or 2 MiB for
+`paste` (`size/commands`), checked before anything else. The vectors cite a row as
+`commands/<type>/<field>`.
 
 `sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
 or by an admin CA's key (`chain` holds that admin CA, DER), as for records.

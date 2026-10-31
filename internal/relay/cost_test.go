@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
 // newRequestRelay is a relay with only what the counting of requests needs.
 func newRequestRelay() *Relay {
-	return &Relay{reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}}
+	return &Relay{requests: budget.NewCount(requestCaps)}
 }
 
 // The requests being read are also counted by the address and the network
@@ -70,8 +71,8 @@ func TestRequestsBoundBySourceAndGroup(t *testing.T) {
 	for range maxRequestsOne {
 		r.freeRequest(&member{from: one, greads: new(int), reading: 1})
 	}
-	if r.reqIP[one] != maxRequestsSource-maxRequestsOne {
-		t.Errorf("%d requests counted for the address after some were read, want %d", r.reqIP[one], maxRequestsSource-maxRequestsOne)
+	if n := r.requests.Held(one, budget.Address); n != maxRequestsSource-maxRequestsOne {
+		t.Errorf("%d requests counted for the address after some were read, want %d", n, maxRequestsSource-maxRequestsOne)
 	}
 }
 
@@ -123,7 +124,7 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 	reading := func(a netip.Addr) (all, from int) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.requesting, r.reqIP[a]
+		return r.requests.Held(a, budget.All), r.requests.Held(a, budget.Address)
 	}
 	// Three devices with all their connections are more than one address
 	// may have read at once.
@@ -148,7 +149,7 @@ func TestRegisteredStrangersLeaveRequestSlots(t *testing.T) {
 // out, and earns more as time passes.
 func TestSetupsChargedPerSecond(t *testing.T) {
 	now := time.Unix(1000, 0)
-	r := &Relay{setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}, allow: newAllowance(), now: func() time.Time { return now }}
+	r := &Relay{setups: budget.NewCount(setupCaps), allow: newAllowance(), now: func() time.Time { return now }}
 	one, other := netip.MustParseAddr("203.0.113.7"), netip.MustParseAddr("198.51.100.1")
 	setups := func() (n int) {
 		for r.takeSlot(one) {
@@ -174,26 +175,26 @@ func TestAllowance(t *testing.T) {
 	a := newAllowance()
 	// Addresses of one network share the network's allowance.
 	for i := range 5 {
-		ok := a.take(netip.AddrFrom4([4]byte{192, 0, 2, byte(i)}), 1024, now)
+		ok := a.Take(netip.AddrFrom4([4]byte{192, 0, 2, byte(i)}), 1024, now)
 		if want := i < 4; ok != want {
 			t.Fatalf("address %d: took %v, want %v", i, ok, want)
 		}
 	}
-	if !a.take(netip.MustParseAddr("198.51.100.1"), 1024, now) {
+	if !a.Take(netip.MustParseAddr("198.51.100.1"), 1024, now) {
 		t.Error("another network refused")
 	}
 	// A refused request charges nothing, and time earns it back.
-	if a.take(netip.MustParseAddr("192.0.2.50"), 1024, now) {
+	if a.Take(netip.MustParseAddr("192.0.2.50"), 1024, now) {
 		t.Error("an exhausted network took more")
 	}
-	if !a.take(netip.MustParseAddr("192.0.2.50"), 1, now.Add(10*time.Second)) {
+	if !a.Take(netip.MustParseAddr("192.0.2.50"), 1, now.Add(10*time.Second)) {
 		t.Error("an exhausted network earned nothing in 10 s")
 	}
 	// Sources whose allowance is full again are forgotten.
-	a.sweepAt = 1
-	a.take(netip.MustParseAddr("198.51.100.2"), 1, now.Add(time.Hour))
-	if len(a.addrs) != 1 || len(a.nets) != 1 {
-		t.Errorf("%d addresses and %d networks kept after an hour, want 1 and 1", len(a.addrs), len(a.nets))
+	a.Sweep(now.Add(time.Hour))
+	a.Take(netip.MustParseAddr("198.51.100.2"), 1, now.Add(time.Hour))
+	if n := a.Payers(); n != 3 {
+		t.Errorf("%d sources kept after an hour, want the address, network and wide network of 1", n)
 	}
 }
 
@@ -257,7 +258,7 @@ func TestRecordsVerifiedOnce(t *testing.T) {
 	units := func() float64 {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.allow.addrs[local].units
+		return r.allow.Left(local, budget.Address)
 	}
 	r.mu.Lock()
 	rs := r.records[group.Tag(ca.Cert)]

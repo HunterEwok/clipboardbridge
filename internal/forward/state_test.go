@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
@@ -45,7 +46,9 @@ func withVersion(p *group.Presented, version uint64) *group.Presented {
 	return &q
 }
 
-func nth(i int) netip.Addr { return netip.AddrFrom4([4]byte{10, byte(i >> 16), byte(i >> 8), 1}) }
+func nth(i int) netip.Addr {
+	return netip.AddrFrom4([4]byte{byte(10 + i>>18), byte(i >> 10), byte(i>>8) & 3, 1})
+}
 
 // TestVersionsKeepsGroupsAgainstNewTags checks that registrations with new
 // period tags never push out what the table kept for a group: from one
@@ -116,8 +119,8 @@ func TestVersionsKeepsGroupsAgainstNewTags(t *testing.T) {
 	if err := v.keep(p, flood); err != nil {
 		t.Fatal(err)
 	}
-	if len(v.entries) != 1 || len(v.nets) != 1 {
-		t.Fatalf("after expiry the table holds %d entries from %d networks, want 1 and 1", len(v.entries), len(v.nets))
+	if len(v.entries) != 1 || v.nets.Held(flood, budget.Network) != 1 || v.nets.Held(flood, budget.All) != 1 {
+		t.Fatalf("after expiry the table holds %d entries, counted as\n%s\nwant 1 of the flooding network", len(v.entries), v.nets)
 	}
 }
 

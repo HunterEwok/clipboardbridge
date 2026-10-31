@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
@@ -30,8 +31,17 @@ const stateLabel = "clipboardbridge forwarder state"
 const writeDelay = 2 * time.Second
 
 // networkTags bounds the entries one network (an IPv4 /24 or an IPv6 /64)
-// may add to the table while they last.
-const networkTags = 256
+// may add to the table while they last, and wideTags those of one wide
+// network (an IPv4 /16 or an IPv6 /48), so that filling the table takes
+// rememberedGroups/wideTags wide networks (docs/relay-budget.md).
+const (
+	networkTags = 256
+	wideTags    = 1024
+)
+
+// tagCaps are the caps of the entries by the source that added them; the
+// table's own bound is rememberedGroups.
+var tagCaps = budget.Caps{Network: networkTags, Wide: wideTags}
 
 // errTableFull is what a registration with a new tag is refused with when
 // the table, or its network's share of it, is full.
@@ -47,10 +57,10 @@ var errTableFull = errors.New("this forwarder cannot remember another group now;
 //
 // An entry stays until the newest credential it recorded has expired, since
 // before that an older credential of the period would be accepted if it were
-// forgotten. The table holds at most rememberedGroups entries and each
-// network at most networkTags of the entries it added; a tag new to the table
-// is refused when either limit is reached and nothing has expired, and no
-// entry is dropped to make room. With a file the table outlives a restart;
+// forgotten. The table holds at most rememberedGroups entries, each network
+// at most networkTags of the entries it added and each wide network at most
+// wideTags; a tag new to the table is refused when any of these is reached
+// and nothing has expired, and no entry is dropped to make room. With a file the table outlives a restart;
 // it is written a moment after a change, and when the forwarder closes.
 type versions struct {
 	file   string // "" keeps it in memory only
@@ -61,7 +71,7 @@ type versions struct {
 
 	mu      sync.Mutex
 	entries map[string]versionEntry // by hashed tag
-	nets    map[netip.Prefix]int    // entries added from each network since the start
+	nets    *budget.Count           // entries added from each network since the start
 	seq     uint64
 	pruneAt time.Time   // no entry expires before this
 	dirty   bool        // changes not yet written
@@ -92,7 +102,7 @@ func newVersions(file string, key any) (*versions, error) {
 	}
 	m := hmac.New(sha256.New, der)
 	m.Write([]byte(stateLabel))
-	v := &versions{file: file, secret: m.Sum(nil), now: time.Now, delay: writeDelay, entries: map[string]versionEntry{}, nets: map[netip.Prefix]int{}}
+	v := &versions{file: file, secret: m.Sum(nil), now: time.Now, delay: writeDelay, entries: map[string]versionEntry{}, nets: budget.NewCount(tagCaps)}
 	if file == "" {
 		return v, nil
 	}
@@ -148,10 +158,13 @@ func (v *versions) check(p *group.Presented, from netip.Addr) error {
 // roomLocked reports whether a tag new to the table, from the network of
 // from, may be added; the entries that have expired go first if it is full.
 func (v *versions) roomLocked(from netip.Addr) error {
-	n := network(from)
-	if len(v.entries) >= rememberedGroups || v.nets[n] >= networkTags {
+	full := func() bool {
+		_, full := v.nets.Full(from, 1)
+		return full || len(v.entries) >= rememberedGroups
+	}
+	if full() {
 		v.pruneLocked()
-		if len(v.entries) >= rememberedGroups || v.nets[n] >= networkTags {
+		if full() {
 			return errTableFull
 		}
 	}
@@ -174,9 +187,7 @@ func (v *versions) pruneLocked() {
 		}
 		delete(v.entries, t)
 		if e.net.IsValid() {
-			if v.nets[e.net]--; v.nets[e.net] <= 0 {
-				delete(v.nets, e.net)
-			}
+			v.nets.Remove(e.net.Addr(), 1)
 		}
 		changed = true
 	}
@@ -206,8 +217,10 @@ func (v *versions) keep(p *group.Presented, from netip.Addr) error {
 		if err := v.roomLocked(from); err != nil {
 			return err
 		}
+		// The entry is charged to its network and wide network by the
+		// network alone, which is all it keeps of where it came from.
 		e.net = network(from)
-		v.nets[e.net]++
+		v.nets.Add(e.net.Addr(), 1)
 		if at := time.UnixMilli(expires); v.pruneAt.IsZero() || at.Before(v.pruneAt) {
 			v.pruneAt = at
 		}

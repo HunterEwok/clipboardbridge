@@ -44,4 +44,40 @@ final class StrictTests: XCTestCase {
             XCTAssertEqual(m?.isValid ?? false, c.valid, "manifest \(c.name)")
         }
     }
+
+    /// testdata/interop/strict-generated.json, from the tables of
+    /// docs/protocol.md: the kit takes exactly the bodies the tables take,
+    /// and says which row it reads otherwise.
+    func testGenerated() throws {
+        struct Case: Decodable {
+            var name, rule: String
+            var valid: Bool
+            var body: Data
+            var pad_at, pad: Int?
+
+            var full: Data {
+                guard let pad, let pad_at else { return body }
+                return body.prefix(pad_at) + Data(repeating: UInt8(ascii: "a"), count: pad) + body.dropFirst(pad_at)
+            }
+        }
+        struct Vectors: Decodable { var records, commands, manifests: [Case] }
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/strict-generated.json")))
+        var wrong: [String] = []
+        let kinds: [(String, [Case], (Data) -> Bool)] = [
+            ("records", v.records, { (b: Data) in Records.Body.decode(b) != nil }),
+            ("commands", v.commands, { (b: Data) in (try? Commands.parse(b)) != nil }),
+            ("manifests", v.manifests, { (b: Data) in
+                (Strict.integersOnly(b) ? try? JSONDecoder().decode(Media.Manifest.self, from: b) : nil)?.isValid ?? false
+            }),
+        ]
+        for (kind, cases, take) in kinds {
+            XCTAssertFalse(cases.isEmpty, "no \(kind)")
+            for c in cases where take(c.full) != c.valid {
+                wrong.append("\(kind) \(c.name) (\(c.rule)): valid \(c.valid)")
+            }
+        }
+        XCTAssert(wrong.isEmpty, "\(wrong.count) vectors read otherwise:\n" + wrong.joined(separator: "\n"))
+    }
 }

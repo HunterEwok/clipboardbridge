@@ -1216,9 +1216,10 @@ not. The project's forwarder runs at `cbb.tools`, still being tested; a user can
   which the forwarder keeps in memory only.
 - **No interference.** Limits per group: packets and bytes per second, at most 16 clients,
   memory. A group that reaches a limit is slowed down alone. Limits per source: registrations
-  per address and per network (/24, /64), and a share of the budget for checking handshakes
-  against the groups per network, so a few hosts can neither fill the forwarder nor starve the
-  others.
+  per address, per network (/24, /64) and per wide network (/16, /48), and a share of the
+  budget for checking handshakes against the groups per network, so a few hosts can neither
+  fill the forwarder nor starve the others. Every limit of the forwarder and the open relay,
+  who pays for it and what a genuine group keeps are in [the servers' budget](relay-budget.md).
 - **Nothing to gain.** Whoever takes the forwarder over sees the same encrypted packets as
   the network and can at most stop forwarding.
 - It learns the hub's WireGuard public key, the addresses of the hub and its clients, and the
@@ -1350,9 +1351,11 @@ relay, or a hub.
 - `cbb relay -group TAG` runs a relay for the groups whose tags it is given and no other;
   `cbb relay -open` serves every group that registers, as the project's relay does, within
   limits that keep groups nobody vouches for from filling it (finding 3 of the security
-  audit): 4096 groups, 16 registrations from one address and 64 from one network (an IPv4
-  /24 or an IPv6 /64), and 1 MiB a second of copying for each group, besides the limits of
-  every relay. An open relay forgets a group once its last device leaves.
+  audit): 4096 groups, 16 registrations from one address, 64 from one network (an IPv4
+  /24 or an IPv6 /64) and 256 from one wide network (an IPv4 /16 or an IPv6 /48), and 1 MiB
+  a second of copying for each group, besides the limits of every relay
+  ([the servers' budget](relay-budget.md)). An open relay forgets a group once its last
+  device leaves.
 - Each device turns it on with `cbb global relay ADDRESS -key KEY`, in place of a hub, after
   the user agrees; the key is the pin of the relay's own key, as with the forwarder.
 - A device registers with its member certificate and proves it holds its WireGuard key, as

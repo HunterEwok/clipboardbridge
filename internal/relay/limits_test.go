@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 )
 
 // posing is a listener that gives each accepted connection the source
@@ -100,7 +102,7 @@ func startPosing(t *testing.T) (*Relay, *posing, Link) {
 func (r *Relay) settingNow() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.setting
+	return r.setups.Held(netip.Addr{}, budget.All)
 }
 
 // Connections that never finish their setup hold only their address's and

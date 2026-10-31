@@ -7,6 +7,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"fmt"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,9 @@ func fakeRecords(n, size int) []group.Record {
 	return rs
 }
 
+// noSource is where the records the tests keep came from.
+var noSource = netip.MustParseAddr("192.0.2.1")
+
 // total returns the groups, records and bytes the memory keeps.
 func (m *memory) total() (groups, records, bytes int) {
 	m.mu.Lock()
@@ -41,7 +45,7 @@ func (m *memory) total() (groups, records, bytes int) {
 // all, and that the group kept least recently goes first.
 func TestMemoryBoundsGroupAndTotal(t *testing.T) {
 	m := newMemory(nil)
-	m.keep("big", fakeRecords(100, 8<<10)) // 800 KiB offered
+	m.keep("big", noSource, fakeRecords(100, 8<<10)) // 800 KiB offered
 	if _, _, n := m.total(); n > rememberedGroupBytes {
 		t.Errorf("one group keeps %d bytes, limit %d", n, rememberedGroupBytes)
 	}
@@ -49,7 +53,7 @@ func TestMemoryBoundsGroupAndTotal(t *testing.T) {
 		t.Error("a group that offered too much keeps nothing")
 	}
 	for i := 0; i < 1000; i++ {
-		m.keep(fmt.Sprintf("g%d", i), fakeRecords(20, 6<<10))
+		m.keep(fmt.Sprintf("g%d", i), noSource, fakeRecords(20, 6<<10))
 		if _, _, n := m.total(); n > rememberedBytes {
 			t.Fatalf("after %d groups the memory keeps %d bytes, limit %d", i+1, n, rememberedBytes)
 		}
@@ -66,9 +70,9 @@ func TestMemoryBoundsGroupAndTotal(t *testing.T) {
 // registered now are not forgotten however many groups come after it.
 func TestMemoryKeepsRegisteredGroups(t *testing.T) {
 	m := newMemory(func(tag string) bool { return tag == "mine" })
-	m.keep("mine", fakeRecords(3, 200))
+	m.keep("mine", noSource, fakeRecords(3, 200))
 	for i := 0; i < 1000; i++ {
-		m.keep(fmt.Sprintf("g%d", i), fakeRecords(20, 6<<10))
+		m.keep(fmt.Sprintf("g%d", i), noSource, fakeRecords(20, 6<<10))
 	}
 	if n := len(m.records("mine")); n != 3 {
 		t.Errorf("a registered group keeps %d records, want 3", n)
@@ -80,8 +84,8 @@ func TestMemoryKeepsRegisteredGroups(t *testing.T) {
 func TestMemoryMergesByID(t *testing.T) {
 	m := newMemory(nil)
 	a, b, c := fakeRecords(1, 100), fakeRecords(1, 100), fakeRecords(1, 100)
-	m.keep("g", append(append([]group.Record{}, a...), b...))
-	m.keep("g", append(append([]group.Record{}, b...), c...))
+	m.keep("g", noSource, append(append([]group.Record{}, a...), b...))
+	m.keep("g", noSource, append(append([]group.Record{}, b...), c...))
 	if g, r, _ := m.total(); g != 1 || r != 3 {
 		t.Errorf("%d groups, %d records, want 1 and 3", g, r)
 	}
@@ -94,7 +98,7 @@ func TestMemoryKeepIsLinear(t *testing.T) {
 	rs := fakeRecords(15, 8<<10)
 	start := time.Now()
 	for i := 0; i < 2000; i++ {
-		m.keep("g", rs)
+		m.keep("g", noSource, rs)
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("2000 registrations with known records took %v", d)

@@ -35,6 +35,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
@@ -58,11 +59,12 @@ type Limits struct {
 	// IPv4 /24 or an IPv6 /64), so that one network cannot use up the
 	// budget of all; ScanRate/16 if zero.
 	NetworkScanRate float64
-	// PerAddress and PerNetwork bound the registrations, held or being
-	// set up, from one address and from one network (an IPv4 /24 or an
-	// IPv6 /64), so that nobody fills the forwarder from a few hosts; 16
-	// and 64 if zero.
-	PerAddress, PerNetwork int
+	// PerAddress, PerNetwork and PerWide bound the registrations, held or
+	// being set up, from one address, from one network (an IPv4 /24 or an
+	// IPv6 /64) and from one wide network (an IPv4 /16 or an IPv6 /48), so
+	// that nobody fills the forwarder from a few hosts; 16, 64 and 256 if
+	// zero.
+	PerAddress, PerNetwork, PerWide int
 }
 
 // DefaultLimits are generous for clipboard texts and small enough that a
@@ -78,6 +80,7 @@ var DefaultLimits = Limits{
 	Connections: 256,
 	PerAddress:  16,
 	PerNetwork:  64,
+	PerWide:     256,
 }
 
 // How long the forwarder remembers a handshake and a session. WireGuard
@@ -111,8 +114,7 @@ type Forwarder struct {
 	sources   *lru[sourceKey, *bucket]        // SourceRate
 	scans     *bucket                         // ScanRate
 	netScans  *lru[scanKey, *bucket]          // NetworkScanRate
-	fromAddr  map[netip.Addr]int              // registrations held or being set up, by address
-	fromNet   map[netip.Prefix]int            // and by network
+	from      *budget.Count                   // registrations held or being set up, by source
 	setting   int                             // registrations being set up
 	mask      [32]byte                        // the key of the hellos' mask, given to every hub
 	vless     *vless.Server
@@ -288,7 +290,6 @@ func Listen(cfg Config) (*Forwarder, error) {
 		pending: map[clientKey]pending{}, byHubIdx: map[uint32]*session{}, byClient: map[clientKey]*session{},
 		byAddr: map[netip.AddrPort]map[*reg]int{}, byInit: map[int][]*reg{},
 		sources: newLRU[sourceKey, *bucket](4 * limits.Groups), netScans: newLRU[scanKey, *bucket](4 * limits.Groups),
-		fromAddr: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
 		done: make(chan struct{}),
 	}
 	f.memory = newMemory(f.registered)
@@ -310,6 +311,10 @@ func Listen(cfg Config) (*Forwarder, error) {
 	if f.limits.PerNetwork <= 0 {
 		f.limits.PerNetwork = DefaultLimits.PerNetwork
 	}
+	if f.limits.PerWide <= 0 {
+		f.limits.PerWide = DefaultLimits.PerWide
+	}
+	f.from = budget.NewCount(budget.Caps{Address: f.limits.PerAddress, Network: f.limits.PerNetwork, Wide: f.limits.PerWide})
 	f.scans = newBucket(f.limits.ScanRate, time.Now())
 	if _, err := rand.Read(f.mask[:]); err != nil {
 		udp.Close()
@@ -488,9 +493,24 @@ func (f *Forwarder) fromHubLocked(r *reg, t byte, m []byte, n int, now time.Time
 // group with the settings of each obfuscated group whose handshake
 // initiation has the packet's size.
 func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initiationSize]byte, now time.Time) (netip.AddrPort, bool) {
+	if user := f.userOf(from); user != "" {
+		return f.fromVLESSLocked(from, user, p, buf, now)
+	}
 	switch messageType(p) {
 	case msgInitiation:
-		if !f.sourceLocked(from, now) || !f.scanLocked(from, len(f.regs), now) {
+		if !f.sourceLocked(from, now) {
+			return netip.AddrPort{}, false
+		}
+		// A client that has a handshake or a session with its group from
+		// this address makes its next handshakes from there too: they are
+		// checked against that group first, which costs no share of the
+		// scan budget.
+		for r := range f.byAddr[from] {
+			if r.obf == nil && hasMac1(&r.mac1, p) {
+				return f.initiationLocked(from, r, p, len(p), now)
+			}
+		}
+		if !f.scanLocked(from, len(f.regs), now) {
 			return netip.AddrPort{}, false
 		}
 		if r := f.addressedLocked(p); r != nil {
@@ -530,6 +550,30 @@ func (f *Forwarder) fromClientLocked(from netip.AddrPort, p []byte, buf *[initia
 		}
 	}
 	// A client answers no handshake: the forwarder passes none from a hub.
+	return netip.AddrPort{}, false
+}
+
+// fromVLESSLocked passes what a client sent over VLESS, whose user ID is
+// user: only to the hub of the group that registered that user ID, the one
+// group the client may reach. Its handshakes are checked against that group
+// alone, so they spend no share of the scan budget, however many groups'
+// clients come over VLESS.
+func (f *Forwarder) fromVLESSLocked(from netip.AddrPort, user string, p []byte, buf *[initiationSize]byte, now time.Time) (netip.AddrPort, bool) {
+	r := f.byVLESS[user]
+	if r == nil {
+		return netip.AddrPort{}, false
+	}
+	switch t, m := open(r.obf, p, buf); t {
+	case msgInitiation:
+		if !f.sourceLocked(from, now) || !hasMac1(&r.mac1, m) {
+			return netip.AddrPort{}, false
+		}
+		return f.initiationLocked(from, r, m, len(p), now)
+	case msgData:
+		if s := f.byHubIdx[receiverIndex(t, m)]; s != nil && s.reg == r {
+			return f.dataLocked(s, len(p), now)
+		}
+	}
 	return netip.AddrPort{}, false
 }
 
@@ -579,15 +623,7 @@ func (f *Forwarder) sourceLocked(from netip.AddrPort, now time.Time) bool {
 // network is the network of an address that the forwarder's per-network
 // limits count: an IPv4 /24 or an IPv6 /64, where one host usually gets
 // a whole /64.
-func network(a netip.Addr) netip.Prefix {
-	a = a.Unmap()
-	bits := 64
-	if a.Is4() {
-		bits = 24
-	}
-	p, _ := a.Prefix(bits)
-	return p
-}
+func network(a netip.Addr) netip.Prefix { return budget.Of(a, budget.Network) }
 
 // scanLocked charges a handshake that n groups are checked against to the
 // budget of all sources and to that of its network; false drops it. One
