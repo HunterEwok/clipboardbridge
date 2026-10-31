@@ -193,6 +193,8 @@
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "utekelezaji wote wanne husoma kwa njia moja miili na seti za rekodi zilizobadilishwa, katika CI na kila usiku",
   "Group records, version 2": "Rekodi za kikundi, toleo la 2",
   "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "muundo ujao wa rekodi za mamlaka za kikundi na kanuni moja inayozitathmini, kwa 0.6",
+  "The core's entry point": "Mlango wa kiini",
+  "the one call, bytes in and bytes out, through which the phones and Go use the Rust core's rules, and its error codes": "mwito mmoja, baiti zinaingia na baiti zinatoka, ambao simu na Go hutumia sheria za kiini cha Rust kupitia, na misimbo yake ya makosa",
   "Security policy": "Sera ya usalama",
   "Set up in three steps": "Weka kwa hatua tatu",
   "Settings and environment variables": "Mipangilio na vigeu vya mazingira",
