@@ -763,6 +763,46 @@ fn strict_generated() {
     assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
 }
 
+/// The server credentials and release files of strict-files.json, which
+/// Go's TestStrictGeneratedFiles writes from the tables of docs/protocol.md.
+/// The lite member reads no attest-status.json, the only kind it leaves to
+/// the others.
+#[test]
+fn strict_files() {
+    let v = vectors("strict-files.json");
+    let mut wrong = Vec::new();
+    for section in ["credentials", "releases"] {
+        let cases = v[section].as_array().unwrap();
+        assert!(!cases.is_empty(), "no {section}");
+        for c in cases {
+            let mut body = bytes(&c["body"]);
+            if let Some(pad) = c["pad"].as_u64() {
+                let at = c["pad_at"].as_u64().unwrap() as usize;
+                body.splice(at..at, std::iter::repeat_n(b'a', pad as usize));
+            }
+            let kind = c["kind"].as_str().unwrap();
+            let got = match (section, kind) {
+                ("credentials", _) => crate::credential::Body::parse(&body).map(|_| ()).map_err(|e| e.to_string()),
+                (_, "attest-status") => continue,
+                _ if body.len() > crate::release::MAX_BODY => Err("too large".to_string()),
+                (_, "keys") => crate::release::decode_keys(&body).map(|_| ()).map_err(|e| e.to_string()),
+                (_, "release") => crate::release::decode_release(&body).map(|_| ()).map_err(|e| e.to_string()),
+                (_, "channel") => crate::release::decode_channel(&body).map(|_| ()).map_err(|e| e.to_string()),
+                _ => panic!("unknown kind {kind}"),
+            };
+            if got.is_ok() != c["valid"].as_bool().unwrap() {
+                wrong.push(format!(
+                    "{section} {:?} ({}): valid {}, got {got:?}",
+                    c["name"].as_str().unwrap(),
+                    c["rule"].as_str().unwrap(),
+                    c["valid"]
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+}
+
 /// The timestamps a clock took do not move how far ahead it takes the next
 /// one (hlc-ahead.json, as Go's TestAheadVectors writes it).
 #[test]

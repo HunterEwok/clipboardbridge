@@ -72,4 +72,42 @@ class StrictTest {
         }
         assertTrue(wrong.isEmpty(), "${wrong.size} vectors read otherwise:\n" + wrong.joinToString("\n"))
     }
+
+    /** strict-files.json: the server credentials and release files, as Go's TestStrictGeneratedFiles writes them. */
+    @Test
+    fun generatedFiles() {
+        val v = Interop.read("strict-files.json").jsonObject
+        val wrong = mutableListOf<String>()
+        for (section in listOf("credentials", "releases")) {
+            val cases = v.getValue(section).jsonArray
+            assertTrue(cases.isNotEmpty(), "no $section")
+            for (c in cases) {
+                val o = c.jsonObject
+                var body = b64(o.str("body"))
+                o["pad"]?.let {
+                    val at = o.getValue("pad_at").jsonPrimitive.int
+                    body = body.copyOfRange(0, at) + ByteArray(it.jsonPrimitive.int) { 'a'.code.toByte() } + body.copyOfRange(at, body.size)
+                }
+                val got = runCatching {
+                    if (section == "credentials") {
+                        ServerCredentials.Body.parse(body)
+                    } else {
+                        if (body.size > Releases.MAX_BODY) throw Releases.Refused("too large")
+                        when (val kind = o.str("kind")) {
+                            "keys" -> Releases.decodeKeys(body)
+                            "release" -> Releases.decodeRelease(body)
+                            "channel" -> Releases.decodeChannel(body)
+                            "attest-status" -> Releases.decodeStatus(body)
+                            else -> error("unknown kind $kind")
+                        }
+                    }
+                }
+                // A reader refuses with its own exception, never with another that escapes it.
+                got.exceptionOrNull()?.let { if (it !is ServerCredentials.Refused && it !is Releases.Refused) throw it }
+                val valid = o.getValue("valid").jsonPrimitive.boolean
+                if (got.isSuccess != valid) wrong += "$section ${o.str("name")} (${o.str("rule")}): valid $valid, got ${got.exceptionOrNull()?.message ?: "taken"}"
+            }
+        }
+        assertTrue(wrong.isEmpty(), "${wrong.size} vectors read otherwise:\n" + wrong.joinToString("\n"))
+    }
 }
