@@ -1148,8 +1148,9 @@ impl<'a> Epoch<'a> {
         }
         self.claims.append(&mut decided);
         // An admin's removal or freeze of a claimant that the claimant had
-        // seen voids its claim; one it had not seen disputes it, unless its
-        // author had seen a record of the claimed root.
+        // seen voids its claim; one it had not seen disputes it, whatever
+        // else its author had seen (a claimed root can sign before its claim
+        // takes effect).
         let mut disputes: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         let mut kept = Vec::new();
         for &c in &live {
@@ -1159,7 +1160,7 @@ impl<'a> Epoch<'a> {
                 let rb = self.r(r).b();
                 if cb.seen_of(&rb.signer) >= rb.seq {
                     void = true;
-                } else if rb.seen_of(&claim_root(cb)) == 0 {
+                } else {
                     disputes.entry(c).or_default().push(r);
                 }
             }
