@@ -103,7 +103,7 @@ environment secret**.
 `main`:
 
 - **check**: `gofmt`, `go mod tidy`, `go mod verify`, `go vet`, `staticcheck`,
-  `govulncheck`, `actionlint` for the workflows,
+  `govulncheck`, `actionlint` and zizmor (their security) for the workflows,
   [the repository rules](../tools/repocheck/main.go) (English only, apart from the apps'
   translations; license headers in Go and Rust files; copied code with its license; the documentation's
   links, the old name, the command reference with every flag, the environment variables,
@@ -153,6 +153,8 @@ Rules for workflows:
 - Set `permissions: contents: read` at the workflow level; grant more to a single job only
   when it needs it.
 - Check out with `persist-credentials: false`.
+- zizmor (CI's check job) looks for holes in the workflows; a finding that has to stay gets a
+  `# zizmor: ignore[<audit>]` comment beside it that says why.
 - Pull request workflows get no secrets.
 - Tools such as `staticcheck`, `govulncheck` and `actionlint` are pinned in `go.mod` and run
   with `go tool`. Go records them as indirect requirements, so `.github/dependabot.yml` allows
