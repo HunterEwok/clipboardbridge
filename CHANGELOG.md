@@ -651,7 +651,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
-- The lite member and the Android app check a hub command's order as the other members do: a forwarder with an
+- The lite member and both phone apps check a hub command's order as Go does: a forwarder with an
   address and a key or an address at least, at most 8 addresses and 256 clients, each client
   a device ID once with keys of 32 bytes.
 - On Windows the service makes the admin socket's directory before the control socket's, and
