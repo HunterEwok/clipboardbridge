@@ -837,6 +837,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   keeps the highest version it has seen, so its channel never goes back below it.
 - The website's `/preview` takes a key of 16 to 128 letters, digits, `-` and `_` only, sets
   no cookie for any other, and answers at most a few requests a minute from one address.
+  The site's nginx configuration parses again, and CI's `website` job checks it with
+  `nginx -t` in nginx's image (`.github/nginx-check.sh`).
 - The lite member keeps a full member's own quick actions when it saves the shared
   `actions.json` and offers only its presets, and counts KDE's lock screen as locked, as
   computers do.
