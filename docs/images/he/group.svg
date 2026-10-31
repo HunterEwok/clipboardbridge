@@ -45,11 +45,11 @@
 <g class=""><rect class="card " x="485.0" y="24.0" width="150" height="52" rx="10"/><g transform="translate(497.0,36)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="535.0" y="55" direction="rtl" text-anchor="end">Linux</text></g>
 <g class=""><rect class="card " x="485.0" y="114.0" width="150" height="52" rx="10"/><g transform="translate(497.0,126)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="535.0" y="145" direction="rtl" text-anchor="end">Mac</text></g>
 <g class=""><rect class="card " x="485.0" y="204.0" width="150" height="52" rx="10"/><g transform="translate(497.0,216)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="535.0" y="235" direction="rtl" text-anchor="end">Windows</text></g>
-<path class="e-pair" d="M219.95,140.0 L330,140.0 L330,50.0 L485.0,50.0"/>
+<path class="e-pair" d="M219.95,140.0 L264.95,140.0 L264.95,50.0 L485.0,50.0"/>
 <path class="a-pair" d="M485.0,50.0 L477.0,45.6 L477.0,54.4z"/>
 <path class="e-pair" d="M219.95,140.0 L485.0,140.0"/>
 <path class="a-pair" d="M485.0,140.0 L477.0,135.6 L477.0,144.4z"/>
-<path class="e-pair" d="M219.95,140.0 L330,140.0 L330,230.0 L485.0,230.0"/>
+<path class="e-pair" d="M219.95,140.0 L264.95,140.0 L264.95,230.0 L485.0,230.0"/>
 <path class="a-pair" d="M485.0,230.0 L477.0,225.6 L477.0,234.4z"/>
 <path class="e-home" d="M560.0,76.0 L560.0,114.0"/>
 <path class="a-home" d="M560.0,114.0 L564.4,106.0 L555.6,106.0z"/>
@@ -61,12 +61,12 @@
 <path class="a-home" d="M635.0,230 L643.0,234.4 L643.0,225.6z"/>
 <path class="a-home" d="M635.0,50 L643.0,54.4 L643.0,45.6z"/>
 <text class="note" x="360" y="288" text-anchor="middle" direction="rtl">כל מכשיר מסתנכרן ישירות עם כל מכשיר אחר, ברשת הביתית שלך.</text>
-<rect class="lbl-bg" x="323.8" y="39.0" width="152.5" height="22" rx="11.0"/>
-<text class="lbl pair" x="400" y="54.0" text-anchor="middle" direction="rtl">מוסיף באמצעות קוד QR</text>
-<rect class="lbl-bg" x="323.8" y="129.0" width="152.5" height="22" rx="11.0"/>
-<text class="lbl pair" x="400" y="144.0" text-anchor="middle" direction="rtl">מוסיף באמצעות קוד QR</text>
-<rect class="lbl-bg" x="323.8" y="219.0" width="152.5" height="22" rx="11.0"/>
-<text class="lbl pair" x="400" y="234.0" text-anchor="middle" direction="rtl">מוסיף באמצעות קוד QR</text>
+<rect class="lbl-bg" x="298.7" y="39.0" width="152.5" height="22" rx="11.0"/>
+<text class="lbl pair" x="374.975" y="54.0" text-anchor="middle" direction="rtl">מוסיף באמצעות קוד QR</text>
+<rect class="lbl-bg" x="298.7" y="129.0" width="152.5" height="22" rx="11.0"/>
+<text class="lbl pair" x="374.975" y="144.0" text-anchor="middle" direction="rtl">מוסיף באמצעות קוד QR</text>
+<rect class="lbl-bg" x="298.7" y="219.0" width="152.5" height="22" rx="11.0"/>
+<text class="lbl pair" x="374.975" y="234.0" text-anchor="middle" direction="rtl">מוסיף באמצעות קוד QR</text>
 <rect class="lbl-bg" x="637.7" y="129.0" width="78.3" height="22" rx="11.0"/>
 <text class="lbl home" x="676.85" y="144.0" text-anchor="middle" direction="rtl">לוח העתקה</text>
 </svg>

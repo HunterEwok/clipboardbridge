@@ -207,12 +207,12 @@ def draw():
     cs = []
     for i, (k, t) in enumerate([('laptop', 'Linux'), ('laptop', 'Mac'), ('desktop', 'Windows')]):
         cs.append(d.card(560, 50 + i*90, k, t, w=150))
+    bx = right(p)[0] + 45  # the branch stands close to the root
+    lx = (bx + left(cs[0])[0]) / 2
     for i, c in enumerate(cs):
         x0, y0 = right(p); x1, y1 = left(c)
-        d.edge([(x0, y0), (330, y0), (330, y1), (x1, y1)] if y1 != y0 else [(x0, y0), (x1, y1)], 'pair')
-    d.labels.append(((400, 50), 'adds by QR code', 'pair'))
-    d.labels.append(((400, 140), 'adds by QR code', 'pair'))
-    d.labels.append(((400, 230), 'adds by QR code', 'pair'))
+        d.edge([(x0, y0), (bx, y0), (bx, y1), (x1, y1)] if y1 != y0 else [(x0, y0), (x1, y1)], 'pair')
+        d.labels.append(((lx, y1), 'adds by QR code', 'pair'))
     for a, b in [(cs[0], cs[1]), (cs[1], cs[2])]:
         d.edge([bottom(a), top(b)], 'home', start=True)
     d.edge([(right(cs[0])[0], 50), (680, 50), (680, 230), (right(cs[2])[0], 230)], 'home', start=True, label='clipboard', at=(680, 140))
@@ -243,36 +243,48 @@ def draw():
     # 3. Away: the hub.
     d = D(800, 300, "Away from home, devices reach the hub through the group's WireGuard tunnel")
     d.zone(10, 10, 210, 250, 'Away')
-    d.zone(400, 10, 390, 250, 'Home network')
+    d.zone(370, 10, 420, 250, 'Home network')
     lp = d.card(115, 90, 'laptop', 'Laptop', w=170)
     ph = d.card(115, 190, 'phone', 'Phone', w=170)
-    hub = d.card(510, 140, 'desktop', 'Hub', 'an admin computer', w=180, cls='key', badge='HUB')
-    dk = d.card(695, 90, 'desktop', 'Desktop', w=150)
-    pi = d.card(695, 190, 'board', 'Raspberry Pi', w=150)
-    d.edge([right(lp), (300, 90), (300, 130), left(hub)[:1] + (130,)], 'tunnel')
-    d.edge([right(ph), (300, 190), (300, 150), (left(hub)[0], 150)], 'tunnel')
-    d.labels.append(((310, 140), "WireGuard tunnel", 'tunnel'))
-    d.edge([(right(hub)[0], 130), (610, 130), (610, 90), left(dk)], 'home', start=True)
-    d.edge([(right(hub)[0], 150), (610, 150), (610, 190), left(pi)], 'home', start=True)
+    hub = d.card(480, 140, 'desktop', 'Hub', 'an admin computer', w=180, cls='key', badge='HUB')
+    dk = d.card(705, 90, 'desktop', 'Desktop', w=150)
+    pi = d.card(705, 190, 'board', 'Raspberry Pi', w=150)
+    d.edge([right(lp), (290, 90), (290, 130), left(hub)[:1] + (130,)], 'tunnel')
+    d.edge([right(ph), (290, 190), (290, 150), (left(hub)[0], 150)], 'tunnel')
+    d.labels.append(((300, 140), "WireGuard tunnel", 'tunnel'))
+    tx = (right(hub)[0] + left(dk)[0]) / 2  # one trunk from the hub to its neighbours
+    d.edge([right(hub), (tx, 140)], 'home', end=False, start=True)
+    d.edge([(tx, 90), (tx, 190)], 'home', end=False)
+    d.edge([(tx, 90), left(dk)], 'home')
+    d.edge([(tx, 190), left(pi)], 'home')
     d.note(400, 288, 'The router forwards UDP port 8764 to the hub. The hub reads the clipboard: it is your own computer.')
     d.save('hub')
 
     # 4. A forwarder.
-    d = D(900, 300, "When the internet cannot reach the hub, it registers with a forwarder")
+    fw_w = D.cardw('Forwarder', 'reads nothing', 170)
+    fwr = 380 + fw_w / 2
+    cw = max(D.cardw('Hub', 'an admin computer', 180), D.cardw('Desktop', None, 180))
+    vx = fwr + tw(tr('hub dials out')) + 16 + 24  # the elbow of the hub's line, past its label
+    zlabel = "Home, behind the provider's NAT"
+    zw = max(cw + 60, tw(tr(zlabel)) * 1.2 + 32)
+    zx = max(560, vx + 25)
+    W = max(900, round(zx + zw + 10))
+    d = D(W, 300, "When the internet cannot reach the hub, it registers with a forwarder")
     d.zone(10, 10, 210, 250, 'Away')
-    d.zone(560, 10, 330, 250, 'Home, behind the provider\'s NAT')
+    d.zone(zx, 10, W - 10 - zx, 250, zlabel)
+    hx = zx + (W - 10 - zx) / 2
     lp = d.card(115, 90, 'laptop', 'Laptop', w=170)
     ph = d.card(115, 190, 'phone', 'Phone', w=170)
     fw = d.card(380, 140, 'cloud', 'Forwarder', 'reads nothing', w=170, cls='srv')
-    hub = d.card(690, 100, 'desktop', 'Hub', 'an admin computer', w=180, cls='key', badge='HUB')
-    dk = d.card(690, 210, 'desktop', 'Desktop', w=180)
+    hub = d.card(hx, 100, 'desktop', 'Hub', 'an admin computer', w=cw, cls='key', badge='HUB')
+    dk = d.card(hx, 210, 'desktop', 'Desktop', w=cw)
     d.edge([right(lp), (250, 90), (250, 130), (left(fw)[0], 130)], 'tunnel')
     d.edge([right(ph), (250, 190), (250, 150), (left(fw)[0], 150)], 'tunnel')
     d.labels.append(((250, 140), 'tunnel', 'tunnel'))
-    d.edge([right(fw), (530, 140), (530, 100), left(hub)], 'tunnel', start=True)
-    d.labels.append(((530, 140), 'hub dials out', 'tunnel'))
-    d.edge([bottom(hub), top(dk)], 'home', start=True, label='home', at=(690, 155))
-    d.note(450, 288, 'The forwarder holds no keys: yours on any server, or the project\'s at cbb.tools.')
+    d.edge([right(fw), (vx, 140), (vx, 100), left(hub)], 'tunnel', start=True)
+    d.labels.append((((fwr + vx) / 2, 140), 'hub dials out', 'tunnel'))
+    d.edge([bottom(hub), top(dk)], 'home', start=True, label='home', at=(hx, 155))
+    d.note(W / 2, 288, 'The forwarder holds no keys: yours on any server, or the project\'s at cbb.tools.')
     d.save('forwarder')
 
     # 5. A blind relay.
@@ -292,11 +304,13 @@ def draw():
     mc = d.card(570, 50, 'laptop', 'Mac', w=170)
     wn = d.card(570, 140, 'desktop', 'Windows', w=170)
     ip = d.card(570, 230, 'phone', 'iPhone', 'with the shortcut', w=170)
-    d.edge([right(rt), left(wn)], 'pair', label='six-digit code', at=(405, 140))
-    d.edge([(330, 140), (330, 50), left(mc)], 'pair')
-    d.labels.append(((405, 50), 'six-digit code', 'pair'))
-    d.edge([(330, 140), (330, 230), left(ip)], 'pair')
-    d.labels.append(((405, 230), 'profile and shortcut', 'pair'))
+    bx = right(rt)[0] + 45  # the branch stands close to the root
+    lx = (bx + left(wn)[0]) / 2
+    d.edge([right(rt), left(wn)], 'pair', label='six-digit code', at=(lx, 140))
+    d.edge([(bx, 140), (bx, 50), left(mc)], 'pair')
+    d.labels.append(((lx, 50), 'six-digit code', 'pair'))
+    d.edge([(bx, 140), (bx, 230), left(ip)], 'pair')
+    d.labels.append(((lx, 230), 'profile and shortcut', 'pair'))
     d.note(360, 290, 'Then every device syncs with every other one, as in a group made on a phone.')
     d.save('without-app')
 

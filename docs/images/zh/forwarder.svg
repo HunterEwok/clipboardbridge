@@ -43,28 +43,28 @@
 </style>
 <rect class="zone" x="10" y="10" width="210" height="250" rx="14"/>
 <text class="zone-t" x="26" y="34">离家</text>
-<rect class="zone" x="560" y="10" width="330" height="250" rx="14"/>
-<text class="zone-t" x="576" y="34">在家，位于运营商 NAT 之后</text>
+<rect class="zone" x="605.0" y="10" width="285.0" height="250" rx="14"/>
+<text class="zone-t" x="621.0" y="34">在家，位于运营商 NAT 之后</text>
 <g class=""><rect class="card " x="30.0" y="64.0" width="170" height="52" rx="10"/><g transform="translate(42.0,76)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="80.0" y="95">笔记本</text></g>
 <g class=""><rect class="card " x="30.0" y="164.0" width="170" height="52" rx="10"/><g transform="translate(42.0,176)" class="ic"><rect x="8" y="2" width="12" height="24" rx="2.5"/><line x1="12.5" y1="22.5" x2="15.5" y2="22.5"/></g><text class="t" x="80.0" y="195">手机</text></g>
 <g class="srv"><rect class="card srv" x="295.0" y="108.0" width="170" height="64" rx="10"/><g transform="translate(307.0,126)" class="ic"><path d="M8 21h13a5 5 0 0 0 0 -10a7 7 0 0 0 -13.5 1.5A4.3 4.3 0 0 0 8 21z"/></g><text class="t" x="345.0" y="136">转发器</text><text class="s" x="345.0" y="154">不读取任何内容</text></g>
-<g class="key"><rect class="card key" x="600.0" y="68.0" width="180" height="64" rx="10"/><g transform="translate(612.0,86)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="650.0" y="96">中枢</text><text class="s" x="650.0" y="114">管理员电脑</text><rect class="badge" x="751.2" y="59.0" width="20.8" height="18" rx="9"/><text class="badge-t" x="761.6" y="72.0" text-anchor="middle">中枢</text></g>
-<g class=""><rect class="card " x="600.0" y="184.0" width="180" height="52" rx="10"/><g transform="translate(612.0,196)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="650.0" y="215">台式机</text></g>
+<g class="key"><rect class="card key" x="657.5" y="68.0" width="180" height="64" rx="10"/><g transform="translate(669.5,86)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="707.5" y="96">中枢</text><text class="s" x="707.5" y="114">管理员电脑</text><rect class="badge" x="808.7" y="59.0" width="20.8" height="18" rx="9"/><text class="badge-t" x="819.1" y="72.0" text-anchor="middle">中枢</text></g>
+<g class=""><rect class="card " x="657.5" y="184.0" width="180" height="52" rx="10"/><g transform="translate(669.5,196)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="707.5" y="215">台式机</text></g>
 <path class="e-tunnel" d="M200.0,90.0 L250,90 L250,130 L295.0,130"/>
 <path class="a-tunnel" d="M295.0,130 L285.0,124.5 L285.0,135.5z"/>
 <path class="e-tunnel" d="M200.0,190.0 L250,190 L250,150 L295.0,150"/>
 <path class="a-tunnel" d="M295.0,150 L285.0,144.5 L285.0,155.5z"/>
-<path class="e-tunnel" d="M465.0,140.0 L530,140 L530,100 L600.0,100.0"/>
-<path class="a-tunnel" d="M600.0,100.0 L590.0,94.5 L590.0,105.5z"/>
+<path class="e-tunnel" d="M465.0,140.0 L580.0,140 L580.0,100 L657.5,100.0"/>
+<path class="a-tunnel" d="M657.5,100.0 L647.5,94.5 L647.5,105.5z"/>
 <path class="a-tunnel" d="M465.0,140.0 L475.0,145.5 L475.0,134.5z"/>
-<path class="e-home" d="M690.0,132.0 L690.0,184.0"/>
-<path class="a-home" d="M690.0,184.0 L694.4,176.0 L685.6,176.0z"/>
-<path class="a-home" d="M690.0,132.0 L685.6,140.0 L694.4,140.0z"/>
-<text class="note" x="450" y="288" text-anchor="middle">转发器不持有任何密钥：可以是你自己服务器上的，也可以是项目在 cbb.tools 上的。</text>
+<path class="e-home" d="M747.5,132.0 L747.5,184.0"/>
+<path class="a-home" d="M747.5,184.0 L751.9,176.0 L743.1,176.0z"/>
+<path class="a-home" d="M747.5,132.0 L743.1,140.0 L751.9,140.0z"/>
+<text class="note" x="450.0" y="288" text-anchor="middle">转发器不持有任何密钥：可以是你自己服务器上的，也可以是项目在 cbb.tools 上的。</text>
 <rect class="lbl-bg" x="229.5" y="129.0" width="41.0" height="22" rx="11.0"/>
 <text class="lbl tunnel" x="250" y="144.0" text-anchor="middle">隧道</text>
-<rect class="lbl-bg" x="484.5" y="129.0" width="91.0" height="22" rx="11.0"/>
-<text class="lbl tunnel" x="530" y="144.0" text-anchor="middle">中枢主动连出</text>
-<rect class="lbl-bg" x="669.5" y="144.0" width="41.0" height="22" rx="11.0"/>
-<text class="lbl home" x="690" y="159.0" text-anchor="middle">在家</text>
+<rect class="lbl-bg" x="477.0" y="129.0" width="91.0" height="22" rx="11.0"/>
+<text class="lbl tunnel" x="522.5" y="144.0" text-anchor="middle">中枢主动连出</text>
+<rect class="lbl-bg" x="727.0" y="144.0" width="41.0" height="22" rx="11.0"/>
+<text class="lbl home" x="747.5" y="159.0" text-anchor="middle">在家</text>
 </svg>
