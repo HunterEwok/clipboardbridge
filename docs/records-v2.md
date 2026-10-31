@@ -223,8 +223,9 @@ decided the same way on every member, in any order, as follows.
 
 A record a **attacks** a record b when b's signer is an admin key, a is a `revoke` or a
 `freeze` whose `keys` name that admin key, a's signer may sign a (the table above), and a's
-`seen` entry for b's signer is below b's `seq`: a cuts b off. A `thaw` attacks each `freeze`
-it names. Records of a root's own key are never attacked; records of a root on the path
+`seen` entry for b's signer is below b's `seq`: a cuts b off. A `claim` is the exception: an
+admin's removal does not attack it but disputes it ("Handing the group over"); only a root's
+removal or freeze cuts a claim off. A `thaw` attacks each `freeze` it names. Records of a root's own key are never attacked; records of a root on the path
 count up to that root's cut, and the current root's all count.
 
 Every admin record is then **in** (it counts), **out** (it counts for nothing) or
@@ -275,24 +276,39 @@ and `seen` with what it held, the current root's records among them. A claim:
   or a `revoke` of the claimant's admin key, at any time, before or after the delay: the
   root always wins. When that happens after the claim took effect, the new root and every
   record under it stop counting, and the group is the old root's again;
-- **takes effect** when the delay has passed on that member, it is not cancelled, no other
-  claim under the same root is held that is not cancelled, and the claimant is not removed,
-  frozen or in a conflict. Its new root becomes the current root and starts its own `seq` at
-  1; the old root's records up to the claim's `seen` entry for the old root keep counting,
-  and its later ones count only to cancel the claim, as above.
+- is **void** when its new root is not a valid root CA or is already on the path, when it
+  does not count (its author lacks `takeover`, a root's removal or freeze cuts it off, it is
+  on a dead branch), when its author had seen a counting admin `revoke` or `freeze` of its
+  own admin key or member key (the claimant was removed first), or when its author had seen
+  another claim under the same root that is not void or cancelled (one claim at a time: a
+  claim made while another waits, or after it took effect, counts for nothing);
+- is **disputed** when a counting admin `revoke` or `freeze` names the claimant's admin key
+  or member key, the claimant had not seen it, and its author had seen no record of the
+  claimed root. An admin who objects to a claim removes the claimant, and the group stops
+  fully until the current root decides: a `resolve` of the claim cancels it and the removal
+  stands, a `resolve` of the removal lets the claim go on. A removal whose author had seen
+  a record of the claimed root was written after the handover; it neither disputes nor
+  holds back the claim and counts under the new root, where that root's own removals cut it
+  as usual;
+- **takes effect** when the delay has passed on that member and it is none of the above,
+  it is the only such claim under the current root, and no root's freeze holds its
+  claimant. Its new root becomes the current root and starts its own `seq` at 1; the old
+  root's records up to the claim's `seen` entry for the old root keep counting, and its
+  later ones count only to cancel the claim, as above.
 
-**Two claims** under one root that are neither cancelled stop the group fully on every
-member that holds both, at once and whatever their order or delay: no sync, no messages, no
-admissions. Only the current root ends it, by cancelling one or both; a group whose root is
-lost is set up again.
+**Two claims** under one root that are neither void nor cancelled stop the group fully on
+every member that holds both, at once and whatever their order or delay: no sync, no
+messages, no admissions. Only the current root ends it, by cancelling one or both; a group
+whose root is lost is set up again. A disputed claim stops the group the same way.
 
 After a claim takes effect the new root signs `device` records for the admins it keeps
 (their admin keys stay, so their `seq` goes on) and issues them admin CAs under itself, as
 version 1 did; an admin CA from the old root still signs while the old root is on the path.
 
 So a removed or stolen admin phone cannot take the group: its claim waits, the root cancels
-it, a second claim stops the group instead of choosing one, and once a new root removes it,
-nothing it signs counts.
+it, a second claim or a removal of the claimant stops the group instead of choosing, and
+once a new root removes it, nothing it signs counts. What it can do without the root, by
+pretending it had not seen a record, is stop the group: never take it.
 
 ### Certificates
 
@@ -313,7 +329,7 @@ says how far:
 
 | Cause | `stop` | Effect |
 |-------|--------|--------|
-| two claims under one root; a conflict between admins; a root that signed two histories | `full` | every member stops sync, events, media, commands and admissions with every peer; it keeps exchanging records and credentials only, so the root's decision reaches it |
+| two claims under one root; a disputed claim; a conflict between admins; a root that signed two histories | `full` | every member stops sync, events, media, commands and admissions with every peer; it keeps exchanging records and credentials only, so the root's decision reaches it |
 | an admin that signed two histories | `secrets` | no member sends a secret event (`kind` `secret`) or a `secret` paste to anyone; the devices that admin alone admitted get nothing |
 | a pending claim | none | the claimant's devices get no secrets |
 
@@ -333,7 +349,7 @@ returns the state as one canonical JSON object:
 | `root_device` | string | the root's own device ID; absent when there is none |
 | `devices` | array of objects | sorted by `device`: `device`, `name`, `role`, `os`, `keys` (sorted member key hashes that stand), and, for an admin, `admin`, `powers`, `commands`, `frozen` (true when frozen) |
 | `revoked` | array of strings | sorted key hashes the records remove |
-| `claims` | array of objects | sorted by `record`: `record`, `claimant` (admin key hash), `root` (new root key hash), `state` (`pending`, `effective`, `cancelled` or `competing`), `left_ms` while pending |
+| `claims` | array of objects | sorted by `record`: `record`, `claimant` (admin key hash), `root` (new root key hash), `state` (`pending`, `effective`, `cancelled`, `void`, `competing` or `disputed`), `left_ms` while pending |
 | `conflicts` | array of objects | sorted by the first record ID: `kind` (`admins`, `claims`, `two_histories`), `records` (sorted record IDs), `signers` (sorted key hashes) |
 | `stop` | string | `none`, `secrets` or `full` |
 | `no_secrets_to` | array of strings | sorted device IDs that get no secrets |
@@ -350,7 +366,8 @@ beyond) and check the same bytes.
   least the cases of the audit findings of version 1 (each with every order): an admin that
   removes another after a claim took effect (X1 and X2 of the second verification), two admin
   phones that remove each other crossed and in order, a chain of three claims, a claim
-  cancelled before and after its delay, two claims, two histories of an admin and of the root,
+  cancelled before and after its delay, two claims, a claim disputed by a removal of its
+  claimant and resolved either way, a claim after its author's removal, two histories of an admin and of the root,
   a removed admin's later `device` and `claim` records, freezes that cross, a `resolve` of each
   kind.
 - `testdata/interop/strict-generated.json` and `strict-files.json` written again from the
