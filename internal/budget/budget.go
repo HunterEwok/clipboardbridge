@@ -3,12 +3,13 @@
 
 // Package budget is the accounting of the open relay and the forwarder: what
 // state and work strangers may make them hold, charged to whoever pays for
-// it (docs/relay-budget.md). A source address pays at three levels, the
-// address itself, its network (an IPv4 /24 or an IPv6 /64) and its wide
-// network (an IPv4 /16 or an IPv6 /48), and all sources together at a
-// fourth; each level has its own cap, so one host, one site or one provider
-// can take only its share of what the server has. What is full refuses the
-// new: nothing a source holds is taken from it to make room for another.
+// it (docs/relay-budget.md). A source address pays at each of its levels,
+// the address itself, its network (an IPv4 /24 or an IPv6 /64), its wide
+// network (an IPv4 /16 or an IPv6 /48) and, for IPv6, its provider (a /32),
+// and all sources together at one more; each level has its own cap, so one
+// host, one site or one provider can take only its share of what the server
+// has. What is full refuses the new: nothing a source holds is taken from it
+// to make room for another.
 package budget
 
 import (
@@ -19,14 +20,15 @@ import (
 	"time"
 )
 
-// Level is who pays: an address, its network, its wide network, or every
-// source together.
+// Level is who pays: an address, its network, its wide network, its
+// provider, or every source together.
 type Level int
 
 const (
 	Address Level = iota
 	Network
 	Wide
+	Provider
 	All
 )
 
@@ -38,6 +40,8 @@ func (l Level) String() string {
 		return "network"
 	case Wide:
 		return "wide network"
+	case Provider:
+		return "provider"
 	case All:
 		return "all sources"
 	}
@@ -45,15 +49,19 @@ func (l Level) String() string {
 }
 
 // The prefix lengths of each level, for IPv4 and for IPv6. A home usually
-// gets one IPv4 address of a /24 or a whole IPv6 /64, and a site or a
-// provider's customer an IPv6 /48; an IPv4 /16 is the closest IPv4 has.
+// gets one IPv4 address of a /24 or a whole IPv6 /64, a site or a
+// provider's customer an IPv6 /48, and a provider an IPv6 /32, from which
+// it hands out tens of thousands of /48s; an IPv4 /16 is the closest IPv4
+// has to either, and it is its own provider: IPv4 addresses are too scarce
+// for one source to hold many /16s.
 var (
-	bits4 = [3]int{32, 24, 16}
-	bits6 = [3]int{128, 64, 48}
+	bits4 = [4]int{32, 24, 16, 16}
+	bits6 = [4]int{128, 64, 48, 32}
 )
 
-// Of returns the prefix that pays for address a at level l (Address, Network
-// or Wide). An address that is not valid pays as the zero prefix, with every
+// Of returns the prefix that pays for address a at level l (Address,
+// Network, Wide or Provider); the provider of an IPv4 address is its wide
+// network. An address that is not valid pays as the zero prefix, with every
 // other one that is not.
 func Of(a netip.Addr, l Level) netip.Prefix {
 	a = a.Unmap()
@@ -65,24 +73,28 @@ func Of(a netip.Addr, l Level) netip.Prefix {
 	return p
 }
 
-// Payers returns the prefixes that pay for a: its address, network and wide
-// network, in that order. An address that is not valid has one payer, the
-// zero prefix, at every level.
+// Payers returns the prefixes that pay for a, the one of each level in
+// order: its address, network and wide network, and for an IPv6 address
+// its provider, which for IPv4 is the wide network again and pays once. An
+// address that is not valid has one payer, the zero prefix, at every level.
 func Payers(a netip.Addr) []netip.Prefix {
 	if !a.IsValid() {
 		return []netip.Prefix{{}}
 	}
-	return []netip.Prefix{Of(a, Address), Of(a, Network), Of(a, Wide)}
+	if a.Unmap().Is4() {
+		return []netip.Prefix{Of(a, Address), Of(a, Network), Of(a, Wide)}
+	}
+	return []netip.Prefix{Of(a, Address), Of(a, Network), Of(a, Wide), Of(a, Provider)}
 }
 
 // Caps bound what one payer of each level may hold, and All what all hold
 // together; zero leaves a level without a cap.
 type Caps struct {
-	Address, Network, Wide, All int
+	Address, Network, Wide, Provider, All int
 }
 
 func (c Caps) of(l Level) int {
-	return [4]int{c.Address, c.Network, c.Wide, c.All}[l]
+	return [5]int{c.Address, c.Network, c.Wide, c.Provider, c.All}[l]
 }
 
 // Count holds what each source holds now: registrations, slots or bytes.
@@ -161,10 +173,10 @@ type Rate struct {
 }
 
 // Rates is what each source may still start: work that costs the server
-// time, paid for in units that each payer earns by the second, at the three
+// time, paid for in units that each payer earns by the second, at the
 // levels of a source. It is not safe for concurrent use.
 type Rates struct {
-	rates   [3]Rate
+	rates   [4]Rate
 	buckets map[netip.Prefix]*bucket
 	sweepAt int
 }
@@ -177,9 +189,10 @@ type bucket struct {
 // minSweep is how many payers Rates holds before it looks for ones to forget.
 const minSweep = 4096
 
-// NewRates returns the rates of an address, a network and a wide network.
-func NewRates(address, network, wide Rate) *Rates {
-	return &Rates{rates: [3]Rate{address, network, wide}, buckets: map[netip.Prefix]*bucket{}, sweepAt: minSweep}
+// NewRates returns the rates of an address, a network, a wide network and
+// a provider.
+func NewRates(address, network, wide, provider Rate) *Rates {
+	return &Rates{rates: [4]Rate{address, network, wide, provider}, buckets: map[netip.Prefix]*bucket{}, sweepAt: minSweep}
 }
 
 func (b *bucket) refill(now time.Time, r Rate) {
@@ -236,7 +249,8 @@ func (r *Rates) sweep(now time.Time) {
 // Payers returns how many payers Rates holds now.
 func (r *Rates) Payers() int { return len(r.buckets) }
 
-// levelOf tells the level of a payer by its prefix length.
+// levelOf tells the level of a payer by its prefix length; an IPv4 /16 is
+// a wide network, which is its own provider.
 func levelOf(p netip.Prefix) Level {
 	bits := bits6
 	if p.Addr().Is4() {
@@ -271,8 +285,8 @@ func (c *Count) String() string {
 	return s.String()
 }
 
-// Left returns the units the payer of a at level l (Address, Network or
-// Wide) has saved as of its last charge: a full burst for one that holds
+// Left returns the units the payer of a at level l (Address, Network, Wide
+// or Provider) has saved as of its last charge: a full burst for one that holds
 // none.
 func (r *Rates) Left(a netip.Addr, l Level) float64 {
 	if b := r.buckets[Of(a, l)]; b != nil {

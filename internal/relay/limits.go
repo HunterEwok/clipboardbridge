@@ -19,23 +19,26 @@ import (
 // A zero field takes its value from DefaultOpenLimits; a relay for the
 // user's own groups has no limits but the per-group ones.
 type Limits struct {
-	Groups     int     // groups on the relay at once
-	PerAddress int     // registrations from one IP address
-	PerNetwork int     // registrations from one IPv4 /24 or IPv6 /64
-	PerWide    int     // registrations from one IPv4 /16 or IPv6 /48
-	ByteRate   float64 // bytes a second the relay copies for one group, both ways together
+	Groups     int // groups on the relay at once
+	PerAddress int // registrations from one IP address
+	PerNetwork int // registrations from one IPv4 /24 or IPv6 /64
+	PerWide    int // registrations from one IPv4 /16 or IPv6 /48
+	// PerProvider bounds the registrations from one IPv6 /32, which holds
+	// tens of thousands of /48s; an IPv4 /16 is its own provider.
+	PerProvider int
+	ByteRate    float64 // bytes a second the relay copies for one group, both ways together
 
 	// GroupRecordBytes bounds the bytes of authority records the relay keeps
 	// for one group, and RecordBytes those it keeps for all groups. The
 	// records a source brings are charged to it too: a network may bring
-	// 4 groups' worth, a wide network 16.
+	// 4 groups' worth, a wide network 16 and an IPv6 provider 64.
 	GroupRecordBytes int
 	RecordBytes      int
 }
 
 // DefaultOpenLimits are an open relay's limits: enough for clipboards,
 // which are small, and for a few thousand groups on a small server.
-var DefaultOpenLimits = Limits{Groups: 4096, PerAddress: 16, PerNetwork: 64, PerWide: 256, ByteRate: 1 << 20,
+var DefaultOpenLimits = Limits{Groups: 4096, PerAddress: 16, PerNetwork: 64, PerWide: 256, PerProvider: 1024, ByteRate: 1 << 20,
 	GroupRecordBytes: 256 << 10, RecordBytes: 128 << 20}
 
 func (l Limits) withDefaults() Limits {
@@ -52,6 +55,9 @@ func (l Limits) withDefaults() Limits {
 	if l.PerWide <= 0 {
 		l.PerWide = d.PerWide
 	}
+	if l.PerProvider <= 0 {
+		l.PerProvider = d.PerProvider
+	}
 	if l.ByteRate <= 0 {
 		l.ByteRate = d.ByteRate
 	}
@@ -67,13 +73,13 @@ func (l Limits) withDefaults() Limits {
 // registrationCaps are the caps of the registrations an open relay holds,
 // by the source they came from.
 func (l Limits) registrationCaps() budget.Caps {
-	return budget.Caps{Address: l.PerAddress, Network: l.PerNetwork, Wide: l.PerWide}
+	return budget.Caps{Address: l.PerAddress, Network: l.PerNetwork, Wide: l.PerWide, Provider: l.PerProvider}
 }
 
 // recordCaps are the caps of the records an open relay keeps, by the
 // source that brought them and in all.
 func (l Limits) recordCaps() budget.Caps {
-	return budget.Caps{Network: 4 * l.GroupRecordBytes, Wide: 16 * l.GroupRecordBytes, All: l.RecordBytes}
+	return budget.Caps{Network: 4 * l.GroupRecordBytes, Wide: 16 * l.GroupRecordBytes, Provider: 64 * l.GroupRecordBytes, All: l.RecordBytes}
 }
 
 // addrOf returns the IP address of a connection's remote end.
@@ -88,25 +94,28 @@ func addrOf(c net.Conn) netip.Addr {
 // setup costs setupCost, each record the relay must verify one more. An
 // address earns addressRate units a second and may save up to addressBurst,
 // a network networkRate and networkBurst, a wide network wideRate and
-// wideBurst; the burst lets one registration of a group with a full claim
+// wideBurst, an IPv6 provider providerRate and providerBurst; the burst lets one registration of a group with a full claim
 // (1024 records) through, and the rates keep the checks of a source that
 // registers over and over to a small share of a processor (a record's check
 // takes about 45 microseconds).
 const (
-	setupCost    = 4
-	addressRate  = 64.0
-	addressBurst = 1536.0
-	networkRate  = 256.0
-	networkBurst = 4096.0
-	wideRate     = 1024.0
-	wideBurst    = 8192.0
+	setupCost     = 4
+	addressRate   = 64.0
+	addressBurst  = 1536.0
+	networkRate   = 256.0
+	networkBurst  = 4096.0
+	wideRate      = 1024.0
+	wideBurst     = 8192.0
+	providerRate  = 2048.0
+	providerBurst = 16384.0
 )
 
-// newAllowance returns what each source address, network and wide network
-// may still start (docs/relay-budget.md).
+// newAllowance returns what each source address, network, wide network and
+// provider may still start (docs/relay-budget.md).
 func newAllowance() *budget.Rates {
 	return budget.NewRates(budget.Rate{PerSecond: addressRate, Burst: addressBurst},
-		budget.Rate{PerSecond: networkRate, Burst: networkBurst}, budget.Rate{PerSecond: wideRate, Burst: wideBurst})
+		budget.Rate{PerSecond: networkRate, Burst: networkBurst}, budget.Rate{PerSecond: wideRate, Burst: wideBurst},
+		budget.Rate{PerSecond: providerRate, Burst: providerBurst})
 }
 
 // rate is a token bucket that holds up to two seconds of its rate; take
