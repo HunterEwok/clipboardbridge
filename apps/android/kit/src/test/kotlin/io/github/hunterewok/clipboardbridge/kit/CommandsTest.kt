@@ -225,7 +225,7 @@ class CommandsTest {
         assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
         val now = v.getValue("now_ms").jsonPrimitive.long
         val commands = v.getValue("commands").jsonArray.map { it.jsonObject }
-        assertEquals(14, commands.size)
+        assertEquals(15, commands.size)
         for (c in commands) {
             val name = c.str("name")
             val got = runCatching { Commands.verify(Member.Record.fromJson(c.getValue("command").jsonObject), set, v.str("self"), now) }
@@ -264,5 +264,20 @@ class CommandsTest {
         assertFailsWith<IllegalArgumentException> { g.actionCommand(pc, "Reboot now", rootKey, now) }
         assertTrue(Commands.validActionName("cancel-shutdown"))
         for (bad in listOf("", "-x", "1x", "X", "a".repeat(33), "a b")) assertTrue(!Commands.validActionName(bad), bad)
+    }
+
+    /** The reason of a result is shown to a person: short, without control characters. */
+    @Test
+    fun cleanReason() {
+        assertEquals("the screen is locked", Member.cleanReason("the screen is locked"))
+        assertEquals("", Member.cleanReason(""))
+        assertEquals("a [2Jb ]52;c;ZXZpbA== c", Member.cleanReason("a\u001b[2Jb\u001b]52;c;ZXZpbA==\u0007c"))
+        assertEquals("a b c ", Member.cleanReason("a\nb\tc\r"))
+        assertEquals("a b", Member.cleanReason("a\u009bb"))
+        assertEquals("écran verrouillé", Member.cleanReason("écran verrouillé"))
+        assertEquals(Member.MAX_REASON, Member.cleanReason("a".repeat(1000)).toByteArray().size)
+        // A character that would cross the limit goes whole.
+        assertEquals("a".repeat(Member.MAX_REASON - 1), Member.cleanReason("a".repeat(Member.MAX_REASON - 1) + "é"))
+        assertTrue(Member.cleanReason("é".repeat(300)).toByteArray().size <= Member.MAX_REASON)
     }
 }

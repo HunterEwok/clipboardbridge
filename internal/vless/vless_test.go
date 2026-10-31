@@ -4,6 +4,7 @@
 package vless
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"net"
@@ -126,5 +127,79 @@ func TestProbe(t *testing.T) {
 	defer c.Close()
 	if names := c.ConnectionState().PeerCertificates[0].DNSNames; len(names) != 1 || names[0] != vlesstest.Site {
 		t.Fatalf("a probe got the certificate for %v", names)
+	}
+}
+
+// TestUserOfEachClient checks that the forwarder's side tells the clients
+// of one VLESS user from those of another by the loopback port their
+// packets come from.
+func TestUserOfEachClient(t *testing.T) {
+	pc, err := net.ListenUDP("udp", net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pc.Close() })
+	var key [32]byte
+	rand.Read(key[:])
+	s, err := Listen(ServerConfig{Listen: "127.0.0.1:0", Dest: vlesstest.Decoy(t), ServerName: vlesstest.Site, Key: key, To: pc.LocalAddr().(*net.UDPAddr).AddrPort()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	// The forwarder's port answers each packet with the user it came from.
+	go func() {
+		b := make([]byte, 2048)
+		for {
+			_, from, err := pc.ReadFromUDPAddrPort(b)
+			if err != nil {
+				return
+			}
+			u, _ := s.User(from)
+			pc.WriteToUDPAddrPort([]byte(u), from)
+		}
+	}()
+	ask := func(id string) string {
+		c, err := Dial(link(t, s, key, id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		conn, err := net.DialUDP("udp", nil, net.UDPAddrFromAddrPort(c.Addr()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		b := make([]byte, 64)
+		for range 10 {
+			conn.Write([]byte("who"))
+			conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+			if n, err := conn.Read(b); err == nil {
+				return string(b[:n])
+			}
+		}
+		return ""
+	}
+	// A client that comes before the server has learned the site's
+	// handshakes waits for it, longer than ask does.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := s.Ready(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := tunnel.NewVLESSID()
+	b, _ := tunnel.NewVLESSID()
+	for _, id := range []string{a, b} {
+		if err := s.AddUser(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := ask(a); got != a {
+		t.Errorf("a client of %s came as %q", a, got)
+	}
+	if got := ask(b); got != b {
+		t.Errorf("a client of %s came as %q", b, got)
+	}
+	if u, ok := s.User(netip.MustParseAddrPort("192.0.2.1:1")); ok {
+		t.Errorf("an address that is not the loopback came as %q", u)
 	}
 }

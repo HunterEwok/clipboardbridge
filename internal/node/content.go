@@ -107,11 +107,13 @@ func decodeChunk(b []byte) (chunk, error) {
 	var ch chunk
 	copy(ch.sum[:], b)
 	ch.offset = int64(binary.BigEndian.Uint64(b[sha256.Size:]))
-	n := int(binary.BigEndian.Uint32(b[sha256.Size+8:]))
-	if ch.offset < 0 || n > ChunkSize || chunkHead+n > len(b) {
+	// The length is compared as it was read: converted to int first, it goes
+	// negative on a 32-bit build and slips past both checks.
+	n := binary.BigEndian.Uint32(b[sha256.Size+8:])
+	if ch.offset < 0 || n > ChunkSize || int64(n) > int64(len(b)-chunkHead) {
 		return chunk{}, errors.New("node: a chunk's length is not valid")
 	}
-	ch.data = b[chunkHead : chunkHead+n]
+	ch.data = b[chunkHead : chunkHead+int(n)]
 	return ch, nil
 }
 

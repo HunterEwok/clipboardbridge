@@ -434,6 +434,13 @@ const (
 // Len returns the number of records.
 func (s *Records) Len() int { return len(s.byID) }
 
+// Has reports whether the set holds the record with the ID id, so that a
+// caller can tell which of a batch Add would have to verify.
+func (s *Records) Has(id [sha256.Size]byte) bool {
+	_, ok := s.byID[id]
+	return ok
+}
+
 // Add checks a record and adds it. It reports whether the record was new; a
 // record that is not valid for this group is an error. The limits are
 // checked after the signature, so that a record nobody signed never fills

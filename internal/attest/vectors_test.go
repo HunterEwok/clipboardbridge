@@ -134,6 +134,19 @@ func makeVectors(t *testing.T) vectors {
 	noDesc := makeChain(t, good, false)
 	noDesc.certs[0] = withoutDescription(t, noDesc)
 	add("no key description", noDesc, spki(t, noDesc.key), ch, [][]byte{noDesc.root}, false, nil)
+
+	// What may sign a certificate: a CA with the key usage and the path length for it.
+	sb := description{levelStrongBox, levelStrongBox, ch, true, bootVerified, false}
+	issuer := func(name string, k chain, strict bool) {
+		add(name, k, spki(t, k.key), ch, [][]byte{k.root}, strict, nil)
+	}
+	issuer("a genuine leaf signs another", makeLeafSigned(t, sb), false)
+	issuer("an issuer that is no CA", makeChainOpts(t, sb, chainOpts{attNotCA: true, attPathLen: -1}), false)
+	issuer("an issuer that may not sign", makeChainOpts(t, sb, chainOpts{attUsage: x509.KeyUsageDigitalSignature, attPathLen: -1}), false)
+	issuer("a path length that is too short", makeChainOpts(t, sb, chainOpts{middle: true, attPathLen: 0}), false)
+	issuer("a path length that fits", makeChainOpts(t, sb, chainOpts{middle: true, attPathLen: 1}), false)
+	issuer("provisioning on the leaf", makeChainOpts(t, sb, chainOpts{leafRKP: true, attPathLen: -1}), true)
+	issuer("provisioning on a CA", makeChainOpts(t, sb, chainOpts{attRKPAbove: true, attPathLen: -1}), true)
 	return v
 }
 
@@ -177,7 +190,7 @@ func TestAttestVectors(t *testing.T) {
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatal(err)
 	}
-	if len(v.GoogleRoots) != len(GoogleRoots) || len(v.Vectors) != 23 || len(v.Challenges) != 3 {
+	if len(v.GoogleRoots) != len(GoogleRoots) || len(v.Vectors) != 30 || len(v.Challenges) != 3 {
 		t.Fatalf("the file has %d roots, %d vectors, %d challenges", len(v.GoogleRoots), len(v.Vectors), len(v.Challenges))
 	}
 	for i, r := range v.GoogleRoots {

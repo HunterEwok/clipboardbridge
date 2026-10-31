@@ -135,8 +135,8 @@ func TestReleaseSpreads(t *testing.T) {
 
 // A release under a newer keys.json, which only a root signs, is newer
 // than the one held whatever its channel file's seq, so a channel file
-// signed far ahead holds the group only until the root signs keys.json
-// again.
+// signed as far ahead as a device takes holds the group only until the
+// root signs keys.json again.
 func TestReleaseUnderNewKeys(t *testing.T) {
 	signer := newReleaseSigner(t)
 	roots := signer.roots(t)
@@ -147,7 +147,7 @@ func TestReleaseUnderNewKeys(t *testing.T) {
 	pairWith(t, pi, pc)
 	waitFor(t, "pc is connected", func() bool { return len(pi.status(t).Peers) == 1 })
 
-	if _, err := pi.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.1", 1<<40))); err != nil {
+	if _, err := pi.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.1", release.MaxSeqStep))); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "pc holds 0.6.1", func() bool { return pc.status(t).Release == "0.6.1" })
@@ -157,7 +157,7 @@ func TestReleaseUnderNewKeys(t *testing.T) {
 	}
 	waitFor(t, "pc holds 0.6.2", func() bool { return pc.status(t).Release == "0.6.2" })
 	signer.keysSeq = 1
-	if _, err := pc.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.3", 1<<40+1))); err == nil {
+	if _, err := pc.do(t, control.Header{Op: control.OpRelease}, releaseJSON(t, signer.sign(t, "0.6.3", release.MaxSeqStep+1))); err == nil {
 		t.Error("pc took a release under an older keys.json")
 	}
 }

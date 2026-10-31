@@ -303,6 +303,8 @@ object Commands {
         if (b.to != self) throw Refused("the command is for another device")
         if (!records.signedByAdmin(c)) throw Refused("the command's signer is not an admin of the group")
         if (b.type !in WATCH_TYPES && records.signedByWatch(c)) throw Refused("a watch does not sign ${b.type} commands")
+        // by names the signer's device whenever the records show it.
+        records.signerDevice(c)?.let { if (it != b.by) throw Refused("a command's by is not the device of its signer") }
         if (b.expiresMS <= nowMS) throw Refused("the command expired; check the clocks of both devices")
         if (b.timeMS > nowMS + AHEAD_MS) throw Refused("the command was signed in the future; check the clocks of both devices")
         return b
@@ -368,6 +370,7 @@ object Commands {
             else -> throw Refused("unknown command type $type")
         }
         if (b.to.length != 32 || b.to.any { it !in "0123456789abcdef" }) throw Refused("the command names no valid device")
+        if (b.by.length != 32 || b.by.any { it !in "0123456789abcdef" }) throw Refused("a command's by is not a device ID")
         if (b.expiresMS <= b.timeMS || b.expiresMS - b.timeMS > LIFETIME_MS) throw Refused("the command's lifetime is not valid")
         return b
     }

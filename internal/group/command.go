@@ -232,6 +232,9 @@ func (b *CommandBody) check() error {
 	if _, err := ParseDeviceID(string(b.To)); err != nil {
 		return err
 	}
+	if _, err := ParseDeviceID(string(b.By)); err != nil {
+		return errors.New("group: a command's by is not a device ID")
+	}
 	if b.ExpiresMS <= b.TimeMS || b.ExpiresMS-b.TimeMS > CommandLifetime.Milliseconds() {
 		return errors.New("group: a command's lifetime is not valid")
 	}
@@ -241,7 +244,8 @@ func (b *CommandBody) check() error {
 // VerifyCommand checks a command for the member self at the time now: its
 // signer is an admin of the group now (a root on the path, or an admin CA
 // under one that is neither revoked nor frozen, and a watch's only for the
-// commands WatchCommand allows), it is for self in this
+// commands WatchCommand allows), its by is the signer's device when the
+// records show that device (CommandSigner), it is for self in this
 // group, it has not expired, and it was not signed in the future. The
 // caller keeps the replay cache.
 func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (CommandBody, error) {
@@ -265,6 +269,10 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 	}
 	if s.Watch(signer) && !WatchCommand(body.Type) {
 		return body, fmt.Errorf("group: a watch does not sign %s commands", body.Type)
+	}
+	// by names the signer's device whenever the records show it.
+	if dev, _, ok := s.signerDevice(signer, anchor); ok && dev.ID != body.By {
+		return body, errors.New("group: a command's by is not the device of its signer")
 	}
 	ms := now.UnixMilli()
 	switch {
@@ -308,6 +316,11 @@ func (s *Records) CommandSigner(c Record) (dev Device, root, ok bool) {
 	if err != nil {
 		return Device{}, false, false
 	}
+	return s.signerDevice(signer, anchor)
+}
+
+// signerDevice is CommandSigner for the key signer under the root anchor.
+func (s *Records) signerDevice(signer, anchor KeyHash) (dev Device, root, ok bool) {
 	var id DeviceID
 	if signer == anchor {
 		id, _ = s.RootMember()

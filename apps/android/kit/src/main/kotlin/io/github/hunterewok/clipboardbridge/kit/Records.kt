@@ -684,6 +684,24 @@ class RecordSet {
     }
 
     /**
+     * The device whose admin key signed command c, as Go's
+     * Records.CommandSigner: the device that holds the group's root when the
+     * root's own key signed it, or the device whose record names the admin CA
+     * that did. Null when no listed device holds the key, as for an admin
+     * phone whose own record is not here yet.
+     */
+    fun signerDevice(c: Member.Record): String? {
+        val groupCA = groupCA ?: return null
+        val a = anchor(c, knownRoots(groupCA)) ?: return null
+        val anchor = runCatching { Records.keyHashOfCert(a.first) }.getOrNull() ?: return null
+        if (a.second.contentEquals(anchor)) {
+            val id = rootMember()?.first ?: return null
+            return devices.firstOrNull { it.id == id }?.id
+        }
+        return devices.firstOrNull { it.adminKey?.contentEquals(a.second) == true }?.id
+    }
+
+    /**
      * Whether a watch's admin CA signed the record or command c
      * (docs/protocol.md, section 10, rule 8), whose powers are few.
      */

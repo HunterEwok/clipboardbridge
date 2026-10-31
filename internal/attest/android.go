@@ -118,7 +118,10 @@ const (
 
 // CheckAndroid checks an Android Key Attestation chain (DER certificates,
 // leaf first) for the key spki made with challenge: every certificate is
-// signed by the next, the last by one of the policy's roots, none is
+// signed by the next, which is a CA that may sign it (a CA certificate
+// whose key usage, when it has one, allows certificate signing, and whose
+// path length fits the chain below it), the last by one of the policy's
+// roots, none is
 // revoked, and the leaf certifies spki and carries challenge. It returns
 // what the leaf's key description shows under the policy, or an error
 // wrapping ErrInvalid.
@@ -144,6 +147,18 @@ func CheckAndroid(chain [][]byte, spki, challenge []byte, p Policy) (Result, err
 		}
 		if p.Revoked[res.Serials[i]] {
 			return Result{}, fmt.Errorf("%w: certificate %d (%s): %w", ErrInvalid, i, res.Serials[i], ErrRevoked)
+		}
+		if i == 0 {
+			continue // the leaf signs nothing and says nothing of provisioning
+		}
+		// Every other certificate signed the one before it.
+		switch {
+		case !c.BasicConstraintsValid || !c.IsCA:
+			return Result{}, invalid("certificate %d signs another and is not a CA", i)
+		case c.KeyUsage != 0 && c.KeyUsage&x509.KeyUsageCertSign == 0:
+			return Result{}, invalid("certificate %d signs another and may not sign certificates", i)
+		case c.MaxPathLen >= 0 && c.MaxPathLen < i-1:
+			return Result{}, invalid("certificate %d allows %d CAs below it, the chain has %d", i, c.MaxPathLen, i-1)
 		}
 		for _, e := range c.Extensions {
 			if e.Id.Equal(oidProvisioning) {

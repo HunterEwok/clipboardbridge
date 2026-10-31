@@ -162,3 +162,39 @@ func TestPasteCommand(t *testing.T) {
 		t.Errorf("paste-off: %+v, %v", got, err)
 	}
 }
+
+// A command's by is a device ID, and the device of its signer when the
+// records show that device.
+func TestCommandByIsItsSigner(t *testing.T) {
+	pg := newPhoneGroup(t)
+	pc := adminCA(t, pg.root)
+	pcM := member(t, pc)
+	s := NewRecords(pg.root.Cert)
+	if _, err := s.Add(computerAdminRecord(t, pg, pcM, "pc", KeyHashOf(pc.Cert))); err != nil {
+		t.Fatal(err)
+	}
+	to, now := NewDeviceID(), time.Now()
+	sign := func(by DeviceID) (Record, error) {
+		return SignCommand(CommandBody{Type: CommandMode, Group: Tag(pg.root.Cert), By: by, To: to, ID: NewCommandID(),
+			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli(), Mode: "own"}, pc.Key, pc.Cert)
+	}
+	for _, by := range []DeviceID{"", "x\ny", DeviceID(strings.ToUpper(string(NewDeviceID())))} {
+		if _, err := sign(by); err == nil {
+			t.Errorf("a command with by %q was signed", by)
+		}
+	}
+	own, err := sign(DeviceID(pcM.Subject.CommonName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.VerifyCommand(own, to, now); err != nil {
+		t.Errorf("a command by its signer's device: %v", err)
+	}
+	other, err := sign(NewDeviceID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.VerifyCommand(other, to, now); err == nil {
+		t.Error("a command naming another device than its signer's was taken")
+	}
+}

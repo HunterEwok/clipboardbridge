@@ -35,6 +35,32 @@ enum Strict {
     /// Whether data is a body that check takes.
     static func ok(_ data: Data, required: [String]) -> Bool { (try? check(data, required: required)) != nil }
 
+    /// Whether every number in data, outside the strings, is an integer as
+    /// check takes it. JSONDecoder reads "-0", "1.0" and "1e0" as integers;
+    /// Go and the lite member refuse them in an integer field, so the frames
+    /// with a manifest pass this first. It only scans: whether data is JSON
+    /// is for the decoder.
+    static func integersOnly(_ data: Data) -> Bool {
+        let b = [UInt8](data)
+        var i = 0
+        while i < b.count {
+            let c = b[i]
+            if c == UInt8(ascii: "\"") {
+                i += 1
+                while i < b.count, b[i] != UInt8(ascii: "\"") { i += b[i] == UInt8(ascii: "\\") ? 2 : 1 }
+                i += 1
+            } else if c == UInt8(ascii: "-") || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(c) {
+                var p = Parser(b: b)
+                p.i = i
+                guard (try? p.integer()) != nil else { return false }
+                i = p.i
+            } else {
+                i += 1
+            }
+        }
+        return true
+    }
+
     /// Decodes s, standard base64 with padding, only when s is the one
     /// encoding of its bytes.
     static func base64(_ s: String) -> Data? {
@@ -208,7 +234,7 @@ enum Strict {
             i += l.count
         }
 
-        /// -?(0|[1-9][0-9]*), in the range of Int64.
+        /// -?[1-9][0-9]*|0, in the range of Int64; "-0" is refused.
         mutating func integer() throws {
             let start = i
             if peek() == UInt8(ascii: "-") { i += 1 }
@@ -216,6 +242,7 @@ enum Strict {
             while let c = peek(), (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(c) { i += 1 }
             guard i > digits else { throw Invalid(reason: "a number has no digits") }
             guard !(b[digits] == UInt8(ascii: "0") && i > digits + 1) else { throw Invalid(reason: "a number has a leading zero") }
+            guard !(b[digits] == UInt8(ascii: "0") && digits > start) else { throw Invalid(reason: "a number is a negative zero") }
             if let c = peek(), c == UInt8(ascii: ".") || c == UInt8(ascii: "e") || c == UInt8(ascii: "E") {
                 throw Invalid(reason: "a number is not an integer")
             }

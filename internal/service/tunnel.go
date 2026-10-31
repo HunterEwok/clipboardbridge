@@ -899,10 +899,18 @@ func (s *Service) awayOff(body group.CommandBody) node.Result {
 	}
 	s.logf("cbb: %s turned sync away from home off here", body.By)
 	if reconnect && nd != nil {
-		time.AfterFunc(restartAfter, func() {
+		// The result goes back first, on the connection that brought the
+		// command, and then has a moment to be read.
+		res.Written = make(chan struct{})
+		go func() {
+			select {
+			case <-res.Written:
+			case <-time.After(resultWait):
+			}
+			time.Sleep(restartAfter)
 			nd.SetTunnelKey(nil, nil)
 			nd.Reconnect()
-		})
+		}()
 	}
 	return res
 }

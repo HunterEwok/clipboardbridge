@@ -33,7 +33,8 @@ public enum Attestation {
 /// Checks an Android Key Attestation chain, as Go's internal/attest
 /// CheckAndroid and the Kotlin kit's AndroidAttestation do
 /// (docs/protocol.md, section 17): the leaf certifies the key and carries
-/// the Keystore's description of it, and the chain leads to one of Google's
+/// the Keystore's description of it, every certificate that signs another
+/// is a CA that may sign it, and the chain leads to one of Google's
 /// attestation roots. testdata/interop/go-attest.json keeps the three in
 /// step. An iPhone checks an Android phone's proof with it.
 public enum AndroidAttestation {
@@ -80,6 +81,10 @@ public enum AndroidAttestation {
 
     static let oidKeyDescription = "1.3.6.1.4.1.11129.2.1.17"
     static let oidProvisioning = "1.3.6.1.4.1.11129.2.1.30"
+    static let oidBasicConstraints = "2.5.29.19"
+    static let oidKeyUsage = "2.5.29.15"
+    /// keyCertSign in the first byte of a key usage's bits.
+    static let keyCertSign: UInt8 = 0x04
     static let levelSoftware = 0
     static let levelStrongBox = 2
     static let bootVerified = 0
@@ -99,6 +104,16 @@ public enum AndroidAttestation {
                 throw Invalid(reason: "certificate \(i) is not signed by the next")
             }
             if policy.revoked.contains(c.serial) { throw Invalid(reason: "certificate \(i) (\(c.serial)) is revoked", revoked: true) }
+            if i == 0 { continue }  // the leaf signs nothing and says nothing of provisioning
+            // Every other certificate signed the one before it: it must be a CA
+            // that may sign certificates, with a path length that fits.
+            guard c.isCA else { throw Invalid(reason: "certificate \(i) signs another and is not a CA") }
+            if let usage = c.keyUsage, usage & keyCertSign == 0 {
+                throw Invalid(reason: "certificate \(i) signs another and may not sign certificates")
+            }
+            if let limit = c.pathLen, limit < i - 1 {
+                throw Invalid(reason: "certificate \(i) allows \(limit) CAs below it, the chain has \(i - 1)")
+            }
             if c.extensions[oidProvisioning] != nil { rkp = true }
         }
         guard (policy.roots ?? googleRoots).contains(where: { certs.last!.signed(by: Array($0)) }) else {
@@ -148,6 +163,11 @@ public enum AndroidAttestation {
         var spki: [UInt8]
         /// The extensions' values by OID.
         var extensions: [String: [UInt8]] = [:]
+        /// BasicConstraints says CA, and its path length when it has one.
+        var isCA = false
+        var pathLen: Int?
+        /// The first byte of the key usage's bits; nil without the extension.
+        var keyUsage: UInt8?
 
         init(_ der: [UInt8]) throws {
             let top = try TLV.read(der, 0)
@@ -170,6 +190,32 @@ public enum AndroidAttestation {
                     guard parts.count >= 2 else { throw Malformed("an extension") }
                     extensions[try TLV.oid(try parts[0].expect(0x06).content(der))] = try parts.last!.expect(0x04).content(der)
                 }
+            }
+            if let bc = extensions[oidBasicConstraints] {
+                let b = try TLV.read(bc, 0)
+                guard b.tag == 0x30, b.end == bc.count else { throw Malformed("basic constraints") }
+                for (n, x) in try b.children(bc).enumerated() {
+                    switch x.tag {
+                    case 0x01 where n == 0:
+                        let v = x.content(bc)
+                        guard v.count == 1 else { throw Malformed("basic constraints") }
+                        isCA = v[0] != 0
+                    case 0x02:
+                        let v = x.content(bc)
+                        guard (1...2).contains(v.count), v[0] & 0x80 == 0 else { throw Malformed("a path length") }
+                        pathLen = v.reduce(0) { $0 << 8 | Int($1) }
+                    default:
+                        throw Malformed("basic constraints")
+                    }
+                }
+                // A path length means something on a CA only.
+                if !isCA { pathLen = nil }
+            }
+            if let ku = extensions[oidKeyUsage] {
+                let b = try TLV.read(ku, 0)
+                guard b.tag == 0x03, b.end == ku.count else { throw Malformed("key usage") }
+                let v = b.content(ku)
+                keyUsage = v.count >= 2 ? v[1] : 0
             }
         }
 

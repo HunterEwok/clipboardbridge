@@ -205,7 +205,7 @@ internal object Strict {
             i += s.length
         }
 
-        /** -?(0|[1-9][0-9]*), in the range of a Long. */
+        /** -?[1-9][0-9]*|0, in the range of a Long; "-0" is refused. */
         fun integer() {
             val start = i
             if (peek() == '-'.code) i++
@@ -213,6 +213,7 @@ internal object Strict {
             while (peek() in '0'.code..'9'.code) i++
             if (i == digits) throw Invalid("a number has no digits")
             if (b[digits] == '0'.code.toByte() && i > digits + 1) throw Invalid("a number has a leading zero")
+            if (b[digits] == '0'.code.toByte() && digits > start) throw Invalid("a number is a negative zero")
             if (peek() == '.'.code || peek() == 'e'.code || peek() == 'E'.code) throw Invalid("a number is not an integer")
             String(b, start, i - start, Charsets.US_ASCII).toLongOrNull() ?: throw Invalid("a number is out of range")
         }

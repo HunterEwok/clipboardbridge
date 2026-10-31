@@ -30,9 +30,15 @@ const (
 	lcsSRGB          = 0x73524742 // 'sRGB'
 	lcsGMImages      = 4
 	v5HeaderSize     = 124
-	// maxPixels bounds a bitmap's size before it is decoded: 4 bytes a
-	// pixel, as large as the group carries.
-	maxPixels = clip.MaxMedia / 4
+	// maxPixels bounds an image's size before it is decoded: 2^25 pixels,
+	// which holds an 8K screen (7680 by 4320 is 33.2 million). It costs 128
+	// MiB decoded and as much again as the DIB. The group carries up to
+	// clip.MaxMedia bytes, but a small file can hold far more pixels than
+	// bytes, so the pixels are counted, not the bytes.
+	maxPixels = 1 << 25
+	// maxDecodedBytes bounds the memory a decoded image takes whatever its
+	// pixels' size: a 16-bit PNG takes 8 bytes a pixel.
+	maxDecodedBytes = 1 << 27
 )
 
 // dibToPNG converts a DIB, as CF_DIB or CF_DIBV5 holds it, to a PNG.
@@ -92,6 +98,10 @@ func decodeDIB(dib []byte) (image.Image, error) {
 		} else if hs >= 56 {
 			n = 4 // V4 and V5 headers hold the alpha mask too
 		}
+		if len(src) < 4*n || (hs != 40 && hs < 40+4*n) {
+			// A header of 41 to 55 bytes does not hold the masks.
+			return nil, errors.New("pasteboard: a bitmap header too short for its color masks")
+		}
 		masks[3] = 0
 		for i := range n {
 			masks[i] = le.Uint32(src[4*i:])
@@ -107,7 +117,7 @@ func decodeDIB(dib []byte) (image.Image, error) {
 		if bpp != 1 && bpp != 4 && bpp != 8 {
 			return nil, fmt.Errorf("pasteboard: a %d-bit bitmap", bpp)
 		}
-		if used == 0 || used > 1<<bpp {
+		if used <= 0 || used > 1<<bpp {
 			used = 1 << bpp
 		}
 		if len(dib) < off+4*used {
@@ -207,6 +217,17 @@ func imageDIBV5(img image.Image) []byte {
 	le.PutUint32(b[56:], lcsSRGB)
 	le.PutUint32(b[108:], lcsGMImages)
 	px := b[v5HeaderSize:]
+	if n, ok := img.(*image.NRGBA); ok {
+		// What a PNG decodes to: copy the rows, no conversion a pixel.
+		for y := range h {
+			row := px[4*w*(h-1-y):][:4*w]
+			src := n.Pix[n.PixOffset(r.Min.X, r.Min.Y+y):][:4*w]
+			for x := 0; x < 4*w; x += 4 {
+				row[x], row[x+1], row[x+2], row[x+3] = src[x+2], src[x+1], src[x], src[x+3]
+			}
+		}
+		return b
+	}
 	for y := range h {
 		row := px[4*w*(h-1-y):]
 		for x := range w {
@@ -223,13 +244,32 @@ func decodeImage(typ string, data []byte) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	if int64(cfg.Width)*int64(cfg.Height) > maxPixels {
+	px := int64(cfg.Width) * int64(cfg.Height)
+	if cfg.Width <= 0 || cfg.Height <= 0 || px > maxPixels || px*decodedPixel(cfg.ColorModel) > maxDecodedBytes {
 		return nil, fmt.Errorf("pasteboard: an image of %d by %d pixels", cfg.Width, cfg.Height)
 	}
 	if typ == clip.TypeJPEG {
 		return jpeg.Decode(bytes.NewReader(data))
 	}
 	return png.Decode(bytes.NewReader(data))
+}
+
+// decodedPixel is the bytes a decoded pixel of a color model takes in the
+// image types of image/png and image/jpeg; an unknown model counts as the
+// largest.
+func decodedPixel(m color.Model) int64 {
+	switch m {
+	case color.GrayModel:
+		return 1
+	case color.Gray16Model:
+		return 2
+	case color.RGBAModel, color.NRGBAModel, color.CMYKModel, color.YCbCrModel:
+		return 4
+	}
+	if _, ok := m.(color.Palette); ok {
+		return 1
+	}
+	return 8
 }
 
 func decodeConfig(typ string, data []byte) (image.Config, error) {

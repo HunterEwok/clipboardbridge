@@ -4,7 +4,9 @@
 package clip
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -47,6 +49,27 @@ const (
 type Manifest struct {
 	Size  int64  `json:"size"` // all the parts together
 	Parts []Part `json:"parts"`
+}
+
+// UnmarshalJSON reads a manifest and refuses a number written "-0": Go
+// takes it for 0, the lite member's reader for a float, so the members
+// would not read one manifest alike.
+func (m *Manifest) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break // the decode below reports it
+		}
+		if n, ok := tok.(json.Number); ok && strings.HasPrefix(n.String(), "-0") {
+			if v, err := n.Int64(); err == nil && v == 0 {
+				return errors.New("clip: a manifest has a negative zero")
+			}
+		}
+	}
+	type plain Manifest
+	return json.Unmarshal(data, (*plain)(m))
 }
 
 // Part is one item of a manifest: a piece of clipboard data of a Type, or a

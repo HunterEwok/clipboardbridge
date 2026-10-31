@@ -1191,14 +1191,20 @@ jobs:
           # ("Failed to launch app", or the app held at dyld's start, or XCTest
           # never loaded in it), and xcodebuild then waits 8 to 17 minutes
           # before it gives up. A run with no test started after 150 seconds,
-          # or one that exits before any test ran, is tried again on a freshly
-          # booted simulator; a run whose tests ran, failed ones included,
+          # or one that exits before any test ran, is tried again on the
+          # simulator erased and booted again; a run whose tests ran, failed ones included,
           # counts as it is.
           test_on() {
             log="${RUNNER_TEMP:-/tmp}/test-$1.log"
             for attempt in 1 2 3; do
               xcrun simctl boot "$1" 2>/dev/null || true
-              xcrun simctl bootstatus "$1" -b
+              # A simulator can hang at boot ("Waiting on System App") for
+              # many minutes; five are enough for a good one.
+              xcrun simctl bootstatus "$1" -b </dev/null &
+              boot=$!
+              for second in $(seq 300); do kill -0 "$boot" 2>/dev/null || break; sleep 1; done
+              kill "$boot" 2>/dev/null || true
+              wait "$boot" || true
               xcodebuild test-without-building -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -destination "id=$1" \
                 "${sign[@]}" >"$log" 2>&1 &
               pid=$!
@@ -1225,7 +1231,11 @@ jobs:
                 return "$status"
               fi
               tail -n 30 "$log"
-              echo "::warning::no test started on $1 (attempt $attempt, status $status); booting the simulator again"
+              echo "::warning::no test started on $1 (attempt $attempt, status $status); erasing the simulator and booting it again"
+              # A simulator that failed once tends to fail again as it is:
+              # its next try starts from a clean device.
+              xcrun simctl shutdown "$1" 2>/dev/null || true
+              xcrun simctl erase "$1" || true
             done
             echo "::error::no test started on $1 in three attempts"
             return 1

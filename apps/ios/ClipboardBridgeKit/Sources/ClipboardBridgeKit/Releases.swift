@@ -140,7 +140,7 @@ public enum Releases {
 
     static func checkSeq(_ seq: UInt64, floor: UInt64) throws {
         guard seq >= floor else { throw Refused("the file is older than one already seen") }
-        guard floor == 0 || seq - floor <= maxSeqStep else { throw Refused("the file is too far ahead of the one already seen") }
+        guard seq - floor <= maxSeqStep else { throw Refused("the file is too far ahead of the one already seen") }
     }
 
     static func signedAhead(_ timeMS: Int64, nowMS: Int64) -> Bool {
@@ -243,7 +243,8 @@ public enum Releases {
     }
 
     static func lifetime(_ time: Int64, _ expires: Int64, max: Int64 = maxLifetimeMS) throws {
-        guard expires > time, expires - time <= max else { throw Refused("the file's lifetime is out of range") }
+        // A time before 1970 is no signing time; from it the difference cannot overflow.
+        guard time >= 0, expires > time, expires - time <= max else { throw Refused("the file's lifetime is out of range") }
     }
 
     static func decodeKeys(_ body: Data) throws -> Keys {

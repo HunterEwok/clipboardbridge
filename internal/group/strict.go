@@ -256,7 +256,8 @@ func (p *strictParser) literal(s string) error {
 	return nil
 }
 
-// integer reads -?(0|[1-9][0-9]*) and checks that it fits in an int64.
+// integer reads -?[1-9][0-9]*|0 and checks that it fits in an int64. "-0"
+// is refused: some JSON readers take it for a float, others for 0.
 func (p *strictParser) integer() error {
 	start := p.i
 	if p.b[p.i] == '-' {
@@ -271,6 +272,8 @@ func (p *strictParser) integer() error {
 		return errors.New("a number has no digits")
 	case p.b[digits] == '0' && p.i > digits+1:
 		return errors.New("a number has a leading zero")
+	case p.b[digits] == '0' && digits > start:
+		return errors.New("a number is a negative zero")
 	case p.i < len(p.b) && (p.b[p.i] == '.' || p.b[p.i] == 'e' || p.b[p.i] == 'E'):
 		return errors.New("a number is not an integer")
 	}

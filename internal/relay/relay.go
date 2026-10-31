@@ -33,23 +33,31 @@ const (
 // Limits of the setups, which strangers can start: a registration is set
 // up before the relay knows its device, so the registrations being set up
 // are counted by the address and the network they come from, and apart
-// from the requests the registered devices send in their tunnels, which
-// strangers cannot reach and are counted by device.
+// from the requests the registered devices send in their tunnels. On an
+// open relay a stranger registers devices too, so those are counted by the
+// address and network the device registered from and by its group, as well
+// as by device.
 const (
-	maxSetups        = 256 // registrations being set up at once
-	maxSetupsAddress = 16  // of them from one IP address
-	maxSetupsNetwork = 64  // of them from one IPv4 /24 or IPv6 /64
-	maxRequests      = 256 // requests in the tunnels being read at once
-	maxRequestsOne   = 16  // of them from one device
+	maxSetups         = 256 // registrations being set up at once
+	maxSetupsAddress  = 16  // of them from one IP address
+	maxSetupsNetwork  = 64  // of them from one IPv4 /24 or IPv6 /64
+	maxRequests       = 256 // requests in the tunnels being read at once
+	maxRequestsOne    = 16  // of them from one device
+	maxRequestsGroup  = 32  // of them from one group
+	maxRequestsSource = 32  // of them from devices registered from one IP address
+	maxRequestsNet    = 64  // of them from devices registered from one IPv4 /24 or IPv6 /64
 )
 
-// Timeouts: setupTimeout bounds a registration and a request line,
-// callTimeout the wait for the called device to answer, and noteTimeout a
-// note to a device that stopped reading.
+// Timeouts: setupTimeout bounds a registration, requestTimeout the wait for
+// the first line of a connection in a tunnel (a device sends it as soon as
+// the connection is open, so five seconds leave room for a phone on a slow
+// link that loses a packet or two), callTimeout the wait for the called
+// device to answer, and noteTimeout a note to a device that stopped reading.
 const (
-	setupTimeout = 15 * time.Second
-	callTimeout  = 10 * time.Second
-	noteTimeout  = 10 * time.Second
+	setupTimeout   = 15 * time.Second
+	requestTimeout = 5 * time.Second
+	callTimeout    = 10 * time.Second
+	noteTimeout    = 10 * time.Second
 )
 
 // Config configures a relay.
@@ -95,9 +103,23 @@ type Relay struct {
 	setupIP    map[netip.Addr]int
 	setupNet   map[netip.Prefix]int
 	requesting int
+	// requestWait is how long a connection in a tunnel may take to send
+	// its request line: requestTimeout, longer in tests.
+	requestWait time.Duration
+	// reqIP and reqNet count the requests being read by the address and the
+	// network the device registered from.
+	reqIP  map[netip.Addr]int
+	reqNet map[netip.Prefix]int
 	// records are each group's authority records, from all its members'
-	// registrations, in memory while the relay runs.
-	records map[string][]group.Record
+	// registrations, verified once and kept in memory while the relay runs.
+	records     map[string]*recordSet
+	recordBytes int // what they take, all together
+	// tagLocks serialise the registrations of one group while they check
+	// its records.
+	tagLocks map[string]*tagLock
+	// allow is what each source address and network may still start.
+	allow *allowance
+	now   func() time.Time
 	// periods are what it holds of the groups that registered with
 	// credentials, by their period's tag.
 	periods map[string]*period
@@ -118,6 +140,7 @@ type member struct {
 	calls   int // calls waiting for its answer
 	reading int // its requests being read
 	pairs   *int
+	greads  *int       // the group's requests being read
 	bytes   *rate      // the group's copying, on an open relay
 	from    netip.Addr // the address it registered from
 	dropped bool
@@ -188,8 +211,9 @@ func Listen(cfg Config) (*Relay, error) {
 	}
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
-		records: map[string][]group.Record{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
-		setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}}
+		records: map[string]*recordSet{}, tagLocks: map[string]*tagLock{}, allow: newAllowance(), now: time.Now,
+		reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
+		setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}, requestWait: requestTimeout}
 	if cfg.Open {
 		r.limits = cfg.Limits.withDefaults()
 	}
@@ -263,6 +287,11 @@ func (r *Relay) takeSlot(from netip.Addr) bool {
 	if r.setting >= maxSetups || r.setupIP[from] >= maxSetupsAddress || r.setupNet[nw] >= maxSetupsNetwork {
 		return false
 	}
+	// Setups are also paid for by the second, so a source that sets up and
+	// closes over and over does not cost the relay more than its share.
+	if !r.allow.take(from, setupCost, r.now()) {
+		return false
+	}
 	r.setting++
 	r.setupIP[from]++
 	r.setupNet[nw]++
@@ -278,13 +307,22 @@ func (r *Relay) freeSlot(from netip.Addr) {
 }
 
 // takeRequestLocked counts a request of m being read; false when there
-// are too many, of m or in all.
+// are too many, of m, of its group, of the address or network it registered
+// from, or in all.
 func (r *Relay) takeRequestLocked(m *member) bool {
-	if m.dropped || r.requesting >= maxRequests || m.reading >= maxRequestsOne {
+	nw := networkOf(m.from)
+	if m.dropped || r.requesting >= maxRequests || m.reading >= maxRequestsOne ||
+		r.reqIP[m.from] >= maxRequestsSource || r.reqNet[nw] >= maxRequestsNet ||
+		m.greads != nil && *m.greads >= maxRequestsGroup {
 		return false
 	}
 	r.requesting++
 	m.reading++
+	r.reqIP[m.from]++
+	r.reqNet[nw]++
+	if m.greads != nil {
+		*m.greads++
+	}
 	return true
 }
 
@@ -292,6 +330,11 @@ func (r *Relay) freeRequest(m *member) {
 	r.mu.Lock()
 	r.requesting--
 	m.reading--
+	countDown(r.reqIP, m.from)
+	countDown(r.reqNet, networkOf(m.from))
+	if m.greads != nil {
+		*m.greads--
+	}
 	r.mu.Unlock()
 }
 
@@ -332,13 +375,13 @@ func (r *Relay) addLocked(m *member) error {
 	if g == nil {
 		g = map[string]*member{}
 		r.groups[m.tag] = g
-		m.pairs = new(int)
+		m.pairs, m.greads = new(int), new(int)
 		if r.cfg.Open {
 			m.bytes = newRate(r.limits.ByteRate)
 		}
 	} else {
 		for _, o := range g {
-			m.pairs, m.bytes = o.pairs, o.bytes
+			m.pairs, m.greads, m.bytes = o.pairs, o.greads, o.bytes
 			break
 		}
 	}
@@ -384,8 +427,8 @@ func (r *Relay) dropLocked(m *member) {
 			delete(r.groups, m.tag)
 			// An open relay forgets a group once its last device goes, so
 			// groups that come and go do not fill its memory.
-			if r.cfg.Open {
-				delete(r.records, m.tag)
+			if r.cfg.Open && r.tagLocks[m.tag] == nil {
+				r.dropRecordsLocked(m.tag)
 			}
 			delete(r.periods, m.tag)
 		}
@@ -470,6 +513,7 @@ func (r *Relay) acceptStreams() {
 		if ok {
 			m.streams[c] = true
 		}
+		wait := r.requestWait
 		r.mu.Unlock()
 		if !ok {
 			c.Close()
@@ -478,15 +522,16 @@ func (r *Relay) acceptStreams() {
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
-			r.serveStream(m, c)
+			r.serveStream(m, c, wait)
 		}()
 	}
 }
 
-// serveStream reads the request of m's connection c and does what it asks.
-func (r *Relay) serveStream(m *member, c net.Conn) {
+// serveStream reads the request of m's connection c, waiting for it at
+// most wait, and does what it asks.
+func (r *Relay) serveStream(m *member, c net.Conn, wait time.Duration) {
 	var req request
-	if err := readLine(c, &req, setupTimeout); err != nil {
+	if err := readLine(c, &req, wait); err != nil {
 		r.freeRequest(m)
 		r.closeStream(m, c)
 		return

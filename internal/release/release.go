@@ -203,12 +203,13 @@ func floor(seq, at, seenKeys, keysSeq uint64) uint64 {
 }
 
 // checkSeq refuses a seq below the floor, or one that rises more than
-// MaxSeqStep past it.
+// MaxSeqStep past it; with no floor, past MaxSeqStep, so that one file
+// cannot take a fresh device to a seq no later file reaches.
 func checkSeq(seq, floor uint64) error {
 	switch {
 	case seq < floor:
 		return ErrRollback
-	case floor > 0 && seq-floor > MaxSeqStep:
+	case seq-floor > MaxSeqStep:
 		return ErrJump
 	}
 	return nil
@@ -353,7 +354,9 @@ func lifetime(timeMS, expiresMS int64) error {
 }
 
 func lifetimeUpTo(timeMS, expiresMS int64, max time.Duration) error {
-	if expiresMS <= timeMS || expiresMS-timeMS > max.Milliseconds() {
+	// A time before 1970 is no signing time; from it the difference below
+	// cannot leave the range of int64.
+	if timeMS < 0 || expiresMS <= timeMS || expiresMS-timeMS > max.Milliseconds() {
 		return errors.New("release: the file's lifetime is out of range")
 	}
 	return nil

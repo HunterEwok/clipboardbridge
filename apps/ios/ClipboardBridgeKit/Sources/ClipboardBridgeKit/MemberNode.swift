@@ -406,7 +406,8 @@ public actor MemberNode {
                     res.by = engine.device
                     c.enqueue(.result(res))
                 }
-            case let .result(r):
+            case var .result(r):
+                r.reason = r.reason.map(Member.cleanReason)
                 // A member the command went to so that it passes it on
                 // answers only with the receiver's result.
                 if let w = waiting[r.id], w.conns.contains(id), c.peer == w.peer || r.by == w.peer {

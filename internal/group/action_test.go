@@ -119,14 +119,22 @@ func TestGoActionVectors(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		phoneM, pcM := member(t, phone), member(t, pc)
 		all := []Record{
 			own, lite, tpmRecord,
-			adminRecord(t, g, pg.root, nil, member(t, phone), "admin phone", KeyHashOf(phone.Cert)),
-			computerAdminRecord(t, pg, member(t, pc), "file pc", KeyHashOf(pc.Cert)),
+			adminRecord(t, g, pg.root, nil, phoneM, "admin phone", KeyHashOf(phone.Cert)),
+			computerAdminRecord(t, pg, pcM, "file pc", KeyHashOf(pc.Cert)),
 		}
+		// A command's by is its signer's device.
+		byOf := map[*CA]DeviceID{pg.root: rootID, phone: DeviceID(phoneM.Subject.CommonName),
+			pc: DeviceID(pcM.Subject.CommonName), tpm: DeviceID(tpmMember.Subject.CommonName)}
 		now := int64(1_800_000_000_000)
 		sign := func(signer *CA, chain []*x509.Certificate, typ, action string) Record {
-			r, err := SignCommand(CommandBody{Type: typ, Group: Tag(g), By: rootID, To: selfID, ID: NewCommandID(),
+			by := byOf[signer]
+			if by == "" {
+				by = selfID // a key of no device here
+			}
+			r, err := SignCommand(CommandBody{Type: typ, Group: Tag(g), By: by, To: selfID, ID: NewCommandID(),
 				TimeMS: now, ExpiresMS: now + CommandLifetime.Milliseconds(), Action: action}, signer.Key, chain...)
 			if err != nil {
 				t.Fatal(err)

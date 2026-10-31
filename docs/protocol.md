@@ -48,8 +48,9 @@ these words depends on it.
     without escapes, and no object has the same name twice. Names match exactly: `Type` is
     not `type`.
   - No value is `null`; a field that is not there is left out.
-  - Every number is an integer written as `-?(0|[1-9][0-9]*)`, without a fraction or an
-    exponent, from -2^63 to 2^63-1.
+  - Every number is an integer written as `0` or `-?[1-9][0-9]*`, without a fraction or an
+    exponent, from -2^63 to 2^63-1; `-0` is not one, since some JSON readers take it for 0
+    and others for a float.
   - A `\u` escape names a UTF-16 code unit; a surrogate MUST be one half of a pair, the high
     half followed at once by the low half.
   - The fields every body of its kind has are there: `v`, `type`, `group` and `time_ms` in a
@@ -522,7 +523,9 @@ file's path does not go through another file. Each name in a path is valid UTF-8
 bytes, not `.` or `..`, without control characters (C0, DEL, C1) or `/ \ : * ? " < > |`, not
 ending in a dot or a space, and not a name Windows reserves (`CON`, `PRN`, `AUX`, `NUL`,
 `COM1` to `COM9`, `LPT1` to `LPT9`, in any case, before the first dot), so that every system
-can hold a received copy. A receiver MUST refuse a manifest that breaks any of these rules,
+can hold a received copy. Every number in a manifest is an integer written as in signed
+bodies (Conventions, "Signed bodies"): no `-0`, fraction or exponent. A receiver MUST refuse a
+manifest that breaks any of these rules,
 and MUST NOT follow or create links when it writes a copy of files. The Go code is
 `internal/clip/media.go`.
 
@@ -2058,11 +2061,8 @@ close the connection beyond that; a sender MUST stay below it.
      or member certificate the records revoke or freeze. It keeps the merged authority
      records in memory after the registration ends, so a removed or demoted admin that
      registers later, while the group's own hub is away, cannot leave its revocation out,
-     until the forwarder restarts; it writes none of them to disk. It refuses a registration
-     whose merged authority records come to more than 256 KiB, so it never keeps part of a
-     group's records. It keeps at most 32 MiB of records for all groups, and past that or
-     100,000 groups it forgets the one that registered least recently; the records of a
-     group that is registered now are never forgotten. The group CA for these records is the
+     until the forwarder restarts; it writes none of them to disk. Past 100,000 groups it
+     forgets the one that registered least recently. The group CA for these records is the
      root the hub's member certificate verified to in step 2, whose tag names the group; a
      self-signed certificate the hub presents besides counts for nothing.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
@@ -2142,10 +2142,13 @@ listens on TCP (`-vless-listen`, port 443 by default) for VLESS inside REALITY:
 - A connection that is not a client's, by REALITY's check, gets the borrowed site's own
   TLS and answers, from port 443 of that site.
 - Only the VLESS user IDs of registered hubs that asked for VLESS are let in. A client's
-  UDP packets, whatever address the client names, go to the forwarder's own UDP port from
-  a loopback address and are routed there as any client's; the answers go back the same
-  way. The per-source handshake limit does not apply to them: each comes from a client its
-  group's ID let in, and its group's limits do.
+  UDP packets, whatever address the client names, go to the forwarder's own UDP port, from
+  a port of the forwarder's own address for each of the client's flows, and are routed
+  there as any client's; the answers go back the same way, and a TCP stream goes nowhere.
+  The forwarder knows which group's ID each of those ports serves, and the per-source
+  handshake limit and the per-network budget of "Limits" count what comes over VLESS by
+  that ID, as one source and one network for each group; a client's own group's limits
+  apply as to any client.
 - The forwarder keeps no log of VLESS either.
 
 ### Limits
@@ -2160,23 +2163,20 @@ Registrations, held or being set up, are bounded at 16 from one address and 64 f
 network, an IPv4 /24 or an IPv6 /64; the forwarder closes a connection past either limit
 at once. A handshake to a new group is checked against each registered group, so it costs
 one check per group. These checks are bounded at 500 000 a second for all sources together,
-and one network gets a sixteenth of that; the handshakes that come over VLESS, from the
-loopback, count as one network. A single handshake costs a network at most its
+and one network gets a sixteenth of that; the handshakes that come over VLESS count as one
+network for each group's VLESS user ID. A single handshake costs a network at most its
 whole budget, so one still passes now and then on a forwarder with more groups than that.
+The tables of sources and networks hold at most four entries per group; when full, a new
+entry replaces the one used least recently (its owner starts again with a full budget), so
+forged addresses cannot keep a real client out.
 
 ### What it keeps
 
 Its own key file, and a state file (`cbb forward -state`, `forward-state.json` next to the
 key by default, `none` for memory only): for each period that registered with a credential,
 under HMAC-SHA256 of the period's tag, the version of its newest hubs' credential and
-HMAC-SHA256 of the tag and the SHA-256 of the period key, with a counter and the expiry of
-the last credential it saw (`expires`, Unix milliseconds; a file without it is read as 35
-days from the start, and never more than 35 days from when it was kept). An entry is kept until that expiry, since forgetting it sooner would
-let an older credential of the period pass. The table holds at most 100,000 periods and one
-network (an IPv4 /24 or an IPv6 /64) at most 256 of those it added; a tag new to the table
-is refused while either is full and nothing has expired, and no entry is ever dropped to
-make room. The file is written at most 2 s after a change, and when the forwarder stops,
-outside the lock the lookups use. The HMAC key is
+HMAC-SHA256 of the tag and the SHA-256 of the period key, with a counter for the bound of
+100,000 periods, past which the one that registered least recently goes. The HMAC key is
 HMAC-SHA256 under the forwarder's private key (PKCS #8) of `clipboardbridge forwarder
 state`, so the file names no group by itself, and a period lasts about a month, so the file
 cannot link one month of a group to the next. A registration with a credential is refused
@@ -2293,16 +2293,24 @@ ID, and a device's pseudonym changes with each period.
    device told for its port, and closes any other.
 4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections.
    Limits of the setups, on every relay: 256 registrations being set up at a time, at most 16
-   of them from one IP address and 64 from one network (an IPv4 /24 or an IPv6 /64); and,
-   counted apart, 256 requests inside the tunnels being read at a time, at most 16 of them
-   from one device. The relay closes a connection over a limit at once.
+   of them from one IP address and 64 from one network (an IPv4 /24 or an IPv6 /64), each
+   setup also paid for by the second: an address may start 16 a second and a network 64,
+   with a burst; and, counted apart, 256 requests inside the tunnels being read at a time,
+   at most 16 of them from one device, 32 from one group, 32 from the devices that
+   registered from one IP address and 64 from one network. A connection in a tunnel sends
+   its request line within 5 s. The relay closes a connection over a limit at once.
    A device, in turn, ends its watch on a note longer than 64 KiB or an `online` list of
    more than 64 names or with a name that is not a device ID or a pseudonym (32 or 64
    lowercase hex characters), and leaves unanswered a call with such a name, a ticket that
    is not 32 lowercase hex characters, or past 16 calls it is answering at once.
 5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address
    and 64 from one network (an IPv4 /24 or an IPv6 /64); and 1 MiB a second of copying for
-   each group, both ways together, after a burst of two seconds' worth. A registration over
+   each group, both ways together, after a burst of two seconds' worth. It keeps at most
+   256 KiB of a group's authority records and 128 MiB of all groups' records, and refuses a
+   registration that would take it past either rather than keep part of them. It verifies
+   a record once, when it first gets it, and keeps the verified set, so a group's later
+   registrations that send the same records cost no checks; each new record is charged to
+   what the address and network that sent it may start by the second. A registration over
    a limit gets `{"error": string}`. It forgets a group's records, or its period's key,
    versions and members' list, once the group's last device leaves.
 
@@ -2336,7 +2344,7 @@ signed bodies (Conventions):
 | `v` | integer | `1` |
 | `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or `away-off` |
 | `group` | string | the group tag |
-| `by` | string | the signer's device ID, for showing |
+| `by` | string | the signer's device ID: a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device |
 | `to` | string | the receiver's device ID |
 | `id` | string | 128 random bits as 32 lowercase hex characters; IDs compare as byte strings |
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
@@ -2361,7 +2369,9 @@ or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
 The sender sends the command on its own connection to the receiver, which answers with a
 `result`: its `id` is the command's, its `status` `done`, `refused` (the receiver does not take
 it) or `failed` (it took it and could not carry it out), and `reason` says why for the last
-two; a `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
+two. The reason is a peer's text: a member that shows it, or passes it to a program, first
+turns each control character (C0, DEL, C1) into a space and cuts it to 256 bytes at a
+character boundary. A `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
 commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
 (20 s for `hub`).
 
@@ -2497,7 +2507,7 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
   `..`), and `sha256`.
 - `docker.digest` is `sha256:` and 64 hex digits.
 - A `keys` or `channel` file lives at most 100 days (`expires_ms` after `time_ms`, by at
-  most 8 640 000 000 ms). `keys.json` is signed again every 90 days, and a channel file
+  most 8 640 000 000 ms), and its `time_ms` is not negative. `keys.json` is signed again every 90 days, and a channel file
   before it expires. `attest-status.json` lives at most 8 days (691 200 000 ms) and is
   signed again at least a day before it expires.
 - A serial number is lowercase hex without leading zeros (`0` for zero), at most 64
@@ -2533,9 +2543,9 @@ the `release.json` that names, and MUST take the release only when:
    is `release_sha256`, its `version` and `channel` are the channel file's, and its version is
    not below the highest the device has taken.
 
-A channel file's `seq` MUST also be at most 65 536 above the highest taken (when that still
-counts), so that one file signed with a far `seq` cannot hold a device above every file
-signed after it. A device whose clock reads before 2026 skips the checks of `time_ms`, as its
+A channel file's `seq` MUST also be at most 65 536 above the highest taken, or at most
+65 536 when none counts (a fresh device, or one under a newer `keys.json`), so that one file
+signed with a far `seq` cannot hold a device above every file signed after it. A device whose clock reads before 2026 skips the checks of `time_ms`, as its
 clock is unset. `attest-status.json` (section 17) is checked the same way as a channel file,
 under its `keys.json`.
 
@@ -2661,7 +2671,11 @@ hellos, once per connection:
 
 Only the group's root acts on it; every other member MUST ignore it, as it ignores a `format`
 or `key` it does not know. The root MUST check that `group_tag` is absent or the group's own, that
-the chain leads to one of Google's attestation roots without a revoked certificate, that the
+the chain leads to one of Google's attestation roots without a revoked certificate, that every
+certificate but the leaf, each of which signs the one before it, is a CA (BasicConstraints
+`cA`), has the `keyCertSign` key usage when it has a key usage, and has a path length (when it
+has one) that allows the CAs below it, that the extension of Remote Key Provisioning counts only
+on such a certificate (never on the leaf), that the
 leaf certifies the key of the sender's TLS certificate and carries the challenge made with
 `group_tag`, an empty member key and `salt`, and reads the leaf's key description:
 

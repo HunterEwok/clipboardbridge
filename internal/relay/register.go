@@ -221,7 +221,7 @@ func (r *Relay) acceptRegistrations() {
 // serveRegistration registers one device and holds its registration while
 // the connection lasts.
 func (r *Relay) serveRegistration(raw net.Conn, from netip.Addr) {
-	m, err := r.register(raw)
+	m, err := r.register(raw, from)
 	r.freeSlot(from)
 	if err != nil {
 		raw.Close()
@@ -237,7 +237,7 @@ func (r *Relay) serveRegistration(raw net.Conn, from netip.Addr) {
 // register runs a registration's setup: TLS with the device's member
 // certificate, then the proof that it holds its WireGuard key, bound to
 // this TLS session, as with the forwarder.
-func (r *Relay) register(raw net.Conn) (*member, error) {
+func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 	raw.SetDeadline(time.Now().Add(setupTimeout))
 	tc := tls.Server(raw, r.tlsCfg)
 	if err := tc.Handshake(); err != nil {
@@ -286,23 +286,29 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 		return refuse("too many records")
 	}
 	leaf := group.KeyHashOf(cs.PeerCertificates[0])
-	var recs *group.Records
+	var recs *recordSet
+	var fresh bool
 	var pr *group.Presented
+	// The group's registrations that check records take turns, until this
+	// one has added its device.
+	unlockTag := func() {}
+	defer func() { unlockTag() }()
 	if cred {
 		if pr, err = r.credentialed(cs.PeerCertificates[0], c, time.Now()); err != nil {
 			return refuse(err.Error())
 		}
 		tag, device = credentialTag(pr.Tag), group.Pseudonym(leaf)
 	} else {
-		r.mu.Lock()
-		known := r.records[tag]
-		r.mu.Unlock()
-		// The signatures take time, so the records are checked outside the
-		// lock.
-		recs = group.NewRecords(rootOf(cs.PeerCertificates, tag))
-		recs.AddAll(known)
-		recs.AddAll(c.Records)
-		if recs.Revoked(leaf) {
+		// The relay keeps the group's records once verified, and checks only
+		// the ones a claim brings that it does not have; the group's other
+		// registrations wait meanwhile.
+		unlockTag = r.lockTag(tag)
+		if recs, fresh, err = r.checkRecords(tag, rootOf(cs.PeerCertificates, tag), from, c.Records); err != nil {
+			r.forgetRecords(tag)
+			return refuse(err.Error())
+		}
+		if recs != nil && recs.set.Revoked(leaf) {
+			r.forgetRecords(tag)
 			return refuse("the device was removed from its group")
 		}
 	}
@@ -324,22 +330,24 @@ func (r *Relay) register(raw net.Conn) (*member, error) {
 			r.mu.Unlock()
 			return refuse(err.Error())
 		}
-	} else if len(c.Records) > 0 {
-		if all := recs.All(); len(all) > len(r.records[tag]) {
-			r.records[tag] = all
-			// The devices the new records remove go now.
-			for _, o := range r.groups[tag] {
-				if recs.Revoked(o.leaf) {
-					r.dropLocked(o)
-				}
+	} else if recs != nil && fresh {
+		// The devices the new records remove go now.
+		for _, o := range r.groups[tag] {
+			if recs.set.Revoked(o.leaf) {
+				r.dropLocked(o)
 			}
 		}
 	}
 	if err := r.addLocked(m); err != nil {
 		r.mu.Unlock()
+		if recs != nil {
+			r.forgetRecords(tag)
+		}
 		return refuse(err.Error())
 	}
 	r.mu.Unlock()
+	unlockTag()
+	unlockTag = func() {}
 	relayKey := r.cfg.Keys.WireGuard.Public()
 	if err := enc.Encode(welcome{Key: relayKey[:], PSK: psk[:], Addr: m.addr.String()}); err != nil {
 		r.mu.Lock()

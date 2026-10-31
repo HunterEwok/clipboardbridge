@@ -222,7 +222,7 @@ final class CommandTests: XCTestCase {
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-commands.json")))
         var set = RecordSet()
         XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
-        XCTAssertEqual(v.commands.count, 14)
+        XCTAssertEqual(v.commands.count, 15)
         for c in v.commands {
             let got = Result { try Commands.verify(c.command, records: set, me: v.`self`, nowMS: v.now_ms) }
             switch got {
@@ -283,5 +283,20 @@ final class CommandTests: XCTestCase {
         for bad in ["", "-x", "1x", "X", String(repeating: "a", count: 33), "a b", "é"] {
             XCTAssertFalse(Commands.validActionName(bad), bad)
         }
+    }
+
+    /// The reason of a result is shown to a person: short, without control characters.
+    func testCleanReason() {
+        XCTAssertEqual(Member.cleanReason("the screen is locked"), "the screen is locked")
+        XCTAssertEqual(Member.cleanReason(""), "")
+        XCTAssertEqual(Member.cleanReason("a\u{1b}[2Jb\u{1b}]52;c;ZXZpbA==\u{07}c"), "a [2Jb ]52;c;ZXZpbA== c")
+        XCTAssertEqual(Member.cleanReason("a\nb\tc\r"), "a b c ")
+        XCTAssertEqual(Member.cleanReason("a\u{9b}b"), "a b")
+        XCTAssertEqual(Member.cleanReason("écran verrouillé"), "écran verrouillé")
+        XCTAssertEqual(Member.cleanReason(String(repeating: "a", count: 1000)).utf8.count, Member.maxReason)
+        // A character that would cross the limit goes whole.
+        XCTAssertEqual(Member.cleanReason(String(repeating: "a", count: Member.maxReason - 1) + "é"),
+                       String(repeating: "a", count: Member.maxReason - 1))
+        XCTAssertLessThanOrEqual(Member.cleanReason(String(repeating: "é", count: 300)).utf8.count, Member.maxReason)
     }
 }

@@ -659,8 +659,51 @@ All notable changes to clipboardbridge are documented in this file. The format f
   table is written to its state file a moment after a change (and when the forwarder
   stops), no longer under the lock of every registration. State files from earlier versions
   are read as before.
+- A relay counts the requests being read in its tunnels by group and by the address and
+  network the devices registered from, besides by device, waits 5 s instead of 15 s for a
+  request line, and charges the registrations an address and a network start by the
+  second. An open relay verifies a group's records once and keeps the verified set, keeps
+  at most 256 KiB of records for one group and 128 MiB in all, and refuses a registration
+  past those rather than keep part of its records. Devices see the new refusals as
+  ordinary ones; nothing on the wire changes.
+- A channel or status file may raise its `seq` at most 65 536 on a fresh device or under a
+  newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
+  with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
+  computers, the lite member and both phones; files the project signs are unaffected.
+- A command's `by` must be a device ID and, when the receiver's records show which device
+  holds the signing key, that device; the limits on pastes and actions from one device and
+  the logs then count the device that signed. The same on computers, the lite member and
+  both phones. A member from before still takes a command whose `by` names another device;
+  no current sender writes one.
 - The release workflow run by hand from `main` builds the OpenWrt feed: it named the
   package's version after the branch, which apk refuses.
+- A forwarder keeps the handshake budgets of clients that come over VLESS apart for each
+  group's VLESS user ID, which its side of VLESS now tells it, so the clients of one group no
+  longer use up those of the other groups. Its tables of sources and networks drop the entry
+  used least recently when full, instead of refusing new clients. Clients and hubs need no
+  change.
+- Every member reads a record, a command and a media manifest with a number written `-0`
+  alike: all refuse it, as they refuse a fraction or an exponent, where before Go and the
+  Android kit took it for 0 and the lite member refused it. The phone kits also refuse such
+  numbers in the other messages they read, as the lite member does. A member from before still takes `-0` in a
+  body that a current member refuses; no current signer writes one.
+- Checking an Android key attestation (Go, the iPhone app's kit and the Android kit) now
+  requires every certificate that signs another one in the chain to be a CA that may sign
+  certificates, with a path length that fits, and takes the Remote Key Provisioning mark only
+  from such a certificate. Real Keystore chains are unchanged; a chain in which a key's own
+  leaf certificate signs another certificate now proves nothing. A root running an older
+  version keeps accepting such chains until it is updated.
+- A command's result is shown with its reason cut to 256 bytes and its control characters
+  made spaces, on computers and both phones, so it always shows as plain text.
+- A content chunk whose length field is 2^31 or more is refused on the 32-bit builds
+  (Raspberry Pi 2 and 3, Pi Zero, mipsle routers, 386) as it already was on 64-bit ones,
+  instead of ending the program.
+- A received PNG or JPEG is decoded on a Windows member only when it fits in 2^25 pixels
+  (an 8K screen) and 128 MiB decoded, checked from its header before any pixel is read; it
+  was 2^28 pixels, which a small file could fill with gigabytes. A PNG is also turned into
+  the clipboard's bitmap by copying rows, not pixel by pixel. A bitmap on the Windows
+  clipboard with a header of 41 to 55 bytes and color masks is refused instead of ending
+  the agent.
 - The lite member writes its state files through a temporary file with a random name that
   must not exist yet, and removes it when the write fails; `attest-status` gives up on
   Google's list after 30 s instead of waiting for it without end.

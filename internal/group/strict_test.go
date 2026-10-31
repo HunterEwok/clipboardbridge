@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,6 +112,19 @@ func makeStrictVectors() strictVectors {
 		r("an unknown type", false, []byte(`{"v":1,"type":"other","group":"`+vecGroup+`","time_ms":1}`)),
 		r("a revoke of nothing", false, []byte(`{"v":1,"type":"revoke","group":"`+vecGroup+`","time_ms":1,"keys":[]}`)),
 		r("a root without a certificate", false, []byte(`{"v":1,"type":"root","group":"`+vecGroup+`","time_ms":1,"root":""}`)),
+		r("a time of zero", true, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":0`+good+`}`)),
+		r("a time of negative zero", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":-0`+good+`}`)),
+		r("a time of negative zeros", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":-00`+good+`}`)),
+		r("a time of zeros", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":00`+good+`}`)),
+		r("a time of zero with an exponent", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":0e0`+good+`}`)),
+		r("a time of negative zero with a fraction", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":-0.0`+good+`}`)),
+		r("a time of negative zero with an exponent", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":-0e0`+good+`}`)),
+		r("a time of a minus sign", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":-`+good+`}`)),
+		r("a time of a plus sign", false, []byte(`{"v":1,"type":"device","group":"`+vecGroup+`","time_ms":+1`+good+`}`)),
+		r("a negative zero in an unknown nested object", false, dev(good+`,"later":{"a":{"b":-0}}`)),
+		r("a negative zero in an unknown array", false, dev(good+`,"later":[1,-0]`)),
+		r("a zero in an unknown nested object", true, dev(good+`,"later":{"a":{"b":0}}`)),
+		r("a negative number in an unknown nested object", true, dev(good+`,"later":{"a":{"b":-10}}`)),
 	}
 	cmd := func(fields string) []byte {
 		return []byte(`{"v":1,"type":"paste-off","group":"` + vecGroup + `","by":"` + vecOther + `","to":"` + vecDevice +
@@ -132,9 +146,20 @@ func makeStrictVectors() strictVectors {
 		r("an ID in upper case", false, bytes.Replace(cmd(""), []byte("abcdef0123456789abcdef"), []byte("ABCDEF0123456789abcdef"), 1)),
 		r("a kind on paste-off", false, cmd(`,"kind":"text"`)),
 		r("enter on paste-off", false, cmd(`,"enter":true`)),
+		r("an expiry of negative zero", false, bytes.Replace(cmd(""), []byte(`"expires_ms":20000`), []byte(`"expires_ms":-0`), 1)),
+		r("an expiry of negative zeros", false, bytes.Replace(cmd(""), []byte(`"expires_ms":20000`), []byte(`"expires_ms":-00`), 1)),
+		r("an expiry of zero with an exponent", false, bytes.Replace(cmd(""), []byte(`"expires_ms":20000`), []byte(`"expires_ms":0e0`), 1)),
+		r("an expiry of negative zero with a fraction", false, bytes.Replace(cmd(""), []byte(`"expires_ms":20000`), []byte(`"expires_ms":-0.0`), 1)),
+		r("a time of negative zero", false, bytes.Replace(cmd(""), []byte(`"time_ms":1000`), []byte(`"time_ms":-0`), 1)),
+		r("a negative zero in an unknown nested object", false, cmd(`,"later":{"a":[{"b":-0}]}`)),
 	}
 	part := func(p string) []byte {
 		return []byte(`{"size":3,"parts":[{"path":"d","dir":true` + p + `},{"path":"d/f","size":3,"sha256":"` + vecHash + `"}]}`)
+	}
+	// file is a manifest of one file, whose size is written as size and
+	// all of whose parts together are total bytes.
+	file := func(total int, size string) []byte {
+		return []byte(fmt.Sprintf(`{"size":%d,"parts":[{"path":"f","size":%s,"sha256":"%s"}]}`, total, size, vecHash))
 	}
 	v.Manifests = []strictVector{
 		r("a folder", true, part("")),
@@ -142,6 +167,17 @@ func makeStrictVectors() strictVectors {
 		r("a folder with an empty hash", false, part(`,"sha256":""`)),
 		r("a folder with a hash", false, part(`,"sha256":"`+vecHash+`"`)),
 		r("a folder with a size", false, part(`,"size":1`)),
+		r("a file of no bytes", true, file(0, "0")),
+		r("a file of negative zero bytes", false, file(0, "-0")),
+		r("a file of negative zeros", false, file(0, "-00")),
+		r("a file of zeros", false, file(0, "00")),
+		r("a file of zero with an exponent", false, file(0, "0e0")),
+		r("a file of negative zero with a fraction", false, file(0, "-0.0")),
+		r("a file of zero with a fraction", false, file(0, "0.0")),
+		r("a file of one with a fraction", false, file(1, "1.0")),
+		r("a manifest of negative zero bytes", false, []byte(`{"size":-0,"parts":[{"path":"f","size":0,"sha256":"`+vecHash+`"}]}`)),
+		r("a manifest of negative zero bytes with a folder", false, []byte(`{"size":-0,"parts":[{"path":"d","dir":true}]}`)),
+		r("a manifest of zero bytes with a folder", true, []byte(`{"size":0,"parts":[{"path":"d","dir":true}]}`)),
 	}
 	return v
 }
@@ -209,6 +245,8 @@ func TestRecordsStrictBody(t *testing.T) {
 		`{"v":1,"type":"revoke","group":"` + tag + `",` + revoke + `}`,
 		`{"v":1,"type":"revoke","group":"` + tag + `","time_ms":1,"by":"\ud800",` + revoke + `}`,
 		"{\"v\":1,\"type\":\"revoke\",\"group\":\"" + tag + "\",\"time_ms\":1,\"by\":\"\xff\"," + revoke + "}",
+		// -0 is 0 for Go and a float for the lite member's reader.
+		`{"v":1,"type":"revoke","group":"` + tag + `","time_ms":-0,` + revoke + `}`,
 	} {
 		s := NewRecords(ca.Cert)
 		if ok, err := s.Add(sign(body)); err == nil || ok {
