@@ -147,6 +147,10 @@ pub struct Entry {
     /// The sender's name, when known.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+    /// The records do not show that the device `by` names signed; `by` is
+    /// then only the signer's word.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unverified: bool,
     /// Bytes of the text.
     pub len: usize,
     /// paste or type.

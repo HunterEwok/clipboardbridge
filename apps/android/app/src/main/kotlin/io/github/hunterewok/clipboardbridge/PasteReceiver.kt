@@ -39,26 +39,31 @@ class PasteReceiver(private val context: Context, dir: File, private val keyboar
     val log: List<RemotePaste.Entry>
         get() = runCatching { RemotePaste.decodeLog(logFile.readBytes()) }.getOrDefault(emptyList())
 
-    /** Carries out a paste command that Commands.verify took; name is the sender's, when known. */
-    fun paste(body: Commands.Body, name: String?): Member.CommandResult {
+    /**
+     * Carries out a paste command that Commands.verify took, from sender
+     * (RecordSet.commandSender), verified when the records show that the
+     * device by names signed; name is that device's, when known.
+     */
+    fun paste(body: Commands.Body, sender: String, verified: Boolean, name: String?): Member.CommandResult {
         val set = settings
         val nowMS = System.currentTimeMillis()
         val res = when {
             !set.on -> refused(body, "remote paste is off on this device; its user turns it on in the app's settings")
             body.enter && !set.enter -> refused(body, "this device takes pastes without Enter only; its user allows Enter in the app's settings")
-            !limiter.allow(body.by, nowMS) -> refused(body, "too many pastes: at most one a second and 30 a minute from one device")
+            !limiter.allow(sender, nowMS) -> refused(body, "too many pastes: at most one a second and 30 a minute from one device")
             else -> inject(body, RemotePaste.clean(body.text ?: ""))
         }
+        val who = if (verified) body.by else "${body.by} (unverified)"
         if (res.status == "done") {
-            Log.i(TAG, "${body.by} pasted ${body.text?.length ?: 0} characters here")
+            Log.i(TAG, "$who pasted ${body.text?.length ?: 0} characters here")
             notifyPasted(name ?: body.by)
         } else {
-            Log.w(TAG, "a paste from ${body.by}: ${res.status}: ${res.reason}")
+            Log.w(TAG, "a paste from $who: ${res.status}: ${res.reason}")
         }
         if (body.kind != "secret") {
             val e = RemotePaste.Entry(
                 nowMS, body.by, name, (body.text ?: "").toByteArray().size, body.mode ?: "paste",
-                body.enter, res.status, res.reason,
+                body.enter, res.status, res.reason, !verified,
             )
             try {
                 save(logFile, RemotePaste.encodeLog(RemotePaste.appended(log, e)))

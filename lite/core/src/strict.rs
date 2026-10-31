@@ -40,6 +40,33 @@ pub fn check(b: &[u8], required: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// Checks that every number in b, outside its strings, is an integer as
+/// check takes it: never "-0", a fraction or an exponent. Readers differ on
+/// those (serde_json takes "-0" for a float, Go for 0), so the member
+/// protocol's frames pass this first, members a reader does not know
+/// included. It only scans: whether b is JSON is for the decoder.
+pub fn integers_only(b: &[u8]) -> Result<()> {
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'"' => {
+                i += 1;
+                while i < b.len() && b[i] != b'"' {
+                    i += if b[i] == b'\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            b'-' | b'0'..=b'9' => {
+                let mut p = Parser { b, i };
+                p.integer().map_err(Error::msg)?;
+                i = p.i;
+            }
+            _ => i += 1,
+        }
+    }
+    Ok(())
+}
+
 struct Parser<'a> {
     b: &'a [u8],
     i: usize,

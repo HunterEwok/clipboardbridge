@@ -140,6 +140,8 @@ object RemotePaste {
         val enter: Boolean,
         val result: String,
         val reason: String?,
+        /** The records do not show that the device by names signed; by is then only the signer's word. */
+        val unverified: Boolean = false,
     )
 
     /** How many pastes the log keeps. */
@@ -161,6 +163,7 @@ object RemotePaste {
                 e.name?.let { fields += "name" to Wire.str(it) }
                 if (e.enter) fields += "enter" to JsonPrimitive(true)
                 e.reason?.let { fields += "reason" to Wire.str(it) }
+                if (e.unverified) fields += "unverified" to JsonPrimitive(true)
                 Wire.obj(*fields.toTypedArray())
             },
         ),
@@ -187,6 +190,7 @@ object RemotePaste {
                     o.optBool("enter") == true,
                     o.optString("result") ?: return@mapNotNull null,
                     o.optString("reason"),
+                    o.optBool("unverified") == true,
                 )
             } catch (e: WireTypeException) {
                 null

@@ -487,7 +487,7 @@ impl Service {
         }
         match body.kind.as_str() {
             "hub" => return refused(&body.id, "the lite member is never the group's hub".into()),
-            "paste" => return self.pasted(&node, body),
+            "paste" => return self.pasted(&node, c, body),
             "action" => return self.act(&node, c, body),
             "actions-off" => {
                 let mut res = wire::CommandResult { id: body.id.clone(), status: "done".into(), reason: String::new() };
@@ -552,6 +552,7 @@ impl Service {
     /// this device's user turned on, for that kind of signer, within the
     /// limits per sender.
     fn act(&self, node: &Node, c: &crate::records::Record, body: crate::records::Command) -> wire::CommandResult {
+        let from = Sender::of(node, c, &body);
         let mut res = wire::CommandResult { id: body.id.clone(), status: "refused".into(), reason: String::new() };
         match actions::load(&self.state_dir) {
             Err(e) => {
@@ -570,7 +571,7 @@ impl Service {
                 };
                 if let Some(why) = actions::check(&set.get(&body.action), &signer) {
                     res.reason = why;
-                } else if !self.acts.lock().unwrap().allow(&body.by, uptime::wall_ms()) {
+                } else if !self.acts.lock().unwrap().allow(&from.key, uptime::wall_ms()) {
                     res.reason = "too many actions: at most one a second and 30 a minute from one device".into();
                 } else {
                     res = self.run_action(&body);
@@ -578,14 +579,21 @@ impl Service {
             }
         }
         if res.status == "done" {
-            (self.log)(&format!("cbb: {} ran the action {} here", body.by, body.action));
+            (self.log)(&format!("cbb: {} ran the action {} here", from.who(&body), body.action));
         } else {
-            (self.log)(&format!("cbb: the action {} from {}: {}: {}", body.action, body.by, res.status, res.reason));
+            (self.log)(&format!(
+                "cbb: the action {} from {}: {}: {}",
+                body.action,
+                from.who(&body),
+                res.status,
+                res.reason
+            ));
         }
         let e = actions::Entry {
             time_ms: uptime::wall_ms(),
             by: body.by.clone(),
-            name: device_name(node, &body.by),
+            name: from.name,
+            unverified: !from.verified,
             action: body.action.clone(),
             result: res.status.clone(),
             reason: res.reason.clone(),
@@ -664,7 +672,8 @@ impl Service {
 
     /// Carries out a paste command that verify_command took, as a full
     /// member does (internal/service/paste.go).
-    fn pasted(&self, node: &Node, body: crate::records::Command) -> wire::CommandResult {
+    fn pasted(&self, node: &Node, c: &crate::records::Record, body: crate::records::Command) -> wire::CommandResult {
+        let from = Sender::of(node, c, &body);
         let mut res = wire::CommandResult { id: body.id.clone(), status: "refused".into(), reason: String::new() };
         match remotepaste::load(&self.state_dir) {
             Err(e) => {
@@ -683,21 +692,22 @@ impl Service {
                     crate::rootless::sudo()
                 );
             }
-            Ok(_) if !self.pastes.lock().unwrap().allow(&body.by, uptime::wall_ms()) => {
+            Ok(_) if !self.pastes.lock().unwrap().allow(&from.key, uptime::wall_ms()) => {
                 res.reason = "too many pastes: at most one a second and 30 a minute from one device".into();
             }
-            Ok(set) => res = self.inject(&body, &remotepaste::clean(&body.text), set, &device_name(node, &body.by)),
+            Ok(set) => res = self.inject(&body, &remotepaste::clean(&body.text), set, &from.name),
         }
         if res.status == "done" {
-            (self.log)(&format!("cbb: {} pasted {} bytes here", body.by, body.text.len()));
+            (self.log)(&format!("cbb: {} pasted {} bytes here", from.who(&body), body.text.len()));
         } else {
-            (self.log)(&format!("cbb: a paste from {}: {}: {}", body.by, res.status, res.reason));
+            (self.log)(&format!("cbb: a paste from {}: {}: {}", from.who(&body), res.status, res.reason));
         }
         if body.paste_kind != "secret" {
             let e = remotepaste::Entry {
                 time_ms: uptime::wall_ms(),
                 by: body.by.clone(),
-                name: device_name(node, &body.by),
+                name: from.name.clone(),
+                unverified: !from.verified,
                 len: body.text.len(),
                 method: body.mode.clone(),
                 enter: body.enter,
@@ -1199,6 +1209,29 @@ fn action_status(set: &actions::Settings) -> Vec<control::Action> {
         .into_iter()
         .map(|a| control::Action { name: a.name, on: a.on, by: a.by, any_key: a.any_key, ..Default::default() })
         .collect()
+}
+
+/// Whom a command counts for in the limits per sender and the logs
+/// (Records::command_sender), with the name of its device when the records
+/// show that it signed.
+struct Sender {
+    key: String,
+    verified: bool,
+    name: String,
+}
+
+impl Sender {
+    fn of(node: &Node, c: &crate::records::Record, body: &crate::records::Command) -> Sender {
+        let (key, verified) = node.records().lock().unwrap().command_sender(c, &body.by);
+        let name = if verified { device_name(node, &body.by) } else { String::new() };
+        Sender { key, verified, name }
+    }
+
+    /// The sender in the service's log: by, marked when the records do not
+    /// show that its device signed.
+    fn who(&self, body: &crate::records::Command) -> String {
+        if self.verified { body.by.clone() } else { format!("{} (unverified)", body.by) }
+    }
 }
 
 fn device_name(node: &Node, id: &str) -> String {

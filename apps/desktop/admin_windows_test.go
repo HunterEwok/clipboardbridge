@@ -21,7 +21,8 @@ func TestPSScript(t *testing.T) {
 	}
 }
 
-// PowerShell runs the encoded script as written.
+// PowerShell runs the encoded script as written, and a name with any of
+// its single quotes stays one literal.
 func TestEncodePS(t *testing.T) {
 	out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePS("$x = 'no'; Write-Output 'Bob''s $x'")).Output()
 	if err != nil {
@@ -29,5 +30,20 @@ func TestEncodePS(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(out)); got != "Bob's $x" {
 		t.Errorf("powershell printed %q", got)
+	}
+	name := "a\u2018; Write-Output pwned; \u2019b\u201a\u201b'"
+	out, err = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePS("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Write-Output "+psQuote(name))).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != name {
+		t.Errorf("powershell printed %q, want %q", got, name)
+	}
+}
+
+// Each of PowerShell's single quotes is doubled.
+func TestPSQuote(t *testing.T) {
+	if got, want := psQuote("a\u2018b\u2019c\u201ad\u201be'f"), "'a\u2018\u2018b\u2019\u2019c\u201a\u201ad\u201b\u201be''f'"; got != want {
+		t.Errorf("psQuote = %q, want %q", got, want)
 	}
 }

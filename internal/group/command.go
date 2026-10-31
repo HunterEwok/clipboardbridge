@@ -271,9 +271,13 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 	if s.Watch(signer) && !WatchCommand(body.Type) {
 		return body, fmt.Errorf("group: a watch does not sign %s commands", body.Type)
 	}
-	// by names the signer's device whenever the records show it.
+	// by names the signer's device whenever the records show it, and
+	// otherwise no device the records show, unless the key is a legacy
+	// group CA, which each full member holds.
 	if dev, _, ok := s.signerDevice(signer, anchor); ok && dev.ID != body.By {
 		return body, errors.New("group: a command's by is not the device of its signer")
+	} else if d, listed := s.device(body.By); !ok && listed && !(s.legacyRoot(signer, anchor) && role(d.Role) == RoleFull) {
+		return body, errors.New("group: a command's by names a device that does not hold its signer's key")
 	}
 	ms := now.UnixMilli()
 	switch {
@@ -318,6 +322,43 @@ func (s *Records) CommandSigner(c Record) (dev Device, root, ok bool) {
 		return Device{}, false, false
 	}
 	return s.signerDevice(signer, anchor)
+}
+
+// CommandSender returns whom the limits per sender and the logs count for
+// the command c, with by, that VerifyCommand took: by, verified, when the
+// records show that its device holds the signing key (for a legacy group
+// CA, that it is a full member), and otherwise the signing key itself, as
+// "key " and its hash in hex, since by is then only the signer's word.
+func (s *Records) CommandSender(c Record, by DeviceID) (sender string, verified bool) {
+	signer, anchor, err := s.signerOf(c)
+	if err != nil {
+		return "", false
+	}
+	if dev, _, ok := s.signerDevice(signer, anchor); ok && dev.ID == by {
+		return string(by), true
+	}
+	if d, listed := s.device(by); listed && s.legacyRoot(signer, anchor) && role(d.Role) == RoleFull {
+		return string(by), true
+	}
+	return "key " + hex.EncodeToString(signer[:]), false
+}
+
+// device returns the device id the records show.
+func (s *Records) device(id DeviceID) (Device, bool) {
+	for _, d := range s.Devices() {
+		if d.ID == id {
+			return d, true
+		}
+	}
+	return Device{}, false
+}
+
+// legacyRoot reports whether signer is the key of a legacy group CA (one
+// no root record has handed on), which every full member of the group
+// holds, so that the records cannot show which device signed.
+func (s *Records) legacyRoot(signer, anchor KeyHash) bool {
+	path := s.path()
+	return signer == anchor && path[len(path)-1].MaxPathLen == 0
 }
 
 // signerDevice is CommandSigner for the key signer under the root anchor.

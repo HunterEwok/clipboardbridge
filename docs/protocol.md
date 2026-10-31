@@ -387,7 +387,10 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 Each frame is a 4-byte big-endian length followed by that many bytes of a JSON object (UTF-8,
 no trailing newline). A frame MUST NOT exceed 7 MiB (7 340 032 bytes); a larger length closes
 the connection. The Go code writes JSON without HTML escaping; receivers MUST accept any valid
-JSON, and MUST close a connection whose frame is not a JSON object. A length with its top bit set (0x80000000) marks a binary `chunk` frame instead, which
+JSON, and MUST close a connection whose frame is not a JSON object. Every number in a frame,
+in members the receiver does not know too, is an integer written as in signed bodies
+(Conventions, "Signed bodies"): no `-0`, fraction or exponent, in the range of a 64-bit signed
+integer; a frame with another number is not a message. A length with its top bit set (0x80000000) marks a binary `chunk` frame instead, which
 carries content of images and files ("Content", below) and comes only to a member that sent
 `get`.
 
@@ -1209,7 +1212,8 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   when that user may take it: root and the service's own user (on Windows the system and
   the service's account) take every target, and `console` only they; `desktop` and `act` go
   to the user of an active session (on Linux and FreeBSD an active graphical logind session
-  of the user's own, X11 or Wayland, so that a user signed in over SSH alone takes none; the
+  of the user's own, X11 or Wayland, on a seat or not remote, so that a user signed in over
+  SSH alone takes none, even with a session type set by hand; the
   owner of `/dev/console` on a Mac; an active Windows session), and `tmux` to a user with a
   session (logind's, active or online, which counts one over SSH; never the user's service
   manager or a greeter). A watcher whose user the system does not name gets
@@ -2312,8 +2316,9 @@ per message, no length prefix, at most 1 MiB in all from the other side.
    [bytes]}` from the device, with the device's WireGuard key.
    - With a member certificate, `records` are the group's authority records, as for the
      forwarder. The relay keeps them for the group in memory while it runs. It refuses a
-     device whose member certificate they revoke, and drops a registered device as soon as
-     a later registration's records revoke it.
+     device whose member certificate chain they refuse, as a member does (section 10: its
+     key revoked or frozen, or its admin CA removed without keeping it), and drops a
+     registered device as soon as a later registration's records refuse its chain.
    - With a server certificate, `credentials` are the period's hubs' and members'
      credentials, and the relay checks them (section 18, "What a server checks"); the
      period's tag names the group, kept apart from the tags of group CAs. A relay that
@@ -2436,7 +2441,7 @@ signed bodies (Conventions):
 | `v` | integer | `1` |
 | `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or `away-off` |
 | `group` | string | the group tag |
-| `by` | string | the signer's device ID (32 of `0`-`9` and `a`-`f`): a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device |
+| `by` | string | the signer's device ID (32 of `0`-`9` and `a`-`f`): a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device, or, when they show none, names a device they show (a computer takes a legacy group CA's command that names a `full` member, since each holds that key) |
 | `to` | string | the receiver's device ID (32 of `0`-`9` and `a`-`f`) |
 | `id` | string | 128 random bits as 32 lowercase hex characters; IDs compare as byte strings |
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch, not negative |
@@ -2464,6 +2469,10 @@ and `key` and `psk`, 32 bytes each in base64. A body is at most 64 KiB, or 2 MiB
 
 `sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
 or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
+
+A receiver's limits per sender (remote paste, quick actions) and its logs count a command for
+its `by` when the records show that this device holds the signing key, and otherwise for the
+signing key itself, with the log entry marked `unverified`: `by` is then only the signer's word.
 
 ### In the member protocol
 

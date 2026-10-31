@@ -135,6 +135,10 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 		return refused(errors.New("this device has no records of its group yet"))
 	}
 	body, err := s.records.VerifyCommand(c, id.ID, now)
+	var from sender
+	if err == nil {
+		from.key, from.verified = s.records.CommandSender(c, body.By)
+	}
 	s.recMu.Unlock()
 	if err != nil {
 		return refused(err)
@@ -172,11 +176,11 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 	case group.CommandHub:
 		return s.takeHub(body)
 	case group.CommandPaste:
-		return s.pasted(body)
+		return s.pasted(body, from)
 	case group.CommandPasteOff:
 		return s.pasteOff(body)
 	case group.CommandAction:
-		return s.act(body, c)
+		return s.act(body, c, from)
 	case group.CommandActionsOff:
 		return s.actionsOff(body)
 	case group.CommandAwayOff:

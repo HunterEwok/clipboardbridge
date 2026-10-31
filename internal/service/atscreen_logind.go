@@ -22,7 +22,7 @@ func atScreen(p peer, target string) verdict {
 	}
 	uid := strconv.FormatUint(uint64(p.uid), 10)
 	for _, id := range ids {
-		if atScreenIn(lockcheck.Show(id, "User", "State", "Class", "Type"), uid, target) {
+		if atScreenIn(lockcheck.Show(id, "User", "State", "Class", "Type", "Remote", "Seat"), uid, target) {
 			return allowed
 		}
 	}
@@ -33,7 +33,8 @@ func atScreen(p peer, target string) verdict {
 // the user uid at the screen for target: a session of the user's own (not
 // its service manager or a greeter); for tmux any that is active or online,
 // as over SSH; for the desktop and the actions an active graphical one,
-// X11 or Wayland, so that a user signed in over SSH alone takes none.
+// X11 or Wayland, on a seat or not remote, so that a user signed in over
+// SSH alone takes none, even where SSH lets the session name its type.
 func atScreenIn(m map[string]string, uid, target string) bool {
 	if m["User"] != uid || !strings.HasPrefix(m["Class"], "user") {
 		return false
@@ -41,5 +42,5 @@ func atScreenIn(m map[string]string, uid, target string) bool {
 	if target == targetTmux {
 		return m["State"] == "active" || m["State"] == "online"
 	}
-	return m["State"] == "active" && (m["Type"] == "x11" || m["Type"] == "wayland")
+	return m["State"] == "active" && (m["Type"] == "x11" || m["Type"] == "wayland") && (m["Seat"] != "" || m["Remote"] == "no")
 }

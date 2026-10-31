@@ -1166,6 +1166,9 @@ type commandVector struct {
 	Command Record `json:"command"`
 	OK      bool   `json:"ok"`
 	Mode    string `json:"mode,omitempty"`
+	// Verified: whether the records show that by holds the signing key,
+	// for the limits per sender and the logs (Records.CommandSender).
+	Verified bool `json:"verified,omitempty"`
 }
 
 // TestGoCommandVectors writes (with -update) and checks
@@ -1183,9 +1186,11 @@ func TestGoCommandVectors(t *testing.T) {
 		self := member(t, pg.root)
 		selfID := DeviceID(self.Subject.CommonName)
 		phoneM, pcM, frozenM, removedM := member(t, phone), member(t, pc), member(t, frozen), member(t, removed)
-		// A command's by is its signer's device.
+		// A command's by is its signer's device; the root has none here,
+		// so its by names a device the records do not show.
+		rootBy := NewDeviceID()
 		byOf := map[*CA]DeviceID{phone: DeviceID(phoneM.Subject.CommonName), pc: DeviceID(pcM.Subject.CommonName),
-			frozen: DeviceID(frozenM.Subject.CommonName), removed: DeviceID(removedM.Subject.CommonName)}
+			frozen: DeviceID(frozenM.Subject.CommonName), removed: DeviceID(removedM.Subject.CommonName), pg.root: rootBy}
 		all := []Record{
 			adminRecord(t, g, pg.root, nil, phoneM, "admin phone", KeyHashOf(phone.Cert)),
 			computerAdminRecord(t, pg, pcM, "pc", KeyHashOf(pc.Cert)),
@@ -1199,7 +1204,7 @@ func TestGoCommandVectors(t *testing.T) {
 		sign := func(signer *CA, chain []*x509.Certificate, to DeviceID, tag string, at int64, mode string) Record {
 			by := byOf[signer]
 			if by == "" {
-				by = selfID // the root, which has no device here
+				by = NewDeviceID() // a key of another group
 			}
 			r, err := SignCommand(CommandBody{Type: CommandMode, Group: tag, By: by, To: to, ID: NewCommandID(),
 				TimeMS: at, ExpiresMS: at + CommandLifetime.Milliseconds(), Mode: mode}, signer.Key, chain...)
@@ -1210,11 +1215,7 @@ func TestGoCommandVectors(t *testing.T) {
 		}
 		tag := Tag(g)
 		paste := func(signer *CA, chain []*x509.Certificate, typ string) Record {
-			by := byOf[signer]
-			if by == "" {
-				by = selfID
-			}
-			b := CommandBody{Type: typ, Group: tag, By: by, To: selfID, ID: NewCommandID(), TimeMS: now, ExpiresMS: now + CommandLifetime.Milliseconds()}
+			b := CommandBody{Type: typ, Group: tag, By: byOf[signer], To: selfID, ID: NewCommandID(), TimeMS: now, ExpiresMS: now + CommandLifetime.Milliseconds()}
 			if typ == CommandPaste {
 				b.Mode, b.Kind, b.Text, b.Enter = PasteByClipboard, "text", "ls -l <dir> & echo \"done\"\n", true
 			}
@@ -1230,12 +1231,22 @@ func TestGoCommandVectors(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		rootAsSelf, err := SignCommand(CommandBody{Type: CommandMode, Group: tag, By: selfID, To: selfID, ID: NewCommandID(),
+			TimeMS: now, ExpiresMS: now + CommandLifetime.Milliseconds(), Mode: "own"}, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootAsPC, err := SignCommand(CommandBody{Type: CommandMode, Group: tag, By: byOf[pc], To: selfID, ID: NewCommandID(),
+			TimeMS: now, ExpiresMS: now + CommandLifetime.Milliseconds(), Mode: "own"}, pg.root.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
 		altered.Body = []byte(strings.Replace(string(altered.Body), `"own"`, `"send"`, 1))
 		v := commandVectors{GroupCA: g.Raw, Records: all, Self: selfID, NowMS: now}
 		for _, c := range []commandVector{
 			{Name: "the root", Command: sign(pg.root, nil, selfID, tag, now, "shared"), Mode: "shared"},
-			{Name: "the admin phone", Command: sign(phone, []*x509.Certificate{phone.Cert}, selfID, tag, now-1000, "receive"), Mode: "receive"},
-			{Name: "an admin computer", Command: sign(pc, []*x509.Certificate{pc.Cert}, selfID, tag, now, "send"), Mode: "send"},
+			{Name: "the admin phone", Command: sign(phone, []*x509.Certificate{phone.Cert}, selfID, tag, now-1000, "receive"), Mode: "receive", Verified: true},
+			{Name: "an admin computer", Command: sign(pc, []*x509.Certificate{pc.Cert}, selfID, tag, now, "send"), Mode: "send", Verified: true},
 			{Name: "a frozen admin computer", Command: sign(frozen, []*x509.Certificate{frozen.Cert}, selfID, tag, now, "own")},
 			{Name: "a removed admin computer", Command: sign(removed, []*x509.Certificate{removed.Cert}, selfID, tag, now, "own")},
 			{Name: "a key of another group", Command: sign(newRoot(t), nil, selfID, tag, now, "own")},
@@ -1245,7 +1256,9 @@ func TestGoCommandVectors(t *testing.T) {
 			{Name: "signed in the future", Command: sign(pg.root, nil, selfID, tag, now+CommandAhead.Milliseconds()+1, "own")},
 			{Name: "altered", Command: altered},
 			{Name: "an admin computer naming another device", Command: misnamed},
-			{Name: "a paste by an admin computer", Command: paste(pc, []*x509.Certificate{pc.Cert}, CommandPaste), Mode: PasteByClipboard},
+			{Name: "the root, with no device here, naming this device", Command: rootAsSelf},
+			{Name: "the root, with no device here, naming an admin computer", Command: rootAsPC},
+			{Name: "a paste by an admin computer", Command: paste(pc, []*x509.Certificate{pc.Cert}, CommandPaste), Mode: PasteByClipboard, Verified: true},
 			{Name: "a paste by a frozen admin computer", Command: paste(frozen, []*x509.Certificate{frozen.Cert}, CommandPaste)},
 			{Name: "paste-off by the root", Command: paste(pg.root, nil, CommandPasteOff), OK: true},
 		} {
@@ -1276,7 +1289,7 @@ func TestGoCommandVectors(t *testing.T) {
 	if _, errs := s.AddAll(v.Records); len(errs) != 0 {
 		t.Fatal(errs)
 	}
-	if len(v.Commands) != 15 {
+	if len(v.Commands) != 17 {
 		t.Fatalf("the file has %d commands", len(v.Commands))
 	}
 	for _, c := range v.Commands {
@@ -1286,6 +1299,9 @@ func TestGoCommandVectors(t *testing.T) {
 		}
 		if err == nil && body.Mode != c.Mode {
 			t.Errorf("%s: the mode is %q, the file has %q", c.Name, body.Mode, c.Mode)
+		}
+		if _, verified := s.CommandSender(c.Command, body.By); err == nil && verified != c.Verified {
+			t.Errorf("%s: the sender is verified %v, the file says %v", c.Name, verified, c.Verified)
 		}
 	}
 }

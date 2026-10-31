@@ -40,8 +40,8 @@ const resultWait = 10 * time.Second
 var ErrRestart = errors.New("restarting at an admin's request")
 
 // act carries out an action command that VerifyCommand took; c is the
-// command, for its signer.
-func (s *Service) act(body group.CommandBody, c group.Record) node.Result {
+// command, for its signer, from the sender from.
+func (s *Service) act(body group.CommandBody, c group.Record, from sender) node.Result {
 	res := node.Result{ID: body.ID, Status: node.ResultRefused}
 	set, err := actions.Load(s.cfg.StateDir)
 	switch {
@@ -59,19 +59,19 @@ func (s *Service) act(body group.CommandBody, c group.Record) node.Result {
 		}
 		if err := actions.Check(set.Get(body.Action), signer); err != nil {
 			res.Reason = err.Error()
-		} else if !s.actionLimit.Allow(string(body.By), s.cfg.now()) {
+		} else if !s.actionLimit.Allow(from.key, s.cfg.now()) {
 			res.Reason = "too many actions: at most one a second and 30 a minute from one device"
 		} else {
 			res = s.runAction(body, set.Get(body.Action))
 		}
 	}
 	if res.Status == node.ResultDone {
-		s.logf("cbb: %s ran the action %s here", body.By, body.Action)
+		s.logf("cbb: %s ran the action %s here", from.who(body), body.Action)
 	} else {
-		s.logf("cbb: the action %s from %s: %s: %s", body.Action, body.By, res.Status, res.Reason)
+		s.logf("cbb: the action %s from %s: %s: %s", body.Action, from.who(body), res.Status, res.Reason)
 	}
-	e := actions.Entry{TimeMS: s.cfg.now().UnixMilli(), By: string(body.By), Name: s.deviceName(body.By),
-		Action: body.Action, Result: res.Status, Reason: res.Reason}
+	e := actions.Entry{TimeMS: s.cfg.now().UnixMilli(), By: string(body.By), Name: s.senderName(body, from),
+		Unverified: !from.verified, Action: body.Action, Result: res.Status, Reason: res.Reason}
 	if err := actions.Append(s.cfg.StateDir, e); err != nil {
 		s.logf("cbb: keeping the action log: %v", err)
 	}
