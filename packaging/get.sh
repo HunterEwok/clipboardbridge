@@ -248,7 +248,7 @@ number() { sed -n "s/.*\"$1\":\([0-9][0-9]*\).*/\1/p" "$2" | head -n 1; }
 # files), and no field get.sh reads written twice, so that field and number,
 # which take the first, read a body as the other programs do.
 strict() {
-	! grep -q '\\' "$1" || return 1
+	! grep -qF "\\" "$1" || return 1
 	! grep -o '"[^"]*":' "$1" | grep -qv '^"[a-z0-9_]\{1,64\}":$' || return 1
 	! grep -q '[:,[]null' "$1" || return 1
 	for n in v type seq time_ms expires_ms keys version channel release release_sha256 files; do
