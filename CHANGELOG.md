@@ -658,6 +658,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The forwarder counts only the groups that are away against the 32 MiB it keeps of their
+  authority records, and past it forgets from the wide network that holds the most of them
+  (docs/relay-budget.md), so the records of a group that is away outlast the groups of other
+  networks.
 - Release files are read alike by every program that checks them. Go read a file entry
   without `size` as 0; Go, the lite member and `get.sh` took a key whose `use` is empty as a
   release key; the lite member took a key with a compressed point; the Swift kit took a

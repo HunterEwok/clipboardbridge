@@ -213,18 +213,30 @@ func TestOpenRelayForgetsStrangers(t *testing.T) {
 			t.Errorf("after the strangers left the counts hold\n%s\n%s", r.held, r.recordBytes)
 		}
 		r.mu.Unlock()
-		// The tunnel stops a removed peer's work a moment later.
-		time.Sleep(time.Second)
-		runtime.GC()
-		runtime.GC()
-		var ms runtime.MemStats
-		runtime.ReadMemStats(&ms)
-		return ms.HeapAlloc
+		return settledHeap()
 	}
 	first := crowd(0)
-	second := crowd(strangers)
-	// 50 bytes a stranger would be a leak.
-	if grown := int64(second) - int64(first); grown > 50*strangers {
+	crowd(strangers)
+	// The tunnel stops a removed peer's work a moment later, and later on a
+	// slow machine: the heap is read until it comes down to the first
+	// crowd's, for a while. 50 bytes a stranger that stay would be a leak.
+	var grown int64
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		if grown = int64(settledHeap()) - int64(first); grown <= 50*strangers || time.Now().After(deadline) {
+			break
+		}
+	}
+	if grown > 50*strangers {
 		t.Errorf("a second crowd of %d strangers grew the relay by %d bytes", strangers, grown)
 	}
+}
+
+// settledHeap is the heap in use a moment after the last work, once collected.
+func settledHeap() uint64 {
+	time.Sleep(time.Second)
+	runtime.GC()
+	runtime.GC()
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	return ms.HeapAlloc
 }
