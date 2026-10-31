@@ -676,6 +676,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   at most 256 KiB of records for one group and 128 MiB in all, and refuses a registration
   past those rather than keep part of its records. Devices see the new refusals as
   ordinary ones; nothing on the wire changes.
+- A relay also counts the requests being read in its tunnels by the wider network (an IPv4
+  /16 or an IPv6 /48) the devices registered from, and an open relay keeps nothing of a
+  group's period for a registration it refused.
 - A channel or status file may raise its `seq` at most 65 536 on a fresh device or under a
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On

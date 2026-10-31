@@ -339,6 +339,11 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 		}
 	}
 	if err := r.addLocked(m); err != nil {
+		// A period is held for the groups that have a device here, as
+		// dropLocked keeps it, so a refused group leaves none.
+		if len(r.groups[tag]) == 0 {
+			delete(r.periods, tag)
+		}
 		r.mu.Unlock()
 		if recs != nil {
 			r.forgetRecords(tag)

@@ -2310,7 +2310,8 @@ ID, and a device's pseudonym changes with each period.
    setup also paid for by the second: an address may start 16 a second and a network 64,
    with a burst; and, counted apart, 256 requests inside the tunnels being read at a time,
    at most 16 of them from one device, 32 from one group, 32 from the devices that
-   registered from one IP address and 64 from one network. A connection in a tunnel sends
+   registered from one IP address, 64 from one network and 64 from one wider network (an
+   IPv4 /16 or an IPv6 /48). A connection in a tunnel sends
    its request line within 5 s. The relay closes a connection over a limit at once.
    A device, in turn, ends its watch on a note longer than 64 KiB or an `online` list of
    more than 64 names or with a name that is not a device ID or a pseudonym (32 or 64
@@ -2325,7 +2326,8 @@ ID, and a device's pseudonym changes with each period.
    registrations that send the same records cost no checks; each new record is charged to
    what the address and network that sent it may start by the second. A registration over
    a limit gets `{"error": string}`. It forgets a group's records, or its period's key,
-   versions and members' list, once the group's last device leaves.
+   versions and members' list, once the group's last device leaves, and keeps none of them
+   for a group whose registration it refused.
 
 ### What it keeps
 

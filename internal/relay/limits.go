@@ -68,6 +68,18 @@ func networkOf(a netip.Addr) netip.Prefix {
 	return p
 }
 
+// wideNetworkOf returns the wider network around networkOf's: an IPv4 /16
+// or an IPv6 /48, what one provider usually gives one customer of either.
+func wideNetworkOf(a netip.Addr) netip.Prefix {
+	a = a.Unmap()
+	bits := 48
+	if a.Is4() {
+		bits = 16
+	}
+	p, _ := a.Prefix(bits)
+	return p
+}
+
 // addrOf returns the IP address of a connection's remote end.
 func addrOf(c net.Conn) netip.Addr {
 	if ap, err := netip.ParseAddrPort(c.RemoteAddr().String()); err == nil {
