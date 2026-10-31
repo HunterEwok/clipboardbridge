@@ -331,6 +331,13 @@ func TestRefused(t *testing.T) {
 		{"an older version", func(t *testing.T, f *fixture) {
 			f.publish(t, "0.6.1", good(t), nil, time.Hour)
 		}, release.Seen{Version: "0.6.2"}, "older"},
+		{"a channel naming no version", func(t *testing.T, f *fixture) {
+			// Before the channel file is checked: its name never makes an
+			// address.
+			f.publish(t, "0.6.1", good(t), nil, time.Hour)
+			body, _ := json.Marshal(release.Channel{V: 1, Type: release.TypeChannel, Channel: Channel, Release: "0.6.1/../x"})
+			f.write(t, Channel+".json", release.File{Body: body, Sig: []byte{1}, Key: spki(t, f.rel)})
+		}, release.Seen{}, "not a version"},
 		{"another project's roots", func(t *testing.T, f *fixture) {
 			f.publish(t, "0.6.1", good(t), nil, time.Hour)
 			f.roots = [][]byte{spki(t, newKey(t))}
@@ -390,6 +397,9 @@ func TestPinned(t *testing.T) {
 	}
 	if _, err := u.Check(context.Background(), State{}, "0.5.3"); err == nil {
 		t.Error("took release.json of 0.5.2 for 0.5.3")
+	}
+	if _, err := u.Check(context.Background(), State{}, "0.5.2/../0.5.2"); err == nil || !strings.Contains(err.Error(), "not a version") {
+		t.Errorf("a version with a path: %v", err)
 	}
 }
 

@@ -90,9 +90,27 @@ public enum Pairing {
         /// Checks it as the member does: a known OS, a printable name of 1
         /// to 64 bytes, a known role, and an admin key only from a phone, a
         /// P-256 one.
+        /// Whether a name may hold s, as Go's unicode.IsPrint says: a
+        /// letter, mark, number, punctuation, symbol or the ASCII space; no
+        /// control, format, private-use, unassigned or other space.
+        static func printable(_ s: Unicode.Scalar) -> Bool {
+            if s == " " { return true }
+            switch s.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+                 .nonspacingMark, .spacingMark, .enclosingMark,
+                 .decimalNumber, .letterNumber, .otherNumber,
+                 .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation,
+                 .initialPunctuation, .finalPunctuation, .otherPunctuation,
+                 .mathSymbol, .currencySymbol, .modifierSymbol, .otherSymbol:
+                return true
+            default:
+                return false
+            }
+        }
+
         public var isValid: Bool {
             guard ["linux", "windows", "macos", "ios", "android"].contains(os) || (os == "none" && role == Self.lite), !name.isEmpty, name.utf8.count <= 64,
-                  !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }),
+                  name.unicodeScalars.allSatisfy(Self.printable),
                   role == nil || role == Self.lite else { return false }
             guard let adminKey else { return true }
             return isPhone && P256.Signing.PublicKey(spki: adminKey) != nil

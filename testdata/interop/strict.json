@@ -568,6 +568,21 @@
       "name": "a manifest of zero bytes with a folder",
       "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImQiLCJkaXIiOnRydWV9XX0=",
       "valid": true
+    },
+    {
+      "name": "two names in NFC and NFD",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6IsOpIiwic2l6ZSI6MCwic2hhMjU2IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifSx7InBhdGgiOiJlzIEiLCJzaXplIjowLCJzaGEyNTYiOiJCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjPSJ9XX0=",
+      "valid": true
+    },
+    {
+      "name": "the Kelvin sign and K",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6IuKEqiIsInNpemUiOjAsInNoYTI1NiI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In0seyJwYXRoIjoiSyIsInNpemUiOjAsInNoYTI1NiI6IkJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2M9In1dfQ==",
+      "valid": true
+    },
+    {
+      "name": "a slash before a combining mark",
+      "body": "eyJzaXplIjowLCJwYXJ0cyI6W3sicGF0aCI6ImEiLCJkaXIiOnRydWV9LHsicGF0aCI6ImEvXHUwMzAxYiIsImRpciI6dHJ1ZX1dfQ==",
+      "valid": true
     }
   ]
 }

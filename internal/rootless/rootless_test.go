@@ -6,6 +6,7 @@
 package rootless
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -27,5 +28,27 @@ func TestDirs(t *testing.T) {
 		if got != filepath.Clean(want) {
 			t.Errorf("got %s, want %s", got, want)
 		}
+	}
+}
+
+// A home whose ~/.local is a link still has its rootless install found.
+func TestSameFileThroughLinks(t *testing.T) {
+	d := t.TempDir()
+	real := filepath.Join(d, "real")
+	if err := os.MkdirAll(filepath.Join(real, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(real, "bin", "cbb")
+	if err := os.WriteFile(exe, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(d, ".local")); err != nil {
+		t.Fatal(err)
+	}
+	if !sameFile(exe, filepath.Join(d, Bin)) {
+		t.Error("a linked ~/.local was not taken for the install")
+	}
+	if sameFile(exe, filepath.Join(d, "other")) {
+		t.Error("another path was taken for the install")
 	}
 }

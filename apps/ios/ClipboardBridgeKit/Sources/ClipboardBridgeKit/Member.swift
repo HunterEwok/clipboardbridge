@@ -343,8 +343,22 @@ public enum Member {
             (self.moved, self.nextKey) = (moved, nextKey)
         }
 
-        /// Whether the keys are 32 bytes, as a tunnel needs.
-        public var isValid: Bool { hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 && (nextKey?.count ?? 32) == 32 }
+        /// Whether it is an offer a tunnel can take, as Go checks one: keys
+        /// of 32 bytes that are not all zeros, at most 8 endpoints, each
+        /// with a port that is not 0.
+        public var isValid: Bool {
+            hubKey.count == 32 && psk.count == 32 && endpoints.count <= 8 && (nextKey?.count ?? 32) == 32
+                && hubKey.contains { $0 != 0 } && psk.contains { $0 != 0 } && endpoints.allSatisfy(Self.hasPort)
+        }
+
+        /// Whether endpoint ends in a port from 1 to 65535, as in
+        /// "192.0.2.1:8764" or "[2001:db8::1]:8764".
+        static func hasPort(_ endpoint: String) -> Bool {
+            guard let colon = endpoint.lastIndex(of: ":"), colon != endpoint.startIndex else { return false }
+            let digits = endpoint[endpoint.index(after: colon)...]
+            guard !digits.isEmpty, digits.utf8.allSatisfy({ (0x30...0x39).contains($0) }), let port = UInt16(digits) else { return false }
+            return port != 0
+        }
 
         /// The offer with the next key as the hub's key, or nil without one.
         public var withNextKey: TunnelOffer? {
@@ -471,6 +485,31 @@ public enum Member {
         public var chain: [Data]?
 
         public init(body: Data, sig: Data, chain: [Data]? = nil) { (self.body, self.sig, self.chain) = (body, sig, chain) }
+
+        /// The records of one message at most, well below the frame limit:
+        /// a set is sent in messages of about 1 MiB (section 10, "Exchange
+        /// in the member protocol"), as Go's chunkRecords does.
+        static let chunk = 1 << 20
+
+        /// rs in the messages that carry them, in order, each of about
+        /// chunk bytes at most unless one record alone is larger.
+        public static func chunks(_ rs: [Record]) -> [[Record]] {
+            var out: [[Record]] = []
+            var cur: [Record] = []
+            var size = 0
+            for r in rs {
+                // base64 and the JSON around it
+                let n = (r.body.count + r.sig.count + (r.chain ?? []).reduce(0) { $0 + $1.count }) * 4 / 3 + 64
+                if !cur.isEmpty && size + n > chunk {
+                    out.append(cur)
+                    (cur, size) = ([], 0)
+                }
+                cur.append(r)
+                size += n
+            }
+            if !cur.isEmpty { out.append(cur) }
+            return out
+        }
     }
 
     /// An attestation of one of a device's keys (section 17, "Evidence"):

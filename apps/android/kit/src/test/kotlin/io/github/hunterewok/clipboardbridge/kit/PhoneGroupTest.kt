@@ -196,6 +196,28 @@ class PhoneGroupTest {
     }
 
     @Test
+    fun memberRefusesAJoinerKeyOrChainAsAComputerDoes() {
+        val root = PhoneGroup.create(SoftwareSigner(), SoftwareSigner().publicKeyDER, t0)
+        val l = Listener()
+        val p384 = java.util.Base64.getDecoder().decode(P384_CERT)
+        val (m, _) = Pipe.pair()
+        val two = object : FrameTransport by m {
+            override val peerChain = listOf(l.cert, root.memberCert)
+        }
+        for ((t, cert, why) in listOf(
+            Triple(m, p384, "the joining device's key is not a P-256 key"),
+            Triple(two, l.cert, "the joining device must send exactly one certificate"),
+        )) {
+            val e = assertFailsWith<PairingMember.Failure> {
+                PairingMember.admit(t, "123456", root.memberCert, cert, sid, Pairing.MemberAD(root.device, root.tag)) { _, _, _ ->
+                    error("issued a welcome")
+                }
+            }
+            assertEquals(why, e.message)
+        }
+    }
+
+    @Test
     fun saveAndLoad() {
         val rootKey = SoftwareSigner()
         val g = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, t0, "My\u0007Pixel")
@@ -419,3 +441,7 @@ class PhoneGroupTest {
         )
     }
 }
+
+/** A self-signed certificate with a P-384 key for the device ID 0123456789abcdef0123456789abcdef. */
+private const val P384_CERT =
+    "MIIB6DCCAW6gAwIBAgIUAZv1zxaQendV3vrzM9UqL0xFbGQwCgYIKoZIzj0EAwIwKzEpMCcGA1UEAwwgMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwHhcNMjYxMDMxMDgwMTA3WhcNMzYxMDI4MDgwMTA3WjArMSkwJwYDVQQDDCAwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjB2MBAGByqGSM49AgEGBSuBBAAiA2IABGPVHQzOkUL3/eN4mcZqO6tU7B6YS8I21tzGWFeoddh3g8gFJ+lvOeXnWNDs5Kb4ewC4C7xajcObF96dLzHm4iJLndLCPs6Ry8yp+n1Qq2iNjfdEP6DbDovujn61huXGe6NTMFEwHQYDVR0OBBYEFOiZlbxuz4DpfnxiZUCH1Uk1ltN+MB8GA1UdIwQYMBaAFOiZlbxuz4DpfnxiZUCH1Uk1ltN+MA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDaAAwZQIxAL+QMr4a6NK+ye/WnoyqP6zSKvX2m36eBB4JLFFWRDXxvuDkkxbOyY1qZTgnAIK79AIwe1vxP94FlJL73T9uTn9I9VolozxxhdFHmsM+uW9t+sFJU14EH1l/ci4PaH7hPKkz"

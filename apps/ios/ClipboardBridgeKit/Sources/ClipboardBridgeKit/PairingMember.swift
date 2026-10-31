@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import Crypto
 import Foundation
 
 /// A connection that carries pairing frames: a TLS connection in the app,
@@ -8,6 +9,14 @@ public protocol FrameTransport: AnyObject {
     func write(_ data: Data) async throws
     /// Reads exactly n bytes, or throws.
     func read(exactly n: Int) async throws -> Data
+    /// The peer's certificate chain from the TLS handshake, DER, leaf
+    /// first: the leaf, then its admin CA when one issued it; empty for a
+    /// transport without TLS.
+    var peerChain: [Data] { get }
+}
+
+public extension FrameTransport {
+    var peerChain: [Data] { [] }
 }
 
 extension FrameTransport {
@@ -78,6 +87,12 @@ public enum PairingMember {
         let joiner = try CertificateInfo(der: joinerCert)
         guard let device = joiner.commonName, GroupCertificates.isDeviceID(device) else {
             throw Failure.badJoiner("the computer's certificate names no device ID")
+        }
+        // As a computer admits one (docs/protocol.md, section 6): a single
+        // certificate with a P-256 key, the key the welcome certifies.
+        guard t.peerChain.count <= 1 else { throw Failure.badJoiner("the joining device must send exactly one certificate") }
+        guard P256.Signing.PublicKey(spki: joiner.publicKey) != nil else {
+            throw Failure.badJoiner("the joining device's key is not a P-256 key")
         }
         let first = try await t.readFrame()
         // A device picks its own ID, so one that is in the group already is

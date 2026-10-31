@@ -6,8 +6,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 const deniedText = "No permission to use the service: add your user to the clipboardbridge group and log in again."
@@ -49,15 +53,37 @@ func pkexecArgs(cbb string, args []string, details bool) []string {
 }
 
 // cbbPath is where the installer puts cbb (/opt/clipboardbridge on
-// SteamOS), or else cbb on PATH; pkexec needs the full path.
+// SteamOS), the first of them that root owns and only root may change;
+// pkexec runs it as root, so cbb is never taken from PATH, where the user's
+// own programs come first.
 func cbbPath() string {
-	for _, p := range []string{"/usr/local/bin/cbb", "/opt/clipboardbridge/bin/cbb"} {
-		if p, err := exec.LookPath(p); err == nil {
+	for _, p := range cbbPlaces {
+		if rootOnly(p) {
 			return p
 		}
 	}
-	if p, err := exec.LookPath("cbb"); err == nil {
-		return p
+	return cbbPlaces[0]
+}
+
+var cbbPlaces = []string{"/usr/local/bin/cbb", "/opt/clipboardbridge/bin/cbb"}
+
+// rootOnly tells whether p and the directories above it are owned by root
+// and writable by no one else, so that no other user could have put or
+// swapped what pkexec runs.
+func rootOnly(p string) bool {
+	fi, err := os.Stat(p)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
 	}
-	return "/usr/local/bin/cbb"
+	for {
+		var st unix.Stat_t
+		if unix.Stat(p, &st) != nil || st.Uid != 0 || st.Mode&0o022 != 0 {
+			return false
+		}
+		up := filepath.Dir(p)
+		if up == p {
+			return true
+		}
+		p = up
+	}
 }

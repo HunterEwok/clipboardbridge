@@ -55,6 +55,10 @@ class PairingTest {
         assertTrue(Pairing.Info("pi", "linux").isValid)
         assertFalse(Pairing.Info("", "linux").isValid)
         assertFalse(Pairing.Info("a\u0007b", "linux").isValid)
+        assertTrue(Pairing.Info("Café — Büro 1", "linux").isValid)
+        for (bad in listOf("evil\u202Egpj", "a\u200Bb", "a\uE000b", "a\u00A0b", "a\u2028b")) {
+            assertFalse(Pairing.Info(bad, "linux").isValid, "a name is printable, as in Go: $bad")
+        }
         assertTrue(Pairing.Info("pc", "windows").isValid)
         assertTrue(Pairing.Info("mac", "macos").isValid)
         assertFalse(Pairing.Info("mac", "darwin").isValid)

@@ -822,12 +822,18 @@ final class LiveGroup: GroupController {
         let isHub = g.isAdmin && hub.isOn
         var answer: (@Sendable (String, Data, Data?, [Data]) -> [Member.TunnelOffer])?
         var sharing: (@Sendable (String, [Data]) -> Member.HubShare?)?
+        let nodeRef = Ref<MemberNode>()
         if isHub {
-            answer = { device, key, psk, _ in hub.offers(device: device, key: key, psk: psk, order: box.hubOrder) }
-            sharing = { peer, chain in box.mayHost(peer, chain: chain) ? hub.share() : nil }
+            let share: @Sendable (String, [Data]) -> Member.HubShare? = { peer, chain in box.mayHost(peer, chain: chain) ? hub.share() : nil }
+            answer = { device, key, psk, _ in
+                // A client admitted now is shared with the other hubs at
+                // once, so that it reaches them when this phone is off.
+                hub.offers(device: device, key: key, psk: psk, order: box.hubOrder,
+                           admitted: { Task { await nodeRef.value?.sendHubs(share) } })
+            }
+            sharing = share
         }
         let offered: Data? = isHub ? nil : awayState.flatMap { try? GoTunnels().publicKey($0.key) }
-        let nodeRef = Ref<MemberNode>()
         let modeBox = modeBox, device = g.device, recent = Self.recentCopyMS
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               device: Self.ownDevice, records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },
@@ -1311,8 +1317,9 @@ final class LiveGroup: GroupController {
 
         /// Carries out a command a member sent: a mode or away-off command
         /// an admin of the group signed for me, not expired and not carried
-        /// out before. A phone takes no hub command. Returns the result and
-        /// what the caller still has to change.
+        /// out before. A phone takes no hub command, no remote paste and no
+        /// quick action. Returns the result and what the caller still has to
+        /// change.
         func take(_ c: Member.Record, from peer: String?, records: RecordBox, me: String) -> (Member.CommandResult, Change?) {
             let id = Commands.id(of: c) ?? ""
             func refused(_ reason: String) -> (Member.CommandResult, Change?) {
@@ -1343,8 +1350,21 @@ final class LiveGroup: GroupController {
                 modeLog.notice("\(body.by, privacy: .public) turned sync away from home off")
                 return (Member.CommandResult(id: body.id, status: "done"), .awayOff)
             }
-            guard body.type == "mode" else {
+            switch body.type {
+            case "mode":
+                break
+            case "paste-off", "actions-off":
+                // This phone takes no remote paste and has no quick
+                // actions, so nothing of them stays on.
+                return (Member.CommandResult(id: body.id, status: "done"), nil)
+            case "paste":
+                return refused("this phone takes no remote paste")
+            case "action":
+                return refused("a phone has no quick actions")
+            case "hub":
                 return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
+            default:
+                return refused("this phone does not know the command \(body.type)")
             }
             guard let mode = body.mode, Member.modes.contains(mode) else { return refused("unknown sync mode \(body.mode ?? "")") }
             do {

@@ -247,11 +247,19 @@ class HubOnPhone(
      * MemberNode's hub: this hub's own, then the group's other hubs' it
      * passes on, in order (docs/protocol.md, section 11, "Several hubs");
      * none while the hub is off or has no forwarder, or when the key is
-     * refused.
+     * refused. admitted runs once a new client is kept: the other hubs take
+     * this hub's clients from what it shares, so it shares again, as a
+     * computer does.
      */
-    fun offers(device: String, key: ByteArray, psk: ByteArray? = null, order: List<String> = emptyList()): List<Member.TunnelOffer> {
+    fun offers(
+        device: String, key: ByteArray, psk: ByteArray? = null, order: List<String> = emptyList(), admitted: () -> Unit = {},
+    ): List<Member.TunnelOffer> {
         val h = offering ?: return emptyList()
-        return h.offers(device, key, psk, order, changed = ::clientsChanged, refused = { why -> log("refused a client: $why", null) })
+        val changed = { clients: List<PhoneHub.Client> ->
+            clientsChanged(clients)
+            admitted()
+        }
+        return h.offers(device, key, psk, order, changed = changed, refused = { why -> log("refused a client: $why", null) })
     }
 
     /** The offer for a member whose hello offered key, as offers gives it first; null without one. */

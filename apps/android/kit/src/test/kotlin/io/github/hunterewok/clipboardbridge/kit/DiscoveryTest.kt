@@ -70,6 +70,16 @@ class DiscoveryTest {
     }
 
     @Test
+    fun dialsAtMostMaxDialed() {
+        val phone = MemberNode(SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock()), null)
+        val d = MemberDialer(phone, "g1", 10_000, 10_000) { throw IOException("refused") }
+        val many = (0 until 200).map { FoundMember("%032x".format(it), "g1") }.toSet()
+        d.update(many)
+        assertEquals(MemberDialer.MAX_DIALED, d.dialing.size)
+        d.stop()
+    }
+
+    @Test
     fun dialFailuresBackOff() {
         val phone = MemberNode(SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock()), null)
         val tries = AtomicInteger()

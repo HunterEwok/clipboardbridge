@@ -341,7 +341,9 @@ class MemberNode(
                         apply(engine.reconcile(m.hello), c)
                         val store = records
                         val mine = store?.digest
-                        if (store != null && mine != null && mine != m.hello.records) c.enqueue(Member.Message.Records(store.all))
+                        if (store != null && mine != null && mine != m.hello.records) {
+                            Member.Record.chunks(store.all).forEach { c.enqueue(Member.Message.Records(it)) }
+                        }
                     }
                     val chain = t.peerChain
                     val renewed = if (chain.isNotEmpty()) renew?.invoke(chain) else null
@@ -618,7 +620,8 @@ class MemberNode(
     }
 
     private fun sendRecords(rs: List<Member.Record>, except: Conn?) {
-        for (c in conns) if (c !== except && c.peerRole != null) c.enqueue(Member.Message.Records(rs))
+        val chunks = Member.Record.chunks(rs)
+        for (c in conns) if (c !== except && c.peerRole != null) chunks.forEach { c.enqueue(Member.Message.Records(it)) }
     }
 
     private fun apply(r: SyncEngine.Result, from: Conn) {

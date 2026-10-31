@@ -248,8 +248,9 @@ func (s *Service) tvPastes() bool {
 // false when there is none. A line break presses Enter there, so a text
 // with one is refused unless the user allowed Enter. An Android TV takes
 // the text at once; a Roku takes it key by key, so its answer is done once
-// typing starts.
-func (s *Service) tvPaste(body group.CommandBody, text string, enter bool) (node.Result, bool) {
+// typing starts, and typing stops when still says the paste may no longer
+// go on or the user sends pastes elsewhere.
+func (s *Service) tvPaste(body group.CommandBody, text string, enter bool, still func() bool) (node.Result, bool) {
 	st, err := tvremote.Load(s.cfg.StateDir)
 	if err != nil {
 		return node.Result{}, false
@@ -274,13 +275,23 @@ func (s *Service) tvPaste(body group.CommandBody, text string, enter bool) (node
 		if _, err := c.Name(ctx); err != nil {
 			return s.tvRefused(res, t, err), true
 		}
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute+time.Duration(len(text))*100*time.Millisecond)
-			defer cancel()
-			if err := c.Type(ctx, text); err != nil {
-				s.logf("cbb: typing a paste from %s on the Roku %s: %v", body.By, t.Name, err)
+		on := func() bool {
+			st, err := tvremote.Load(s.cfg.StateDir)
+			if err != nil {
+				return false
 			}
-		}()
+			now, ok := st.Pasting()
+			return ok && now.Host == t.Host && still()
+		}
+		typ := func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, time.Minute+time.Duration(len(text))*100*time.Millisecond)
+			defer cancel()
+			return c.Type(ctx, text)
+		}
+		if !s.typeLater("the Roku "+t.Name, on, typ) {
+			res.Reason = fmt.Sprintf("the Roku %s is still typing the last paste; send this one when it is done", t.Name)
+			return res, true
+		}
 	default:
 		if err := tvremote.Type(ctx, t, st.Client, text); err != nil {
 			return s.tvRefused(res, t, err), true

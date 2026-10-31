@@ -1056,7 +1056,9 @@ the watcher's `copied`, `clipboard`, `injected` and `acted`) and refuses every o
 all, and MUST be the only way to them. So a program of a user in the group can use the clipboard but cannot admit, remove,
 rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
 the holder setting. `cbb` dials the socket each operation needs. The lite member does the same
-with its own two sockets.
+with its own two sockets, but its control socket takes fewer: no `copy-media`, `copied-media`,
+`paste-media`, `config`, `release`, `release-get` or `keys`, and of the watcher's reports no
+`acted`.
 
 ### Framing
 
@@ -1197,7 +1199,8 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
 - Service to watcher, for remote paste, only to a watcher whose watch request named an
   `inject` target: `inject` (payload, `seq`, `method`, `enter`, `kind`, `name`, the
   sender's device name, and for a `desktop` watcher `keys`, the grant for the uinput
-  helper). The watcher checks
+  helper; the lite member gives no grant, so a desktop connector that types through the
+  uinput helper refuses its pastes). The watcher checks
   that its session is active and not locked, puts the text in, presses Enter when `enter`
   is set, clears the clipboard after a `secret`, shows a notification with the sender, and
   answers `injected` with the same `seq`: no `error` when it did, or `error` (and `detail`),
@@ -1853,7 +1856,8 @@ later (D-65 in [design.md](design.md)).
   takes the clients a hub command hands over ("Moving the hub"): a client it met keeps its
   own keys. Every receiver keeps the sender's offer with its own preshared key, as that
   hub's. A hub sends the message again to the connected hubs when it starts or stops
-  serving.
+  serving, and when it admits a client it did not have, so that the other hubs know every
+  client before this hub is off.
 - A computer's hub serves only while no hub above it answers, and is otherwise a client of
   the first that does. Starting, it tries the hubs above it once, then serves. It stops
   serving when a hub above it says it serves, or offers its tunnel: first it passes that
@@ -2534,8 +2538,8 @@ and logs who sent it. Every member takes `mode` commands; only a computer takes 
 phones and the lite member refuse it.
 
 A `paste` command MUST be refused unless the receiver's user turned remote paste on there,
-and, with `enter`, allowed Enter; and beyond one a second and 30 a minute from one signer.
-The switches MUST be set only on the device itself, never by a command. The receiver MUST
+and, with `enter`, allowed Enter; and beyond one a second and 30 a minute from one sender
+(the limits per sender, above). The switches MUST be set only on the device itself, never by a command. The receiver MUST
 clean the text (newlines and tabs stay; other control characters, terminal escape
 sequences and bytes that are not UTF-8 go; CR LF and CR become LF), hands it to a target
 (the watcher protocol's `inject`, section 8: a desktop session first, then tmux, then a text
@@ -2563,7 +2567,7 @@ on there, and then:
   only a record a known root's own key signed says either: section 10, the devices list);
 - for `reboot` and `shutdown`, unless that device's record says its keys are in hardware
   (`store` `hardware` or `proven`), or the user allowed keys in files for that action;
-- beyond one a second and 30 a minute from one signer.
+- beyond one a second and 30 a minute from one sender (the limits per sender, above).
 
 It answers `done` when the system took the action (a reboot that is scheduled counts),
 `refused` with the reason (the action is off, the signer is not allowed, the system refused
@@ -2841,7 +2845,10 @@ A computer whose member key is in a TPM (above) proves it to the group's root in
    encrypts 32 random bytes to the EK for the AK's name (`TPM2_MakeCredential`'s format) and
    sends `credential`, the ID object, and `secret`, the encrypted seed.
 3. **`tpm-activated`**, the device to the root: `secret` holds what `TPM2_ActivateCredential`
-   recovered with the AK and the EK, which the TPM does only when both are its own.
+   recovered with the AK and the EK, which the TPM does only when both are its own. The device
+   opens a credential only from the group's root (the device and key of the root's own
+   device record, not revoked) and one at a time, since the TPM's work holds up the member
+   key's signatures.
 
 When it holds the 32 bytes, the root records the device's keys as `proven`, kind `tpm`, and
 `proof` the hex SHA-256 of the EK certificate. Anything that fails is logged and changes

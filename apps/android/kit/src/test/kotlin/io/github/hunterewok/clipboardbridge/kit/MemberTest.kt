@@ -20,6 +20,18 @@ class MemberTest {
     private val v = Interop.read("member.json").jsonObject
 
     @Test
+    fun recordsGoInMessagesOfAboutOneMiB() {
+        // 1024 records of the largest body: more than one frame holds.
+        val rs = (0 until 1024).map { i -> Member.Record(ByteArray(8 shl 10) { i.toByte() }, ByteArray(72) { 1 }) }
+        assertFailsWith<Member.WireException> { Member.encode(Member.Message.Records(rs)) }
+        val chunks = Member.Record.chunks(rs)
+        assertTrue(chunks.size > 8)
+        assertEquals(rs, chunks.flatten())
+        for (c in chunks) assertTrue(Member.encode(Member.Message.Records(c)).size <= Member.Record.CHUNK * 5 / 4)
+        assertTrue(Member.Record.chunks(emptyList()).isEmpty())
+    }
+
+    @Test
     fun goFrames() {
         val decoded = v.getValue("frames").jsonArray.map { goFrame ->
             val m = Member.decode(Wire.encode(goFrame))

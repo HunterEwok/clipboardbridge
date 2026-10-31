@@ -9,9 +9,6 @@ public protocol ClosableTransport: FrameTransport {
     /// The peer's leaf certificate from the TLS handshake, DER; nil when
     /// there is none.
     var peerCertificate: Data? { get }
-    /// The peer's certificate chain from the TLS handshake, DER, leaf
-    /// first: the leaf, then its admin CA when one issued it.
-    var peerChain: [Data] { get }
 }
 
 extension ClosableTransport {
@@ -356,7 +353,7 @@ public actor MemberNode {
                 c.peerRole = peerRole
                 apply(try engine.reconcile(h), from: id)
                 if let store = records, let mine = store.digest, mine != h.records {
-                    c.enqueue(.records(store.all))
+                    for rs in Member.Record.chunks(store.all) { c.enqueue(.records(rs)) }
                 }
                 if let renew, !t.peerChain.isEmpty, let renewed = renew(t.peerChain) {
                     c.enqueue(.cert(renewed.cert, issuer: renewed.issuer))
@@ -675,7 +672,10 @@ public actor MemberNode {
     }
 
     private func sendRecords(_ rs: [Member.Record], except: ObjectIdentifier?) {
-        for (id, c) in conns where id != except && c.peerRole != nil { c.enqueue(.records(rs)) }
+        let chunks = Member.Record.chunks(rs)
+        for (id, c) in conns where id != except && c.peerRole != nil {
+            for part in chunks { c.enqueue(.records(part)) }
+        }
     }
 
     private func apply(_ r: SyncEngine.Result, from: ObjectIdentifier) {
