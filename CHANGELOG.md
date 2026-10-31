@@ -31,6 +31,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   16 KiB, a get over 1 MiB dropped, and too many gets at once closing the connection (O15).
 - The bench's fleet plays the phone that scans a computer's QR code: the computer listens only
   during `cbb pair`, and only for the certificate and code in the QR code (G17).
+- The bench's fleet relays a join between two TLS sessions with the forge: the join fails, the
+  window loses one guess, and the joiner then joins directly (G8).
 - The bench's time suite runs the hub's key renewed each credential period, with a client
   away from home taking the next key ahead and one off across the switch (W12).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
