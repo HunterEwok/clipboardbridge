@@ -163,3 +163,16 @@ func TestRequestsBoundByDevice(t *testing.T) {
 		t.Fatal("a request taken for a dropped device")
 	}
 }
+
+// noAddrConn is a connection that has no remote address any more.
+type noAddrConn struct{ net.Conn }
+
+func (noAddrConn) RemoteAddr() net.Addr { return nil }
+
+// A connection without a remote address has the zero address, which no
+// device is registered under.
+func TestAddrOfWithoutAddress(t *testing.T) {
+	if a := addrOf(noAddrConn{}); a.IsValid() {
+		t.Fatalf("addrOf of a connection without an address: %v", a)
+	}
+}

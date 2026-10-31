@@ -82,9 +82,14 @@ func (l Limits) recordCaps() budget.Caps {
 	return budget.Caps{Network: 4 * l.GroupRecordBytes, Wide: 16 * l.GroupRecordBytes, Provider: 64 * l.GroupRecordBytes, All: l.RecordBytes}
 }
 
-// addrOf returns the IP address of a connection's remote end.
+// addrOf returns the IP address of a connection's remote end, or the zero
+// address if it has none.
 func addrOf(c net.Conn) netip.Addr {
-	if ap, err := netip.ParseAddrPort(c.RemoteAddr().String()); err == nil {
+	a := c.RemoteAddr()
+	if a == nil {
+		return netip.Addr{}
+	}
+	if ap, err := netip.ParseAddrPort(a.String()); err == nil {
 		return ap.Addr().Unmap()
 	}
 	return netip.Addr{}
