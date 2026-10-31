@@ -700,6 +700,7 @@ object Member {
      * decode is an Event(null).
      */
     fun decode(body: ByteArray): Message {
+        if (!Strict.integersOnly(body)) throw WireException("not a message")
         val o = Wire.parse(body) ?: throw WireException("not a message")
         try {
             return when (val t = o.optString("t") ?: throw WireException("not a message")) {

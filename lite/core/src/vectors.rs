@@ -87,6 +87,12 @@ fn member_frames() {
         let b: Event = serde_json::from_value(o["b"].clone()).unwrap();
         assert_eq!(a.later(&b), o["later"].as_bool().unwrap(), "order {o}");
     }
+    let bodies = v["bodies"].as_array().unwrap();
+    assert!(bodies.len() >= 14);
+    for b in bodies {
+        let text = b["text"].as_str().unwrap();
+        assert_eq!(wire::decode(text.as_bytes()).is_ok(), b["ok"].as_bool().unwrap(), "body {text}");
+    }
 }
 
 /// Which member certificates a peer accepts at which time
@@ -300,6 +306,24 @@ fn go_envelopes() {
             assert_eq!(s.len() as u64, v["count"].as_u64().unwrap(), "{name}");
             assert_eq!(s.digest(), v["digest"].as_str().unwrap(), "{name}");
         }
+    }
+}
+
+/// Where a device's keys live, as Go's StoreOf reads a record's store.
+#[test]
+fn stores() {
+    use crate::records::store_of;
+    for (store, role, want) in [
+        ("file", "full", "file"),
+        ("hardware", "full", "hardware"),
+        ("proven", "phone", "proven"),
+        ("rootless", "full", "rootless"),
+        ("", "phone", "hardware"),
+        ("", "watch", "hardware"),
+        ("", "full", "file"),
+        ("disk", "lite", "file"),
+    ] {
+        assert_eq!(store_of(store, role), want, "{store:?} {role:?}");
     }
 }
 

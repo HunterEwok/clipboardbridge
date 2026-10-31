@@ -84,6 +84,17 @@ class MemberTest {
     }
 
     @Test
+    fun bodies() {
+        val bodies = v.getValue("bodies").jsonArray
+        assertTrue(bodies.size >= 14)
+        for (e in bodies) {
+            val o = e.jsonObject
+            val text = o.getValue("text").jsonPrimitive.content
+            assertEquals(o.getValue("ok").jsonPrimitive.boolean, runCatching { Member.decode(text.toByteArray()) }.isSuccess, text)
+        }
+    }
+
+    @Test
     fun events() {
         for (e in v.getValue("events").jsonArray) {
             val o = e.jsonObject

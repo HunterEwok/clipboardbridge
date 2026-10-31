@@ -25,6 +25,7 @@ final class MemberTests: XCTestCase {
         var timestamps: [TS]
         var events: [Ev]
         var order: [Order]
+        var bodies: [TS]
     }
 
     /// Keeps a JSON value as Foundation objects, to compare encodings.
@@ -138,6 +139,14 @@ final class MemberTests: XCTestCase {
             let a = try JSONDecoder().decode(Member.Event.self, from: o.a.data)
             let b = try JSONDecoder().decode(Member.Event.self, from: o.b.data)
             XCTAssertEqual(a.isLater(than: b), o.later)
+        }
+    }
+
+    func testBodies() throws {
+        let v = try JSONDecoder().decode(Vectors.self, from: vectors("member.json"))
+        XCTAssertGreaterThanOrEqual(v.bodies.count, 14)
+        for b in v.bodies {
+            XCTAssertEqual((try? Member.decode(body: Data(b.text.utf8))) != nil, b.ok, b.text)
         }
     }
 

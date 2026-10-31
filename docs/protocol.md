@@ -363,7 +363,10 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 Each frame is a 4-byte big-endian length followed by that many bytes of a JSON object (UTF-8,
 no trailing newline). A frame MUST NOT exceed 7 MiB (7 340 032 bytes); a larger length closes
 the connection. The Go code writes JSON without HTML escaping; receivers MUST accept any valid
-JSON, and MUST close a connection whose frame is not a JSON object. A length with its top bit set (0x80000000) marks a binary `chunk` frame instead, which
+JSON, and MUST close a connection whose frame is not a JSON object. Every number in a frame,
+in members the receiver does not know too, is an integer written as in signed bodies
+(Conventions, "Signed bodies"): no `-0`, fraction or exponent, in the range of a 64-bit signed
+integer; a frame with another number is not a message. A length with its top bit set (0x80000000) marks a binary `chunk` frame instead, which
 carries content of images and files ("Content", below) and comes only to a member that sent
 `get`.
 

@@ -50,6 +50,37 @@ internal object Strict {
     /** Whether b is a body that [check] takes. */
     fun ok(b: ByteArray, vararg required: String): Boolean = runCatching { check(b, *required) }.isSuccess
 
+    /**
+     * Whether every number in b, outside its strings, is an integer as
+     * [check] takes it: never "-0", a fraction or an exponent. Readers differ
+     * on those (Go takes "-0" for 0, the lite member's reader for a float),
+     * so the member protocol's frames pass this first, members a reader does
+     * not know included. It only scans: whether b is JSON is for the decoder.
+     */
+    fun integersOnly(b: ByteArray): Boolean {
+        var i = 0
+        while (i < b.size) {
+            val c = b[i].toInt()
+            if (c == '"'.code) {
+                i++
+                while (i < b.size && b[i] != '"'.code.toByte()) i += if (b[i] == '\\'.code.toByte()) 2 else 1
+                i++
+            } else if (c == '-'.code || c in '0'.code..'9'.code) {
+                val p = Parser(b)
+                p.i = i
+                try {
+                    p.integer()
+                } catch (e: Invalid) {
+                    return false
+                }
+                i = p.i
+            } else {
+                i++
+            }
+        }
+        return true
+    }
+
     /** Decodes s, standard base64 with padding, only when s is the one encoding of its bytes. */
     fun base64(s: String): ByteArray? {
         val b = try {

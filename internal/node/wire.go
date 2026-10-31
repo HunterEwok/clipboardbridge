@@ -440,8 +440,14 @@ func readMessage(r deadliner, timeout time.Duration) (*message, error) {
 		}
 		return &message{Type: typeChunk, chunk: &ch}, nil
 	}
+	return decodeMessage(data)
+}
+
+// decodeMessage decodes the JSON of a frame. A number that is not an
+// integer as in a signed body makes it no message, wherever it is.
+func decodeMessage(data []byte) (*message, error) {
 	var m message
-	if err := json.Unmarshal(data, &m); err != nil {
+	if group.IntegersOnly(data) != nil || json.Unmarshal(data, &m) != nil {
 		return nil, errors.New("node: a frame is not a message")
 	}
 	return &m, nil
