@@ -119,9 +119,11 @@ jobs:
           sudo apt-get install -y -q swtpm
           echo CBB_TPM_REQUIRED=1 >>"$GITHUB_ENV"
       - name: go test
-        # bash: PowerShell splits -coverprofile=cover-go.out at the dot.
+        # bash: PowerShell splits -coverprofile=cover-go.out at the dot. Each
+        # system's file has a name of its own: the coverage job downloads
+        # them all into one folder.
         shell: bash
-        run: go test -race -coverprofile=cover-go.out ./...
+        run: go test -race -coverprofile="cover-go-${{ matrix.os }}.out" ./...
       # int is 32 bits there, as on the Raspberry Pi's armv7 and the routers'
       # mips, and 386 runs on the runner without an emulator.
       - name: go test of the member protocol on a 32-bit build
@@ -134,7 +136,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-go-${{ matrix.os }}
-          path: cover-go.out
+          path: cover-go-${{ matrix.os }}.out
           retention-days: 7
 
   # Go's test coverage across packages (a test of internal/service counts for
@@ -178,6 +180,29 @@ jobs:
           done
           export WAYLAND_DISPLAY DISPLAY=:5
           CBB_TEST_WAYLAND=1 CBB_TEST_X11=1 "$RUNNER_TEMP/desktop.test" -test.coverprofile=cover-go-desktop.out
+      - name: the uinput keyboard against the kernel
+        run: |
+          go test -c -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/uinput.test" ./internal/uinput
+          sudo modprobe uinput
+          sudo CBB_TEST_UINPUT=1 "$RUNNER_TEMP/uinput.test" -test.run TestKeyboard -test.coverprofile="$PWD/cover-go-uinput.out"
+          sudo chown "$(id -u)" cover-go-uinput.out
+      - name: mDNS beside avahi-daemon in a container
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go test -c -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/mdns.test" ./internal/mdns
+          mkdir -p "$RUNNER_TEMP/mdns-cover"
+          docker run --rm -v "$RUNNER_TEMP/mdns.test:/t/mdns.test:ro" -v "$RUNNER_TEMP/mdns-cover:/out" debian:stable-slim sh -euc '
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq avahi-daemon avahi-utils dbus >/dev/null
+            mkdir -p /run/dbus
+            dbus-daemon --system --fork
+            avahi-daemon --daemonize --no-chroot
+            sleep 2
+            CBB_TEST_AVAHI=1 /t/mdns.test -test.run "TestAvahi|TestSystemNetwork" -test.coverprofile=/out/cover.out
+          '
+          sudo cp "$RUNNER_TEMP/mdns-cover/cover.out" cover-go-mdns.out
+          sudo chown "$(id -u)" cover-go-mdns.out
       - name: the e2e with a cbb built with -cover
         env:
           CGO_ENABLED: "0"

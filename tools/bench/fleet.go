@@ -31,6 +31,10 @@ const fleetDockerfile = `FROM debian:stable-slim
 RUN apt-get update && apt-get install -y --no-install-recommends iproute2 iptables procps tmux curl ca-certificates && rm -rf /var/lib/apt/lists/*
 `
 
+// fleetCoverDir, when set (-coverdir), is where a cbb built with -cover
+// writes its coverage from every container of the fleet.
+var fleetCoverDir string
+
 // Fleet is one run's containers and their network.
 type Fleet struct {
 	run, net, cbb string
@@ -142,6 +146,9 @@ func (f *Fleet) container(ctx context.Context, net string, run, env []string, cm
 		"--network", net, "--label", "cbbbench=fleet",
 		"--cap-add", "NET_ADMIN",
 		"-v", f.cbb + ":/usr/local/bin/cbb:ro"}
+	if fleetCoverDir != "" {
+		args = append(args, "-v", fleetCoverDir+":/cover", "-e", "GOCOVERDIR=/cover")
+	}
 	args = append(args, run...)
 	for _, e := range env {
 		args = append(args, "-e", e)
@@ -179,6 +186,19 @@ func (f *Fleet) Close(ctx context.Context) {
 	f.mu.Lock()
 	ms := f.members
 	f.mu.Unlock()
+	if len(ms) > 0 && fleetCoverDir != "" {
+		// A program built with -cover writes its counters when it exits:
+		// let the services end before their containers go.
+		var wg sync.WaitGroup
+		for _, d := range ms {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				docker(ctx, "exec", d.Container, "sh", "-c", "pkill -TERM -x cbb; sleep 2")
+			}()
+		}
+		wg.Wait()
+	}
 	if len(ms) > 0 {
 		args := []string{"rm", "-f", "-v"}
 		for _, d := range ms {
