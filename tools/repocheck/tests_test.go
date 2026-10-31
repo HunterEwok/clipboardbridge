@@ -33,6 +33,9 @@ func TestTestNames(t *testing.T) {
 }
 
 func TestTestsKept(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
 	repo := t.TempDir()
 	runGit := func(args ...string) {
 		t.Helper()
