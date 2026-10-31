@@ -11,7 +11,7 @@ description = "The lite member of clipboardbridge, for small Linux devices"
 publish = false
 
 [workspace]
-members = ["core", "embassy", "ring-shim"]
+members = ["core", "embassy", "ffi", "ring-shim"]
 exclude = ["esp32", "core/fuzz"]
 
 [[bin]]
