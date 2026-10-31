@@ -14,6 +14,19 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
+// settled is the relay's state once the registrations it refused have
+// ended: a refusal reaches the client while its registration still holds
+// its group's turn to check records, which it gives back as it returns.
+func (r *Relay) settled(t *testing.T) string {
+	t.Helper()
+	waitFor(t, "the refused registrations to end", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return len(r.tagLocks) == 0
+	})
+	return r.state()
+}
+
 // state is what a relay holds of its groups and devices, as text that two
 // moments compare by: the charges a registration pays for its setup are
 // left out, since they are what a refused one costs.
@@ -118,7 +131,7 @@ func TestRefusedRegistrationLeavesState(t *testing.T) {
 			t.Errorf("%s: %v, want a refusal for %q", tc.name, err, tc.why)
 			continue
 		}
-		if after := r.state(); after != before {
+		if after := r.settled(t); after != before {
 			t.Errorf("%s: a refused registration changed the relay\nbefore:\n%s\nafter:\n%s", tc.name, before, after)
 		}
 	}

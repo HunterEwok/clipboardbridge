@@ -85,7 +85,7 @@ func TestRecordBytesChargedToTheSource(t *testing.T) {
 	if err := registerWith(t, link, g, deviceRecords(t, g, 10)); err == nil || !strings.Contains(err.Error(), "from this network") {
 		t.Errorf("records past the network's share: %v", err)
 	}
-	if after := r.state(); after != before {
+	if after := r.settled(t); after != before {
 		t.Errorf("a refused registration changed the relay\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
