@@ -533,6 +533,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Remote paste on Linux and FreeBSD takes nothing where the device cannot tell whether its
+  session is locked (no logind, `loginctl` failing or saying nothing): earlier it pasted
+  there. The device's user may allow pastes without that check with
+  `cbb paste-receive on -no-lock-check`, on a computer and on the lite member; `cbb
+  paste-receive` shows the switch. A locker that runs still stops a paste either way.
 - The Android app's root and admin keys sign for 30 seconds after the fingerprint, the face
   or the screen lock, not five minutes; keys made by earlier versions keep their window,
   and the app asks again after 25 seconds either way.

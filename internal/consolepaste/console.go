@@ -53,7 +53,7 @@ func (c *Console) Inject(ctx context.Context, text, method string, enter, secret
 	if err != nil {
 		return err
 	}
-	if why := c.locked(tty); why != "" {
+	if why := c.locked(tty, connector.NoLockCheck(ctx)); why != "" {
 		return &connector.Refusal{Reason: why}
 	}
 	f, err := c.openTTY(tty)
@@ -106,8 +106,9 @@ func (c *Console) openTTY(tty string) (*os.File, error) {
 }
 
 // locked says why the console takes no text now, or "" if it does: no one
-// is logged in on it, or it is locked.
-func (c *Console) locked(tty string) string {
+// is logged in on it, or it is locked, or logind does not tell whether it
+// is, unless noLockCheck lets the paste go on then.
+func (c *Console) locked(tty string, noLockCheck bool) string {
 	if name := lockcheck.Locker(true); name != "" {
 		return "the console is locked (" + name + " runs)"
 	}
@@ -117,8 +118,14 @@ func (c *Console) locked(tty string) string {
 		return "cannot tell who is logged in on the console: " + err.Error()
 	case id == "":
 		return "no one is logged in on the active console"
-	case c.session == nil && lockcheck.Locked(id):
+	case c.session != nil:
+		return ""
+	}
+	switch locked, known := lockcheck.State(id); {
+	case locked:
 		return "the console's session is locked"
+	case !known && !noLockCheck:
+		return lockcheck.Unknown
 	}
 	return ""
 }

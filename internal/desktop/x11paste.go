@@ -91,7 +91,7 @@ func (b *X11) Inject(ctx context.Context, text, method string, enter, secret boo
 	if b.inj.err != nil {
 		return &connector.Refusal{Reason: "this desktop cannot press keys for a paste: " + b.inj.err.Error()}
 	}
-	if why := b.locked(); why != "" {
+	if why := b.locked(connector.NoLockCheck(ctx)); why != "" {
 		return &connector.Refusal{Reason: why}
 	}
 	keys, err := b.keyboard()
@@ -114,9 +114,10 @@ func (b *X11) Inject(ctx context.Context, text, method string, enter, secret boo
 }
 
 // locked says why the session cannot take a paste now, or "" if it can:
-// it is locked, or the screen saver is on.
-func (b *X11) locked() string {
-	if why := lockcheck.Reason(); why != "" {
+// it is locked, or the screen saver is on; noLockCheck lets it paste where
+// nothing tells whether the session is locked.
+func (b *X11) locked(noLockCheck bool) string {
+	if why := lockcheck.Reason(noLockCheck); why != "" {
 		return why
 	}
 	if screensaver.Init(b.x) == nil {

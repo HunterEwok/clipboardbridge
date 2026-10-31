@@ -103,7 +103,7 @@ func TestTestSkips(t *testing.T) {
 // reported; a new test may skip.
 func TestTestsKeptRunning(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Fatal("git is not installed")
+		t.Skip("git is not installed")
 	}
 	repo := t.TempDir()
 	runGit := func(args ...string) {

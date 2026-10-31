@@ -60,6 +60,9 @@ type inject struct {
 	command []string // an action's: the user's own program and arguments
 	done    chan node.Result
 	keys    string // the grant for the uinput helper, while a desktop session pastes it
+	// noLockCheck lets the target paste where it cannot tell whether the
+	// session is locked (remotepaste.Settings).
+	noLockCheck bool
 }
 
 // A keysGrant lets the uinput helper press the keys of one remote paste for
@@ -333,7 +336,7 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 	}
 	var reasons []string
 	for _, w := range ws {
-		in := &inject{body: body, text: text, done: make(chan node.Result, 1)}
+		in := &inject{body: body, text: text, done: make(chan node.Result, 1), noLockCheck: set.NoLockCheck}
 		select {
 		case w.injects <- in:
 		default:
@@ -418,8 +421,8 @@ func (s *Service) setReceive(ctx context.Context, m *control.Message) error {
 		return fmt.Errorf("remote paste is on or off, not %q", m.Name)
 	case m.Name == "on" && (m.Device != "" || m.All):
 		return errors.New("only a device's own user turns remote paste on there")
-	case m.Name == "off" && (m.Enter || m.Console):
-		return errors.New("-enter and -console go with on")
+	case m.Name == "off" && (m.Enter || m.Console || m.NoLockCheck):
+		return errors.New("-enter, -console and -no-lock-check go with on")
 	}
 	s.mu.Lock()
 	id := s.id
@@ -428,11 +431,11 @@ func (s *Service) setReceive(ctx context.Context, m *control.Message) error {
 		return s.errNoGroup()
 	}
 	if m.Device == "" && !m.All {
-		set := remotepaste.Settings{On: m.Name == "on", Enter: m.Enter, Console: m.Console}
+		set := remotepaste.Settings{On: m.Name == "on", Enter: m.Enter, Console: m.Console, NoLockCheck: m.NoLockCheck}
 		if err := remotepaste.Save(s.cfg.StateDir, set); err != nil {
 			return fmt.Errorf("saving the remote paste settings: %w", err)
 		}
-		s.logf("cbb: remote paste is %s here (enter %v, console %v)", m.Name, set.Enter, set.Console)
+		s.logf("cbb: remote paste is %s here (enter %v, console %v, no lock check %v)", m.Name, set.Enter, set.Console, set.NoLockCheck)
 		return nil
 	}
 	var targets []control.Device
@@ -542,7 +545,7 @@ func (s *Service) pasteStatusLocked() *control.Paste {
 	if err != nil {
 		return nil
 	}
-	p := &control.Paste{On: set.On, Enter: set.Enter, Console: set.Console}
+	p := &control.Paste{On: set.On, Enter: set.Enter, Console: set.Console, NoLockCheck: set.NoLockCheck}
 	for w := range s.watchers {
 		if w.inject != "" && !slices.Contains(p.Targets, w.inject) {
 			p.Targets = append(p.Targets, w.inject)

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/clipboardbridge/internal/connector"
+	"github.com/HunterEwok/clipboardbridge/internal/lockcheck"
 	"github.com/HunterEwok/clipboardbridge/internal/uinput"
 )
 
@@ -94,10 +95,17 @@ func TestKeysHelperPaste(t *testing.T) {
 
 	kb := keysHelper{socket: sock}
 	var r *connector.Refusal
-	if err := keysInject(context.Background(), kb, board, "no grant", "paste", false, false); !errors.As(err, &r) {
+	// Without logind nothing tells whether the session is locked: the
+	// paste is refused unless the device's user allowed that.
+	t.Setenv("PATH", t.TempDir())
+	if err := keysInject(connector.WithKeysGrant(context.Background(), "g7"), kb, board, "unknown lock", "paste", false, false); !errors.As(err, &r) || r.Reason != lockcheck.Unknown {
+		t.Errorf("a paste where nothing tells whether the session is locked: %v", err)
+	}
+	unchecked := connector.WithoutLockCheck(context.Background(), true)
+	if err := keysInject(unchecked, kb, board, "no grant", "paste", false, false); !errors.As(err, &r) || r.Reason == lockcheck.Unknown {
 		t.Errorf("a paste without the service's grant: %v", err)
 	}
-	if err := keysInject(connector.WithKeysGrant(context.Background(), "g7"), kb, board, "pasted text", "paste", true, false); err != nil {
+	if err := keysInject(connector.WithKeysGrant(unchecked, "g7"), kb, board, "pasted text", "paste", true, false); err != nil {
 		t.Fatal(err)
 	}
 	want := []uinput.Key{{Code: uinput.KeyLeftShift, Press: true}, {Code: uinput.KeyInsert, Press: true}, {Code: uinput.KeyInsert}, {Code: uinput.KeyLeftShift},

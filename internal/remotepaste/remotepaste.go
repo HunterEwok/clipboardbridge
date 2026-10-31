@@ -22,11 +22,14 @@ import (
 
 // Settings are the switches of remote paste on a device, which only its own
 // user turns on: On lets the group's admins paste, Enter lets a paste press
-// Enter, and Console lets it reach text consoles and root's tmux.
+// Enter, Console lets it reach text consoles and root's tmux, and
+// NoLockCheck lets a target paste where it cannot tell whether the session
+// is locked, which it otherwise refuses.
 type Settings struct {
-	On      bool `json:"on"`
-	Enter   bool `json:"enter,omitempty"`
-	Console bool `json:"console,omitempty"`
+	On          bool `json:"on"`
+	Enter       bool `json:"enter,omitempty"`
+	Console     bool `json:"console,omitempty"`
+	NoLockCheck bool `json:"no_lock_check,omitempty"`
 }
 
 // settingsFile holds the settings in the state directory.
@@ -48,7 +51,7 @@ func Load(dir string) (Settings, error) {
 	return s, nil
 }
 
-// Save writes the settings to dir. Off, Enter and Console are off too.
+// Save writes the settings to dir. Off, the other switches are off too.
 func Save(dir string, s Settings) error {
 	if !s.On {
 		s = Settings{}

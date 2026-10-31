@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/connector"
 )
 
 // TestWaylandPaste pastes and types into foot, a Wayland terminal that
@@ -52,7 +54,9 @@ func TestWaylandPaste(t *testing.T) {
 	if err := w.Write("there before", false); err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	// The test's session is none that logind knows: the paste goes in as
+	// on a device whose user allowed that.
+	ctx := connector.WithoutLockCheck(context.Background(), true)
 	if err := w.Inject(ctx, "pasted é αβγ€", "paste", true, false); err != nil {
 		t.Fatal(err)
 	}

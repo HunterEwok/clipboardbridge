@@ -551,3 +551,28 @@ func TestActed(t *testing.T) {
 		}
 	}
 }
+
+// ctxTarget keeps the context of its last inject.
+type ctxTarget struct{ ctx context.Context }
+
+func (c *ctxTarget) Target() string { return "desktop" }
+
+func (c *ctxTarget) Inject(ctx context.Context, text, method string, enter, secret bool) error {
+	c.ctx = ctx
+	return nil
+}
+
+// An inject hands its target whether the device lets it paste where
+// nothing tells whether the session is locked, and the keys grant.
+func TestInjectCarriesTheSwitches(t *testing.T) {
+	tgt := &ctxTarget{}
+	for _, yes := range []bool{false, true} {
+		m := &control.Message{Header: control.Header{Op: control.OpInject, Seq: 1, Method: "paste", Keys: "g", NoLockCheck: yes}, Payload: []byte("x")}
+		if ans := injected(context.Background(), tgt, m, t.Logf); ans.Error != "" {
+			t.Fatalf("injected: %+v", ans.Header)
+		}
+		if NoLockCheck(tgt.ctx) != yes || KeysGrant(tgt.ctx) != "g" {
+			t.Errorf("no_lock_check %v: the target got %v, grant %q", yes, NoLockCheck(tgt.ctx), KeysGrant(tgt.ctx))
+		}
+	}
+}

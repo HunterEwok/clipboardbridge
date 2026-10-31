@@ -1165,7 +1165,7 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 			injMu.Lock()
 			injected[injSeq] = in
 			injMu.Unlock()
-			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By), Keys: in.keys}
+			h := control.Header{Op: control.OpInject, Seq: injSeq, Method: in.body.Mode, Enter: in.body.Enter, Kind: in.body.Kind, Name: s.deviceName(in.body.By), Keys: in.keys, NoLockCheck: in.noLockCheck}
 			if in.body.Type == group.CommandAction {
 				h = control.Header{Op: control.OpAct, Seq: injSeq, Name: in.body.Action, Command: in.command}
 			}
