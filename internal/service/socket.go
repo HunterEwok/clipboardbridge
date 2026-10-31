@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -538,7 +539,7 @@ func (s *Service) openWindow(code string) (*pair.Window, *group.Identity, func()
 		end()
 		return nil, nil, nil, s.errNotAdmitter()
 	}
-	opened, err := pair.Open(id, code, pair.Options{Records: s.pathRecords, Taken: s.idTaken})
+	opened, err := pair.Open(id, code, pair.Options{Now: benchtime.Now, Records: s.pathRecords, Taken: s.idTaken})
 	if err != nil {
 		end()
 		return nil, nil, nil, err
