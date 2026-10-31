@@ -385,10 +385,12 @@ func decodeKeys(data []byte) (Keys, error) {
 	if len(k.Keys) == 0 || len(k.Keys) > maxKeys {
 		return k, errors.New("release: keys.json must hold 1 to 8 keys")
 	}
-	// The keys are the only plain bytes of a body: in base64's one form.
+	// The keys are the only plain bytes of a body: in base64's one form. A
+	// release key's use is left out, never written empty.
 	var raw struct {
 		Keys []struct {
-			Key string `json:"key"`
+			Key string  `json:"key"`
+			Use *string `json:"use"`
 		} `json:"keys"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -397,6 +399,9 @@ func decodeKeys(data []byte) (Keys, error) {
 	for _, key := range raw.Keys {
 		if _, err := strict.DecodeBase64(key.Key); err != nil {
 			return k, fmt.Errorf("release: a key: %w", err)
+		}
+		if key.Use != nil && *key.Use == "" {
+			return k, errors.New("release: a key's use is empty")
 		}
 	}
 	for _, key := range k.Keys {
@@ -430,6 +435,20 @@ func decodeRelease(data []byte) (Release, error) {
 	}
 	if len(r.Files) == 0 || len(r.Files) > maxFiles {
 		return r, errors.New("release: release.json must list 1 to 256 files")
+	}
+	// Each file has its size, which an absent field would read as 0.
+	var raw struct {
+		Files []struct {
+			Size *int64 `json:"size"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return r, fmt.Errorf("release: %w", err)
+	}
+	for _, a := range raw.Files {
+		if a.Size == nil {
+			return r, errors.New("release: a file has no size")
+		}
 	}
 	names := map[string]bool{}
 	for _, a := range r.Files {

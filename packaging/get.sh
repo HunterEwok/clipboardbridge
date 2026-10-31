@@ -242,6 +242,20 @@ verifying() { [ "${CBB_VERIFY:-}" != skip ] && [ -n "$roots" ]; }
 field() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" "$2" | head -n 1; }
 number() { sed -n "s/.*\"$1\":\([0-9][0-9]*\).*/\1/p" "$2" | head -n 1; }
 
+# strict FILE tells whether the body in FILE is in the strict form as far as
+# get.sh reads it (docs/protocol.md, "Signed bodies"): every member name 1 to
+# 64 of a-z, 0-9 and _, no null, no backslash (the signer writes none in these
+# files), and no field get.sh reads written twice, so that field and number,
+# which take the first, read a body as the other programs do.
+strict() {
+	! grep -qF "\\" "$1" || return 1
+	! grep -o '"[^"]*":' "$1" | grep -qv '^"[a-z0-9_]\{1,64\}":$' || return 1
+	! grep -q '[:,[]null' "$1" || return 1
+	for n in v type seq time_ms expires_ms keys version channel release release_sha256 files; do
+		[ "$(grep -o "\"$n\":" "$1" | wc -l)" -le 1 ] || return 1
+	done
+}
+
 # opened FILE NAME KEYS... checks the envelope in FILE with any of the PEM
 # keys KEYS, and leaves its body in $tmp/NAME.body; it fails when none
 # verifies or the body is not of the type NAME.
@@ -252,8 +266,10 @@ opened() {
 	field sig "$f" | openssl base64 -d -A >"$tmp/$kind.sig" 2>/dev/null || return 1
 	for k in "$@"; do
 		if openssl dgst -sha256 -verify "$k" -signature "$tmp/$kind.sig" "$tmp/$kind.body" >/dev/null 2>&1; then
+			strict "$tmp/$kind.body" || fail "the signed $kind file is not in the strict form of signed bodies; not installing"
 			[ "$(field type "$tmp/$kind.body")" = "$kind" ] || return 1
 			[ "$(number v "$tmp/$kind.body")" = 1 ] || return 1
+			[ -n "$(number time_ms "$tmp/$kind.body")" ] || return 1
 			return 0
 		fi
 	done
@@ -283,8 +299,12 @@ verify_release() {
 	[ "$(number expires_ms "$tmp/keys.body")" -gt "$now_ms" ] || fail "keys.json has expired; check the clock, or try again later"
 	# Each key with its use: a release key (no use) signs release.json and
 	# stable.json, a channel key only stable.json, a key of another use
-	# neither.
-	grep -o '{"key":"[^"]*"[^}]*}' "$tmp/keys.body" >"$tmp/keys.list"
+	# neither. Each entry is read whole, as the signer writes it (a name may
+	# hold a brace), and one that does not read so, or a use written empty,
+	# refuses the file.
+	grep -oE '\{"key":"[A-Za-z0-9+/=]+","name":"[^"]*"(,"use":"[a-z]+")?\}' "$tmp/keys.body" >"$tmp/keys.list" || true
+	[ "$(wc -l <"$tmp/keys.list")" -eq "$(grep -o '{"key":' "$tmp/keys.body" | wc -l)" ] ||
+		fail "keys.json is not valid; not installing"
 	n=0
 	while read -r entry; do
 		n=$((n + 1))

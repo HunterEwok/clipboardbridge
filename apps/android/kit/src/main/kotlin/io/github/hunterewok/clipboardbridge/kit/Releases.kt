@@ -184,7 +184,10 @@ object Releases {
             if (name.isEmpty() || name.toByteArray().size > 64) throw Refused("a key has no valid name")
             val spki = k.optBytes("key") ?: ByteArray(0)
             if (p256PublicKey(spki) == null) throw Refused("a key is not P-256")
-            (k.optString("use") ?: USE_RELEASE) to spki
+            // A release key's use is left out, never written empty.
+            val use = k.optString("use")
+            if (use == "") throw Refused("a key's use is empty")
+            (use ?: USE_RELEASE) to spki
         }
         return Keys(seq, o.optLong("time_ms") ?: 0, expires, uses)
     }

@@ -27,7 +27,10 @@ const (
 	genP384      = `"MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEMoRALl99rpVZVnqLkr8SIICF/ccy5tmAUUHR6wxVHlxre5pgqiBXi3PKfarow3t4RiDbZ170VvCSVVN5cponfbHOvzaIZwSrttxum3Y4QCPEt6PHgXNwOF49EjfNopH3"`
 	genP256Stray = `"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEisTU0kiulUla1IJnCzjqGjJXTjaRtYjaMBcnJkhyA7t34yvhwHB6o8QmvZ+ZzjvjhygF8oLcfmRq6a/qgoX/FB=="`
 	genTag       = `"8899aabbccddeeff"`
-	genSHA       = `"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"`
+	// The P-256 key above with its point compressed, which Go's x509
+	// refuses.
+	genP256Compressed = `"MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgACisTU0kiulUla1IJnCzjqGjJXTjaRtYjaMBcnJkhyA7s="`
+	genSHA            = `"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"`
 )
 
 // genFileVectors are the vectors of strict-files.json.
@@ -44,6 +47,7 @@ func genTagValues() []genValue {
 		bad("of 15 characters", `"001122334455667"`),
 		bad("of 17 characters", `"00112233445566778"`),
 		bad("not hex", `"001122334455667g"`),
+		bad("with a line break after it", `"0011223344556677\n"`),
 		bad("empty", `""`),
 	}
 }
@@ -52,6 +56,7 @@ func genTagValues() []genValue {
 func genKeyValues() []genValue {
 	return []genValue{
 		bad("of a P-384 key", genP384),
+		bad("of a compressed point", genP256Compressed),
 		bad("with stray bits", genP256Stray),
 		bad("without padding", strings.TrimRight(genP256, `="`)+`"`),
 		bad("not a key", genB64(32, 7)),
@@ -132,6 +137,7 @@ func genVersionValues() []genValue {
 		bad("with a leading zero", `"0.06.0"`),
 		bad("of seven digits", `"1000000.0.0"`),
 		bad("of a candidate 0", `"0.6.0-rc.0"`),
+		bad("with a line break after it", `"0.6.0\n"`),
 		bad("of a beta", `"0.6.0-beta.1"`),
 		bad("empty", `""`),
 	}
@@ -145,6 +151,7 @@ func genChannelValues() []genValue {
 		bad("in upper case", `"Stable"`),
 		bad("starting with a digit", `"1a"`),
 		bad("with an underscore", `"a_b"`),
+		bad("with a line break after it", `"stable\n"`),
 		bad("empty", `""`),
 	}
 }
@@ -154,6 +161,7 @@ func genSHAValues() []genValue {
 		bad("in upper case", strings.ToUpper(genSHA)),
 		bad("of 63 characters", genSHA[:64]+`"`),
 		bad("of 65 characters", genSHA[:65]+`0"`),
+		bad("with a line break after it", genSHA[:65]+`\n"`),
 		bad("empty", `""`),
 	}
 }
@@ -200,6 +208,8 @@ func releaseKinds() []genKind {
 		ok("of a key of a later use", `[`+key(`,"use":"later"`)+`]`),
 		ok("of a name of 64 bytes", `[{"key":`+genP256+`,"name":"`+strings.Repeat("k", 64)+`"}]`),
 		bad("of 9", keyList(9)),
+		bad("of an empty use", `[`+key(`,"use":""`)+`]`),
+		bad("of a compressed key", `[{"key":`+genP256Compressed+`,"name":"k"}]`),
 		bad("empty", `[]`),
 		bad("of a P-384 key", `[{"key":`+genP384+`,"name":"k"}]`),
 		bad("of a key with stray bits", `[{"key":`+genP256Stray+`,"name":"k"}]`),
@@ -225,6 +235,9 @@ func releaseKinds() []genKind {
 		ok("of a file of size 0", `[{"name":"f","size":0,"sha256":`+genSHA+`}]`),
 		ok("of a binary", `[`+bin(`"bin/cbb"`)+`]`),
 		bad("of 257", fileList(257)),
+		bad("of a file without a size", `[{"name":"f","sha256":`+genSHA+`}]`),
+		bad("of a name with a line break after it", `[{"name":"f\n","size":3,"sha256":`+genSHA+`}]`),
+		bad("of a binary with a line break after it", `[`+bin(`"bin/cbb\n"`)+`]`),
 		bad("empty", `[]`),
 		bad("of a name twice", `[`+file("")+`,`+file("")+`]`),
 		bad("of a path as a name", `[{"name":"../cbb","size":3,"sha256":`+genSHA+`}]`),
@@ -240,6 +253,7 @@ func releaseKinds() []genKind {
 		ok("of an image", `{"image":"ghcr.io/x/cbb","digest":"sha256:`+strings.Trim(genSHA, `"`)+`"}`),
 		bad("without an image", `{"digest":"sha256:`+strings.Trim(genSHA, `"`)+`"}`),
 		bad("of a digest without sha256", `{"image":"x","digest":`+genSHA+`}`),
+		bad("of a digest with a line break after it", `{"image":"x","digest":"sha256:`+strings.Trim(genSHA, `"`)+`\n"}`),
 		bad("empty", `{}`),
 	}
 	return []genKind{
@@ -280,6 +294,7 @@ func releaseKinds() []genKind {
 						bad("of a serial twice", `["1f","1f"]`),
 						bad("of a leading zero", `["01f"]`),
 						bad("in capitals", `["1F"]`),
+						bad("of a line break after a serial", `["1f\n"]`),
 						bad("of an empty serial", `[""]`),
 						bad("of a number", `[31]`),
 					}})...)},

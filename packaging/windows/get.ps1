@@ -118,6 +118,24 @@
 		$out
 	}
 
+	# Test-StrictBody tells whether text, a body, is in the strict form as far
+	# as get.ps1 reads it (docs/protocol.md, "Signed bodies"): every member
+	# name 1 to 64 of a-z, 0-9 and _, no null, no backslash (the signer writes
+	# none in these files), and no field this script reads written twice, so
+	# that ConvertFrom-Json, which matches names in any case and keeps one of
+	# two, reads a body as the other programs do.
+	function Test-StrictBody([string]$text) {
+		if ($text.Contains('\')) { return $false }
+		foreach ($m in [regex]::Matches($text, '"([^"]*)":')) {
+			if ($m.Groups[1].Value -cnotmatch '^[a-z0-9_]{1,64}$') { return $false }
+		}
+		if ($text -match '[:,\[]null') { return $false }
+		foreach ($n in 'v', 'type', 'seq', 'time_ms', 'expires_ms', 'keys', 'version', 'channel', 'release', 'release_sha256', 'files') {
+			if ([regex]::Matches($text, '"' + $n + '":').Count -gt 1) { return $false }
+		}
+		$true
+	}
+
 	# Open-ReleaseFile checks the envelope at path with any of the keys and
 	# returns its body, decoded, or throws.
 	function Open-ReleaseFile($path, $type, $keys) {
@@ -126,8 +144,10 @@
 		$sig = ConvertFrom-DerSignature ([Convert]::FromBase64String($f.sig))
 		foreach ($k in $keys) {
 			if ($sig -and (Get-P256Key $k).VerifyData($body, $sig, [Security.Cryptography.HashAlgorithmName]::SHA256)) {
-				$b = [Text.Encoding]::UTF8.GetString($body) | ConvertFrom-Json
-				if ($b.type -ne $type -or $b.v -ne 1) { break }
+				$text = [Text.Encoding]::UTF8.GetString($body)
+				if (-not (Test-StrictBody $text)) { throw "$(Split-Path $path -Leaf) is not a valid release file; not installing" }
+				$b = $text | ConvertFrom-Json
+				if ($b.type -cne $type -or $b.v -ne 1 -or -not $b.PSObject.Properties['time_ms']) { break }
 				return @{ Bytes = $body; Value = $b }
 			}
 		}
@@ -155,27 +175,31 @@
 		if ([long]$keys.Value.expires_ms -le $nowMS) { throw 'keys.json has expired; check the clock, or try again later' }
 		# A release key (no use) signs release.json and stable.json, a channel
 		# key only stable.json, a key of another use neither.
-		# Under strict mode a key without use has no such property to read.
-		$releaseKeys = @($keys.Value.keys | Where-Object { $u = $_.PSObject.Properties['use']; -not $u -or $u.Value -eq 'release' } |
+		# Under strict mode a key without use has no such property to read. A
+		# use is never written empty.
+		if (@($keys.Value.keys | Where-Object { $u = $_.PSObject.Properties['use']; $u -and $u.Value -ceq '' }).Count -gt 0) {
+			throw "keys.json holds a key whose use is empty; not installing"
+		}
+		$releaseKeys = @($keys.Value.keys | Where-Object { $u = $_.PSObject.Properties['use']; -not $u -or $u.Value -ceq 'release' } |
 			ForEach-Object { , [Convert]::FromBase64String($_.key) })
-		$channelKeys = @($keys.Value.keys | Where-Object { $u = $_.PSObject.Properties['use']; $u -and $u.Value -eq 'channel' } |
+		$channelKeys = @($keys.Value.keys | Where-Object { $u = $_.PSObject.Properties['use']; $u -and $u.Value -ceq 'channel' } |
 			ForEach-Object { , [Convert]::FromBase64String($_.key) })
 		$rel = Open-ReleaseFile -path (Join-Path $tmp 'release.json') -type 'release' -keys $releaseKeys
 		if ($named) {
 			$ch = Open-ReleaseFile -path (Join-Path $tmp 'stable.json') -type 'channel' -keys ($releaseKeys + $channelKeys)
-			if ($ch.Value.channel -ne 'stable') { throw "stable.json is not the stable channel's" }
+			if ($ch.Value.channel -cne 'stable') { throw "stable.json is not the stable channel's" }
 			if ([long]$ch.Value.expires_ms -le $nowMS) { throw 'stable.json has expired; check the clock, or try again later' }
 			$sum = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($rel.Bytes) | ForEach-Object { $_.ToString('x2') })
 			# The release must be one for this channel, as cbb update checks.
-			if ($ch.Value.release_sha256 -ne $sum -or $ch.Value.release -ne $rel.Value.version -or $rel.Value.channel -ne $ch.Value.channel) {
+			if ($ch.Value.release_sha256 -cne $sum -or $ch.Value.release -cne $rel.Value.version -or $rel.Value.channel -cne $ch.Value.channel) {
 				throw 'release.json is not the release stable.json names; not installing'
 			}
-		} elseif ("v$($rel.Value.version)" -ne $version) {
+		} elseif ("v$($rel.Value.version)" -cne $version) {
 			throw "release.json is for $($rel.Value.version), not $version"
 		}
-		$entry = $rel.Value.files | Where-Object { $_.name -eq $archive } | Select-Object -First 1
+		$entry = $rel.Value.files | Where-Object { $_.name -ceq $archive } | Select-Object -First 1
 		if (-not $entry) { throw "release.json does not list $archive" }
-		if ($entry.sha256 -ne $got -or [long]$entry.size -ne (Get-Item (Join-Path $tmp $archive)).Length) {
+		if ($entry.sha256 -cne $got -or -not $entry.PSObject.Properties['size'] -or [long]$entry.size -ne (Get-Item (Join-Path $tmp $archive)).Length) {
 			throw "$archive does not match the signed release.json; not installing it"
 		}
 		Write-Host "The release's signature checks out ($($rel.Value.version))."
