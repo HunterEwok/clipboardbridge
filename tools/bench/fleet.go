@@ -137,6 +137,11 @@ func (f *Fleet) addServer(ctx context.Context, net string, run []string, cmd str
 
 // container starts a container of the fleet's image that runs cmd with sh.
 func (f *Fleet) container(ctx context.Context, net string, run, env []string, cmd string) (*Device, error) {
+	return f.containerOf(ctx, f.cbb, net, run, env, cmd)
+}
+
+// containerOf is container with bin, not the fleet's cbb, as its cbb.
+func (f *Fleet) containerOf(ctx context.Context, bin, net string, run, env []string, cmd string) (*Device, error) {
 	f.mu.Lock()
 	f.n++
 	n := f.n
@@ -145,7 +150,7 @@ func (f *Fleet) container(ctx context.Context, net string, run, env []string, cm
 	args := []string{"run", "-d", "--name", name, "--hostname", fmt.Sprintf("m%02d", n),
 		"--network", net, "--label", "cbbbench=fleet",
 		"--cap-add", "NET_ADMIN",
-		"-v", f.cbb + ":/usr/local/bin/cbb:ro"}
+		"-v", bin + ":/usr/local/bin/cbb:ro"}
 	if fleetCoverDir != "" {
 		args = append(args, "-v", fleetCoverDir+":/cover", "-e", "GOCOVERDIR=/cover")
 	}

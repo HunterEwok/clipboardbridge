@@ -22,8 +22,9 @@
 // hello that names SYSTEM (G35). The tunnel's cases are in tunnel.go, the
 // stand-in for a well-known site that VLESS borrows in site.go, the control
 // socket's in control.go, the TVs in tv.go, the mDNS records in mdns.go,
-// the renewals in cert.go, watching the writes in watch.go. It is
-// never part of a release.
+// the renewals in cert.go, watching the writes in watch.go, the fetch
+// limits in fetch.go, the phone that scans a QR code in qr.go, a relay
+// between two pairing sessions in relay.go. It is never part of a release.
 package main
 
 import (
@@ -72,6 +73,27 @@ func main() {
 	}
 	if flag.NArg() > 0 && fuzzCase(flag.Arg(0)) {
 		if err := runFuzz(*state, group.DeviceID(*to), *addr, *socket, flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && relayCase(flag.Arg(0)) {
+		if err := runRelay(*state, *addr, flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && qrCase(flag.Arg(0)) {
+		if err := runQR(*signer, flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && fetchCase(flag.Arg(0)) {
+		if err := runFetch(*state, group.DeviceID(*to), *addr, flag.Arg(0)); err != nil {
 			fmt.Fprintln(os.Stderr, "forge:", err)
 			os.Exit(1)
 		}
