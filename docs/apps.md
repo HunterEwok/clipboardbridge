@@ -358,6 +358,20 @@ page of Settings:
 3. Android 12 and later show "CBB pasted from your clipboard" each time; that
    is the system's notice and cannot be turned off.
 
+What the service asks Android for (`accessibility_copy.xml`), and why each part is needed:
+
+- `typeViewClicked`: the click events, whose text or description tells it that "Copy" was
+  pressed. It reads only the clicked element's label.
+- `typeWindowsChanged` with `flagRetrieveInteractiveWindows`: the list of windows, whose
+  titles show the system's clipboard overlay (step 1). It reads only the titles.
+- `canRetrieveWindowContent`: needed by `findFocus`, with which remote paste finds the text
+  field that has the focus and pastes into it. It touches no other field.
+- No list of packages: a copy can happen in any app, so the service listens in every app.
+
+These are wider than what the code reads, since Android grants window content as a whole.
+Whether a narrower set still notices copies and pastes is to be checked on a real phone
+before it changes (0.7).
+
 On Android 13 and later, an APK installed from a browser or file manager cannot turn on an
 accessibility service until "Allow restricted settings" is chosen in the app's App info
 (⋮ menu). The setup screen shows that step with a button to App info; an install from

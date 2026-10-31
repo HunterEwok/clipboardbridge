@@ -661,6 +661,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A copy of files may hold the other device names of Windows (`COM0`, `LPT0`, `COM` or `LPT`
+  with a superscript digit, `CONIN$`, `CONOUT$`, and these with spaces before the dot): a
+  computer writes them with `_` after the name's base, and every program gives its own
+  names that form before it sends them. The names Windows reserves are compared alike on
+  every member (docs/protocol.md, section 4; `testdata/interop/media-names.json`).
+- The lite member's updater asks the next update server when the first one's files are
+  out of date, as the full member's does, and stops only at a signature that fails or at
+  files older than ones it has seen.
 - The open relay and the forwarder count what one IPv6 provider (a /32) holds, as they count
   a wide network: registrations (1024), credential versions (4096), records (16 MiB),
   setups and requests being read, and the setups and record checks paid by the second; the

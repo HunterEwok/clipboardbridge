@@ -1973,6 +1973,10 @@ rest from the forwarder's answer when it registers (section 13) and keeps that t
 - After the member TLS handshake the hub MUST check that the device ID of the client
   certificate gives the tunnel address the connection came from, and close it otherwise,
   so a device cannot use another device's tunnel key.
+  Note: a phone that is a hub does not check this yet. Its tunnel (`mobile/cbbtun`) hands
+  each connection to the app through a loopback port, which does not say from which tunnel
+  peer it came, so such a hub knows the client by its member certificate alone. This is
+  planned for 0.7, with a call in `cbbtun` that names the peer of a loopback connection.
 - A member that keeps hubs' offers runs the other end, with the hub it tries as its only
   peer and a keepalive every 25 s. It dials the hub's tunnel address, TCP 8764, with member
   TLS whenever no hub is connected on the home network, trying the hubs in order and each

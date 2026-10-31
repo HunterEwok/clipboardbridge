@@ -181,7 +181,8 @@ public enum Media {
     private static func withUnderscore(_ name: String) -> String {
         let b = Array(name.utf8)
         let base = baseBytes(name)
-        return String(decoding: base + Array("_".utf8) + b[base.count...], as: UTF8.self)
+        let out: [UInt8] = base + [0x5F] + Array(b[base.count...])
+        return String(decoding: out, as: UTF8.self)
     }
 
     /// A name that checkName takes, made of one a system gave, as Go's

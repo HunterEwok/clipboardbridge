@@ -23,6 +23,9 @@ pub struct Error {
     msg: String,
     cause: Option<Box<dyn core::error::Error + Send + Sync + 'static>>,
     cause_type: &'static str,
+    // answer marks a refusal that is an answer, not a failure to get one:
+    // a signature that does not verify, or a file older than one seen.
+    answer: bool,
 }
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -30,17 +33,32 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 impl Error {
     /// An error with a message and no underlying cause.
     pub fn msg(msg: impl Into<String>) -> Error {
-        Error { msg: msg.into(), cause: None, cause_type: "" }
+        Error { msg: msg.into(), cause: None, cause_type: "", answer: false }
     }
 
     /// An error with a message, caused by err.
     pub fn with<E: core::error::Error + Send + Sync + 'static>(msg: impl Into<String>, err: E) -> Error {
-        Error { msg: msg.into(), cause: Some(Box::new(err)), cause_type: core::any::type_name::<E>() }
+        Error { msg: msg.into(), cause: Some(Box::new(err)), cause_type: core::any::type_name::<E>(), answer: false }
     }
 
     /// Wraps this error under a new message, keeping this one as the cause.
     pub fn context(self, msg: impl Into<String>) -> Error {
-        Error { msg: msg.into(), cause_type: "cbb_core::error::Error", cause: Some(Box::new(Cause(self))) }
+        let answer = self.answer;
+        Error { msg: msg.into(), cause_type: "cbb_core::error::Error", cause: Some(Box::new(Cause(self))), answer }
+    }
+
+    /// Marks this error as an answer rather than a failure to get one, as
+    /// Go's release.ErrSignature and release.ErrRollback: whoever asks
+    /// several sources stops at it instead of asking the next. A context
+    /// over it keeps the mark.
+    pub fn answer(mut self) -> Error {
+        self.answer = true;
+        self
+    }
+
+    /// Whether this error, or the one under its contexts, is an answer.
+    pub fn is_answer(&self) -> bool {
+        self.answer
     }
 
     /// The message for the user.
