@@ -47,15 +47,15 @@
 <g class=""><rect class="card " x="485.0" y="198.0" width="170" height="64" rx="10"/><g transform="translate(497.0,216)" class="ic"><rect x="8" y="2" width="12" height="24" rx="2.5"/><line x1="12.5" y1="22.5" x2="15.5" y2="22.5"/></g><text class="t" x="535.0" y="226">iPhone</text><text class="s" x="535.0" y="244">装有快捷指令</text></g>
 <path class="e-pair" d="M235.0,140.0 L485.0,140.0"/>
 <path class="a-pair" d="M485.0,140.0 L477.0,135.6 L477.0,144.4z"/>
-<path class="e-pair" d="M330,140 L330,50 L485.0,50.0"/>
+<path class="e-pair" d="M280.0,140 L280.0,50 L485.0,50.0"/>
 <path class="a-pair" d="M485.0,50.0 L477.0,45.6 L477.0,54.4z"/>
-<path class="e-pair" d="M330,140 L330,230 L485.0,230.0"/>
+<path class="e-pair" d="M280.0,140 L280.0,230 L485.0,230.0"/>
 <path class="a-pair" d="M485.0,230.0 L477.0,225.6 L477.0,234.4z"/>
 <text class="note" x="360" y="290" text-anchor="middle">之后每台设备都与其他每台设备同步，就像在手机上创建的群组一样。</text>
-<rect class="lbl-bg" x="365.8" y="129.0" width="78.5" height="22" rx="11.0"/>
-<text class="lbl pair" x="405" y="144.0" text-anchor="middle">六位数代码</text>
-<rect class="lbl-bg" x="365.8" y="39.0" width="78.5" height="22" rx="11.0"/>
-<text class="lbl pair" x="405" y="54.0" text-anchor="middle">六位数代码</text>
-<rect class="lbl-bg" x="340.8" y="219.0" width="128.5" height="22" rx="11.0"/>
-<text class="lbl pair" x="405" y="234.0" text-anchor="middle">描述文件和快捷指令</text>
+<rect class="lbl-bg" x="343.2" y="129.0" width="78.5" height="22" rx="11.0"/>
+<text class="lbl pair" x="382.5" y="144.0" text-anchor="middle">六位数代码</text>
+<rect class="lbl-bg" x="343.2" y="39.0" width="78.5" height="22" rx="11.0"/>
+<text class="lbl pair" x="382.5" y="54.0" text-anchor="middle">六位数代码</text>
+<rect class="lbl-bg" x="318.2" y="219.0" width="128.5" height="22" rx="11.0"/>
+<text class="lbl pair" x="382.5" y="234.0" text-anchor="middle">描述文件和快捷指令</text>
 </svg>
