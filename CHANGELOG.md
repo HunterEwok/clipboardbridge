@@ -12,6 +12,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   clipboards and the e2e), the lite member, the Swift kit and the Kotlin kit, prints it in
   the run's summary, and fails when a part falls below its floor (`tools/coverage`,
   docs/testing.md, "Coverage").
+- The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
+  with `-cover` write which code the cases ran (docs/testbench.md, "Code coverage").
 - `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
   a name, the order of the checks is written down, and section 10 has a table of every
   record field with its JSON type, the types that need it and its values; section 15 says

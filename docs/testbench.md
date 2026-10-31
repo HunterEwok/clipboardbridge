@@ -308,6 +308,15 @@ relay over SSH.
 (artifacts with checksums and attestations), never builds on the devices, so it tests what
 users get.
 
+**Code coverage**: the fleet and time suites can tell which code of the service their cases
+run. Build the fleet's `cbb` with `-cover` (`CGO_ENABLED=0 go build -cover
+-coverpkg=./cmd/...,./internal/...,./mobile/... -o cbb ./cmd/cbb`, and with `-tags benchtime`
+for `-cbb-time`) and pass `-coverdir DIR`: every container writes its counters there, the
+services stopped first so that theirs are written too. Then `go tool covdata textfmt -i DIR -o
+fleet.out` and `go run ./tools/coverage -go fleet.out` give the table, by package, as CI's
+coverage job does ([testing](testing.md#coverage)). The real devices run release builds and are
+not counted.
+
 **Reports**: a JUnit XML file for GitHub's test summary, an HTML report with the matrix
 (green and red cells), every failure's logs from all devices (`journalctl`, `log show`,
 Windows event log, `logcat`) with `CBB_DEBUG=1`, and the packet captures of the security

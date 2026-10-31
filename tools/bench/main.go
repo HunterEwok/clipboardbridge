@@ -55,12 +55,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fleetSize := fs.Int("fleet-size", 16, "fleet: the members of the many-members case (E3)")
 	scenarioList := fs.String("scenario", "", "fleet, time: comma-separated scenarios to run instead of all, such as T2-tmux or K6-clock")
 	docs := fs.String("docs", "docs", "coverage, all: the directory with testbench-catalogue.md and testbench-functions.md")
+	coverDir := fs.String("coverdir", "", "fleet, time, all: with a cbb built with -cover, the directory where every container writes its coverage (docs/testbench.md, \"Code coverage\")")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|fleet|time|all|coverage")
 		return 2
+	}
+	if *coverDir != "" {
+		abs, err := filepath.Abs(*coverDir)
+		if err == nil {
+			err = os.MkdirAll(abs, 0o755)
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "bench: -coverdir: %v\n", err)
+			return 2
+		}
+		fleetCoverDir = abs
 	}
 	for _, n := range splitList(*scenarioList) {
 		if scenarios == nil {

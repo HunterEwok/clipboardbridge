@@ -111,8 +111,8 @@ environment secret**.
   tokens (`go run ./tools/tokens -check`);
 - **test**: `go test -race` on Linux x86-64, Linux ARM64, macOS and Windows, each with its
   own files' coverage;
-- **go coverage**: Go's tests across packages with `-coverpkg`, the desktop clipboards and the
-  e2e built with `-cover`;
+- **go coverage**: Go's tests across packages with `-coverpkg`, the desktop clipboards, the
+  uinput keyboard, mDNS beside avahi and the e2e built with `-cover`;
 - **coverage**: the coverage of every part that ran, in the run's summary, held to
   `tools/coverage/floor.json` ([testing](testing.md#coverage));
 - **build**: a cgo-free build (`CGO_ENABLED=0`) for every Linux and Windows target, static
