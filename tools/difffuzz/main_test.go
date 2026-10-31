@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,34 @@ func TestSeedsMutants(t *testing.T) {
 	}
 	if last := got[len(got)-1]; last.Kind != "record" || string(last.Body) != "{aa}" {
 		t.Fatalf("seed %s %q", last.Kind, last.Body)
+	}
+}
+
+// TestSetSources checks the three forms a file of record sets takes.
+func TestSetSources(t *testing.T) {
+	dir := t.TempDir()
+	set := `{"name":"%s","group_ca":"Y2E=","records":[{"body":"e30=","sig":"c2ln"}]}`
+	files := map[string]string{
+		"one.json":   fmt.Sprintf(set, "x"),
+		"cases.json": `{"cases":[` + fmt.Sprintf(set, "a") + `,` + fmt.Sprintf(set, "b") + `]}`,
+		"list.json":  `[` + fmt.Sprintf(set, "c") + `]`,
+		"none.json":  `{"records":[]}`,
+	}
+	for f, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := setSources(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, s := range got {
+		names = append(names, s.name)
+	}
+	if want := "cases/a cases/b list/c one"; strings.Join(names, " ") != want {
+		t.Fatalf("sets %q, want %q", strings.Join(names, " "), want)
 	}
 }
 

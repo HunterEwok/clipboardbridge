@@ -110,8 +110,8 @@ func seeds(dir string) ([]Case, error) {
 }
 
 // setSources reads every record set of the interop vectors: a file with a
-// group_ca and records, or a list of such cases. The records of a set's
-// "later" go with it, so the set holds both.
+// group_ca and records, or a list of such cases, alone or under "cases".
+// The records of a set's "later" go with it, so the set holds both.
 func setSources(dir string) ([]setSource, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	if err != nil {
@@ -146,6 +146,12 @@ func setSources(dir string) ([]setSource, error) {
 		}
 		if json.Unmarshal(data, &many) == nil {
 			for _, c := range many.Cases {
+				add(base+"/"+c.Name, c)
+			}
+		}
+		var list []raw
+		if json.Unmarshal(data, &list) == nil {
+			for _, c := range list {
 				add(base+"/"+c.Name, c)
 			}
 		}
