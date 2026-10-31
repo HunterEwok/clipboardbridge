@@ -75,6 +75,9 @@ struct Inject {
     text: String,
     method: String,
     enter: bool,
+    /// The target may paste where nothing tells whether the session is
+    /// locked (remotepaste::Settings).
+    no_lock_check: bool,
     kind: String,
     name: String,
     done: SyncSender<(String, String)>,
@@ -175,20 +178,7 @@ pub fn run(cfg: Config) -> Result<()> {
     let admin_socket = control::admin_socket(&cfg.socket);
     for (ln, admin) in [(listen(&cfg.socket, false)?, false), (listen(&admin_socket, true)?, true)] {
         let svc = svc.clone();
-        std::thread::spawn(move || {
-            let users = Arc::new(ControlUsers::default());
-            for conn in ln.incoming().flatten() {
-                let user = crate::peer::uid(&conn);
-                if !users.add(user) {
-                    continue; // drops conn
-                }
-                let (svc, users) = (svc.clone(), users.clone());
-                std::thread::spawn(move || {
-                    svc.serve(conn, admin);
-                    users.done(user);
-                });
-            }
-        });
+        std::thread::spawn(move || accept_control(ln, move |conn| svc.serve(conn, admin)));
     }
 
     // Wait until the device is in a group: cbb join may run meanwhile.
@@ -819,6 +809,7 @@ impl Service {
                 text: text.to_string(),
                 method: body.mode.clone(),
                 enter: body.enter,
+                no_lock_check: set.no_lock_check,
                 kind: body.paste_kind.clone(),
                 name: name.to_string(),
                 done,
@@ -860,7 +851,13 @@ impl Service {
             self.watchers.lock().unwrap().iter().filter(|w| !w.target.is_empty()).map(|w| w.target.clone()).collect();
         targets.sort();
         targets.dedup();
-        Some(control::Paste { on: set.on, enter: set.enter, console: set.console, targets })
+        Some(control::Paste {
+            on: set.on,
+            enter: set.enter,
+            console: set.console,
+            no_lock_check: set.no_lock_check,
+            targets,
+        })
     }
 
     /// cbb paste-receive on or off: only this device's own user turns
@@ -878,13 +875,21 @@ impl Service {
                 "only an admin turns remote paste off on another device; the lite member is never one: use the phone app or a full member"
             }));
         }
-        if h.name == "off" && (h.enter || h.console) {
-            return Err(Error::msg("-enter and -console go with on"));
+        if h.name == "off" && (h.enter || h.console || h.no_lock_check) {
+            return Err(Error::msg("-enter, -console and -no-lock-check go with on"));
         }
         self.node()?;
-        let set = remotepaste::Settings { on: h.name == "on", enter: h.enter, console: h.console };
+        let set = remotepaste::Settings {
+            on: h.name == "on",
+            enter: h.enter,
+            console: h.console,
+            no_lock_check: h.no_lock_check,
+        };
         remotepaste::save(&self.state_dir, set).map_err(|e| e.context("saving the remote paste settings"))?;
-        (self.log)(&format!("cbb: remote paste is {} here (enter {}, console {})", h.name, set.enter, set.console));
+        (self.log)(&format!(
+            "cbb: remote paste is {} here (enter {}, console {}, no lock check {})",
+            h.name, set.enter, set.console, set.no_lock_check
+        ));
         let status = Status { paste: self.paste_status(), ..Default::default() };
         Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
     }
@@ -1158,6 +1163,7 @@ impl Service {
                                     seq,
                                     method: i.method,
                                     enter: i.enter,
+                                    no_lock_check: i.no_lock_check,
                                     kind: i.kind,
                                     name: i.name,
                                     ..Default::default()
@@ -1261,6 +1267,24 @@ fn device_name(node: &Node, id: &str) -> String {
 /// and commands need a few.
 const MAX_CONTROL_PER_USER: usize = 64;
 
+/// Takes the connections to a control socket and serves each on a thread of
+/// its own, closing one of a user who has MAX_CONTROL_PER_USER open.
+fn accept_control(ln: UnixListener, serve: impl Fn(UnixStream) + Send + Sync + 'static) {
+    let serve = Arc::new(serve);
+    let users = Arc::new(ControlUsers::default());
+    for conn in ln.incoming().flatten() {
+        let user = crate::peer::uid(&conn);
+        if !users.add(user) {
+            continue; // drops conn
+        }
+        let (serve, users) = (serve.clone(), users.clone());
+        std::thread::spawn(move || {
+            serve(conn);
+            users.done(user);
+        });
+    }
+}
+
 /// How long a control connection may wait before its first request.
 const FIRST_REQUEST_TIME: Duration = Duration::from_secs(30);
 
@@ -1292,7 +1316,10 @@ impl ControlUsers {
 
 #[cfg(test)]
 mod tests {
-    use super::{ControlUsers, MAX_CONTROL_PER_USER};
+    use super::{ControlUsers, MAX_CONTROL_PER_USER, accept_control};
+    use std::io::Read;
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::time::Duration;
 
     #[test]
     fn control_users_are_bounded() {
@@ -1304,5 +1331,30 @@ mod tests {
         assert!(u.add(Some(1001)) && u.add(None));
         u.done(Some(1000));
         assert!(u.add(Some(1000)));
+    }
+
+    /// The control socket closes a user's connection past the limit at
+    /// once, and keeps the ones before it open.
+    #[test]
+    fn control_socket_bounds_each_user() {
+        let dir = std::env::temp_dir().join(format!("cbb-control-users-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("control.sock");
+        let ln = UnixListener::bind(&path).unwrap();
+        std::thread::spawn(move || {
+            accept_control(ln, |mut c| {
+                let _ = c.read(&mut [0u8; 1]);
+            })
+        });
+        let open: Vec<UnixStream> = (0..MAX_CONTROL_PER_USER).map(|_| UnixStream::connect(&path).unwrap()).collect();
+        let mut past = UnixStream::connect(&path).unwrap();
+        past.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(past.read(&mut [0u8; 1]).unwrap(), 0, "the connection past the limit stays open");
+        let mut first = &open[0];
+        first.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+        assert!(first.read(&mut [0u8; 1]).is_err(), "a connection within the limit was closed");
+        drop(open);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -281,7 +281,9 @@ fn fetch_with(tool: &str, url: &str, mut child: std::process::Child, path: &Path
     let pid = child.id();
     let (done, stop) = std::sync::mpsc::channel::<()>();
     let watch = std::thread::spawn(move || {
-        if stop.recv_timeout(FETCH_TIME).is_err() {
+        // Only the time running out stops the tool: done is dropped once
+        // its output has ended, and a tool may still be finishing then.
+        if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) = stop.recv_timeout(FETCH_TIME) {
             // SAFETY: kill has no memory preconditions, and the child is
             // waited for only after this thread is joined, so pid is
             // still its.
@@ -958,6 +960,33 @@ mod tests {
         assert!(!path.exists(), "the part of a refused download stays");
         let child = Command::new("sh")
             .args(["-c", "printf abc"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        fetch_with("sh", "test", child, &path, 1000).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"abc");
+        // No more than the limit reaches the disk while the tool goes on:
+        // the tool measures the file before it ends.
+        let size = dir.join("size");
+        let script = format!("head -c 100000 /dev/zero; sleep 1; wc -c < {} > {}", path.display(), size.display());
+        let child =
+            Command::new("sh").args(["-c", &script]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        assert!(fetch_with("sh", "test", child, &path, 1000).is_err());
+        std::thread::sleep(Duration::from_millis(1500));
+        if let Ok(n) = fs::read_to_string(&size) {
+            assert!(n.trim().parse::<u64>().unwrap() <= 1001, "{} bytes on the disk", n.trim());
+        }
+    }
+
+    /// A tool that closes its output and then finishes is not stopped: its
+    /// download stands.
+    #[test]
+    fn fetch_lets_the_tool_finish() {
+        let dir = tmp("fetch-finish");
+        let path = dir.join("out");
+        let child = Command::new("sh")
+            .args(["-c", "printf abc; exec 1>&-; sleep 0.5; exit 0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

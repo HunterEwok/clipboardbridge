@@ -546,6 +546,54 @@ class RecordSet {
             }
         }
 
+        /**
+         * The roots the group CA hands on to: by the roots' own keys, by the
+         * admin computers, and by the admin phones under these roots that are
+         * not in removed; with null by no phone (Go's handedOn).
+         */
+        private fun handedOn(ca: Set<Key>, removed: Set<Key>?): Set<Key> {
+            val out = ca.toMutableSet()
+            do {
+                var grew = false
+                val phones = if (removed == null) emptySet() else phoneAdmins(out)
+                for (e in entries) {
+                    val root = e.body.root ?: continue
+                    if (e.body.type != "root" || e.anchor !in out) continue
+                    val byPhone = removed != null && e.signer in phones && e.signer !in removed
+                    if (e.signer != e.anchor && !computerHandOver(e) && !byPhone) continue
+                    val rk = rootKey(root) ?: continue
+                    if (out.add(rk)) grew = true
+                }
+            } while (grew)
+            return out
+        }
+
+        /** The admin CAs of the phones that the own keys of roots certified. */
+        private fun phoneAdmins(roots: Set<Key>): Set<Key> = entries.mapNotNull { phoneAdminOf(it, roots) }.toSet()
+
+        /**
+         * The keys that a revoke from the own key of one of roots names, and
+         * those that a revoke from an admin phone under them names when no
+         * such revoke names that phone, each with the records that name it
+         * (Go's removals).
+         */
+        private fun removals(roots: Set<Key>): Map<Key, MutableList<Entry>> {
+            val phones = phoneAdmins(roots)
+            val out = mutableMapOf<Key, MutableList<Entry>>()
+            for (e in entries) {
+                if (e.body.type == "revoke" && e.signer == e.anchor && e.anchor in roots) {
+                    for (key in e.body.keys.orEmpty()) out.getOrPut(Key(key)) { mutableListOf() }.add(e)
+                }
+            }
+            val byRoot = out.keys.toSet()
+            for (e in entries) {
+                if (e.body.type == "revoke" && e.signer in phones && e.anchor in roots && e.signer !in byRoot) {
+                    for (key in e.body.keys.orEmpty()) out.getOrPut(Key(key)) { mutableListOf() }.add(e)
+                }
+            }
+            return out
+        }
+
         /** The admin CA key that e, a device record of a phone signed by the own key of one of roots, names; null for any other record. */
         private fun phoneAdminOf(e: Entry, roots: Set<Key>): Key? {
             val admin = e.body.admin ?: return null
@@ -555,53 +603,23 @@ class RecordSet {
 
         private fun evaluate(groupCA: ByteArray, roots: List<ByteArray>) {
             val all = roots.mapNotNull(::rootKey).toSet()
-            // The known roots, until nothing is added.
-            val k = mutableSetOf<Key>()
-            rootKey(groupCA)?.let(k::add)
-            // The admin CAs that are removed: named by a revoke from the own
-            // key of a known root, or from an admin phone's admin CA under a
-            // known root that no such revoke from a root names. Such an admin
-            // phone's root records no longer count. The roots are known in
-            // rounds, each phone's root records judged by the removals of the
-            // roots known before them, as Go's knownRoots.
-            val removed = mutableSetOf<Key>()
+            // The roots that surely count and those that may count, in turns
+            // until neither changes, as Go's knownRoots: a root counts only
+            // when it surely counts, and an admin phone that a root that may
+            // count removes is removed when no root that counts removes it.
+            val ca = setOfNotNull(rootKey(groupCA))
+            var k = handedOn(ca, null)
+            val disputed = mutableMapOf<Key, MutableList<Entry>>()
             while (true) {
-                // The roots the own keys and the computers' admin CAs hand on to.
-                do {
-                    var grew = false
-                    for (e in entries) {
-                        val root = e.body.root ?: continue
-                        if (e.body.type != "root" || e.anchor !in k) continue
-                        if (e.signer != e.anchor && !computerHandOver(e)) continue
-                        val rk = rootKey(root) ?: continue
-                        if (k.add(rk)) grew = true
-                    }
-                } while (grew)
-                val phones = entries.mapNotNull { phoneAdminOf(it, k) }.toSet()
-                val byRootKey = mutableSetOf<Key>()
-                for (e in entries) {
-                    if (e.body.type == "revoke" && e.signer == e.anchor && e.anchor in k) {
-                        for (key in e.body.keys.orEmpty()) {
-                            byRootKey.add(Key(key))
-                            removed.add(Key(key))
-                        }
-                    }
+                val may = handedOn(ca, removals(k).keys)
+                val next = handedOn(ca, removals(may).keys)
+                if (next.size == k.size) {
+                    val removed = removals(k)
+                    val phones = phoneAdmins(k)
+                    for ((key, rs) in removals(may)) if (key in phones && key !in removed) disputed[key] = rs
+                    break
                 }
-                for (e in entries) {
-                    if (e.body.type == "revoke" && e.signer in phones && e.anchor in k && e.signer !in byRootKey) {
-                        for (key in e.body.keys.orEmpty()) removed.add(Key(key))
-                    }
-                }
-                // The roots that admin phones that are not removed hand on to.
-                var grew = false
-                for (e in entries) {
-                    val root = e.body.root ?: continue
-                    if (e.body.type != "root" || e.anchor !in k || e.signer == e.anchor) continue
-                    if (e.signer !in phones || e.signer in removed) continue
-                    val rk = rootKey(root) ?: continue
-                    if (k.add(rk)) grew = true
-                }
-                if (!grew) break
+                k = next
             }
             known = k
             val byRoot = mutableMapOf<Key, MutableList<Entry>>()
@@ -625,7 +643,15 @@ class RecordSet {
                 val a = e.body.admin ?: continue
                 if (e.body.type == "device" && Records.role(e.body.role) == "watch" && rootSigned(e)) watch.add(Key(a))
             }
+            // An admin phone whose removal is in dispute is removed, by the
+            // records that would remove it.
             val disabled = mutableSetOf<Key>()
+            for ((key, rs) in disputed) {
+                phoneAdmin.remove(key)
+                disabled.add(key)
+                revoked.add(key)
+                revokers[key] = rs
+            }
             for (e in entries) {
                 val fromPhone = e.signer in phoneAdmin && e.anchor in known
                 if (e.body.type != "revoke" || !(rootSigned(e) || fromPhone)) continue
@@ -982,17 +1008,16 @@ class RecordSet {
     fun knows(device: String): Boolean = list.any { Records.Body.decode(it.body)?.let { b -> b.type == "device" && b.device == device } == true }
 
     /**
-     * The phone that holds the root: the one whose own record the current
-     * root's key signed (a phone records itself when it makes the group,
-     * and again when it takes the group over).
+     * The phone that holds the root: the root's own device ([rootMember]),
+     * when its own record says it is a phone (a phone records itself when it
+     * makes the group, and again when it takes the group over); null when
+     * the root is a computer.
      */
     val rootDevice: String?
         get() {
             val ev = Eval(this)
             val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return null
-            return ev.entries.filter {
-                it.signer == cur && it.body.type == "device" && it.body.role == "phone" && it.body.device != null && it.body.device == it.body.by
-            }.maxByOrNull { it.body.timeMS }?.body?.device
+            return ownRecords(ev, cur).maxWithOrNull(NEWEST)?.takeIf { Records.role(it.body.role) == "phone" }?.body?.device
         }
 
     /**
@@ -1034,15 +1059,21 @@ class RecordSet {
                 .map { it.id }
         }
 
-    /** The root's own device and its key: the newest full or phone device record the current root signed for itself. */
+    /**
+     * The root's own device and its key: the newest full or phone device record the current root signed for itself, of
+     * two at the same time the one with the greater record ID, as Go's Records.RootMember.
+     */
     internal fun rootMember(): Pair<String, Key>? {
         val ev = Eval(this)
         val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return null
-        val own = ev.entries.filter {
-            it.signer == cur && it.body.type == "device" && Records.role(it.body.role) in setOf("phone", "full") &&
-                it.body.device != null && it.body.device == it.body.by
-        }.maxByOrNull { it.body.timeMS } ?: return null
+        val own = ownRecords(ev, cur).maxWithOrNull(NEWEST) ?: return null
         return (own.body.device ?: return null) to Key(own.body.key ?: return null)
+    }
+
+    /** The full or phone device records that the current root, cur, signed for itself. */
+    private fun ownRecords(ev: Eval, cur: Key): List<Entry> = ev.entries.filter {
+        it.signer == cur && it.body.type == "device" && Records.role(it.body.role) in setOf("phone", "full") &&
+            it.body.device != null && it.body.device == it.body.by
     }
 
     /**
@@ -1076,6 +1107,9 @@ class RecordSet {
 
         /** Entries by ID and then signer, as Go sorts records; lower-case hex sorts as the bytes do. */
         private val BY_ENVELOPE = compareBy<Entry>({ it.id.hex }, { it.signer.hex })
+
+        /** By time, then by record ID and signer: the newest is the greatest, as Go's newer. */
+        private val NEWEST = compareBy<Entry> { it.body.timeMS }.then(BY_ENVELOPE)
 
         private const val NAMED_PHONE = 1
         private const val NAMED_OTHER = 2

@@ -66,7 +66,9 @@ func TestX11Paste(t *testing.T) {
 	if err := b.Write("there before", false); err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	// The test's session is none that logind knows: the paste goes in as
+	// on a device whose user allowed that.
+	ctx := connector.WithoutLockCheck(context.Background(), true)
 	if err := b.Inject(ctx, "pasted \u00e9 \u03b1\u03b2\u03b3\u20ac", "paste", true, false); err != nil {
 		t.Fatal(err)
 	}

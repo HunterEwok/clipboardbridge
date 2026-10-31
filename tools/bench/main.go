@@ -51,10 +51,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	buildDir := fs.String("build", "", "reset: the directory with the release archives (and SHA256SUMS) to install")
 	quick := fs.Bool("quick", false, "reset: keep each device's install and only remove its state")
 	cbb := fs.String("cbb", "", "fleet, all: a static Linux cbb of the build under test for this computer's CPU, which the fleet's containers run")
+	fs.StringVar(&fleetLite, "cbb-lite", "", "fleet, all: the lite member's cbb for Linux (cargo build --release in lite/), for the fleet's cases with a lite member")
 	cbbTime := fs.String("cbb-time", "", "time, all: the same cbb built with -tags benchtime, whose long times run 100000 times faster")
 	fleetSize := fs.Int("fleet-size", 16, "fleet: the members of the many-members case (E3)")
 	scenarioList := fs.String("scenario", "", "fleet, time: comma-separated scenarios to run instead of all, such as T2-tmux or K6-clock")
 	docs := fs.String("docs", "docs", "coverage, all: the directory with testbench-catalogue.md and testbench-functions.md")
+	fs.DurationVar(&fuzzFor, "fuzz-for", fuzzFor, "fleet: how long the fuzzing case (S20) sends each kind of frame; a release's full run takes 1h")
 	coverDir := fs.String("coverdir", "", "fleet, time, all: with a cbb built with -cover, the directory where every container writes its coverage (docs/testbench.md, \"Code coverage\")")
 	if fs.Parse(args) != nil {
 		return 2

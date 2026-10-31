@@ -73,7 +73,7 @@ func TestRemotePaste(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := <-got
-	if string(m.Payload) != "echo hi" || m.Method != "type" || m.Enter || m.Name != "pi" {
+	if string(m.Payload) != "echo hi" || m.Method != "type" || m.Enter || m.NoLockCheck || m.Name != "pi" {
 		t.Errorf("the desktop got %q %+v", m.Payload, m.Header)
 	}
 	time.Sleep(time.Second) // one paste a second from one sender
@@ -104,6 +104,22 @@ func TestRemotePaste(t *testing.T) {
 	}
 	if e := log[2]; e.Result != "done" || e.Len != len("echo hi") || e.Method != "type" || e.Unverified {
 		t.Errorf("the paste's entry: %+v", e)
+	}
+
+	// Its user lets it paste where nothing tells whether the session is
+	// locked: the inject says so.
+	if m, err := deck.do(t, control.Header{Op: control.OpReceive, Name: "on", NoLockCheck: true}, ""); err != nil || m.Status.Paste == nil || !m.Status.Paste.NoLockCheck {
+		t.Fatalf("paste-receive on -no-lock-check: %+v, %v", m, err)
+	}
+	time.Sleep(time.Second)
+	if err := paste("ls", control.Header{}); err != nil {
+		t.Fatal(err)
+	}
+	if m := <-got; !m.NoLockCheck {
+		t.Errorf("the inject does not let the target paste without the lock check: %+v", m.Header)
+	}
+	if _, err := deck.do(t, control.Header{Op: control.OpReceive, Name: "off", NoLockCheck: true}, ""); err == nil {
+		t.Error("off took -no-lock-check")
 	}
 
 	// Any admin turns it off.

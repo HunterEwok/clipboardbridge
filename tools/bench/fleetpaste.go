@@ -158,7 +158,7 @@ func tmuxPaste(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		return nil
 	})
 	r.Do(p+"T6-line-break", func() error {
-		return refused("", "true\n"+text, "a line break would run the text")
+		return refused("", "true\n"+text, "the text has a line break, which may run what comes before it")
 	})
 	r.Do(p+"T6-enter-not-allowed", func() error {
 		return refused("-enter", text, "takes pastes without Enter only")
@@ -211,8 +211,14 @@ func tmuxPaste(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		return err
 	})
 	// T13: with the admin and the target apart, the paste and its result
-	// go through the member both reach.
+	// go through an admin both reach.
 	r.Do(p+"T13-through-a-member", func() error {
+		// A command goes only through the group's hubs, the root and the
+		// admins (docs/protocol.md, section 15): the member in between is
+		// made one.
+		if err := succeeds(ctx, admin, "cbb admin -allow-file-key "+member.Name, "", "is an admin now"); err != nil {
+			return err
+		}
 		if err := cut(ctx, admin, b); err != nil {
 			return err
 		}

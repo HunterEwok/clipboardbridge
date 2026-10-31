@@ -31,10 +31,10 @@ var automated = map[string][]string{
 	"W1": {"away"}, "W10": {"away", "fleet"}, "W13": {"away", "fleet"}, "W14": {"away", "fleet"}, "W15": {"away", "fleet"},
 	"W31": {"away", "fleet"}, "W36": {"relay", "fleet"}, "W3": {"fleet"}, "W11": {"fleet"}, "W18": {"fleet"},
 	"W19": {"fleet"}, "W20": {"fleet"}, "W32": {"fleet"}, "W33": {"fleet"}, "W34": {"fleet"}, "W35": {"fleet"},
-	"W37": {"fleet"}, "W38": {"fleet"}, "W4": {"fleet"}, "W21": {"fleet"}, "W40": {"fleet"},
+	"W30": {"fleet"}, "W37": {"fleet"}, "W38": {"fleet"}, "W4": {"fleet"}, "W21": {"fleet"}, "W40": {"fleet"},
 	// Security.
 	"S10": {"full"}, "S11": {"full"}, "S15": {"full"}, "S16": {"full"},
-	"S3": {"fleet"}, "S4": {"fleet"}, "S5": {"fleet"}, "S8": {"fleet"},
+	"S3": {"fleet"}, "S4": {"fleet"}, "S20": {"fleet"}, "S21": {"fleet"}, "S5": {"fleet"}, "S8": {"fleet"},
 	// Load and faults.
 	"E7": {"faults"}, "E8": {"faults"}, "E11": {"faults"}, "E6": {"fleet"},
 	// The fleet of containers.
@@ -45,7 +45,7 @@ var automated = map[string][]string{
 	"T1": {"fleet"}, "T2": {"fleet"}, "T6": {"fleet"}, "T7": {"fleet"}, "T9": {"fleet"},
 	"T10": {"fleet"}, "T13": {"fleet"}, "T14": {"fleet"}, "G25": {"fleet"}, "G27": {"fleet"},
 	"G33": {"fleet"}, "S24": {"fleet"}, "M4": {"fleet"}, "G4": {"fleet"}, "G7": {"fleet"},
-	"D2": {"fleet"}, "D6": {"fleet"}, "D7": {"fleet"}, "D8": {"fleet"}, "D12": {"fleet"},
+	"D2": {"fleet"}, "D4": {"fleet"}, "D5": {"fleet"}, "D11": {"fleet"}, "D6": {"fleet"}, "D7": {"fleet"}, "D8": {"fleet"}, "D12": {"fleet"},
 	"I19": {"fleet"}, "U8": {"fleet"}, "U13": {"fleet"}, "Q1": {"fleet"}, "Q4": {"fleet"},
 	"Q6": {"fleet"}, "Q7": {"fleet"}, "X2": {"fleet"}, "X3": {"fleet"}, "K12": {"fleet"},
 	"Q2": {"fleet"}, "Q5": {"fleet"}, "X1": {"fleet"}, "U2": {"fleet"},
@@ -53,10 +53,10 @@ var automated = map[string][]string{
 	"Y22": {"fleet"}, "Y23": {"fleet"}, "G34": {"fleet"}, "K9": {"fleet"},
 	"Y33": {"fleet"}, "D16": {"fleet"}, "G24": {"fleet"}, "X4": {"fleet"}, "G35": {"fleet"}, "U11": {"fleet"}, "T17": {"fleet"}, "T19": {"fleet"}, "G13": {"fleet"}, "D17": {"fleet"}, "D3": {"fleet"}, "D14": {"fleet"}, "D13": {"fleet"}, "Y15": {"fleet"}, "G16": {"fleet"}, "G40": {"fleet"}, "K3": {"fleet"},
 	"E1": {"fleet"}, "E2": {"fleet"}, "E4": {"fleet"}, "O7": {"fleet"}, "O8": {"fleet"},
-	"S17": {"fleet"}, "S23": {"fleet"}, "G31": {"fleet"}, "G32": {"fleet"}, "K14": {"fleet"},
+	"S17": {"fleet"}, "S23": {"fleet"}, "G31": {"fleet"}, "G32": {"fleet"}, "K14": {"fleet"}, "K11": {"fleet"}, "G41": {"fleet"}, "Y6": {"fleet"}, "I3": {"fleet"}, "I8": {"fleet"}, "I9": {"fleet"}, "I10": {"fleet"}, "I11": {"fleet"}, "I12": {"fleet"}, "I2": {"fleet"}, "I4": {"fleet"}, "I6": {"fleet"}, "I7": {"fleet"}, "O9": {"fleet"}, "U9": {"fleet"}, "O6": {"fleet"}, "O15": {"fleet"}, "G17": {"fleet"}, "G8": {"fleet"}, "S22": {"fleet"}, "I1": {"fleet"},
 	// The time-scaled build.
 	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
-	"Y13": {"time"}, "W39": {"time"},
+	"Y13": {"time"}, "W39": {"time"}, "W12": {"time"},
 }
 
 // suites lists every suite `testbench` runs, in the order `all` runs them.

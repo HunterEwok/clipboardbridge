@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -238,8 +239,18 @@ func generate(dir string, seed uint64, n, sets int) ([]Case, error) {
 		seen[key] = true
 		out = append(out, Case{Kind: c.Kind, Body: body})
 	}
+	// Every set as it is, reversed and in two other orders: what a set
+	// decides must not depend on the order its records come in.
 	for _, s := range srcs {
 		out = append(out, Case{Kind: "set", CA: s.ca, Records: s.records, Keys: keysOf(s.records)})
+		reversed := slices.Clone(s.records)
+		slices.Reverse(reversed)
+		out = append(out, Case{Kind: "set", CA: s.ca, Records: reversed, Keys: keysOf(s.records)})
+		for range 2 {
+			rs := slices.Clone(s.records)
+			r.Shuffle(len(rs), func(i, j int) { rs[i], rs[j] = rs[j], rs[i] })
+			out = append(out, Case{Kind: "set", CA: s.ca, Records: rs, Keys: keysOf(s.records)})
+		}
 	}
 	for i := 0; i < sets; i++ {
 		s := srcs[r.IntN(len(srcs))]

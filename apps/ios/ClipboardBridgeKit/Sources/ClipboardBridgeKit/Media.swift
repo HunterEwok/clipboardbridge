@@ -42,14 +42,16 @@ public enum Media {
             var total: Int64 = 0
             var paths = 0
             // Paths compare byte for byte, as the spec says, not as Swift
-            // compares strings: two names in NFC and NFD are two paths.
+            // compares strings: two names in NFC and NFD are two paths. They
+            // compare as a receiver writes them: two that savePath makes one
+            // would land in one place.
             var seen = Set<[UInt8]>()
             for p in parts {
                 let key: String
                 if files {
                     guard let path = p.path, p.type == nil, Media.checkPath(path) else { return false }
                     paths += path.utf8.count
-                    key = path
+                    key = Media.savePath(path)
                 } else {
                     guard let type = p.type, !p.dir, Media.types.contains(type) else { return false }
                     key = type
@@ -64,10 +66,12 @@ public enum Media {
             }
             guard paths <= Media.maxPaths, total == size, total <= Media.maxMedia else { return false }
             if files {
+                // No file is inside another, by the paths as a receiver
+                // writes them.
+                let saved = parts.map { (Array(Media.savePath($0.path!).utf8), $0.dir) }
                 var dirs: [[UInt8]: Bool] = [:]
-                for p in parts { dirs[Array(p.path!.utf8)] = p.dir }
-                for p in parts {
-                    let path = Array(p.path!.utf8)
+                for (path, dir) in saved { dirs[path] = dir }
+                for (path, _) in saved {
                     for (i, b) in path.enumerated() where b == 0x2F {
                         if dirs[Array(path[..<i])] == false { return false }
                     }
@@ -113,21 +117,22 @@ public enum Media {
     }
 
     /// Whether path is names joined by "/", each one checkName takes, at
-    /// most maxPath bytes.
+    /// most maxPath bytes as a receiver writes it (savePath).
     public static func checkPath(_ path: String) -> Bool {
         // Split on the byte "/": a "/" that a combining mark follows is one
         // Character for Swift but still a separator.
-        !path.isEmpty && path.utf8.count <= maxPath
+        !path.isEmpty && path.utf8.count <= maxPath && savePath(path).utf8.count <= maxPath
             && path.utf8.split(separator: 0x2F, omittingEmptySubsequences: false).allSatisfy { checkName(String(decoding: $0, as: UTF8.self)) }
     }
 
     /// Whether a name of a path is one every system can hold, as Go's
-    /// clip.CheckName decides: 1 to 255 bytes, not "." or "..", no control
+    /// clip.CheckName decides: 1 to 255 bytes, as a receiver writes it too
+    /// (saveName), not "." or "..", no control
     /// characters, separators or characters Windows does not allow, no dot
     /// or space at the end, no name Windows reserves.
     public static func checkName(_ name: String) -> Bool {
         let n = name.utf8.count
-        guard n > 0, n <= maxName, name != ".", name != ".." else { return false }
+        guard n > 0, n <= maxName, saveName(name).utf8.count <= maxName, name != ".", name != ".." else { return false }
         if name.unicodeScalars.contains(where: { "/\\:*?\"<>|".unicodeScalars.contains($0) || $0.value < 0x20 || (0x7f...0x9f).contains($0.value) }) {
             return false
         }
@@ -164,6 +169,13 @@ public enum Media {
     /// is.
     public static func saveName(_ name: String) -> String {
         device(name) ? withUnderscore(name) : name
+    }
+
+    /// saveName for each name of a path, as Go's clip.SavePath; split on
+    /// the byte "/", as checkPath splits.
+    public static func savePath(_ path: String) -> String {
+        path.utf8.split(separator: 0x2F, omittingEmptySubsequences: false)
+            .map { saveName(String(decoding: $0, as: UTF8.self)) }.joined(separator: "/")
     }
 
     /// The bytes of name before its first dot, the byte ".": a dot that a

@@ -44,7 +44,8 @@ object Media {
                     val key = if (files) {
                         if (p.path == null || p.type != null || !checkPath(p.path)) return false
                         paths += p.path.toByteArray().size
-                        p.path
+                        // Paths compare as a receiver writes them: two that savePath makes one would land in one place.
+                        savePath(p.path)
                     } else {
                         if (p.type == null || p.dir || p.type !in TYPES) return false
                         p.type
@@ -59,12 +60,14 @@ object Media {
                 }
                 if (paths > MAX_PATHS || total != size || total > MAX_MEDIA) return false
                 if (files) {
-                    val dirs = parts.associate { it.path!! to it.dir }
-                    for (p in parts) {
-                        var i = p.path!!.indexOf('/')
+                    // No file is inside another, by the paths as a receiver writes them.
+                    val saved = parts.map { savePath(it.path!!) to it.dir }
+                    val dirs = saved.toMap()
+                    for ((path, _) in saved) {
+                        var i = path.indexOf('/')
                         while (i >= 0) {
-                            if (dirs[p.path.substring(0, i)] == false) return false
-                            i = p.path.indexOf('/', i + 1)
+                            if (dirs[path.substring(0, i)] == false) return false
+                            i = path.indexOf('/', i + 1)
                         }
                     }
                 }
@@ -118,9 +121,13 @@ object Media {
         }
     }
 
-    /** Whether path is names joined by "/", each one checkName takes, at most MAX_PATH bytes. */
+    /** Whether path is names joined by "/", each one checkName takes, at most MAX_PATH bytes as a receiver writes it. */
     fun checkPath(path: String): Boolean =
-        path.isNotEmpty() && path.toByteArray().size <= MAX_PATH && path.split('/').all { checkName(it) }
+        path.isNotEmpty() && path.toByteArray().size <= MAX_PATH && savePath(path).toByteArray().size <= MAX_PATH &&
+            path.split('/').all { checkName(it) }
+
+    /** saveName for each name of a path, as Go's clip.SavePath. */
+    fun savePath(path: String): String = path.split('/').joinToString("/") { saveName(it) }
 
     /**
      * A name that checkName takes, made of one a system gave, as Go's
@@ -184,13 +191,13 @@ object Media {
 
     /**
      * Whether a name of a path is one every system can hold, as Go's
-     * clip.CheckName decides: 1 to 255 bytes, not "." or "..", no control
+     * clip.CheckName decides: 1 to 255 bytes, as a receiver writes it too (saveName), not "." or "..", no control
      * characters, separators or characters Windows does not allow, no dot
      * or space at the end, no name Windows reserves.
      */
     fun checkName(name: String): Boolean {
         val bytes = name.toByteArray().size
-        if (bytes == 0 || bytes > MAX_NAME || name == "." || name == "..") return false
+        if (bytes == 0 || bytes > MAX_NAME || saveName(name).toByteArray().size > MAX_NAME || name == "." || name == "..") return false
         if (name.any { it in "/\\:*?\"<>|" || it < ' ' || it == '\u007f' || it in '\u0080'..'\u009f' }) return false
         if (name.endsWith('.') || name.endsWith(' ')) return false
         return !reserved(name)

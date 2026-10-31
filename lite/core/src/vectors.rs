@@ -350,28 +350,71 @@ fn go_removed_admin() {
     }
 }
 
+/// The orders of 0..n that start at each place, forward and backward: each
+/// record comes first and last. Go's TestRemovedAdminCases checks every
+/// order.
+fn rotations(n: usize) -> Vec<Vec<usize>> {
+    let mut out = Vec::new();
+    for start in 0..n {
+        let forward: Vec<usize> = (0..n).map(|i| (start + i) % n).collect();
+        let mut backward = forward.clone();
+        backward.reverse();
+        out.push(forward);
+        out.push(backward);
+    }
+    out
+}
+
 /// An admin phone removed by the current root after a handover, or by
 /// another admin phone, signs a root record afterwards, for a root of its
 /// own that revokes the group's roots and admins: that root is not known
-/// either (go-removed-admins.json, as Go's TestRemovedAdminCases writes it).
+/// either. A root an admin phone hands on counts only when no root that may
+/// count removes that phone; two such roots that would remove each other's
+/// phones do not count, and both phones are removed. Every case, in the
+/// orders of rotations (go-removed-admins.json, as Go's
+/// TestRemovedAdminCases writes it).
 #[test]
 fn go_removed_admins() {
     let cases = vectors("go-removed-admins.json");
     let cases = cases.as_array().unwrap();
-    assert_eq!(cases.len(), 2);
+    assert!(cases.len() >= 7, "{} cases", cases.len());
     for v in cases {
         let case = v["name"].as_str().unwrap();
         let rs = records(&v["records"]);
-        let mut reversed = rs.clone();
-        reversed.reverse();
-        for (name, recs) in [("as written", &rs), ("reversed", &reversed)] {
+        for order in rotations(rs.len()) {
+            let recs: Vec<_> = order.iter().map(|&i| rs[i].clone()).collect();
             let mut s = Records::new(&cert(&v["group_ca"]));
-            let _ = s.add_all(recs);
-            assert_eq!(s.roots().len() as u64, v["roots"].as_u64().unwrap(), "{case}, {name}");
+            let _ = s.add_all(&recs);
+            assert_eq!(s.roots().len() as u64, v["roots"].as_u64().unwrap(), "{case}, {order:?}");
             for k in v["keys"].as_array().unwrap() {
                 let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
-                assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{case}, {name}: {}", k["name"]);
+                assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{case}, {order:?}: {}", k["name"]);
             }
+        }
+    }
+}
+
+/// The root's own device when the root signed two own device records at
+/// the same time, the one with the greater record ID, and whether it is a
+/// phone or a computer, in every rotation of the records
+/// (go-root-member.json, as Go's TestGoRootMemberVectors writes it).
+#[test]
+fn go_root_member() {
+    let v = vectors("go-root-member.json");
+    let cases = v["cases"].as_array().unwrap();
+    assert!(cases.len() >= 4, "{} cases", cases.len());
+    for c in cases {
+        let case = c["name"].as_str().unwrap();
+        let rs = records(&c["records"]);
+        for order in rotations(rs.len()) {
+            let recs: Vec<_> = order.iter().map(|&i| rs[i].clone()).collect();
+            let mut s = Records::new(&cert(&v["group_ca"]));
+            let (_, errs) = s.add_all(&recs);
+            assert!(errs.is_empty(), "{case}: {errs:?}");
+            let root = s.root_member().map(|(d, _)| d).unwrap_or_default();
+            let role = s.devices().into_iter().find(|d| d.id == root).map(|d| d.role).unwrap_or_default();
+            assert_eq!(root, c["root_device"].as_str().unwrap(), "{case}, {order:?}");
+            assert_eq!(role, c["root_role"].as_str().unwrap(), "{case}, {order:?}");
         }
     }
 }

@@ -38,7 +38,7 @@ func keysInject(ctx context.Context, kb keyboard, b connector.PasteBoard, text, 
 	default:
 		return &connector.Refusal{Reason: fmt.Sprintf("this desktop pastes, not %q", method)}
 	}
-	if why := lockcheck.Reason(); why != "" {
+	if why := lockcheck.Reason(connector.NoLockCheck(ctx)); why != "" {
 		return &connector.Refusal{Reason: why}
 	}
 	if k, ok := kb.(granted); ok {

@@ -91,6 +91,7 @@ func cmdPasteReceive(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	enter := fs.Bool("enter", false, "with on: let a paste press Enter")
 	console := fs.Bool("console", false, "with on: let pastes reach text consoles and root's tmux")
+	noLockCheck := fs.Bool("no-lock-check", false, "with on: paste also where nothing tells whether the session is locked")
 	on := fs.String("on", "", "with off, on an admin: the device, by name or ID, to turn remote paste off on")
 	all := fs.Bool("all", false, "with off, on an admin: turn remote paste off on every device of the group")
 	// on or off comes first, as the usage shows; before the flags, it
@@ -102,7 +103,7 @@ func cmdPasteReceive(args []string, stdout, stderr io.Writer) int {
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	usage := "usage: cbb paste-receive [on [-enter] [-console] | off [-on DEVICE | -all]]"
+	usage := "usage: cbb paste-receive [on [-enter] [-console] [-no-lock-check] | off [-on DEVICE | -all]]"
 	if name == "" && fs.NArg() == 1 {
 		name = fs.Arg(0)
 	} else if fs.NArg() > 0 {
@@ -111,8 +112,8 @@ func cmdPasteReceive(args []string, stdout, stderr io.Writer) int {
 	}
 	h := control.Header{Op: control.OpStatus}
 	if name != "" {
-		h = control.Header{Op: control.OpReceive, Name: name, Enter: *enter, Console: *console, Device: *on, All: *all}
-	} else if *enter || *console || *on != "" || *all {
+		h = control.Header{Op: control.OpReceive, Name: name, Enter: *enter, Console: *console, NoLockCheck: *noLockCheck, Device: *on, All: *all}
+	} else if *enter || *console || *noLockCheck || *on != "" || *all {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
@@ -155,6 +156,9 @@ func pasteLine(p *control.Paste) string {
 		line += " and reach text consoles, without Enter."
 	default:
 		line += ", without Enter."
+	}
+	if p.NoLockCheck {
+		line += " It pastes also where nothing tells whether the session is locked."
 	}
 	if len(p.Targets) == 0 {
 		return line + " Nothing here can paste yet: the desktop connector, the Mac app or the tmux and console helpers do it."

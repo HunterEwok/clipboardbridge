@@ -12,6 +12,30 @@ All notable changes to clipboardbridge are documented in this file. The format f
   clipboards and the e2e), the lite member, the Swift kit and the Kotlin kit, prints it in
   the run's summary, and fails when a part falls below its floor (`tools/coverage`,
   docs/testing.md, "Coverage").
+- The bench's fleet runs the holder's election and handover (D4, D5), dial-back (D11), what a
+  stranger learns (S21), the forwarder's hub rule (W30) and fuzzing for `-fuzz-for` (S20).
+- The bench's fleet runs the key-file warnings (K11), the join matrix (G41, Y6) and, in a
+  systemd container, `cbb update` from a test feed signed by `tools/release-sign`: the install,
+  every refusal, a rollback and the update method (I8 to I11), and `get.sh` against the same
+  feed, each refusal named (I3), and in a group of two the second member taking the archive
+  from the first, with the timer turned on and off (I12).
+- The bench's fleet runs install.sh's options against a bare nftables firewall (I2), uninstall
+  with and without `--purge` checked against what was there before (I4), an upgrade in a group
+  one member at a time (I6) and the previous release installed over the new state (I7).
+- The bench's fleet checks the content cache: a part readable only by the service, gone
+  10 minutes after its copy is replaced, and none after a restart (O9).
+- The bench's fleet runs the lite member (`-cbb-lite FILE`) joined to full members: `cbb watch`
+  and `watch -0`, the ZX Next's frames (U9), and a copy of a file giving it only the text that
+  goes with it (O6), its `cbb update -check` against a feed signed with test keys (S22), and
+  `get.sh --lite` installing it from such a feed (I1).
+- The bench's fleet checks the fetch limits of a part's holder with the forge: chunks padded to
+  16 KiB, a get over 1 MiB dropped, and too many gets at once closing the connection (O15).
+- The bench's fleet plays the phone that scans a computer's QR code: the computer listens only
+  during `cbb pair`, and only for the certificate and code in the QR code (G17).
+- The bench's fleet relays a join between two TLS sessions with the forge: the join fails, the
+  window loses one guess, and the joiner then joins directly (G8).
+- The bench's time suite runs the hub's key renewed each credential period, with a client
+  away from home taking the next key ahead and one off across the switch (W12).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
   with `-cover` write which code the cases ran (docs/testbench.md, "Code coverage").
 - `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
@@ -509,6 +533,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Remote paste on Linux and FreeBSD takes nothing where the device cannot tell whether its
+  session is locked (no logind, `loginctl` failing or saying nothing): earlier it pasted
+  there. The device's user may allow pastes without that check with
+  `cbb paste-receive on -no-lock-check`, on a computer and on the lite member; `cbb
+  paste-receive` shows the switch. A locker that runs still stops a paste either way.
+- The Android app's root and admin keys sign for 30 seconds after the fingerprint, the face
+  or the screen lock, not five minutes; keys made by earlier versions keep their window,
+  and the app asks again after 25 seconds either way.
 - A remote paste with a line break needs the device user's leave for Enter on every target
   of a computer and of the lite member, a desktop session too: a shell or console window
   there may take the paste without bracketing it. Without that leave such a paste is
@@ -617,7 +649,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   default is in the ports table of `docs/reference/devices.md`. The pages for users and
   administrators may not tell the reader something is easy ("simply", "easily") or call
   the product `clipboardbridge` outside code, links and quotes, and every field of the
-  control socket's header must be in section 8 of `docs/protocol.md`.
+  control socket's header must be in section 8 of `docs/protocol.md`. Against a base, it
+  also reports a test that skips where it did not, and counts the Swift tests of the Xcode
+  projects' test targets too.
 - A fresh read of docs/protocol.md against the code fixed the length of CPace's channel
   identifier (88 bytes, not 83), and added what an implementation needs and could not find:
   the forwarder's and relay's framing (JSON lines, at most 1 MiB), the TLS parameters every
@@ -671,9 +705,35 @@ All notable changes to clipboardbridge are documented in this file. The format f
   means. `cbb new` warns that the root key is a file.
 - `get.ps1` no longer stops in Windows PowerShell 5.1 when `gh` is installed but not signed
   in.
+- A copy of files whose names, as a receiver writes the names Windows reserves (`COM0` as
+  `COM0_`), would grow past 255 bytes, or whose paths would become one or go through a file,
+  is refused by every member when it arrives, instead of failing as it is written.
+- When the root signed two own device records at the same time, the phones take the one
+  with the greater record ID as its own device, as the computers and the lite member do, so
+  every member agrees which device holds the root and whether it is a phone or a computer.
 
 ### Fixed
 
+- The lite member no longer stops the download tool after it has finished, so a download
+  the tool ends a moment after its output stands.
+- A replaced image's or file's parts leave the cache 10 minutes after the copy that replaced
+  them even when no further copy comes; the service sweeps the cache every minute instead of
+  only on the next copy.
+- Uninstalling on Linux also removes what the installer created and nothing else uses
+  any more: an `/etc/tmux.conf` left with only blank lines and an empty `/etc/xdg/autostart`.
+- A JPEG pasted on Windows stays within the image memory bound: the PNG that goes on the
+  clipboard with it is made from the bitmap once the decoded pixels are dropped, in one
+  buffer, and the bound counts it.
+- The roots a group knows are found from two sides until they settle (docs/protocol.md,
+  section 10, rule 2), in every implementation. A root that an admin phone hands the group
+  to counts only when no root that may count removes that phone, so a removal by a new root
+  holds whichever phone's record made that root known. Where two admin phones hand the
+  group to roots that would remove each other's phone, neither root counts and both phones
+  are removed. More cases in `testdata/interop/go-removed-admins.json`, which Go checks in
+  every order, and the differential corpus gives every record set in other orders too.
+- A connection through the hub's tunnel that closes right after it opens no longer stops
+  the relay or a hub: the tunnel keeps each connection's addresses from when it was set up,
+  on a computer and in the phones' tunnel, and drops one that is gone before it is taken.
 - A copy of files may hold the other device names of Windows (`COM0`, `LPT0`, `COM` or `LPT`
   with a superscript digit, `CONIN$`, `CONOUT$`, and these with spaces before the dot): a
   computer writes them with `_` after the name's base, and every program gives its own
@@ -806,7 +866,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the EK purpose when it names purposes and the TPM's maker in its alternative name.
 - The tray app on Linux runs only a `cbb` that root owns and no one else may change, never
   one found on `PATH`, and on Windows finds Program Files from the system, not from the
-  environment.
+  environment. When neither place holds such a `cbb`, it runs nothing as root and says to
+  install it again or to use `sudo cbb` in a terminal.
 - `CBB_ROOTLESS` set to anything but `1` no longer hides a rootless install from the Go
   commands, and a linked `~/.local` or `~/.local/bin` is resolved as the lite member does.
 - `cbb update` takes a release name from the channel file, and a version asked for, only when
@@ -820,6 +881,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   keeps the highest version it has seen, so its channel never goes back below it.
 - The website's `/preview` takes a key of 16 to 128 letters, digits, `-` and `_` only, sets
   no cookie for any other, and answers at most a few requests a minute from one address.
+  The site's nginx configuration parses again, and CI's `website` job checks it with
+  `nginx -t` in nginx's image (`.github/nginx-check.sh`).
 - The lite member keeps a full member's own quick actions when it saves the shared
   `actions.json` and offers only its presets, and counts KDE's lock screen as locked, as
   computers do.

@@ -157,7 +157,10 @@ CA under the root and the iPhone CA key; every other member holds neither and ha
 `clipboardbridge.local` certificate. A **legacy group**, made before admin CAs, has a group CA
 with path length 0, and every Linux and Windows member of it holds both CA keys, a Mac
 neither; `cbb upgrade` turns it into a group with a root (design.md, "Full members, admins
-and the operating system"). Implementations other than Go MAY refuse legacy groups. The joiner's certificate carries the key that the member certifies in the welcome
+and the operating system"). Implementations other than Go MAY refuse legacy groups. A phone
+never takes part in one: only a phone admits a phone (section 6), and a phone's group always
+has a root, so the phone kits join only a group whose CA has path length 1 and refuse the
+`root` record of an upgrade (section 10, rule 7). The joiner's certificate carries the key that the member certifies in the welcome
 (section 6).
 
 Checking a member certificate (`checkPeer`, `DeviceOf`): the chain MUST verify to the group
@@ -563,7 +566,10 @@ a manifest may hold since earlier members send them: `COM0`, `LPT0`, `COM` or `L
 by `¹`, `²` or `³`, `CONIN$` and `CONOUT$`, and any of these names with spaces before the
 first dot (`CON .txt`). A receiver MUST take such a name and write it with `_` after the part
 before the first dot (`COM0_`, `CON _.txt`), and a sender SHOULD give its own names that form
-before it sends them; `testdata/interop/media-names.json` holds the cases. Every number in a manifest is an integer written as in signed
+before it sends them; `testdata/interop/media-names.json` holds the cases. The paths are
+checked as the receiver writes them too: a receiver MUST refuse a manifest in which a name
+grows past 255 bytes or a path past 4096 bytes that way, two paths become one (`COM0.txt`
+and `COM0_.txt`), or a file becomes one that another path goes through. Every number in a manifest is an integer written as in signed
 bodies (Conventions, "Signed bodies"): no `-0`, fraction or exponent. A receiver MUST refuse a
 manifest that breaks any of these rules (the vectors of
 `strict-generated.json` cite them as `manifests/size` and `manifests/parts`; a manifest is no
@@ -1095,6 +1101,7 @@ Header fields (all omitted when empty):
 | `method` | string | `paste-on`, `inject`: `paste` (the clipboard and the paste keys, the default) or `type` |
 | `enter` | bool | `paste-on`, `inject`: press Enter after the text; `paste-receive on`: allow that |
 | `console` | bool | `paste-receive on`: allow text consoles and root's tmux |
+| `no_lock_check` | bool | `paste-receive on`: let a target paste where nothing tells whether the session is locked, which it refuses otherwise; `inject`: that this device allows it |
 | `all` | bool | `paste-receive off`, `actions-off`: on every device of the group |
 | `actions` | array | `action-set`: one quick action, `{name, on?, by?, any_key?, command?}`: on or off, the admins it lets run it (by key), any admin, and for an action of the user's own its program and arguments; in `status`, this device's actions, the presets first |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
@@ -1217,7 +1224,7 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   an app press keys once its user allowed it in Accessibility, and the service and its
   pasteboard agent are not apps; without it the member refuses with a reason that says so. `status` shows the
   switches and the targets of the connected watchers as `paste: {on, enter, console,
-  targets}`.
+  no_lock_check, targets}`.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
 - The socket's group is for the clipboard, while a remote paste and an action go to one
   user's screen or console. So the service MUST read the user at the other end of a watcher
@@ -1474,17 +1481,25 @@ set.
    `chain` that verifies to the group CA, or to a root records may be signed under (rule 7).
    Other records are dropped. A member takes at most 1024 records signed by one signer, so
    a stolen admin cannot fill the set.
-2. **Signers and their powers.** The **known roots** are the group CA and the roots found
-   in rounds. A round first adds the new root of every `root` record that a known root's own
-   key signed, or that a computer's admin CA signed under a known root that is a computer,
-   until nothing is added. Then an admin CA is **removed** when a `revoke` record names it
-   that a known root's own key signed, or that an admin phone's admin CA under a known root
-   signed while no `revoke` record from a known root's own key names that signer; an admin
-   CA once removed stays removed. Last, the round adds the new root of every `root` record
-   that an admin phone's admin CA that is not removed signed under a known root, and the
-   rounds repeat until one adds nothing. An admin phone that any root of the group, or
-   another admin phone, removed thus hands the group to nobody, whenever it signs, and a
-   root that a phone's `root` record makes known cannot undo a removal found before it.
+2. **Signers and their powers.** The roots **handed on to** from a set of admin phones
+   that are taken as removed are the group CA and, until nothing is added, the new root of
+   every `root` record signed under one of them by its own key, by a computer's admin CA
+   under a root that is a computer, or by an admin phone's admin CA that is not taken as
+   removed. The **removals** of a set of roots are the keys that a `revoke` record names
+   that one of those roots' own keys signed, or that an admin phone's admin CA under one of
+   them signed while no such `revoke` record from a root's own key names that signer. The
+   **known roots** are found from two sides in turns. The sure roots start as those handed
+   on to with every admin phone taken as removed. Each turn takes the roots that may count
+   as those handed on to with the removals of the sure roots taken as removed, then the new
+   sure roots as those handed on to with the removals of the roots that may count taken as
+   removed; the turns end when the sure roots stay the same. The known roots are the sure
+   roots. An admin phone under a known root is **removed** when the removals of the known
+   roots name it, or when the removals of the roots that may count name it: then the
+   `revoke` records that name it there are the records that revoked it (rule 3). An admin
+   phone that a root of the group, or another admin phone, removed thus hands the group to
+   nobody, whenever it signs. Where two admin phones hand the group to roots that would
+   each remove the other phone, neither root is known and both phones are removed; the
+   result does not depend on the order of the records.
    A root is a **computer** when its own key
    signed a `device` record with `by` = `device` and role `full` and none with role
    `phone`; the admin CA must be named in `admin` by a `device` record that root's own key
@@ -1500,6 +1515,9 @@ set.
    `device` record that a known root's own key signed, and every admin CA that signed a
    record. An `admin` in a record an admin CA signed makes no key an admin's.
 3. The **revoked set**, in strata that do not depend on each other in a circle:
+   - an admin phone that only the removals of roots that may count remove (rule 2) is
+     revoked and disabled, by the `revoke` records that name it there, and its admin CA is
+     not an admin phone's from then on;
    - a `revoke` record signed by a known root's own key counts;
    - an admin or root key that a `revoke` record from a known root's own key, or an admin
      or non-root key that one from an admin phone's admin CA under a known root, names is
@@ -1552,7 +1570,8 @@ set.
 7. **Roots.** The group CA is the group's first root and names the group for good: the
    group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
    only when it was signed under a root with path length 1, or, in a legacy group, by the
-   group CA's own key (empty `chain`; `cbb upgrade`), and its `root` is a self-signed CA
+   group CA's own key (empty `chain`; `cbb upgrade`; the phones, never in a legacy group,
+   take only the first), and its `root` is a self-signed CA
    with path length 1 and a P-256 key. Such an upgrade record also counts while the group
    CA's key is revoked, as long as every record that revokes that key was signed under the
    root it names: a leftover copy of the old key can then break the group, by revoking
@@ -3121,7 +3140,7 @@ frames (section 4, "Content"); `records`, `admin`, `phone_ca` (section 10); `tun
 | iPhone `direction` | `to_iphone`, `from_iphone`, `none`, `unpaired`, `error` | 7 |
 | Evidence `format` | `android-key`, `tpm`, `tpm-credential`, `tpm-activated` | 17 |
 | Release file `type` | `keys`, `release`, `channel`, `attest-status` | 16 |
-| Release key `use` | `release`, `status` | 16 |
+| Release key `use` | `release`, `status`, `channel` | 16 |
 | Server credential `type` | `period`, `server`, `hubs`, `members` | 18 |
 
 ### Addresses and URIs

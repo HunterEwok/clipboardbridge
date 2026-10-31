@@ -49,9 +49,10 @@ The maintainer follows these rules; they are written down to keep the history co
   *Unreleased*.
 - **Go code.** `gofmt`, `go vet`, `staticcheck` and `govulncheck` pass, and tests cover the
   change.
-- **Tests.** A change keeps every test function of every language; one that replaces a test
-  keeps its name. `go run ./tools/repocheck -tests-since origin/main` lists the tests a
-  branch lost, and CI runs it against the pull request's base.
+- **Tests.** A change keeps every test function of every language, running: one that replaces
+  a test keeps its name, and a test does not skip where it did not (`t.Skip`, `#[ignore]`,
+  `XCTSkip`, `@Ignore`, an `assume`). `go run ./tools/repocheck -tests-since origin/main`
+  lists the tests a branch lost or made skip, and CI runs it against the pull request's base.
 - **Installers.** Every platform has the same three: a one-line `get` that downloads a
   release and checks it against `SHA256SUMS`, an `install` for an unpacked archive, and an
   `uninstall` that the install leaves on the machine. `get.sh` serves Linux and macOS,

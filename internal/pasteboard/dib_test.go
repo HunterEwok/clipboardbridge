@@ -483,3 +483,71 @@ func TestImageDIBV5NRGBA64(t *testing.T) {
 	}
 	samePixels(t, got, want)
 }
+
+// noiseJPEG is a w by h JPEG of random pixels, which deflate cannot make
+// smaller.
+func noiseJPEG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	x := uint32(1)
+	for i := range img.Pix {
+		x ^= x << 13
+		x ^= x >> 17
+		x ^= x << 5
+		img.Pix[i] = byte(x)
+		if i%4 == 3 {
+			img.Pix[i] = 0xFF
+		}
+	}
+	var b bytes.Buffer
+	if err := jpeg.Encode(&b, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
+// A JPEG goes on the clipboard as a PNG too, made from the DIB: it holds the
+// same pixels, fits in pngBound, and imageBytes counts the DIB with it.
+func TestDIBPNG(t *testing.T) {
+	data := noiseJPEG(t, 300, 200)
+	img, err := decodeImage(clip.TypeJPEG, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dib := imageDIBV5(img)
+	p, err := dibPNG(dib, 300, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(p)) > pngBound(300, 200) || int64(cap(p)) > pngBound(300, 200) {
+		t.Fatalf("a PNG of %d bytes in %d, bound %d", len(p), cap(p), pngBound(300, 200))
+	}
+	back, err := png.Decode(bytes.NewReader(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for y := range 200 {
+		for x := range 300 {
+			want := color.NRGBAModel.Convert(img.At(x, y))
+			if got := color.NRGBAModel.Convert(back.At(x, y)); got != want {
+				t.Fatalf("pixel %d,%d: %v, want %v", x, y, got, want)
+			}
+		}
+	}
+	cfg, err := decodeConfig(clip.TypeJPEG, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counted, err := imageBytes(clip.TypeJPEG, data, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(len(dib) - v5HeaderSize + len(p)); counted < want {
+		t.Fatalf("counted %d bytes, the DIB and the PNG take %d", counted, want)
+	}
+	// A DIB with transparency is no JPEG's.
+	dib[v5HeaderSize+3] = 0x80
+	if _, err := dibPNG(dib, 300, 200); err == nil {
+		t.Fatal("a PNG of a DIB with transparency")
+	}
+}

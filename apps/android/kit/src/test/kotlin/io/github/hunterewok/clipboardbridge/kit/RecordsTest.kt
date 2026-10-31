@@ -201,17 +201,25 @@ class RecordsTest {
      * an admin phone removed by the current root after a handover, or by
      * another admin phone, signs a root record afterwards, for a root of its
      * own that revokes the group's roots and admins; that root is not known
-     * either, in any order.
+     * either. A root an admin phone hands on counts only when no root that
+     * may count removes that phone; two such roots that would remove each
+     * other's phones do not count, and both phones are removed.
      */
     @Test
     fun goRemovedAdmins() {
         val cases = Interop.read("go-removed-admins.json").jsonArray
-        assertEquals(2, cases.size)
+        assertTrue(cases.size >= 7, "${cases.size} cases")
         for (c in cases) {
             val v = c.jsonObject
             val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
             val ca = b64(v.str("group_ca"))
-            for ((name, recs) in listOf("as written" to records, "reversed" to records.reversed())) {
+            // Each record first and last in turn; Go checks every order.
+            val n = records.size
+            val orders = (0 until n).flatMap { start ->
+                val forward = (0 until n).map { records[(start + it) % n] }
+                listOf("from $start" to forward, "from $start, reversed" to forward.reversed())
+            }
+            for ((name, recs) in orders) {
                 val set = RecordSet()
                 set.addAll(recs, ca)
                 assertEquals(v.getValue("roots").jsonPrimitive.int, set.roots.size, "${v.str("name")}, $name")
@@ -223,6 +231,37 @@ class RecordsTest {
                         "${v.str("name")}, $name: ${o.str("name")}",
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * testdata/interop/go-root-member.json, from Go's TestGoRootMemberVectors: the root's own device when the root
+     * signed two own device records at the same time, the one with the greater record ID, and whether it is a phone
+     * or a computer, in every rotation of the records.
+     */
+    @Test
+    fun goRootMember() {
+        val v = Interop.read("go-root-member.json").jsonObject
+        val ca = b64(v.str("group_ca"))
+        val cases = v.getValue("cases").jsonArray
+        assertTrue(cases.size >= 4, "${cases.size} cases")
+        for (c in cases) {
+            val o = c.jsonObject
+            val records = o.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+            val n = records.size
+            val orders = (0 until n).flatMap { start ->
+                val forward = (0 until n).map { records[(start + it) % n] }
+                listOf("from $start" to forward, "from $start, reversed" to forward.reversed())
+            }
+            for ((name, recs) in orders) {
+                val set = RecordSet()
+                assertEquals(n, set.addAll(recs, ca).size, "${o.str("name")}, $name")
+                val root = set.rootMember()?.first
+                assertEquals(o.str("root_device"), root, "${o.str("name")}, $name")
+                val role = set.devices.firstOrNull { it.id == root }?.role
+                assertEquals(o.str("root_role"), role, "${o.str("name")}, $name")
+                assertEquals(if (role == "phone") root else null, set.rootDevice, "${o.str("name")}, $name: the root phone")
             }
         }
     }

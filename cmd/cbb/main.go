@@ -27,7 +27,7 @@ Commands:
   paste -on DEVICE [-type] [-enter] [-secret]
                           On an admin: put standard input, or this clipboard, where the
                           focus is on another device that allows remote paste.
-  paste-receive [on [-enter] [-console] | off]
+  paste-receive [on [-enter] [-console] [-no-lock-check] | off]
                           Show, or turn on or off, remote paste on this device;
                           off -on DEVICE or off -all on an admin turns it off elsewhere.
   keyboard [on [-layout us|ru] [-rate N] [-pastes] | off | pair | type [TEXT]]

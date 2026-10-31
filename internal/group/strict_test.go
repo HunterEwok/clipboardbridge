@@ -92,6 +92,11 @@ func makeStrictVectors() strictVectors {
 		r("a surrogate in UTF-8", false, with(`"Laptop"`, "\"Lap\xed\xa0\x80top\"")),
 		r("a lone high surrogate escaped", false, with(`"Laptop"`, `"Lap\ud800top"`)),
 		r("a lone low surrogate escaped", false, with(`"Laptop"`, `"Lap\udc00top"`)),
+		r("a high surrogate before an escape past the low ones", false, with(`"Laptop"`, `"Lap\ud800\ue000"`)),
+		r("a high surrogate before an escape below the low ones", false, with(`"Laptop"`, `"Lap\ud800\udbff"`)),
+		r("a high surrogate before another escape", false, with(`"Laptop"`, `"Lap\ud800\n"`)),
+		r("a high surrogate at the end of a string", false, with(`"Laptop"`, `"Lap\ud800"`)),
+		r("the last surrogate pair escaped", true, with(`"Laptop"`, `"Lap\udbff\udfff"`)),
 		r("a byte order mark", false, append([]byte("\xef\xbb\xbf"), dev(good)...)),
 		r("a raw control character", false, with(`"Laptop"`, "\"Lap\ttop\"")),
 		r("an unknown escape", false, with(`"Laptop"`, `"Lap\xtop"`)),
@@ -205,6 +210,17 @@ func makeStrictVectors() strictVectors {
 		// still separates names.
 		r("two names in NFC and NFD", true, two("\u00e9", "e\u0301")),
 		r("the Kelvin sign and K", true, two("\u212a", "K")),
+		// A receiver writes a name Windows reserves with "_" after its base
+		// (clip.SaveName): two paths that become one, a file that a path
+		// goes through once written, and names or paths that grow past the
+		// bounds are refused.
+		r("two names that are one once written", false, two("COM0.txt", "COM0_.txt")),
+		r("two names in other cases once written", true, two("COM0.txt", "com0_.txt")),
+		r("a file that another goes through once written", false, two("COM0", "COM0_/f")),
+		r("a name of 254 bytes that grows to 255", true, two(`COM0.`+strings.Repeat("a", 249), "f")),
+		r("a name of 255 bytes that grows to 256", false, two(`COM0.`+strings.Repeat("a", 250), "f")),
+		r("a path of 4096 bytes that grows past it", false, two(strings.Repeat("COM0/", 819)+"f", "g")),
+		r("a path of 4096 bytes that stays", true, two(strings.Repeat("COMX/", 819)+"f", "g")),
 		r("a slash before a combining mark", true, []byte(`{"size":0,"parts":[{"path":"a","dir":true},{"path":"a/\u0301b","dir":true}]}`)),
 	}
 	return v

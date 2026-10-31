@@ -265,7 +265,16 @@ place 0644 "$here/clipboardbridge.service" /etc/systemd/system/clipboardbridge.s
 # none.
 # Desktops with graphical-session.target start it as a user unit, which the
 # installer restarts after an update (below); others from the autostart entry.
+# made records a path install.sh is about to create, which was not there,
+# in $share/created, kept across runs: uninstall.sh removes it again once
+# nothing else is in it.
+install -d -m 0755 "$share"
+made() {
+	[ -e "$1" ] || grep -qsxF "$1" "$share/created" || echo "$1" >>"$share/created"
+}
 if [ "$kind" = full ]; then
+	made /etc/xdg/autostart
+	made /etc/systemd/user
 	install -d -m 0755 /etc/xdg/autostart /etc/systemd/user
 	place 0644 "$here/clipboardbridge-desktop.desktop" /etc/xdg/autostart/clipboardbridge-desktop.desktop
 	place 0644 "$here/clipboardbridge-agent.service" /etc/systemd/user/clipboardbridge-agent.service
@@ -277,6 +286,7 @@ install -d -m 0755 "$share"
 install -m 0644 "$here/../tmux/clipboardbridge.conf" "$share/tmux.conf"
 line="source-file -q $share/tmux.conf"
 if ! grep -qsF "$line" /etc/tmux.conf; then
+	made /etc/tmux.conf
 	echo "$line" >>/etc/tmux.conf
 fi
 if [ "$console" = yes ]; then

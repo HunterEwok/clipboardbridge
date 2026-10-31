@@ -426,6 +426,9 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 	go s.watchSleep(ctx)
+	if s.content != nil {
+		go s.sweepContent(ctx, contentSweepEvery)
+	}
 	go s.applyKeyboard()
 	defer s.closeKeyboard()
 	defer s.endTVPairing()

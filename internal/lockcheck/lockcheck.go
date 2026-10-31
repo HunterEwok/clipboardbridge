@@ -24,20 +24,25 @@ var lockers = []string{"swaylock", "hyprlock", "waylock", "gtklock", "i3lock", "
 	// running is the only sign.
 	"kscreenlocker_greet"}
 
+// Unknown is the reason a target gives when nothing tells whether the
+// session is locked and its user did not allow pastes without the check.
+const Unknown = "this device cannot tell whether its session is locked, as logind does not say, so it takes no remote paste; its user may allow pastes without that check with cbb paste-receive on -no-lock-check"
+
 // Reason says why the graphical session of this process takes no keys
 // now, or "" if it does: logind marks it locked, as GNOME, KDE and most
-// lock screens tell it, or a locker runs as this user.
-func Reason() string {
-	if Locked(sessionID()) {
+// lock screens tell it, or a locker runs as this user, or logind does not
+// tell, without logind (as on FreeBSD) or when it does not answer, unless
+// noLockCheck lets the paste go on then.
+func Reason(noLockCheck bool) string {
+	locked, known := State(sessionID())
+	if locked {
 		return "the session is locked"
 	}
 	if name := Locker(false); name != "" {
 		return "the screen is locked (" + name + " runs)"
 	}
-	// GNOME's lock screen is part of gnome-shell, so without logind (as on
-	// FreeBSD) nothing tells whether it is up.
-	if _, err := exec.LookPath("loginctl"); err != nil && strings.Contains(os.Getenv("XDG_CURRENT_DESKTOP"), "GNOME") {
-		return "without logind GNOME does not tell whether the screen is locked"
+	if !known && !noLockCheck {
+		return Unknown
 	}
 	return ""
 }
@@ -56,10 +61,24 @@ func sessionID() string {
 // Locked reports whether logind marks the session id locked; false
 // without logind or an id.
 func Locked(id string) bool {
+	locked, _ := State(id)
+	return locked
+}
+
+// State reports whether logind marks the session id locked, and whether
+// it told at all: known is false without logind or an id, when loginctl
+// fails, and when it gives no LockedHint of yes or no.
+func State(id string) (locked, known bool) {
 	if id == "" {
-		return false
+		return false, false
 	}
-	return Show(id, "LockedHint")["LockedHint"] == "yes"
+	switch Show(id, "LockedHint")["LockedHint"] {
+	case "yes":
+		return true, true
+	case "no":
+		return false, true
+	}
+	return false, false
 }
 
 // Show returns logind's properties of the session id, empty when logind
@@ -117,13 +136,18 @@ func loginctl(args ...string) (string, error) {
 // anyUser, as anyone, or "".
 func Locker(anyUser bool) string {
 	uid := uint32(os.Getuid())
-	for _, p := range processes() {
+	for _, p := range running() {
 		if slices.Contains(lockers, p.name) && (anyUser || p.uid == uid) {
 			return p.name
 		}
 	}
 	return ""
 }
+
+// running lists the running processes; tests replace it, so that a
+// locker they pretend runs is not seen by the tests of other packages
+// running at the same time.
+var running = processes
 
 // A process is the command name and user of a running process.
 type process struct {

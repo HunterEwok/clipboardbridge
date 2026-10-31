@@ -24,6 +24,10 @@ pub struct Settings {
     pub enter: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub console: bool,
+    /// A target may paste where nothing tells whether the session is
+    /// locked, which it refuses otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_lock_check: bool,
 }
 
 const SETTINGS_FILE: &str = "paste-receive";
@@ -224,10 +228,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cbb-remotepaste-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(load(&dir).unwrap(), Settings::default());
-        save(&dir, Settings { on: true, enter: true, console: false }).unwrap();
-        assert_eq!(load(&dir).unwrap(), Settings { on: true, enter: true, console: false });
+        save(&dir, Settings { on: true, enter: true, ..Default::default() }).unwrap();
+        assert_eq!(load(&dir).unwrap(), Settings { on: true, enter: true, ..Default::default() });
         assert_eq!(std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap(), "{\"on\":true,\"enter\":true}\n");
-        save(&dir, Settings { on: false, enter: true, console: true }).unwrap();
+        save(&dir, Settings { on: true, no_lock_check: true, ..Default::default() }).unwrap();
+        assert_eq!(load(&dir).unwrap(), Settings { on: true, no_lock_check: true, ..Default::default() });
+        save(&dir, Settings { on: false, enter: true, console: true, no_lock_check: true }).unwrap();
         assert_eq!(load(&dir).unwrap(), Settings::default(), "Enter stays on when remote paste is off");
         for i in 0..LOG_SIZE + 5 {
             let e = Entry {

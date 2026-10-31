@@ -101,12 +101,14 @@ func (m *Manifest) Validate() error {
 				return err
 			}
 			paths += len(p.Path)
-			key = p.Path
+			// Paths compare as a receiver writes them: two that SavePath
+			// makes one would land in one place.
+			key = SavePath(p.Path)
 		case p.Type != TypePNG && p.Type != TypeJPEG && p.Type != TypeHTML:
 			return fmt.Errorf("clip: unknown media type %q", p.Type)
 		}
 		if seen[key] {
-			return fmt.Errorf("clip: %q is twice in a manifest", key)
+			return fmt.Errorf("clip: %q is twice in a manifest, as a receiver writes it", key)
 		}
 		seen[key] = true
 		if p.Dir {
@@ -138,16 +140,18 @@ func (m *Manifest) Validate() error {
 }
 
 // checkTree checks that no file of a copy is also a folder, or inside a
-// file.
+// file, by the paths as a receiver writes them (SavePath).
 func checkTree(parts []Part) error {
 	kind := make(map[string]bool, len(parts)) // path: is a folder
-	for _, p := range parts {
-		kind[p.Path] = p.Dir
+	saved := make([]string, len(parts))
+	for i, p := range parts {
+		saved[i] = SavePath(p.Path)
+		kind[saved[i]] = p.Dir
 	}
-	for _, p := range parts {
-		for i := strings.IndexByte(p.Path, '/'); i >= 0; i = nextSlash(p.Path, i) {
-			if dir, ok := kind[p.Path[:i]]; ok && !dir {
-				return fmt.Errorf("clip: %q is inside the file %q", p.Path, p.Path[:i])
+	for _, path := range saved {
+		for i := strings.IndexByte(path, '/'); i >= 0; i = nextSlash(path, i) {
+			if dir, ok := kind[path[:i]]; ok && !dir {
+				return fmt.Errorf("clip: %q is inside the file %q", path, path[:i])
 			}
 		}
 	}
@@ -163,10 +167,11 @@ func nextSlash(s string, i int) int {
 }
 
 // CheckPath checks a path of a manifest: names joined by "/", each a
-// clean name (CheckName), at most MaxPath bytes.
+// clean name (CheckName), at most MaxPath bytes as a receiver writes it
+// (SavePath).
 func CheckPath(path string) error {
-	if path == "" || len(path) > MaxPath {
-		return fmt.Errorf("clip: a path of %d bytes", len(path))
+	if path == "" || len(path) > MaxPath || len(SavePath(path)) > MaxPath {
+		return fmt.Errorf("clip: a path of %d bytes as a receiver writes it", len(SavePath(path)))
 	}
 	for name := range strings.SplitSeq(path, "/") {
 		if err := CheckName(name); err != nil {
@@ -177,13 +182,13 @@ func CheckPath(path string) error {
 }
 
 // CheckName checks one name of a path: valid UTF-8 of 1 to MaxName bytes,
-// not "." or "..", without control characters, path separators or the
+// as the receiver writes it too (SaveName), not "." or "..", without control characters, path separators or the
 // characters Windows does not allow, and not a name Windows reserves, so
 // that a received copy lands where the receiver puts it on every system.
 func CheckName(name string) error {
 	switch {
-	case name == "" || len(name) > MaxName:
-		return fmt.Errorf("clip: a name of %d bytes", len(name))
+	case name == "" || len(name) > MaxName || len(SaveName(name)) > MaxName:
+		return fmt.Errorf("clip: a name of %d bytes as a receiver writes it", len(SaveName(name)))
 	case name == "." || name == "..":
 		return fmt.Errorf("clip: the name %q", name)
 	case !utf8.ValidString(name):
