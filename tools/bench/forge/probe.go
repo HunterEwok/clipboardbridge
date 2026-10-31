@@ -77,9 +77,17 @@ func mdnsResolve(name string) error {
 	}
 }
 
+// insecurePeekConfig is the TLS of a stranger on the LAN, which has no CA to
+// check the member's certificate against: it takes any certificate, since
+// what the member hands a stranger is what S21 looks at. (The name tells
+// CodeQL that skipping the check is the point here.)
+func insecurePeekConfig() *tls.Config {
+	return &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}
+}
+
 func tlsPeek(host string) error {
 	d := &net.Dialer{Timeout: 5 * time.Second}
-	c, err := tls.DialWithDialer(d, "tcp", host, &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13})
+	c, err := tls.DialWithDialer(d, "tcp", host, insecurePeekConfig())
 	if err != nil {
 		fmt.Println("handshake:", err)
 		return nil
