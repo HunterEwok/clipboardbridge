@@ -235,6 +235,17 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     associated data, and signs the sealed command. A device that published no key gets a
     secret paste only directly. The same in Go, the lite member, both kits, with shared
     vectors and docs/protocol.md section 15.
+- **43.** **Planned for 0.7.** What the app stores ask for, before the apps are submitted:
+    - App Store (the iPhone, Apple Watch and Mac apps): a privacy manifest
+      (`PrivacyInfo.xcprivacy`) with the reasons for the APIs that need them (`UserDefaults`,
+      file times and the like), without which an upload is refused; and
+      `ITSAppUsesNonExemptEncryption` in each `Info.plist`, with the export answer for the
+      apps' encryption (standard algorithms) written down in docs/maintaining.md.
+    - Google Play: the declaration for the accessibility service, which Play allows for an
+      app that is not an accessibility tool only with a declaration in the console, a video
+      and a prominent disclosure in the app before the user turns the service on; the Data
+      safety form; the reason for the `connectedDevice` foreground service; the current
+      target API level. The GitHub and F-Droid builds are not affected.
 
 ## Devices that are hard to type into
 
