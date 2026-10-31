@@ -4,6 +4,7 @@
 package service
 
 import (
+	"crypto/rand"
 	"fmt"
 	"net"
 	"os"
@@ -29,16 +30,6 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	// The admin socket's directory sits in run\, where the group may make
-	// directories: one that another user made first would stay that user's,
-	// who could change its access list whatever the service sets. It is
-	// made again unless the system, the administrators or the service owns
-	// it.
-	if admin {
-		if err := ownDir(dir); err != nil {
-			return nil, err
-		}
-	}
 	sddl, err := controlSDDL(admin)
 	if err != nil {
 		return nil, err
@@ -51,8 +42,24 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the access list of the control socket: %w", err)
 	}
-	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+	const narrow = windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION
+	if admin {
+		// The admin socket's directory sits in run\, where the group may
+		// make directories: one that another user made first would stay
+		// that user's, who could change its access list whatever the
+		// service sets. It is made again unless the system, the
+		// administrators or the service owns it, and narrowed through the
+		// handle that was checked.
+		h, err := ownDir(dir)
+		if err != nil {
+			return nil, err
+		}
+		err = windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, narrow, nil, nil, dacl, nil)
+		windows.CloseHandle(h)
+		if err != nil {
+			return nil, fmt.Errorf("narrowing %s: %w", dir, err)
+		}
+	} else if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, narrow, nil, nil, dacl, nil); err != nil {
 		return nil, fmt.Errorf("narrowing %s: %w", dir, err)
 	}
 	// A socket left by a service that did not stop cleanly blocks the name.
@@ -68,35 +75,74 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 	return &controlListener{UnixListener: ul, path: path}, nil
 }
 
-// ownDir makes sure the directory dir belongs to the system, the
-// administrators or the service's own account: one owned by anybody else
-// is removed and made again.
-func ownDir(dir string) error {
+// ownDir makes sure the directory dir is a directory, not a link, that
+// belongs to the system, the administrators or the service's own account,
+// and returns it open. Anything else at dir is moved aside, never entered
+// or removed, so that nothing another user placed in it, such as a
+// junction, leads the service elsewhere, and dir is made again.
+func ownDir(dir string) (windows.Handle, error) {
 	for range 2 {
-		ok, err := trustedOwner(dir)
+		h, ok, err := openOwnDir(dir)
 		if err != nil {
-			return fmt.Errorf("the owner of %s: %w", dir, err)
+			return 0, fmt.Errorf("the owner of %s: %w", dir, err)
 		}
 		if ok {
-			return nil
+			return h, nil
 		}
-		if err := os.RemoveAll(dir); err != nil {
-			return err
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return 0, err
+		}
+		if err := os.Rename(dir, fmt.Sprintf("%s.untrusted-%x", dir, b)); err != nil {
+			return 0, err
 		}
 		if err := os.Mkdir(dir, 0o700); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return fmt.Errorf("%s belongs to another user", dir)
+	return 0, fmt.Errorf("%s belongs to another user", dir)
 }
 
-// trustedOwner reports whether the system, the administrators or the
-// service's own account owns the file or directory at path.
-func trustedOwner(path string) (bool, error) {
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+// openOwnDir opens what is at path without following a link and reports
+// whether it is a directory, not a reparse point, that the system, the
+// administrators or the service's own account owns; only then it returns
+// the handle, which may change the access list.
+func openOwnDir(path string) (windows.Handle, bool, error) {
+	p, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
+	h, err := windows.CreateFile(p, windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL|windows.WRITE_DAC,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return 0, false, err
+	}
+	var fi windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &fi); err != nil {
+		windows.CloseHandle(h)
+		return 0, false, err
+	}
+	if fi.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 || fi.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		windows.CloseHandle(h)
+		return 0, false, nil
+	}
+	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		windows.CloseHandle(h)
+		return 0, false, err
+	}
+	ok, err := trustedSID(sd)
+	if err != nil || !ok {
+		windows.CloseHandle(h)
+		return 0, false, err
+	}
+	return h, true, nil
+}
+
+// trustedSID reports whether the system, the administrators or the
+// service's own account is the owner in sd.
+func trustedSID(sd *windows.SECURITY_DESCRIPTOR) (bool, error) {
 	owner, _, err := sd.Owner()
 	if err != nil {
 		return false, err
