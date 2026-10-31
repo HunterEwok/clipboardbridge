@@ -2252,8 +2252,9 @@ per message, no length prefix, at most 1 MiB in all from the other side.
    [bytes]}` from the device, with the device's WireGuard key.
    - With a member certificate, `records` are the group's authority records, as for the
      forwarder. The relay keeps them for the group in memory while it runs. It refuses a
-     device whose member certificate they revoke, and drops a registered device as soon as
-     a later registration's records revoke it.
+     device whose member certificate chain they refuse, as a member does (section 10: its
+     key revoked or frozen, or its admin CA removed without keeping it), and drops a
+     registered device as soon as a later registration's records refuse its chain.
    - With a server certificate, `credentials` are the period's hubs' and members'
      credentials, and the relay checks them (section 18, "What a server checks"); the
      period's tag names the group, kept apart from the tags of group CAs. A relay that

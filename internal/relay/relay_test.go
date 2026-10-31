@@ -464,3 +464,55 @@ func TestRemovedDevice(t *testing.T) {
 		return !r.Connected && r.Err != nil && strings.Contains(r.Err.Error(), "removed")
 	})
 }
+
+// TestRemovedAdmin checks that the relay goes by the whole certificate
+// chain: once the records it holds remove an admin, it drops the devices
+// that admin certified, unless the removal keeps them, and refuses any
+// certificate that admin issues afterwards.
+func TestRemovedAdmin(t *testing.T) {
+	root, err := group.NewRootCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, link := startRelay(t, root)
+	adminKey, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminCert, err := root.IssueAdmin(group.NewDeviceID(), &adminKey.PublicKey, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := &group.CA{Cert: adminCert, Key: adminKey}
+	certified := func() device {
+		d := newDevice(t, admin)
+		d.cert.Certificate = append(d.cert.Certificate, root.Cert.Raw)
+		return d
+	}
+	gone, kept := certified(), certified()
+	jg, jk := join(t, link, gone), join(t, link, kept)
+	waitFor(t, "the admin's devices to connect", func() bool { return jg.last().Connected && jk.last().Connected })
+
+	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(root.Cert), TimeMS: time.Now().UnixMilli(),
+		Keys: []group.KeyHash{group.KeyHashOf(adminCert)}, Keep: []group.KeyHash{group.KeyHashOf(kept.cert.Leaf)}}, root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stays := newDevice(t, root)
+	stays.records = []group.Record{revoke}
+	js := join(t, link, stays)
+	waitFor(t, "the root's device to connect", func() bool { return js.last().Connected })
+	waitFor(t, "the removed admin's device to be refused", func() bool {
+		r := jg.last()
+		return !r.Connected && r.Err != nil && strings.Contains(r.Err.Error(), "removed")
+	})
+	if r := jk.last(); !r.Connected {
+		t.Errorf("the device the removal keeps: %+v", r)
+	}
+	fresh := certified()
+	jf := join(t, link, fresh)
+	waitFor(t, "a certificate the removed admin issued later to be refused", func() bool {
+		r := jf.last()
+		return !r.Connected && r.Err != nil && strings.Contains(r.Err.Error(), "removed")
+	})
+}

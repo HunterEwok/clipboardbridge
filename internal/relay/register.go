@@ -315,7 +315,7 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &member{leaf: leaf, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}, from: addrOf(raw)}
+	m := &member{leaf: leaf, chain: cs.PeerCertificates, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}, from: addrOf(raw)}
 	copy(m.key[:], c.Key)
 	if cred {
 		if pr, err = r.credentialed(cs.PeerCertificates[0], c, time.Now()); err != nil {
@@ -346,15 +346,17 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 			// of this registration: the records stay with the group's
 			// devices.
 			for _, o := range r.groups[tag] {
-				if recs.set.Revoked(o.leaf) {
+				if recs.set.Refused(o.chain) != nil {
 					r.dropLocked(o)
 				}
 			}
 		}
 		r.mu.Unlock()
-		if recs != nil && recs.set.Revoked(leaf) {
-			r.forgetRecords(tag)
-			return refuse("the device was removed from its group")
+		if recs != nil {
+			if err := recs.set.Refused(cs.PeerCertificates); err != nil {
+				r.forgetRecords(tag)
+				return refuse(strings.TrimPrefix(err.Error(), "group: "))
+			}
 		}
 	}
 	r.mu.Lock()
