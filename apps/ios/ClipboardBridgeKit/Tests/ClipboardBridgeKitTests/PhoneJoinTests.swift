@@ -225,7 +225,7 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertFalse(Pairing.Info(name: "pi", os: "linux", adminKey: key).isValid, "only a phone sends an admin key")
         XCTAssertFalse(Pairing.Info(name: "iPhone", os: "ios", adminKey: Data([1, 2, 3])).isValid)
         XCTAssertTrue(Pairing.Info(name: "pc", os: "windows").isValid, "a Windows PC joins as a computer")
-        XCTAssertTrue(Pairing.Info(name: "Café — ПК 1", os: "linux").isValid)
+        XCTAssertTrue(Pairing.Info(name: "Café — Büro 1", os: "linux").isValid)
         for bad in ["a\u{7}b", "evil\u{202E}gpj", "a\u{200B}b", "a\u{E000}b", "a\u{A0}b", "a\u{2028}b"] {
             XCTAssertFalse(Pairing.Info(name: bad, os: "linux").isValid, "a name is printable, as in Go: \(bad.unicodeScalars.map { String($0.value, radix: 16) })")
         }

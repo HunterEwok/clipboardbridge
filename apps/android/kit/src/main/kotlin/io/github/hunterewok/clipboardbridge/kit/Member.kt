@@ -462,14 +462,12 @@ object Member {
                 if (cur.isNotEmpty()) out += cur
                 return out
             }
-        }
 
-        fun toJson(): JsonObject = Wire.obj("body" to Wire.bytes(body), "sig" to Wire.bytes(sig), "chain" to Wire.list(chain))
-
-        companion object {
             fun fromJson(o: JsonObject): Record =
                 Record(o.optBytes("body") ?: ByteArray(0), o.optBytes("sig") ?: ByteArray(0), o.optBytesList("chain"))
         }
+
+        fun toJson(): JsonObject = Wire.obj("body" to Wire.bytes(body), "sig" to Wire.bytes(sig), "chain" to Wire.list(chain))
     }
 
     /** The answer to a command (section 15): its ID, "done", "refused" or "failed", and why for the last two. */
