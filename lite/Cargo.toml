@@ -12,7 +12,7 @@ publish = false
 
 [workspace]
 members = ["core", "embassy", "ring-shim"]
-exclude = ["esp32"]
+exclude = ["esp32", "core/fuzz"]
 
 [[bin]]
 name = "cbb"

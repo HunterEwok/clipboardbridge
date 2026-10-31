@@ -66,6 +66,7 @@ for security reviewers.
 | [Protocol](protocol.md) | the wire format, for anyone writing another implementation |
 | [Cryptography](cryptography.md) | every primitive, library, key, its size, lifetime and where it is kept |
 | [Testing](testing.md) | the test levels, the interop vectors, the cross tests and the bench |
+| [Differential fuzzing](differential.md) | the four implementations reading changed bodies and record sets alike, in CI and nightly |
 | [Platform parity](parity.md) | what each computer, phone and lite device can do, the gaps and the plan to close them |
 | [App specification](apps.md) | what the apps do and how they look |
 | [Roadmap](roadmap.md) | what comes next, the agreed plans not built yet, research |

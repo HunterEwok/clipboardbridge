@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 HunterEwok
+
+# The cargo fuzz targets of the lite member's protocol core: the readers of
+# what comes from the network. Nightly CI runs them (.github/workflows/nightly.yml):
+#   cargo +nightly fuzz run record_body -- -max_total_time=60
+[package]
+name = "clipboardbridge-core-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+clipboardbridge-core = { path = "..", features = ["std", "fuzzing"] }
+
+# Not a member of lite's workspace.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "record_body"
+path = "fuzz_targets/record_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "command"
+path = "fuzz_targets/command.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "credential"
+path = "fuzz_targets/credential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "release"
+path = "fuzz_targets/release.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wire"
+path = "fuzz_targets/wire.rs"
+test = false
+doc = false
+bench = false

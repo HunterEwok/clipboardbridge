@@ -21,6 +21,9 @@ std = ["getrandom/std"]
 # crypto: a small RustCrypto provider, the peer checks, a sans-I/O session
 # and the pairing exporter, for the microcontroller and Linux alike.
 tls = ["dep:rustls", "dep:aes-gcm", "dep:chacha20poly1305"]
+# fuzzing opens the readers of network input to the cargo fuzz targets in
+# fuzz/; nothing else turns it on.
+fuzzing = []
 
 [dependencies]
 aes-gcm = { version = "0.11", default-features = false, features = ["aes"], optional = true }

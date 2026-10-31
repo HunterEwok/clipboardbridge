@@ -18,6 +18,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - `testdata/interop/strict-files.json`, written by Go's `TestStrictGeneratedFiles` the same
   way, holds some 1500 bodies of server credentials and release files; all four
   implementations read it.
+- Differential fuzzing (`docs/differential.md`): `tools/difffuzz` changes the bodies of the
+  interop vectors and their record sets at random from a seed, each of Go, the lite member and
+  both phone kits writes its verdict on every case, and the `differential` job of CI fails on
+  any case they read differently. A nightly workflow runs it with a fresh seed and more
+  cases, and the native fuzz targets of the readers of network input: Go's `FuzzRecordBody`,
+  `FuzzCommand`, `FuzzRelayWire` and `FuzzForwardWire`, and the lite core's `cargo fuzz`
+  targets.
 - The two text diagrams of `docs/design.md` (the system context and the containers) are
   pictures now, drawn by `tools/diagrams` like the others, with a light and a dark theme.
 - On the website the pictures of the documentation are drawn in chalk on a board in a walnut
@@ -662,6 +669,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   progressive JPEG's coefficients for every block, the black plane of a four-component one
   and the image an unusual layout or CMYK is converted to, from the frame header before any
   pixel is read, so the 384 MiB bound holds for every JPEG.
+- The Kotlin kit reads P-256 keys (in server credentials, release keys and certificates)
+  exactly as the other implementations do; `strict-files.json` has vectors for it.
 - The forwarder counts only the groups that are away against the 32 MiB it keeps of their
   authority records, and past it forgets from the wide network that holds the most of them
   (docs/relay-budget.md), so the records of a group that is away outlast the groups of other

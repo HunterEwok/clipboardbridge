@@ -189,6 +189,8 @@
   "Security and privacy": "Безопасность и приватность",
   "Security audit": "Аудит безопасности",
   "The servers' budget": "Бюджет серверов",
+  "Differential fuzzing": "Дифференциальный фаззинг",
+  "the four implementations reading changed bodies and record sets alike, in CI and nightly": "четыре реализации одинаково читают изменённые тела и наборы записей, в CI и каждую ночь",
   "Security policy": "Политика безопасности",
   "Set up in three steps": "Настройка в три шага",
   "Settings and environment variables": "Настройки и переменные окружения",

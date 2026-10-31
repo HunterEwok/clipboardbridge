@@ -155,6 +155,13 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
        fork nobody new is admitted.
     8. Later: the hubs' order from a table the root signs (D-65) instead of one derived from
        the roles.
+    9. **Manifests in the strict form**: the manifest of a media event (protocol.md section
+       4) read by the rules of signed bodies (exact names, each once, valid UTF-8, integers
+       of int64), with `null` only where its table allows it. Until then the four
+       implementations' JSON readers decide names in another case, members written twice and
+       invalid UTF-8 each in their own way, and the differential run
+       ([differential.md](differential.md)) prints the manifests they read differently
+       without failing on them.
 
 - **10.** **Console helper and auto-paste**: the double press that injects the member's own text
     on the text console (design.md, "3. Console helper"), and Shift+Insert after a copy from

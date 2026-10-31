@@ -21,7 +21,9 @@
 //     (version.go);
 //   - no compiled program (ELF, Mach-O, PE) and no file over 1 MiB is
 //     committed: build output belongs outside the repository, and a large
-//     file stays in git's history for good.
+//     file stays in git's history for good;
+//   - with -tests-since COMMIT, every test function of Go, Rust, Swift and
+//     Kotlin that COMMIT has is still there (tests.go).
 //
 // Run it anywhere inside the repository:
 //
@@ -31,6 +33,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -48,7 +51,9 @@ const spdxLine = "// SPDX-License-Identifier: AGPL-3.0-only"
 var copyrightLine = regexp.MustCompile(`^// Copyright \(C\) \d{4}(-\d{4})? HunterEwok$`)
 
 func main() {
-	problems, checked, err := checkRepo()
+	since := flag.String("tests-since", "", "also report the test functions that this commit has and the tree does not")
+	flag.Parse()
+	problems, checked, err := checkRepo(*since)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "repocheck:", err)
 		os.Exit(1)
@@ -64,7 +69,7 @@ func main() {
 
 // checkRepo checks the repository that contains the current directory and
 // returns the problems and the number of files checked.
-func checkRepo() (problems []string, checked int, err error) {
+func checkRepo(testsSince string) (problems []string, checked int, err error) {
 	top, err := git("rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, 0, err
@@ -115,6 +120,13 @@ func checkRepo() (problems []string, checked int, err error) {
 	problems = append(problems, checkIndex(contents)...)
 	problems = append(problems, checkPlanned(contents)...)
 	problems = append(problems, checkAndroidVersion(contents)...)
+	if testsSince != "" {
+		lost, err := checkTestsKept(testsSince, contents)
+		if err != nil {
+			return nil, 0, err
+		}
+		problems = append(problems, lost...)
+	}
 	return problems, len(files), nil
 }
 

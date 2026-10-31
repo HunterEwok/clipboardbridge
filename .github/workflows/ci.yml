@@ -54,6 +54,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The base of the pull request, for the tests it must keep.
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -78,8 +80,10 @@ jobs:
         run: go tool govulncheck ./...
       - name: actionlint
         run: go tool actionlint
-      - name: repository rules
-        run: go run ./tools/repocheck
+      - name: repository rules, and every test of the base still there
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: go run ./tools/repocheck -tests-since "$BASE"
       - name: design tokens up to date and readable
         run: go run ./tools/tokens -check
       - name: app icon up to date
@@ -450,7 +454,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: shellcheck
-        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/install-rootless.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh packaging/fdroid/reproduce.sh mobile/cbbtun/bind.sh .github/ci-changes.sh
+        run: shellcheck packaging/archive.sh packaging/release-notes.sh packaging/get.sh packaging/update.sh packaging/linux/install.sh packaging/linux/install-rootless.sh packaging/linux/firewall.sh packaging/linux/uninstall.sh packaging/freebsd/install.sh packaging/freebsd/firewall.sh packaging/freebsd/uninstall.sh packaging/freebsd/clipboardbridge packaging/openwrt/install.sh packaging/openwrt/uninstall.sh packaging/openwrt/firewall.sh packaging/openwrt/clipboardbridge.init packaging/openwrt/clipboardbridge.ntp packaging/openwrt/feed.sh packaging/openwrt/apk-post-install packaging/openwrt/apk-pre-deinstall tools/e2e/openwrt.sh packaging/macos/install.sh packaging/macos/uninstall.sh packaging/homebrew/formula.sh packaging/winget/manifest.sh packaging/tmux/clipboardbridge-console.sh lite/packaging/archive.sh lite/packaging/notices.sh lite/packaging/mips.sh tools/e2e/e2e.sh tools/e2e/docker.sh tools/bench/setup-docker.sh packaging/docker/context.sh packaging/fdroid/reproduce.sh mobile/cbbtun/bind.sh .github/ci-changes.sh .github/differential.sh
       - name: the OPNsense plugin hook
         run: php tools/e2e/opnsense-hook.php
       - name: systemd-analyze verify
@@ -1950,10 +1954,39 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The four implementations read the same changed bodies and record sets
+  # alike (docs/differential.md); the nightly workflow runs it with a fresh
+  # seed and more cases.
+  differential:
+    name: differential (Go, Rust, Kotlin, Swift)
+    needs: changes
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.lite == 'true' || needs.changes.outputs.ios == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.tools == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: the Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: a corpus of the fixed seed, read by all four
+        run: sh .github/differential.sh 1 20000 500 "$RUNNER_TEMP/differential"
+      - name: the cases read differently
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: differential
+          path: ${{ runner.temp }}/differential/failures.jsonl
+          if-no-files-found: ignore
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, fdroid, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker]
+    needs: [changes, check, website, test, build, mips, freebsd, openwrt, avahi, e2e, desktop, packaging, homebrew, windows, kit, app, macapp, trayapp, android, fdroid, phonetunnel, lite, litemips, esp32, zxnext, advisories, docker, differential]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
