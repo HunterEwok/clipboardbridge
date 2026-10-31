@@ -11,6 +11,11 @@ ignoreUntil = 2027-04-25T00:00:00Z
 reason = "paste is unmaintained; a proc macro of esp-hal, build time only"
 
 [[IgnoredVulns]]
+id = "RUSTSEC-2026-0374"
+ignoreUntil = 2027-04-30T00:00:00Z
+reason = "basic-toml is unmaintained; askama reads its config with it inside uniffi_bindgen, the tool that writes the phones' bindings (lite/ffi, feature bindgen), build time only"
+
+[[IgnoredVulns]]
 id = "RUSTSEC-2024-0449"
 ignoreUntil = 2027-04-25T00:00:00Z
 reason = "unsafe-libyaml is unmaintained; esp-config's build scripts read YAML with it, build time only"
