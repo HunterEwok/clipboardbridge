@@ -154,7 +154,7 @@ impl Write for Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cbb_core::certs::{self_signed, DeviceId};
+    use cbb_core::certs::{DeviceId, self_signed};
     use cbb_core::identity::{new_key, signing_key};
     use std::net::TcpListener;
     use std::time::Duration;
