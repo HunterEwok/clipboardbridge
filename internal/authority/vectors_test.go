@@ -86,6 +86,7 @@ var scenarios = []struct {
 	{"two claims", TestTwoClaimsStop},
 	{"removed phone after a takeover", TestRemovedPhoneCannotTakeBack},
 	{"claim disputed", TestClaimDisputed},
+	{"claimed root signs early", TestClaimedRootSignsEarly},
 	{"claim after removal", TestClaimAfterRemoval},
 	{"claim while another waits", TestPendingClaimRace},
 	{"removed admin's claim", TestRemovedAdminClaimVoid},

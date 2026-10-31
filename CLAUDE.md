@@ -89,7 +89,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   in Go tests.
 - `lite/`: the lite member in Rust (its command is `cbb` too): no CA keys, joins by the phone's QR code,
   dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
-  `records`, `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, `keyboard` (the layouts' keys), CPace under `src/third_party`, the
+  `records`, `authority` (records `v:2` and their evaluation, docs/records-v2.md), `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, `keyboard` (the layouts' keys), CPace under `src/third_party`, the
   interop vectors, and with the `tls` feature `tls`: rustls unbuffered with a RustCrypto
   provider, the peer checks, a sans-I/O `Session`, the pairing exporter from the key log):
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the
@@ -98,6 +98,8 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   helpers in `pastehelper.rs`) and the tunnel to the hub (`tunnel.rs`, `away.rs`:
   GotaTun's WireGuard and smoltcp's TCP behind a loopback port; GotaTun's AEAD comes from
   `lite/ring-shim`, a stand-in for ring on RustCrypto, patched in by `lite/Cargo.toml`).
+- `lite/ffi`: the core's group rules (`authority`) for the phones through UniFFI (`bind.sh`: the
+  iPhone's xcframework, Android's libraries, the Swift and Kotlin bindings; CI's `phone core` jobs).
 - `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
   with the Xtensa toolchain (`cargo +esp`) and rust-lld; esp-hal is pinned to a git commit
   until a release carries its fix for Rust 1.99; `console.rs` (the USB console), `store.rs`

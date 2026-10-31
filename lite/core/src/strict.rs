@@ -67,6 +67,79 @@ pub fn integers_only(b: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Checks that b is a signed body in the strict form and in its canonical
+/// form (docs/records-v2.md, "Canonical form of signed bodies"): exactly
+/// the bytes canonicalize gives for what it holds, as Go's
+/// strict.CheckCanonical.
+pub fn check_canonical(b: &[u8], required: &[&str]) -> Result<()> {
+    check(b, required)?;
+    if canonicalize(b)? != b {
+        return Err(Error::msg("a signed body is not in its canonical form"));
+    }
+    Ok(())
+}
+
+/// Returns the canonical form of b, a body in the strict form: no
+/// whitespace, the members of every object in bytewise order of their
+/// names, and in strings only the escapes \", \\ and \u00xx (lower-case
+/// hex) for a character below U+0020.
+pub fn canonicalize(b: &[u8]) -> Result<alloc::vec::Vec<u8>> {
+    check(b, &[])?;
+    let v: serde_json::Value = serde_json::from_slice(b).map_err(|_| Error::msg("a signed body does not decode"))?;
+    let mut out = alloc::vec::Vec::with_capacity(b.len());
+    write_canonical(&mut out, &v);
+    Ok(out)
+}
+
+/// Writes v in the canonical form; serde_json's maps are sorted by name.
+pub(crate) fn write_canonical(out: &mut alloc::vec::Vec<u8>, v: &serde_json::Value) {
+    use serde_json::Value;
+    match v {
+        Value::Null => out.extend_from_slice(b"null"),
+        Value::Bool(true) => out.extend_from_slice(b"true"),
+        Value::Bool(false) => out.extend_from_slice(b"false"),
+        Value::Number(n) => out.extend_from_slice(format!("{n}").as_bytes()),
+        Value::String(s) => write_string(out, s),
+        Value::Array(a) => {
+            out.push(b'[');
+            for (i, x) in a.iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                write_canonical(out, x);
+            }
+            out.push(b']');
+        }
+        Value::Object(m) => {
+            out.push(b'{');
+            for (i, (k, x)) in m.iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                write_string(out, k);
+                out.push(b':');
+                write_canonical(out, x);
+            }
+            out.push(b'}');
+        }
+    }
+}
+
+fn write_string(out: &mut alloc::vec::Vec<u8>, s: &str) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    out.push(b'"');
+    for &c in s.as_bytes() {
+        match c {
+            b'"' | b'\\' => out.extend_from_slice(&[b'\\', c]),
+            0..=0x1f => {
+                out.extend_from_slice(&[b'\\', b'u', b'0', b'0', HEX[(c >> 4) as usize], HEX[(c & 15) as usize]])
+            }
+            _ => out.push(c),
+        }
+    }
+    out.push(b'"');
+}
+
 struct Parser<'a> {
     b: &'a [u8],
     i: usize,
@@ -263,5 +336,46 @@ impl Parser<'_> {
         }
         let text = core::str::from_utf8(&self.b[start..self.i]).map_err(|_| "a number is not valid")?;
         text.parse::<i64>().map(|_| ()).map_err(|_| "a number is out of range")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical() {
+        for (input, want) in [
+            (r#"{}"#, r#"{}"#),
+            (r#"{"b":1,"a":2}"#, r#"{"a":2,"b":1}"#),
+            (r#" { "a" : [ 1 , true , false , "x" ] } "#, r#"{"a":[1,true,false,"x"]}"#),
+            (r#"{"a":"\/\b\f\n\r\t"}"#, r#"{"a":"/\u0008\u000c\u000a\u000d\u0009"}"#),
+            (r#"{"a":"\u00e9\u20ac\ud83d\ude00"}"#, "{\"a\":\"\u{e9}\u{20ac}\u{1F600}\"}"),
+            (r#"{"a":"\u001F\"\\"}"#, r#"{"a":"\u001f\"\\"}"#),
+            (r#"{"a":{"z":0,"y":-1},"_":"","0":1}"#, r#"{"0":1,"_":"","a":{"y":-1,"z":0}}"#),
+            (r#"{"ab":1,"a":2,"b":3}"#, r#"{"a":2,"ab":1,"b":3}"#),
+            (r#"{"a":[{"c":1,"b":2},[]]}"#, r#"{"a":[{"b":2,"c":1},[]]}"#),
+        ] {
+            let got = canonicalize(input.as_bytes()).unwrap();
+            assert_eq!(core::str::from_utf8(&got).unwrap(), want, "{input}");
+            assert!(check_canonical(&got, &[]).is_ok(), "{want}");
+            assert_eq!(check_canonical(input.as_bytes(), &[]).is_ok(), input == want, "{input}");
+        }
+        for input in [
+            r#"{"b":1,"a":2}"#,
+            r#"{"a":1,"a":2}"#,
+            r#"{ "a":1}"#,
+            r#"{"a":[1, 2]}"#,
+            r#"{"a":"\/"}"#,
+            r#"{"a":"\n"}"#,
+            r#"{"a":"\u0041"}"#,
+            r#"{"a":"\u001F"}"#,
+            r#"{"a":"\u00e9"}"#,
+            "{\"a\":1}\n",
+            r#"{"a":null}"#,
+            r#"{"a":1.0}"#,
+        ] {
+            assert!(check_canonical(input.as_bytes(), &[]).is_err(), "{input} is taken");
+        }
     }
 }

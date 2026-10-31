@@ -188,9 +188,12 @@ func Listen(cfg Config) (*Relay, error) {
 	// errors included, goes without the addresses in it.
 	logf = tunnel.Redacted(logf)
 	// The tunnel listens on the UDP port of the same number. Where any free
-	// port will do, the UDP port is picked first, by the system, which never
-	// gives one of the ranges Windows keeps for Hyper-V; a TCP twin that is
-	// taken or reserved is given up for another.
+	// port will do, the system picks one of the two, which is never in the
+	// ranges Windows keeps for Hyper-V for that protocol, and a twin that is
+	// taken or reserved is given up for another. The system hands out its
+	// ports in order, so a run of them can fall in a range reserved for the
+	// other protocol: the tries take turns picking the UDP port first and
+	// the TCP port first.
 	host, wanted, _ := net.SplitHostPort(cfg.Listen)
 	var (
 		tcp net.Listener
@@ -198,7 +201,7 @@ func Listen(cfg Config) (*Relay, error) {
 	)
 	for try := 0; ; try++ {
 		listen := cfg.Listen
-		if wanted == "0" {
+		if wanted == "0" && try%2 == 0 {
 			port, err := freeUDPPort(host)
 			if err != nil {
 				return nil, fmt.Errorf("relay: %w", err)
@@ -214,7 +217,7 @@ func Listen(cfg Config) (*Relay, error) {
 			}
 			tcp.Close()
 		}
-		if wanted != "0" || try == 19 {
+		if wanted != "0" || try == 39 {
 			return nil, fmt.Errorf("relay: %w", err)
 		}
 	}
