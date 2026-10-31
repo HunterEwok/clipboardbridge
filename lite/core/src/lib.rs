@@ -24,6 +24,8 @@ pub mod certs;
 pub mod clip;
 pub mod credential;
 pub mod error;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 pub mod hlc;
 pub mod identity;
 pub mod keyboard;

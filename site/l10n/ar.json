@@ -190,6 +190,8 @@
   "Security and privacy": "الأمان والخصوصية",
   "Security audit": "تدقيق الأمان",
   "The servers' budget": "ميزانية الخوادم",
+  "Differential fuzzing": "الاختبار التفاضلي بالمدخلات العشوائية",
+  "the four implementations reading changed bodies and record sets alike, in CI and nightly": "التطبيقات الأربعة تقرأ الأجسام ومجموعات السجلات المعدّلة بالطريقة نفسها، في CI وكل ليلة",
   "Security policy": "سياسة الأمان",
   "Set up in three steps": "الإعداد في ثلاث خطوات",
   "Settings and environment variables": "الإعدادات ومتغيرات البيئة",

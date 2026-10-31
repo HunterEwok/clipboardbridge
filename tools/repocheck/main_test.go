@@ -213,7 +213,7 @@ func TestCheckRepo(t *testing.T) {
 
 	// Run from a subdirectory: the whole repository must be checked.
 	t.Chdir(filepath.Join(repo, "sub"))
-	problems, checked, err := checkRepo()
+	problems, checked, err := checkRepo("")
 	if err != nil {
 		t.Fatal(err)
 	}

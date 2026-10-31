@@ -189,6 +189,8 @@
   "Security and privacy": "Seguridad y privacidad",
   "Security audit": "Auditoría de seguridad",
   "The servers' budget": "El presupuesto de los servidores",
+  "Differential fuzzing": "Fuzzing diferencial",
+  "the four implementations reading changed bodies and record sets alike, in CI and nightly": "las cuatro implementaciones leen igual los cuerpos y conjuntos de registros modificados, en CI y cada noche",
   "Security policy": "Política de seguridad",
   "Set up in three steps": "Listo en tres pasos",
   "Settings and environment variables": "Ajustes y variables de entorno",
