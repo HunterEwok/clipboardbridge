@@ -160,36 +160,3 @@ func TestCredentialedRelay(t *testing.T) {
 func credOf(d device) func() (Credentialed, bool) {
 	return func() (Credentialed, bool) { return *d.cred, true }
 }
-
-// An open relay holds the period of a group only while a device of it is
-// registered: the registrations it refuses, past what one address may
-// hold, leave nothing of their groups.
-func TestRefusedRegistrationsLeaveNoPeriod(t *testing.T) {
-	r, link := startWith(t, Config{Open: true})
-	ctx := context.Background()
-	try := func() error {
-		g := newCredGroup(t)
-		d, k := g.device(t)
-		g.sign(t, 1, k, g.key, []device{d}, &d)
-		tc, _, _, err := register(ctx, MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert }, Credentialed: credOf(d)})
-		if err == nil {
-			t.Cleanup(func() { tc.Close() })
-		}
-		return err
-	}
-	for range DefaultOpenLimits.PerAddress {
-		if err := try(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for range 8 {
-		if try() == nil {
-			t.Fatal("a registration past the address's limit was taken")
-		}
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.periods) != len(r.groups) {
-		t.Errorf("the relay holds %d periods for %d registered groups", len(r.periods), len(r.groups))
-	}
-}

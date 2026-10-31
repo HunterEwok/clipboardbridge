@@ -2326,8 +2326,11 @@ ID, and a device's pseudonym changes with each period.
    registrations that send the same records cost no checks; each new record is charged to
    what the address and network that sent it may start by the second. A registration over
    a limit gets `{"error": string}`. It forgets a group's records, or its period's key,
-   versions and members' list, once the group's last device leaves, and keeps none of them
-   for a group whose registration it refused.
+   versions and members' list, once the group's last device leaves. A registration it
+   refuses leaves it as it was: the devices registered before stay, and it keeps nothing of
+   the refused device's group, its period or records, except the records of a group it
+   holds devices of that verified, which take effect for those devices. A newer members'
+   credential counts the devices it leaves out as gone when the relay checks its limits.
 
 ### What it keeps
 

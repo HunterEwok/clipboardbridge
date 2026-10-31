@@ -338,29 +338,51 @@ func (r *Relay) freeRequest(m *member) {
 	r.mu.Unlock()
 }
 
-// addLocked registers m, in place of the same device's earlier
-// registration, and gives the tunnel its key.
-func (r *Relay) addLocked(m *member) error {
+// admitLocked tells whether the relay would register m, in place of the
+// same device's earlier registration and of the devices of its group that
+// leaving tells go with it (nil for none); it changes nothing, so a refused
+// registration leaves the relay as it was.
+func (r *Relay) admitLocked(m *member, leaving func(*member) bool) error {
 	for _, o := range r.byAddr {
 		if o.key == m.key && (o.tag != m.tag || o.device != m.device) {
 			return errors.New("another device registered that WireGuard key")
 		}
 	}
 	g := r.groups[m.tag]
-	if old := g[m.device]; old != nil {
-		r.dropLocked(old)
-		g = r.groups[m.tag]
+	n, ip, nw := len(g), r.fromIP[m.from], r.fromNet[networkOf(m.from)]
+	for dev, o := range g {
+		if dev != m.device && (leaving == nil || !leaving(o)) {
+			continue
+		}
+		n--
+		if o.from == m.from {
+			ip--
+		}
+		if networkOf(o.from) == networkOf(m.from) {
+			nw--
+		}
 	}
-	if len(g) >= maxMembers {
+	if n >= maxMembers {
 		return errors.New("the relay holds as many devices of this group as it can")
 	}
 	if r.cfg.Open {
 		switch {
 		case g == nil && len(r.groups) >= r.limits.Groups:
 			return errors.New("the relay serves as many groups as it can; try again later, or run your own relay")
-		case r.fromIP[m.from] >= r.limits.PerAddress, r.fromNet[networkOf(m.from)] >= r.limits.PerNetwork:
+		case ip >= r.limits.PerAddress, nw >= r.limits.PerNetwork:
 			return errors.New("too many devices registered from this network; try again later")
 		}
+	}
+	return nil
+}
+
+// addLocked registers m, which admitLocked let through, in place of the
+// same device's earlier registration, and gives the tunnel its key.
+func (r *Relay) addLocked(m *member) error {
+	g := r.groups[m.tag]
+	if old := g[m.device]; old != nil {
+		r.dropLocked(old)
+		g = r.groups[m.tag]
 	}
 	for {
 		a, err := tunnel.Addr(string(group.NewDeviceID()))

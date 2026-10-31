@@ -681,7 +681,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The phone apps keep the peer's cancels only of the parts they queue or serve, as the
   service does.
 - The lite member gives the TLS handshake on its ports 10 s in all, not 10 s for each read.
-- An open relay keeps nothing of a group's period for a registration it refused.
+- A relay that refuses a registration is left as it was: it keeps nothing of the refused
+  device's group, period or records, and keeps a period's key and versions while a group's
+  devices change under a newer members' credential.
 - A channel or status file may raise its `seq` at most 65 536 on a fresh device or under a
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
