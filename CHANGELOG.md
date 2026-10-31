@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- CI checks the workflows with zizmor (template injection, tokens left to later steps, wide
+  permissions, cache poisoning) and the lite member's and the ESP32 firmware's crates with
+  cargo-deny: each under a license that fits the AGPL-3.0 (`lite/deny.toml`), from crates.io
+  or the pinned esp-hal commit only.
 - CI measures the tests' coverage of the Go service (across packages, with the desktop
   clipboards and the e2e), the lite member, the Swift kit and the Kotlin kit, prints it in
   the run's summary, and fails when a part falls below its floor (`tools/coverage`,

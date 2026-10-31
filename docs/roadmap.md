@@ -246,6 +246,21 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       and a prominent disclosure in the app before the user turns the service on; the Data
       safety form; the reason for the `connectedDevice` foreground service; the current
       target API level. The GitHub and F-Droid builds are not affected.
+- **44.** **Planned for 0.7.** More tools that check the code, after the records `v:2` and
+    the one rules core settle (all free and run only in CI, none ships in the product):
+    - Mutation testing, nightly, on the records' code only: cargo-mutants for `cbb_core` and
+      gremlins for Go change the code (drop a check, turn `<` into `<=`) and report every
+      change that no test notices, so a weakened check cannot go unseen.
+    - Kani on `cbb_core`'s parsers (the wire framing, the canonical form): a proof, for
+      inputs up to a bound, that they never panic and never overflow.
+    - golangci-lint with a few linters beside staticcheck: errcheck (an error left unread),
+      exhaustive (a switch over the record kinds that misses one), gosec's G115 (an integer
+      conversion that overflows), errorlint and bodyclose; first a clean-up of what they find.
+    - goleak in the tests of the daemon, the relay and the forwarder: a goroutine a test
+      leaves running fails it.
+    - The Swift code that stays in Swift (the network, `AppModel`, `LiveGroup`): the
+      Thread Sanitizer in the Mac app's CI job, then the Swift 6 language mode with its
+      strict checks of concurrency.
 
 ## Devices that are hard to type into
 

@@ -194,7 +194,7 @@ jobs:
     # The iPhone app's CodeQL analysis must pass before a release; it runs on
     # pull requests only when the app changes.
     if: github.ref_type == 'tag'
-    uses: ./.github/workflows/codeql-swift.yml
+    uses: ./.github/workflows/codeql-swift.yml # zizmor: ignore[self-repository]
     permissions:
       actions: read
       contents: read

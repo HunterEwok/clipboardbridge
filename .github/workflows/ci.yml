@@ -80,6 +80,15 @@ jobs:
         run: go tool govulncheck ./...
       - name: actionlint
         run: go tool actionlint
+      - name: zizmor, the workflows' security
+        # actionlint checks how the workflows are written; zizmor looks for holes in them:
+        # a pull request's text run as a command, a token left where a step can take it,
+        # wide permissions, a cache that a release could be built from, an action pinned
+        # to a commit outside its repository. A finding it must leave alone carries a
+        # `# zizmor: ignore[...]` comment that says why.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pipx run zizmor==1.31.1 --min-severity low --format github .github/workflows
       - name: repository rules, and every test of the base still there
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -2025,6 +2034,14 @@ jobs:
             -L lite/Cargo.lock -L lite/esp32/Cargo.lock -L apps/desktop/go.mod \
             -L apps/android/app/gradle.lockfile -L apps/android/shared/gradle.lockfile \
             -L apps/android/wear/gradle.lockfile -L apps/android/kit/gradle.lockfile
+      - name: cargo-deny, the crates' licenses and sources
+        # Every crate of the lite member and of the ESP32 firmware under a license
+        # lite/deny.toml allows (all fit the AGPL-3.0), from crates.io or the pinned
+        # esp-hal commit only.
+        run: |
+          cargo install --locked cargo-deny@0.20.2
+          (cd lite && cargo deny --locked check licenses bans sources)
+          (cd lite/esp32 && cargo deny --locked --config ../deny.toml check licenses bans sources)
 
   docker:
     name: docker image
