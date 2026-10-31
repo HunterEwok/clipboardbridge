@@ -104,7 +104,8 @@ func TestCredentialRegistration(t *testing.T) {
 	}
 
 	// After a restart on the same state the older credential and the other
-	// key stay refused.
+	// key stay refused. The forwarder writes its state when it stops.
+	f.Close()
 	g, gpin := startForwarderWith(t, Config{Cert: fcert, StateFile: state})
 	if a := register(g, gpin, hub, creds(sign(period, periodKey, 9))); !strings.Contains(a.Error, "older") {
 		t.Errorf("an older credential after a restart: %+v", a)

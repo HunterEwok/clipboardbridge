@@ -2065,8 +2065,11 @@ close the connection beyond that; a sender MUST stay below it.
      or member certificate the records revoke or freeze. It keeps the merged authority
      records in memory after the registration ends, so a removed or demoted admin that
      registers later, while the group's own hub is away, cannot leave its revocation out,
-     until the forwarder restarts; it writes none of them to disk. Past 100,000 groups it
-     forgets the one that registered least recently. The group CA for these records is the
+     until the forwarder restarts; it writes none of them to disk. It refuses a registration
+     whose merged authority records come to more than 256 KiB, so it never keeps part of a
+     group's records. It keeps at most 32 MiB of records for all groups, and past that or
+     100,000 groups it forgets the one that registered least recently; the records of a
+     group that is registered now are never forgotten. The group CA for these records is the
      root the hub's member certificate verified to in step 2, whose tag names the group; a
      self-signed certificate the hub presents besides counts for nothing.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
@@ -2179,8 +2182,14 @@ forged addresses cannot keep a real client out.
 Its own key file, and a state file (`cbb forward -state`, `forward-state.json` next to the
 key by default, `none` for memory only): for each period that registered with a credential,
 under HMAC-SHA256 of the period's tag, the version of its newest hubs' credential and
-HMAC-SHA256 of the tag and the SHA-256 of the period key, with a counter for the bound of
-100,000 periods, past which the one that registered least recently goes. The HMAC key is
+HMAC-SHA256 of the tag and the SHA-256 of the period key, with a counter and the expiry of
+the last credential it saw (`expires`, Unix milliseconds; a file without it is read as 35
+days from the start, and never more than 35 days from when it was kept). An entry is kept until that expiry, since forgetting it sooner would
+let an older credential of the period pass. The table holds at most 100,000 periods and one
+network (an IPv4 /24 or an IPv6 /64) at most 256 of those it added; a tag new to the table
+is refused while either is full and nothing has expired, and no entry is ever dropped to
+make room. The file is written at most 2 s after a change, and when the forwarder stops,
+outside the lock the lookups use. The HMAC key is
 HMAC-SHA256 under the forwarder's private key (PKCS #8) of `clipboardbridge forwarder
 state`, so the file names no group by itself, and a period lasts about a month, so the file
 cannot link one month of a group to the next. A registration with a credential is refused
