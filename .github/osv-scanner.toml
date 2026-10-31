@@ -15,6 +15,14 @@ id = "RUSTSEC-2024-0449"
 ignoreUntil = 2027-04-25T00:00:00Z
 reason = "unsafe-libyaml is unmaintained; esp-config's build scripts read YAML with it, build time only"
 
+# basic-toml comes in with askama inside uniffi_bindgen, which only lite/ffi's
+# bindgen feature builds, to write the phones' Swift and Kotlin bindings; the
+# phones' libraries do not contain it. Unmaintained, not vulnerable.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0374"
+ignoreUntil = 2027-04-30T00:00:00Z
+reason = "basic-toml is unmaintained; askama reads its config with it inside uniffi_bindgen, the tool that writes the phones' bindings (lite/ffi, feature bindgen), build time only"
+
 # block-buffer before 0.12.1 can be left with a bad cursor when the compression
 # callback panics and the caller catches the panic and uses the buffer again.
 # Nothing here can catch one: the lite member's release build aborts on a panic

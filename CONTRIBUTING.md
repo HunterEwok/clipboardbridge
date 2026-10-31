@@ -168,6 +168,17 @@ mobile/cbbtun/bind.sh ios Cbbtun.xcframework   # macOS with Xcode
 The Android app's build runs `bind.sh` itself (the `bindTunnel` task), so building the app
 needs Go besides the Android SDK and its NDK.
 
+The group rules of records `v:2` (docs/records-v2.md) reach the phones from the Rust core:
+`lite/ffi` wraps `cbb_core::authority` for UniFFI, and its `bind.sh` builds the libraries and
+writes the Swift and Kotlin bindings; the `phone core` jobs run it:
+
+```sh
+cd lite && cargo test -p clipboardbridge-ffi
+ANDROID_NDK_HOME=<ndk> lite/ffi/bind.sh android OUT   # needs cargo-ndk
+lite/ffi/bind.sh ios OUT                              # macOS with Xcode
+lite/ffi/bind.sh jvm OUT                              # the host library, for JVM tests
+```
+
 The differential run of all four implementations (Go, Rust, JDK 17 and Docker for the Swift
 container; [docs/differential.md](docs/differential.md)):
 
