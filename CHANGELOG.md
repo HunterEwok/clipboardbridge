@@ -698,6 +698,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
   computers, the lite member and both phones; files the project signs are unaffected.
+- A command whose signer's device the receiver's records do not show may not name in `by` a
+  device they do show, and the limits on pastes and actions and the logs then count its
+  signing key, with the log entry marked unverified. The same on computers, the lite member
+  and both phones.
 - A command's `by` must be a device ID and, when the receiver's records show which device
   holds the signing key, that device; the limits on pastes and actions from one device and
   the logs then count the device that signed. The same on computers, the lite member and

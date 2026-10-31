@@ -724,6 +724,20 @@ class RecordSet {
     }
 
     /**
+     * Whom the limits per sender and the logs count command c, with by,
+     * for, as Go's Records.CommandSender: by, verified (true), when the
+     * records show that its device holds the signing key, and otherwise the
+     * signing key itself, as "key " and its hash in hex, since by is then
+     * only the signer's word.
+     */
+    fun commandSender(c: Member.Record, by: String): Pair<String, Boolean> {
+        if (signerDevice(c) == by) return by to true
+        val groupCA = groupCA ?: return "" to false
+        val a = anchor(c, knownRoots(groupCA)) ?: return "" to false
+        return "key ${a.second.toHex()}" to false
+    }
+
+    /**
      * Whether a watch's admin CA signed the record or command c
      * (docs/protocol.md, section 10, rule 8), whose powers are few.
      */

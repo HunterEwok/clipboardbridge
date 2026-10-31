@@ -47,7 +47,7 @@ class RemotePasteTest {
         assertEquals(RemotePaste.Settings(), RemotePaste.Settings.decode("{\"on\":\"yes\"}".toByteArray()))
         val e = RemotePaste.Entry(5, "ab", "deck", 3, "type", true, "refused", "locked")
         var log = emptyList<RemotePaste.Entry>()
-        repeat(RemotePaste.LOG_SIZE + 5) { log = RemotePaste.appended(log, e.copy(timeMS = it.toLong())) }
+        repeat(RemotePaste.LOG_SIZE + 5) { log = RemotePaste.appended(log, e.copy(timeMS = it.toLong(), unverified = it % 2 == 0)) }
         assertEquals(RemotePaste.LOG_SIZE, log.size)
         assertEquals(5L, log.first().timeMS)
         assertEquals(log, RemotePaste.decodeLog(RemotePaste.encodeLog(log)))

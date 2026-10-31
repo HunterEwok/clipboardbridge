@@ -102,7 +102,7 @@ func TestRemotePaste(t *testing.T) {
 			t.Errorf("an entry names %q", e.Name)
 		}
 	}
-	if e := log[2]; e.Result != "done" || e.Len != len("echo hi") || e.Method != "type" {
+	if e := log[2]; e.Result != "done" || e.Len != len("echo hi") || e.Method != "type" || e.Unverified {
 		t.Errorf("the paste's entry: %+v", e)
 	}
 

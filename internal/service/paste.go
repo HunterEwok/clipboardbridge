@@ -134,8 +134,34 @@ func (s *Service) takeKeys(grant, req, uid string) error {
 // paste on.
 var errPasteOff = errors.New("remote paste is off on this device; its user turns it on there with cbb paste-receive on, or in the app")
 
-// pasted carries out a paste command that VerifyCommand took.
-func (s *Service) pasted(body group.CommandBody) node.Result {
+// sender is whom a command counts for in the limits per sender and the
+// logs (group.Records.CommandSender).
+type sender struct {
+	key      string
+	verified bool
+}
+
+// who names the sender in the service's log: by, marked when the records
+// do not show that its device signed.
+func (f sender) who(body group.CommandBody) string {
+	if f.verified {
+		return string(body.By)
+	}
+	return string(body.By) + " (unverified)"
+}
+
+// senderName is the sender's device name for a log, when the records show that
+// it signed.
+func (s *Service) senderName(body group.CommandBody, from sender) string {
+	if !from.verified {
+		return ""
+	}
+	return s.deviceName(body.By)
+}
+
+// pasted carries out a paste command that VerifyCommand took, from the
+// sender from.
+func (s *Service) pasted(body group.CommandBody, from sender) node.Result {
 	res := node.Result{ID: body.ID}
 	refuse := func(why string) node.Result {
 		res.Status, res.Reason = node.ResultRefused, why
@@ -149,19 +175,19 @@ func (s *Service) pasted(body group.CommandBody) node.Result {
 		res = refuse(errPasteOff.Error())
 	case body.Enter && !set.Enter:
 		res = refuse("this device takes pastes without Enter only; its user allows Enter with cbb paste-receive on -enter")
-	case !s.pastes.Allow(string(body.By), s.cfg.now()):
+	case !s.pastes.Allow(from.key, s.cfg.now()):
 		res = refuse("too many pastes: at most one a second and 30 a minute from one device")
 	default:
 		res = s.inject(body, remotepaste.Clean(body.Text), set)
 	}
 	if res.Status == node.ResultDone {
-		s.logf("cbb: %s pasted %d bytes here", body.By, len(body.Text))
+		s.logf("cbb: %s pasted %d bytes here", from.who(body), len(body.Text))
 	} else {
-		s.logf("cbb: a paste from %s: %s: %s", body.By, res.Status, res.Reason)
+		s.logf("cbb: a paste from %s: %s: %s", from.who(body), res.Status, res.Reason)
 	}
 	if body.Kind != "secret" {
-		e := remotepaste.Entry{TimeMS: s.cfg.now().UnixMilli(), By: string(body.By), Name: s.deviceName(body.By),
-			Len: len(body.Text), Method: body.Mode, Enter: body.Enter, Result: res.Status, Reason: res.Reason}
+		e := remotepaste.Entry{TimeMS: s.cfg.now().UnixMilli(), By: string(body.By), Name: s.senderName(body, from),
+			Unverified: !from.verified, Len: len(body.Text), Method: body.Mode, Enter: body.Enter, Result: res.Status, Reason: res.Reason}
 		if err := remotepaste.Append(s.cfg.StateDir, e); err != nil {
 			s.logf("cbb: keeping the paste log: %v", err)
 		}

@@ -225,12 +225,18 @@ class CommandsTest {
         assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
         val now = v.getValue("now_ms").jsonPrimitive.long
         val commands = v.getValue("commands").jsonArray.map { it.jsonObject }
-        assertEquals(15, commands.size)
+        assertEquals(17, commands.size)
         for (c in commands) {
             val name = c.str("name")
-            val got = runCatching { Commands.verify(Member.Record.fromJson(c.getValue("command").jsonObject), set, v.str("self"), now) }
+            val r = Member.Record.fromJson(c.getValue("command").jsonObject)
+            val got = runCatching { Commands.verify(r, set, v.str("self"), now) }
             assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
             got.getOrNull()?.let { assertEquals(c["mode"]?.jsonPrimitive?.content, it.mode, name) }
+            got.getOrNull()?.let {
+                val (sender, verified) = set.commandSender(r, it.by)
+                assertEquals(c["verified"]?.jsonPrimitive?.boolean ?: false, verified, name)
+                assertTrue(if (verified) sender == it.by else sender.startsWith("key "), "$name: $sender")
+            }
             got.getOrNull()?.takeIf { it.type == "paste" }?.let { assertTrue(it.enter && it.kind == "text" && it.text!!.endsWith("\"done\"\n"), name) }
         }
     }

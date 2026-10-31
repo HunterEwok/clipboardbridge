@@ -2373,7 +2373,7 @@ signed bodies (Conventions):
 | `v` | integer | `1` |
 | `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or `away-off` |
 | `group` | string | the group tag |
-| `by` | string | the signer's device ID: a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device |
+| `by` | string | the signer's device ID: a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device, or, when they show none, names a device they show (a computer takes a legacy group CA's command that names a `full` member, since each holds that key) |
 | `to` | string | the receiver's device ID |
 | `id` | string | 128 random bits as 32 lowercase hex characters; IDs compare as byte strings |
 | `time_ms` | integer | when it was signed, milliseconds since the Unix epoch, not negative |
@@ -2387,6 +2387,10 @@ signed bodies (Conventions):
 
 `sig` is ECDSA P-256 with SHA-256 over the body's exact bytes, by a root's own key (no `chain`)
 or by an admin CA's key (`chain` holds that admin CA, DER), as for records.
+
+A receiver's limits per sender (remote paste, quick actions) and its logs count a command for
+its `by` when the records show that this device holds the signing key, and otherwise for the
+signing key itself, with the log entry marked `unverified`: `by` is then only the signer's word.
 
 ### In the member protocol
 

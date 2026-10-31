@@ -445,7 +445,7 @@ fn go_commands() {
     let me = v["self"].as_str().unwrap();
     let now = v["now_ms"].as_i64().unwrap();
     let cs = v["commands"].as_array().unwrap();
-    assert_eq!(cs.len(), 15);
+    assert_eq!(cs.len(), 17);
     for c in cs {
         let r: Record = serde_json::from_value(c["command"].clone()).unwrap();
         let got = s.verify_command(&r, me, now);
@@ -453,6 +453,9 @@ fn go_commands() {
         assert_eq!(got.is_ok(), c["ok"].as_bool().unwrap(), "{name}: {got:?}");
         if let Ok(b) = got {
             assert_eq!(b.mode, c["mode"].as_str().unwrap_or(""), "{name}");
+            let (sender, verified) = s.command_sender(&r, &b.by);
+            assert_eq!(verified, c["verified"].as_bool().unwrap_or(false), "{name}");
+            assert!(if verified { sender == b.by } else { sender.starts_with("key ") }, "{name}: {sender}");
             if b.kind == "paste" {
                 assert!(b.enter && b.paste_kind == "text" && b.text.ends_with("\"done\"\n"), "{name}");
             }

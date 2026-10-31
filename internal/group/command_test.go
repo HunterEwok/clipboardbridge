@@ -198,3 +198,67 @@ func TestCommandByIsItsSigner(t *testing.T) {
 		t.Error("a command naming another device than its signer's was taken")
 	}
 }
+
+// TestCommandSenders checks whom a command counts for: by when the
+// records show that its device holds the signing key, and otherwise the
+// key, so a signer whose device is not shown can neither name a device
+// that is nor spread its commands over made-up ones.
+func TestCommandSenders(t *testing.T) {
+	now := time.UnixMilli(1_761_400_000_000)
+	command := func(ca *CA, tag string, by, to DeviceID) Record {
+		t.Helper()
+		c, err := SignCommand(CommandBody{Type: CommandMode, Group: tag, By: by, To: to, ID: NewCommandID(),
+			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli(), Mode: "own"}, ca.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	check := func(s *Records, what string, c Record, to DeviceID, ok, verified bool) string {
+		t.Helper()
+		body, err := s.VerifyCommand(c, to, now)
+		if (err == nil) != ok {
+			t.Fatalf("%s: %v, want ok %v", what, err, ok)
+		}
+		if err != nil {
+			return ""
+		}
+		sender, v := s.CommandSender(c, body.By)
+		if v != verified || (v && sender != string(body.By)) || (!v && !strings.HasPrefix(sender, "key ")) {
+			t.Errorf("%s: the sender is %q, verified %v", what, sender, v)
+		}
+		return sender
+	}
+
+	// A group whose root has no device record yet.
+	pg := newPhoneGroup(t)
+	s := NewRecords(pg.root.Cert)
+	self := member(t, pg.root)
+	selfID := DeviceID(self.Subject.CommonName)
+	mustAdd(t, s, deviceRecord(t, pg.root.Cert, pg.root, nil, self, "pi", 1))
+	tag := Tag(pg.root.Cert)
+	one := check(s, "the root naming no device shown", command(pg.root, tag, NewDeviceID(), selfID), selfID, true, false)
+	two := check(s, "the root naming another such device", command(pg.root, tag, NewDeviceID(), selfID), selfID, true, false)
+	if one != two {
+		t.Errorf("the root counts as %q and as %q", one, two)
+	}
+	check(s, "the root naming this device", command(pg.root, tag, selfID, selfID), selfID, false, false)
+
+	// A legacy group, whose CA key every full member holds.
+	legacy := newLegacyGroup(t)
+	ca := &legacy.GroupCA
+	ls := NewRecords(ca.Cert)
+	full, phone := member(t, ca), member(t, ca)
+	mustAdd(t, ls, deviceRecord(t, ca.Cert, ca, nil, full, "pc", 1))
+	phoneKey := KeyHashOf(phone)
+	pr, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(ca.Cert), TimeMS: 2, Device: DeviceID(phone.Subject.CommonName),
+		Name: "phone", Role: RolePhone, Key: &phoneKey}, ca.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustAdd(t, ls, pr)
+	ltag, to := Tag(ca.Cert), NewDeviceID()
+	check(ls, "a legacy CA naming a full member", command(ca, ltag, DeviceID(full.Subject.CommonName), to), to, true, true)
+	check(ls, "a legacy CA naming a phone", command(ca, ltag, DeviceID(phone.Subject.CommonName), to), to, false, false)
+	check(ls, "a legacy CA naming no device shown", command(ca, ltag, NewDeviceID(), to), to, true, false)
+}
