@@ -676,6 +676,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   at most 256 KiB of records for one group and 128 MiB in all, and refuses a registration
   past those rather than keep part of its records. Devices see the new refusals as
   ordinary ones; nothing on the wire changes.
+- Every member refuses a command signed at a negative `time_ms`, as it already refused
+  such release files; the iPhone app no longer stops on one.
+- The phone apps keep the peer's cancels only of the parts they queue or serve, as the
+  service does.
+- The lite member gives the TLS handshake on its ports 10 s in all, not 10 s for each read.
 - A relay also counts the requests being read in its tunnels by the wider network (an IPv4
   /16 or an IPv6 /48) the devices registered from, and an open relay keeps nothing of a
   group's period for a registration it refused.
@@ -711,9 +716,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - A content chunk whose length field is 2^31 or more is refused on the 32-bit builds
   (Raspberry Pi 2 and 3, Pi Zero, mipsle routers, 386) as it already was on 64-bit ones,
   instead of ending the program.
-- A received PNG or JPEG is decoded on a Windows member only when it fits in 2^25 pixels
-  (an 8K screen) and 128 MiB decoded, checked from its header before any pixel is read; it
-  was 2^28 pixels, which a small file could fill with gigabytes. A PNG is also turned into
+- A received PNG or JPEG is decoded on a Windows member only when it takes at most 384 MiB
+  decoded and as the clipboard's bitmap together, which holds a 48-megapixel photo, counted
+  from its header (and a PNG's transparency) before any pixel is read; it was 2^28 pixels,
+  which a small file could fill with gigabytes. A PNG is also turned into
   the clipboard's bitmap by copying rows, not pixel by pixel. A bitmap on the Windows
   clipboard with a header of 41 to 55 bytes and color masks is refused instead of ending
   the agent.

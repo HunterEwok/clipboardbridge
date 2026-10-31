@@ -30,15 +30,15 @@ const (
 	lcsSRGB          = 0x73524742 // 'sRGB'
 	lcsGMImages      = 4
 	v5HeaderSize     = 124
-	// maxPixels bounds an image's size before it is decoded: 2^25 pixels,
-	// which holds an 8K screen (7680 by 4320 is 33.2 million). It costs 128
-	// MiB decoded and as much again as the DIB. The group carries up to
-	// clip.MaxMedia bytes, but a small file can hold far more pixels than
-	// bytes, so the pixels are counted, not the bytes.
+	// maxPixels bounds a bitmap on the clipboard: 2^25 pixels, which holds
+	// an 8K screen (7680 by 4320 is 33.2 million).
 	maxPixels = 1 << 25
-	// maxDecodedBytes bounds the memory a decoded image takes whatever its
-	// pixels' size: a 16-bit PNG takes 8 bytes a pixel.
-	maxDecodedBytes = 1 << 27
+	// maxImageBytes bounds the memory a received image takes before it is
+	// decoded: its pixels decoded and the DIB made of them together, 384
+	// MiB, which holds a 48-megapixel photo. The group carries up to
+	// clip.MaxMedia bytes, but a small file can hold far more pixels than
+	// bytes, so the decoded bytes are counted, not the file's.
+	maxImageBytes = 3 << 27
 )
 
 // dibToPNG converts a DIB, as CF_DIB or CF_DIBV5 holds it, to a PNG.
@@ -228,6 +228,18 @@ func imageDIBV5(img image.Image) []byte {
 		}
 		return b
 	}
+	if n, ok := img.(*image.NRGBA64); ok {
+		// What a 16-bit PNG with transparency decodes to: the high byte of
+		// each channel, with no pixel converted on the heap.
+		for y := range h {
+			row := px[4*w*(h-1-y):][:4*w]
+			src := n.Pix[n.PixOffset(r.Min.X, r.Min.Y+y):][:8*w]
+			for x := range w {
+				row[4*x], row[4*x+1], row[4*x+2], row[4*x+3] = src[8*x+4], src[8*x+2], src[8*x], src[8*x+6]
+			}
+		}
+		return b
+	}
 	for y := range h {
 		row := px[4*w*(h-1-y):]
 		for x := range w {
@@ -244,8 +256,7 @@ func decodeImage(typ string, data []byte) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	px := int64(cfg.Width) * int64(cfg.Height)
-	if cfg.Width <= 0 || cfg.Height <= 0 || px > maxPixels || px*decodedPixel(cfg.ColorModel) > maxDecodedBytes {
+	if cfg.Width <= 0 || cfg.Height <= 0 || imageBytes(typ, data, cfg) > maxImageBytes {
 		return nil, fmt.Errorf("pasteboard: an image of %d by %d pixels", cfg.Width, cfg.Height)
 	}
 	if typ == clip.TypeJPEG {
@@ -254,22 +265,54 @@ func decodeImage(typ string, data []byte) (image.Image, error) {
 	return png.Decode(bytes.NewReader(data))
 }
 
-// decodedPixel is the bytes a decoded pixel of a color model takes in the
-// image types of image/png and image/jpeg; an unknown model counts as the
-// largest.
-func decodedPixel(m color.Model) int64 {
-	switch m {
-	case color.GrayModel:
-		return 1
-	case color.Gray16Model:
-		return 2
-	case color.RGBAModel, color.NRGBAModel, color.CMYKModel, color.YCbCrModel:
-		return 4
+// imageBytes is what the image of cfg, from data, takes in memory decoded
+// and as the DIB of CF_DIBV5 (4 bytes a pixel), as image/png and image/jpeg
+// decode it: a PNG's transparency turns gray into NRGBA or NRGBA64. An
+// unknown model counts as the largest.
+func imageBytes(typ string, data []byte, cfg image.Config) int64 {
+	var n int64 = 8
+	switch m := cfg.ColorModel; {
+	case m == color.GrayModel:
+		n = 1
+	case m == color.Gray16Model:
+		n = 2
+	case m == color.YCbCrModel:
+		n = 3 // the most, without subsampling
+	case m == color.RGBAModel, m == color.NRGBAModel, m == color.CMYKModel:
+		n = 4
+	default:
+		if _, ok := m.(color.Palette); ok {
+			n = 1
+		}
 	}
-	if _, ok := m.(color.Palette); ok {
-		return 1
+	if typ == clip.TypePNG && n <= 2 && pngTransparent(data) {
+		if _, ok := cfg.ColorModel.(color.Palette); !ok {
+			n *= 4
+		}
 	}
-	return 8
+	return int64(cfg.Width) * int64(cfg.Height) * (n + 4)
+}
+
+// pngTransparent reports whether a PNG has a tRNS chunk before its image
+// data; one that cannot be read through counts as having one.
+func pngTransparent(data []byte) bool {
+	const sig = 8
+	for i := sig; ; {
+		if len(data)-i < 8 {
+			return true
+		}
+		n := int64(binary.BigEndian.Uint32(data[i:]))
+		switch string(data[i+4 : i+8]) {
+		case "tRNS":
+			return true
+		case "IDAT", "IEND":
+			return false
+		}
+		if n > int64(len(data)-i-12) {
+			return true
+		}
+		i += 12 + int(n)
+	}
 }
 
 func decodeConfig(typ string, data []byte) (image.Config, error) {
