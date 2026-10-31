@@ -36,10 +36,11 @@ enum Strict {
     static func ok(_ data: Data, required: [String]) -> Bool { (try? check(data, required: required)) != nil }
 
     /// Whether every number in data, outside the strings, is an integer as
-    /// check takes it. JSONDecoder reads "-0", "1.0" and "1e0" as integers;
-    /// Go and the lite member refuse them in an integer field, so the frames
-    /// with a manifest pass this first. It only scans: whether data is JSON
-    /// is for the decoder.
+    /// check takes it. JSONDecoder reads "-0", "1.0" and "1e0" as integers,
+    /// other readers do not, so every frame of the member protocol passes
+    /// this first, members a reader does not know included, as in the other
+    /// implementations. It only scans: whether data is JSON is for the
+    /// decoder.
     static func integersOnly(_ data: Data) -> Bool {
         let b = [UInt8](data)
         var i = 0

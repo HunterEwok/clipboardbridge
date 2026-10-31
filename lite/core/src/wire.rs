@@ -250,6 +250,13 @@ pub fn bare(kind: &str) -> Message {
     Message { kind: kind.into(), ..Default::default() }
 }
 
+/// Decodes the body of a frame. A number that is not an integer as in a
+/// signed body makes it no message (strict::integers_only).
+pub fn decode(body: &[u8]) -> Result<Message> {
+    crate::strict::integers_only(body).map_err(|_| Error::msg("a frame is not a message"))?;
+    serde_json::from_slice(body).context("a frame is not a message")
+}
+
 /// Decodes a hello and returns the rest of it as it came. A current event
 /// that does not decode, for example from a newer version, counts as none.
 pub fn decode_hello(v: Option<&Value>) -> Result<(Hello, HelloBody)> {

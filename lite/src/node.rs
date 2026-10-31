@@ -452,7 +452,7 @@ impl Node {
         let mut r = TlsReader { c, buf: Vec::new() };
         let mut first = true;
         loop {
-            let m: Message = match wire::read_json(&mut r, wire::MAX_FRAME) {
+            let m: Message = match wire::read_frame(&mut r, wire::MAX_FRAME).and_then(|b| wire::decode(&b)) {
                 Ok(m) => m,
                 Err(_) if c.closed.load(Ordering::SeqCst) => return Ok(()),
                 Err(e) => return Err(e),

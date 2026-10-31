@@ -910,7 +910,11 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
             commands[body.id] = body.expiresMS
         }
         when (body.type) {
-            "paste" -> return pastes.paste(body, g.devices.firstOrNull { it.id == body.by }?.name)
+            "paste" -> {
+                val (sender, verified) = synchronized(lock) { g.records.commandSender(c, body.by) }
+                val name = if (verified) g.devices.firstOrNull { it.id == body.by }?.name else null
+                return pastes.paste(body, sender, verified, name)
+            }
             "paste-off" -> {
                 Log.i(TAG, "${body.by} turned remote paste off")
                 return pastes.turnOff()?.copy(id = body.id) ?: Member.CommandResult(body.id, "done")

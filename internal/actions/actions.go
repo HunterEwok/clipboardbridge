@@ -291,9 +291,12 @@ type Entry struct {
 	TimeMS int64  `json:"time_ms"`
 	By     string `json:"by"`             // the sender's device ID
 	Name   string `json:"name,omitempty"` // the sender's name, when known
-	Action string `json:"action"`
-	Result string `json:"result"` // done, refused or failed
-	Reason string `json:"reason,omitempty"`
+	// Unverified: the records do not show that the device By names
+	// signed; By is then only the signer's word.
+	Unverified bool   `json:"unverified,omitempty"`
+	Action     string `json:"action"`
+	Result     string `json:"result"` // done, refused or failed
+	Reason     string `json:"reason,omitempty"`
 }
 
 // Append adds an entry to the log in dir, keeping the last LogSize.

@@ -199,8 +199,13 @@ public enum Commands {
         guard b.to == me else { throw refuse("the command is for another device") }
         guard records.signedByAdmin(c) else { throw refuse("the command's signer is not an admin of the group") }
         guard watchTypes.contains(b.type) || !records.signedByWatch(c) else { throw refuse("a watch does not sign \(b.type) commands") }
-        // by names the signer's device whenever the records show it.
-        if let dev = records.signerDevice(c), dev != b.by { throw refuse("a command's by is not the device of its signer") }
+        // by names the signer's device whenever the records show it, and
+        // otherwise no device they show.
+        if let dev = records.signerDevice(c) {
+            guard dev == b.by else { throw refuse("a command's by is not the device of its signer") }
+        } else if records.devices.contains(where: { $0.id == b.by }) {
+            throw refuse("a command's by names a device that does not hold its signer's key")
+        }
         guard b.expires_ms > nowMS else { throw refuse("the command expired; check the clocks of both devices") }
         guard b.time_ms <= nowMS + aheadMS else { throw refuse("the command was signed in the future; check the clocks of both devices") }
         return b

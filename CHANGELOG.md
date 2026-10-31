@@ -698,6 +698,20 @@ All notable changes to clipboardbridge are documented in this file. The format f
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
   computers, the lite member and both phones; files the project signs are unaffected.
+- Every frame of the member protocol holds only integers written as in signed bodies, members
+  a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
+  computers, the lite member and both phones alike, where some took `-0` for 0 before.
+- A session counts as at the screen for remote paste and quick actions only on a seat or when
+  logind says it is not remote, on computers and the lite member.
+- The lock check names logind's own session (`auto`) when `XDG_SESSION_ID` is not set.
+- The tray app on Windows doubles every kind of single quote in what it hands PowerShell.
+- The lite member takes the key store `rootless` in device records, as the others do.
+- A relay goes by a device's whole certificate chain against the group's records, as members
+  do: it refuses and drops a device whose admin was removed, unless the removal keeps it.
+- A command whose signer's device the receiver's records do not show may not name in `by` a
+  device they do show, and the limits on pastes and actions and the logs then count its
+  signing key, with the log entry marked unverified. The same on computers, the lite member
+  and both phones.
 - A command's `by` must be a device ID and, when the receiver's records show which device
   holds the signing key, that device; the limits on pastes and actions from one device and
   the logs then count the device that signed. The same on computers, the lite member and

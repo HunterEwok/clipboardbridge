@@ -174,11 +174,14 @@ type Entry struct {
 	TimeMS int64  `json:"time_ms"`
 	By     string `json:"by"`             // the sender's device ID
 	Name   string `json:"name,omitempty"` // the sender's name, when known
-	Len    int    `json:"len"`            // bytes of the text
-	Method string `json:"method"`         // paste or type
-	Enter  bool   `json:"enter,omitempty"`
-	Result string `json:"result"` // done, refused or failed
-	Reason string `json:"reason,omitempty"`
+	// Unverified: the records do not show that the device By names
+	// signed; By is then only the signer's word.
+	Unverified bool   `json:"unverified,omitempty"`
+	Len        int    `json:"len"`    // bytes of the text
+	Method     string `json:"method"` // paste or type
+	Enter      bool   `json:"enter,omitempty"`
+	Result     string `json:"result"` // done, refused or failed
+	Reason     string `json:"reason,omitempty"`
 }
 
 // logFile keeps the last LogSize pastes in the state directory.

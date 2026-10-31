@@ -41,3 +41,16 @@ func TestLockerRuns(t *testing.T) {
 		t.Errorf("with swaylock running: %q", why)
 	}
 }
+
+// TestSessionID checks that a process started outside a session, as a
+// user service is, still asks logind about its user's session.
+func TestSessionID(t *testing.T) {
+	t.Setenv("XDG_SESSION_ID", "")
+	if got := sessionID(); got != "auto" {
+		t.Errorf("without XDG_SESSION_ID: %q", got)
+	}
+	t.Setenv("XDG_SESSION_ID", "c2")
+	if got := sessionID(); got != "c2" {
+		t.Errorf("with XDG_SESSION_ID: %q", got)
+	}
+}

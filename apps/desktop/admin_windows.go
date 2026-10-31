@@ -64,7 +64,14 @@ func psScript(cbb string, args []string, yes, details bool, outPath string) stri
 	return b.String()
 }
 
-func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+func psQuote(s string) string {
+	// PowerShell ends a single-quoted string at any of its single quotes,
+	// the typographic ones too, and takes each doubled as one.
+	for _, q := range []string{"'", "\u2018", "\u2019", "\u201a", "\u201b"} {
+		s = strings.ReplaceAll(s, q, q+q)
+	}
+	return "'" + s + "'"
+}
 
 // encodePS is PowerShell's -EncodedCommand: base64 of UTF-16LE.
 func encodePS(script string) string {

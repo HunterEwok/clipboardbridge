@@ -323,7 +323,7 @@ fn role(r: &str) -> &str {
 /// phone's keys were in hardware and every other device's in a file.
 pub fn store_of<'a>(store: &'a str, role: &str) -> &'a str {
     match store {
-        "file" | "hardware" | "proven" => store,
+        "file" | "hardware" | "proven" | "rootless" => store,
         _ if role == "phone" || role == "watch" => "hardware",
         _ => "file",
     }
@@ -1286,11 +1286,16 @@ impl Records {
         if self.watch(&signer) && !watch_command(&body.kind) {
             return Err(Error::msg(format!("a watch does not sign {} commands", body.kind)));
         }
-        // by names the signer's device whenever the records show it.
-        if let (Some(d), _) = self.command_signer(c) {
-            if d.id != body.by {
+        // by names the signer's device whenever the records show it, and
+        // otherwise no device they show.
+        match self.command_signer(c) {
+            (Some(d), _) if d.id != body.by => {
                 return Err(Error::msg("a command's by is not the device of its signer"));
             }
+            (None, _) if self.devices().iter().any(|d| d.id == body.by) => {
+                return Err(Error::msg("a command's by names a device that does not hold its signer's key"));
+            }
+            _ => {}
         }
         if body.expires_ms <= now_ms {
             return Err(Error::msg("the command expired; check the clocks of both devices"));
@@ -1323,6 +1328,19 @@ impl Records {
             None => d.admin_key == Some(signer),
         });
         (d, root)
+    }
+
+    /// Whom the limits per sender and the logs count for the command c,
+    /// with by, that verify_command took, as Go's Records.CommandSender:
+    /// by, verified (true), when the records show that its device holds
+    /// the signing key, and otherwise the signing key itself, as "key " and
+    /// its hash in hex, since by is then only the signer's word.
+    pub fn command_sender(&self, c: &Record, by: &str) -> (String, bool) {
+        let Ok((signer, _)) = self.signer_of(c) else { return (String::new(), false) };
+        match self.command_signer(c) {
+            (Some(d), _) if d.id == by => (d.id, true),
+            _ => (format!("key {}", certs::hex(&signer)), false),
+        }
     }
 
     /// The devices that may be the group's hubs, in the order in which
