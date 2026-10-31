@@ -71,12 +71,7 @@ func runRelay(state, listen, arg string) error {
 	if err != nil {
 		return err
 	}
-	window := tls.Client(up, &tls.Config{
-		MinVersion:         tls.VersionTLS13,
-		Certificates:       []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
-		InsecureSkipVerify: true, // the relay trusts anyone: it only passes frames
-		NextProtos:         []string{pair.Protocol},
-	})
+	window := tls.Client(up, insecureRelayConfig(tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}))
 	defer window.Close()
 	if err := window.Handshake(); err != nil {
 		return fmt.Errorf("the window's handshake: %w", err)
@@ -99,4 +94,16 @@ func runRelay(state, listen, arg string) error {
 	wg.Wait()
 	fmt.Printf("relay: %d bytes to the window, %d bytes to the joiner\n", toWindow, toJoiner)
 	return nil
+}
+
+// insecureRelayConfig is the relay's side towards the window: it trusts
+// any certificate, since it only passes frames it never reads. The bench's
+// forge only, never part of a release.
+func insecureRelayConfig(cert tls.Certificate) *tls.Config {
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS13,
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: true,
+		NextProtos:         []string{pair.Protocol},
+	}
 }
