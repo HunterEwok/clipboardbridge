@@ -171,6 +171,29 @@ jobs:
           done
           export WAYLAND_DISPLAY DISPLAY=:5
           CBB_TEST_WAYLAND=1 CBB_TEST_X11=1 "$RUNNER_TEMP/desktop.test" -test.coverprofile=cover-go-desktop.out
+      - name: the uinput keyboard against the kernel
+        run: |
+          go test -c -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/uinput.test" ./internal/uinput
+          sudo modprobe uinput
+          sudo CBB_TEST_UINPUT=1 "$RUNNER_TEMP/uinput.test" -test.run TestKeyboard -test.coverprofile="$PWD/cover-go-uinput.out"
+          sudo chown "$(id -u)" cover-go-uinput.out
+      - name: mDNS beside avahi-daemon in a container
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go test -c -cover -coverpkg="$COVERPKG" -o "$RUNNER_TEMP/mdns.test" ./internal/mdns
+          mkdir -p "$RUNNER_TEMP/mdns-cover"
+          docker run --rm -v "$RUNNER_TEMP/mdns.test:/t/mdns.test:ro" -v "$RUNNER_TEMP/mdns-cover:/out" debian:stable-slim sh -euc '
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq avahi-daemon avahi-utils dbus >/dev/null
+            mkdir -p /run/dbus
+            dbus-daemon --system --fork
+            avahi-daemon --daemonize --no-chroot
+            sleep 2
+            CBB_TEST_AVAHI=1 /t/mdns.test -test.run "TestAvahi|TestSystemNetwork" -test.coverprofile=/out/cover.out
+          '
+          sudo cp "$RUNNER_TEMP/mdns-cover/cover.out" cover-go-mdns.out
+          sudo chown "$(id -u)" cover-go-mdns.out
       - name: the e2e with a cbb built with -cover
         env:
           CGO_ENABLED: "0"
