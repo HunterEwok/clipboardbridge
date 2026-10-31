@@ -4,9 +4,11 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +38,38 @@ func TestRootOnly(t *testing.T) {
 	}
 	if rootOnly("/tmp") || rootOnly("/nonexistent/cbb") {
 		t.Error("a directory or a missing file counts")
+	}
+}
+
+// Without a cbb that root owns in its places, nothing is run as root: the
+// tray says what to do instead.
+func TestRunAdminWithoutRootsCbb(t *testing.T) {
+	// A folder anyone may change, so the file counts as no one's but the
+	// user's even when the test runs as root.
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(dir, "cbb")
+	if err := os.WriteFile(mine, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := cbbPlaces
+	t.Cleanup(func() { cbbPlaces = saved })
+	cbbPlaces = []string{mine, "/nonexistent/cbb"}
+	if p := cbbPath(); p != "" {
+		t.Fatalf("cbbPath = %q, want none", p)
+	}
+	err := runAdmin([]string{"revoke", "ab12"}, false, false)
+	var ae *adminError
+	if !errors.As(err, &ae) || !strings.Contains(ae.msg, "sudo cbb revoke ab12") || !strings.Contains(ae.detail, mine) {
+		t.Fatalf("runAdmin = %#v", err)
+	}
+	cbbPlaces = []string{"/nonexistent/cbb", "/bin/sh"}
+	if !rootOnly("/bin/sh") {
+		return
+	}
+	if p := cbbPath(); p != "/bin/sh" {
+		t.Errorf("cbbPath = %q, want the place root owns", p)
 	}
 }

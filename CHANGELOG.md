@@ -831,7 +831,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   the EK purpose when it names purposes and the TPM's maker in its alternative name.
 - The tray app on Linux runs only a `cbb` that root owns and no one else may change, never
   one found on `PATH`, and on Windows finds Program Files from the system, not from the
-  environment.
+  environment. When neither place holds such a `cbb`, it runs nothing as root and says to
+  install it again or to use `sudo cbb` in a terminal.
 - `CBB_ROOTLESS` set to anything but `1` no longer hides a rootless install from the Go
   commands, and a linked `~/.local` or `~/.local/bin` is resolved as the lite member does.
 - `cbb update` takes a release name from the channel file, and a version asked for, only when

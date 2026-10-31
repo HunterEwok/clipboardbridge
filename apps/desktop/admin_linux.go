@@ -20,11 +20,16 @@ const deniedText = "No permission to use the service: add your user to the clipb
 // desktop's own dialog; pkexec passes the arguments as they are, without a
 // shell, and clears the environment, so CBB_DEBUG goes through env.
 func runAdmin(args []string, yes, details bool) error {
+	cbb := cbbPath()
+	if cbb == "" {
+		return &adminError{msg: "cbb is not installed where the installer puts it, owned by root: install it again, or run sudo cbb " + strings.Join(args, " ") + " in a terminal.",
+			detail: "none of " + strings.Join(cbbPlaces, ", ") + " is a file that root owns and only root may change"}
+	}
 	pkexec, err := exec.LookPath("pkexec")
 	if err != nil {
 		return &adminError{msg: "pkexec is not installed: run sudo cbb " + strings.Join(args, " ") + " in a terminal instead.", detail: err.Error()}
 	}
-	cmd := exec.Command(pkexec, pkexecArgs(cbbPath(), args, details)...)
+	cmd := exec.Command(pkexec, pkexecArgs(cbb, args, details)...)
 	if yes {
 		cmd.Stdin = strings.NewReader("yes\n")
 	}
@@ -55,14 +60,15 @@ func pkexecArgs(cbb string, args []string, details bool) []string {
 // cbbPath is where the installer puts cbb (/opt/clipboardbridge on
 // SteamOS), the first of them that root owns and only root may change;
 // pkexec runs it as root, so cbb is never taken from PATH, where the user's
-// own programs come first.
+// own programs come first. It is "" when there is none: a cbb that root
+// does not own is never run as root.
 func cbbPath() string {
 	for _, p := range cbbPlaces {
 		if rootOnly(p) {
 			return p
 		}
 	}
-	return cbbPlaces[0]
+	return ""
 }
 
 var cbbPlaces = []string{"/usr/local/bin/cbb", "/opt/clipboardbridge/bin/cbb"}
