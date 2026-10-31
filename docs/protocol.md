@@ -2536,10 +2536,13 @@ and, with `enter`, allowed Enter; and beyond one a second and 30 a minute from o
 clean the text (newlines and tabs stay; other control characters, terminal escape
 sequences and bytes that are not UTF-8 go; CR LF and CR become LF), hands it to a target
 (the watcher protocol's `inject`, section 8: a desktop session first, then tmux, then a text
-console only where the user allowed consoles). A line break runs the text where keys go
-straight to a shell, so unless the user allowed Enter, a typed text with a line break is
-refused, and a pasted one goes only to a desktop session, whose terminals take it
-bracketed. The receiver answers `done` when the target put it
+console only where the user allowed consoles). A line break may run what comes before it
+wherever the focused program does not take a paste bracketed, which no target can tell (a
+shell or console window on a desktop may not ask for it), so unless the user allowed Enter,
+the receiver MUST refuse a text with a line break on each of these targets, and when it
+types the text on a Bluetooth keyboard or a TV. An Android phone that puts it into the
+focused text field through its accessibility service takes it: a line break there is a
+character of the field. The receiver answers `done` when the target put it
 in, `refused` with its reason (for example a locked session) or `failed`. It keeps the last
 100 pastes in a log (sender, time, length, way, result, never the text), but no `secret`
 one. A `paste-off` command turns remote paste off, Enter and consoles too; only the

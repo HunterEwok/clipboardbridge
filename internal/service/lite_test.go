@@ -484,7 +484,7 @@ func TestLiteRemotePaste(t *testing.T) {
 		t.Errorf("tmux got %q %+v", m.Payload, m.Header)
 	}
 	time.Sleep(time.Second)
-	wantRefused("a line break", "two\nlines", control.Header{}, "where a line break would run the text")
+	wantRefused("a line break", "two\nlines", control.Header{}, "the text has a line break")
 	wantRefused("enter", "ls", control.Header{Enter: true}, "without Enter only")
 	wantRefused("locked", "locked", control.Header{}, "the tmux client is locked")
 	<-got

@@ -279,27 +279,25 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 		res.Reason = "the text has nothing that may be pasted: only control characters"
 		return res
 	}
-	// A line break runs what comes before it where keys go straight to a
-	// shell: in a typed text, and in tmux and on a console. There it needs
-	// the user's leave for Enter; a desktop's terminal takes a paste
-	// bracketed.
 	if r, ok := s.keyboardPaste(body, text, set.Enter, still); ok {
 		return r
 	}
 	if r, ok := s.tvPaste(body, text, set.Enter, still); ok {
 		return r
 	}
-	lines := strings.Contains(text, "\n") && !set.Enter
-	if lines && body.Mode == group.PasteByTyping {
-		res.Reason = "a typed text with a line break would run it, and this device takes pastes without Enter only; send it as a paste or as one line"
+	// A Bluetooth keyboard and a TV check line breaks themselves. Elsewhere
+	// a line break runs what comes before it wherever the focused program
+	// does not take a paste bracketed: a typed text, tmux, a console, and on
+	// a desktop a shell or console window that does not ask for it (cmd.exe,
+	// sh), which no target can tell. So a text with one needs the user's
+	// leave for Enter on every target.
+	if strings.Contains(text, "\n") && !set.Enter {
+		res.Reason = "the text has a line break, which may run what comes before it, and this device takes pastes without Enter only; send it as one line, or its user allows Enter with cbb paste-receive on -enter"
 		return res
 	}
-	order := []string{targetDesktop}
-	if !lines {
-		order = append(order, targetTmux)
-		if set.Console {
-			order = append(order, targetConsole)
-		}
+	order := []string{targetDesktop, targetTmux}
+	if set.Console {
+		order = append(order, targetConsole)
 	}
 	s.mu.Lock()
 	var ws []*watcher
@@ -311,10 +309,8 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 			}
 		}
 	}
-	term := false // tmux or a console is here
 	for w := range s.watchers {
 		console = console || w.inject == targetConsole
-		term = term || w.inject == targetTmux || w.inject == targetConsole
 	}
 	s.mu.Unlock()
 	if len(ws) == 0 {
@@ -325,9 +321,7 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 			// and its pasteboard agent are not apps.
 			res.Reason = "a Mac pastes through the Clipboard Bridge app, and it is not open here; its user opens it and allows it in System Settings, Privacy & Security, Accessibility"
 		}
-		if lines && term {
-			res.Reason = "only tmux or a text console is here, where a line break would run the text, and this device takes pastes without Enter only; send it as one line"
-		} else if console && !set.Console {
+		if console && !set.Console {
 			res.Reason = "only a text console is here, and its user did not allow consoles (cbb paste-receive on -console)"
 		}
 		return res
