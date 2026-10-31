@@ -5,6 +5,7 @@ package io.github.hunterewok.clipboardbridge.kit
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.security.SecureRandom
 import java.time.Instant
@@ -349,7 +350,10 @@ object Commands {
         if (type != "action" && !b.action.isNullOrEmpty()) throw Refused("a $type command names an action")
         when (type) {
             "mode" -> if (b.mode.isNullOrEmpty() || o.opt("hub") != null) throw Refused("a mode command names no mode")
-            "hub" -> if (o.opt("hub") == null || !b.mode.isNullOrEmpty()) throw Refused("a hub command has no order")
+            "hub" -> {
+                if (o.opt("hub") == null || !b.mode.isNullOrEmpty()) throw Refused("a hub command has no order")
+                checkHub(o.optObject("hub")!!)
+            }
             "paste-off", "actions-off", "away-off" -> if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("a $type command carries an order")
             "action" -> {
                 if (o.opt("hub") != null || !b.mode.isNullOrEmpty()) throw Refused("an action command carries an order")
@@ -374,6 +378,31 @@ object Commands {
         // A time before 1970 is no signing time; from it the difference cannot overflow.
         if (b.timeMS < 0 || b.expiresMS <= b.timeMS || b.expiresMS - b.timeMS > LIFETIME_MS) throw Refused("the command's lifetime is not valid")
         return b
+    }
+
+    /**
+     * Checks a hub command's order as Go's HubOrder.check: a forwarder with an address and a key, or an address at
+     * least; at most 8 addresses and [MAX_HUB_CLIENTS] clients, each a device ID once with keys of 32 bytes.
+     */
+    private fun checkHub(h: JsonObject) {
+        val forwarder = h.optObject("forwarder")
+        val endpoints = h.optArray("endpoints").orEmpty().map {
+            (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw WireTypeException("endpoints: not a string")
+        }
+        val clients = h.optArray("clients").orEmpty().map { it as? JsonObject ?: throw WireTypeException("clients: not an object") }
+        if (forwarder == null && endpoints.isEmpty()) throw Refused("a hub command gives no forwarder and no address")
+        if (endpoints.size > 8) throw Refused("a hub command gives too many addresses")
+        if (clients.size > MAX_HUB_CLIENTS) throw Refused("a hub command hands over too many clients")
+        if (forwarder != null && (forwarder.optString("endpoint").isNullOrEmpty() || forwarder.optString("key").isNullOrEmpty())) {
+            throw Refused("a hub command's forwarder has no address or key")
+        }
+        val seen = HashSet<String>()
+        for (c in clients) {
+            val device = c.optString("device") ?: ""
+            if (device.length != 32 || device.any { it !in "0123456789abcdef" }) throw Refused("a hub command's client has no valid device ID")
+            if (!seen.add(device)) throw Refused("a hub command hands over $device twice")
+            if (c.optBytes("key")?.size != 32 || c.optBytes("psk")?.size != 32) throw Refused("a hub command's keys for $device are not 32 bytes")
+        }
     }
 
     /** The ID in a command's body, or null when it has none. */
