@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/strict"
 )
 
 // The body types.
@@ -329,7 +331,14 @@ var (
 	serialRE   = regexp.MustCompile(`^(0|[1-9a-f][0-9a-f]{0,63})$`)
 )
 
-func decode(data []byte, typ string, v any) error {
+// decode reads data as a body of type typ into v; the body must have v,
+// type and each field of required.
+func decode(data []byte, typ string, v any, required ...string) error {
+	// The strict form of signed bodies first, so that every program reads a
+	// file alike (docs/protocol.md, section 16).
+	if err := strict.Check(data, append([]string{"v", "type"}, required...)...); err != nil {
+		return fmt.Errorf("release: %w", err)
+	}
 	var b struct {
 		V    int    `json:"v"`
 		Type string `json:"type"`
@@ -364,7 +373,7 @@ func lifetimeUpTo(timeMS, expiresMS int64, max time.Duration) error {
 
 func decodeKeys(data []byte) (Keys, error) {
 	var k Keys
-	if err := decode(data, TypeKeys, &k); err != nil {
+	if err := decode(data, TypeKeys, &k, "seq", "time_ms", "expires_ms", "keys"); err != nil {
 		return k, err
 	}
 	if k.Seq == 0 {
@@ -375,6 +384,20 @@ func decodeKeys(data []byte) (Keys, error) {
 	}
 	if len(k.Keys) == 0 || len(k.Keys) > maxKeys {
 		return k, errors.New("release: keys.json must hold 1 to 8 keys")
+	}
+	// The keys are the only plain bytes of a body: in base64's one form.
+	var raw struct {
+		Keys []struct {
+			Key string `json:"key"`
+		} `json:"keys"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return k, fmt.Errorf("release: %w", err)
+	}
+	for _, key := range raw.Keys {
+		if _, err := strict.DecodeBase64(key.Key); err != nil {
+			return k, fmt.Errorf("release: a key: %w", err)
+		}
 	}
 	for _, key := range k.Keys {
 		if key.Name == "" || len(key.Name) > maxName {
@@ -393,7 +416,7 @@ func decodeKeys(data []byte) (Keys, error) {
 
 func decodeRelease(data []byte) (Release, error) {
 	var r Release
-	if err := decode(data, TypeRelease, &r); err != nil {
+	if err := decode(data, TypeRelease, &r, "version", "channel", "time_ms", "files"); err != nil {
 		return r, err
 	}
 	if !versionRE.MatchString(r.Version) {
@@ -431,7 +454,7 @@ func decodeRelease(data []byte) (Release, error) {
 
 func decodeChannel(data []byte) (Channel, error) {
 	var c Channel
-	if err := decode(data, TypeChannel, &c); err != nil {
+	if err := decode(data, TypeChannel, &c, "channel", "seq", "time_ms", "expires_ms", "release", "release_sha256"); err != nil {
 		return c, err
 	}
 	if !channelRE.MatchString(c.Channel) {
@@ -451,7 +474,7 @@ func decodeChannel(data []byte) (Channel, error) {
 
 func decodeStatus(data []byte) (Status, error) {
 	var s Status
-	if err := decode(data, TypeStatus, &s); err != nil {
+	if err := decode(data, TypeStatus, &s, "seq", "time_ms", "expires_ms", "android_revoked"); err != nil {
 		return s, err
 	}
 	if s.Seq == 0 {

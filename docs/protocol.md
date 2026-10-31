@@ -38,8 +38,9 @@ these words depends on it.
   ignore fields it does not know, unless a section says otherwise. Byte strings in JSON are
   standard base64 with padding ([RFC 4648](https://www.rfc-editor.org/rfc/rfc4648), section
   4; Go's encoding of `[]byte`) unless a field says base64url.
-- **Signed bodies.** The body of a record (section 10) and of a command (section 15) is
-  signed as bytes and passed on unchanged, so every member MUST read it alike. A receiver
+- **Signed bodies.** The body of a record (section 10), of a command (section 15), of a
+  release file (section 16) and of a server credential (section 18) is signed as bytes and
+  passed on unchanged, so every member MUST read it alike. A receiver
   MUST refuse a body that breaks any of these rules, before it reads a field, and so MUST
   a signer's own code before it signs. Each rule has a name, which the vectors cite:
   - `form/object`: the body is one JSON object in UTF-8, with nothing but whitespace (space,
@@ -63,13 +64,16 @@ these words depends on it.
   - `form/unknown`: a member the body's kind does not know is ignored, whatever its value, but
     it still follows every rule above.
   - The fields every body of its kind has are there: `v`, `type`, `group` and `time_ms` in a
-    record; `v`, `type`, `group`, `by`, `to`, `id`, `time_ms` and `expires_ms` in a command.
+    record; `v`, `type`, `group`, `by`, `to`, `id`, `time_ms` and `expires_ms` in a command;
+    `v`, `type`, `group`, `version` and `expires_ms` in a server credential; `v`, `type` and
+    every field its table does not call optional in a release file.
   - Bytes are standard base64 with padding in its one form: decoding and encoding again
     gives the same string (no line breaks, no missing padding, no base64url, zero bits
     after the last byte).
 
   A receiver checks a body in this order: its size (`size/records`, 8 KiB, section 10;
-  `size/commands`, section 15) before anything else; then these rules; then each field
+  `size/commands`, section 15; `size/releases`, 256 KiB, section 16; `size/credentials`, 16
+  KiB, section 18) before anything else; then these rules; then each field
   against its row in the tables of its kind ("Record fields" in section 10, "The command"
   in section 15); then the group, the signature and the rules of evaluation. A body that
   fails a step is refused there, so a member never verifies a signature over a body it
@@ -78,12 +82,15 @@ these words depends on it.
   implement these rules. Every one of them gives the same verdict on the vectors in
   `testdata/interop/strict.json`, written by hand, and in
   `testdata/interop/strict-generated.json`, which Go's `TestStrictGenerated` writes from
-  these rules and the tables: a valid body of every kind and, for every field, the body
+  these rules and the tables, and in `testdata/interop/strict-files.json`, which
+  `TestStrictGeneratedFiles` writes the same way for server credentials and release files: a
+  valid body of every kind and, for every field, the body
   without it, with a value of each other JSON type, `null`, written twice, its name in upper
   case or escaped, its numbers or strings in each form these rules refuse (for the fields every
   kind of a section has, on one kind only), and the values at the ends of its row's range. Each vector names its rule (`form/...`, `size/...`, or
-  `records/<type>/<field>`, `commands/<type>/<field>` and `manifests/<field>` for a row of a
-  table) and whether a member takes the body; a vector with `pad` has `pad` bytes `a`
+  `records/<type>/<field>`, `commands/<type>/<field>`, `manifests/<field>`,
+  `credentials/<type>/<field>` and `releases/<type>/<field>` for a row of a table) and whether
+  a member takes the body, and in strict-files.json its `kind`; a vector with `pad` has `pad` bytes `a`
   inserted at the offset `pad_at` of its body. The tests fail when the file is not what the
   tables give, and when any implementation reads a vector otherwise.
 - **Time.** Times on the wire are Unix milliseconds (`_ms`), and durations integer
@@ -2604,6 +2611,10 @@ bytes (base64), signed as they are and never re-encoded; `sig` is ECDSA P-256 wi
 over them, DER (base64); `key` is SHA-256 of the signer's SubjectPublicKeyInfo (base64, 32
 bytes), which picks the key to verify with. A body is at most 256 KiB. Every body has `v`
 (`1`) and `type`, so one kind of file is never taken for another; unknown fields are ignored.
+A body follows the strict form of signed bodies (Conventions), checked before its fields, and
+has every field of its row: only `min_from`, `docker`, `binaries`, `use` and `source_ms` may
+be left out. `seq` is from 1 to 2^63-1. The lite member reads no `attest-status.json`; the
+vectors in `testdata/interop/strict-files.json` (section `releases`) test each row.
 
 | `type` | Signed by | Fields |
 |--------|-----------|--------|
@@ -2905,8 +2916,14 @@ A credential is `{"body": bytes, "sig": bytes, "key": bytes}`: the body, JSON, s
 these exact bytes; an ECDSA P-256 signature with SHA-256 over them, DER; and the signer's
 public key as a SubjectPublicKeyInfo, DER. Its ID is SHA-256 over `body`. Every body has
 `v` (1), `type`, `group` (16 lower-case hex characters), `version` (a positive integer) and
-`expires_ms`, and nothing that names a device or a time of signing. Bodies are at most 16
-KiB.
+`expires_ms` (positive), and nothing that names a device or a time of signing. Bodies are at
+most 16 KiB. A receiver checks a body's size, then the strict form of signed bodies
+(Conventions), then its fields, before it verifies the signature; a signer checks its own
+body the same way. A `period` and a `server` credential have `tag` and `key` and no list; a
+`hubs` credential no `tag`, `key` or `members`; a `members` credential no `tag`, `key`, `hubs`
+or `admins`; a field a type does not have is left out or empty. Bytes and hashes are base64
+in its one form (Conventions). The vectors in `testdata/interop/strict-files.json` (section
+`credentials`) test each row in all four implementations.
 
 | `type` | `group` | Other fields | Signed by | Seen by |
 |--------|---------|--------------|-----------|---------|

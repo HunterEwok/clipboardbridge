@@ -235,6 +235,12 @@ public enum Releases {
     static let channelRE = "^[a-z][a-z0-9-]{0,31}$"
 
     static func decode<T: Decodable>(_ body: Data, _ type: String, as: T.Type) throws -> T {
+        // The strict form of signed bodies first, so that every program reads a file alike (docs/protocol.md, section 16).
+        do {
+            try Strict.check(body, required: ["v", "type"])
+        } catch let e as Strict.Invalid {
+            throw Refused("the file is not valid: \(e.reason)")
+        }
         guard let h = try? JSONDecoder().decode(Head.self, from: body) else { throw Refused("the file is not valid") }
         guard h.type == type else { throw Refused("the file is a \"\(h.type ?? "")\", not a \"\(type)\"") }
         guard h.v == 1 else { throw Refused("unknown version") }
@@ -249,6 +255,10 @@ public enum Releases {
 
     static func decodeKeys(_ body: Data) throws -> Keys {
         let k = try decode(body, "keys", as: Keys.self)
+        // A key is the only plain bytes of the file: only the one encoding of them.
+        struct RawKey: Decodable { var key: String }
+        struct Raw: Decodable { var keys: [RawKey] }
+        guard let raw = try? JSONDecoder().decode(Raw.self, from: body), raw.keys.allSatisfy({ Strict.base64($0.key) != nil }) else { throw Refused("a key is not canonical base64") }
         guard k.seq > 0 else { throw Refused("keys.json has no sequence number") }
         try lifetime(k.time_ms, k.expires_ms)
         guard (1...8).contains(k.keys.count) else { throw Refused("keys.json must hold 1 to 8 keys") }
@@ -292,6 +302,18 @@ public enum Releases {
             throw Refused("the channel file names no valid release")
         }
         return c
+    }
+
+    static func decodeStatus(_ body: Data) throws -> Status {
+        let st = try decode(body, "attest-status", as: Status.self)
+        guard st.seq > 0 else { throw Refused("attest-status.json has no sequence number") }
+        try lifetime(st.time_ms, st.expires_ms, max: maxStatusLifetimeMS)
+        for (i, s) in st.android_revoked.enumerated() {
+            guard matches(s, "^(0|[1-9a-f][0-9a-f]{0,63})$"), i == 0 || serialLess(st.android_revoked[i - 1], s) else {
+                throw Refused("\"\(s)\" is not a serial number in order")
+            }
+        }
+        return st
     }
 
     static func within<T>(_ file: String, _ f: () throws -> T) throws -> T {
@@ -355,14 +377,7 @@ public enum Releases {
         let k = try verifyKeys(keys, roots: roots, nowMS: nowMS, seen: seen)
         let st = try within("attest-status.json") {
             try status.verify(k.spkis(useStatus))
-            let st = try decode(status.body, "attest-status", as: Status.self)
-            guard st.seq > 0 else { throw Refused("attest-status.json has no sequence number") }
-            try lifetime(st.time_ms, st.expires_ms, max: maxStatusLifetimeMS)
-            for (i, s) in st.android_revoked.enumerated() {
-                guard matches(s, "^(0|[1-9a-f][0-9a-f]{0,63})$"), i == 0 || serialLess(st.android_revoked[i - 1], s) else {
-                    throw Refused("\"\(s)\" is not a serial number in order")
-                }
-            }
+            let st = try decodeStatus(status.body)
             guard nowMS < st.expires_ms else { throw Refused("the file has expired") }
             guard !signedAhead(st.time_ms, nowMS: nowMS) else { throw Refused("the file was signed ahead of this device's clock") }
             try checkSeq(st.seq, floor: seqFloor(seen.status_seq ?? 0, at: seen.status_keys_seq, seenKeys: seen.keys_seq, keysSeq: k.seq))

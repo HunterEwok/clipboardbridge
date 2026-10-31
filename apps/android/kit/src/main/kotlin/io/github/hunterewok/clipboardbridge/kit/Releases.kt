@@ -135,7 +135,23 @@ object Releases {
 
     private fun hex(b: ByteArray): String = b.joinToString("") { "%02x".format(it) }
 
-    private fun decode(body: ByteArray, type: String): JsonObject {
+    /** Runs f, a reader of a body, with a field of the wrong JSON type refused as any other fault. */
+    private inline fun <T> reading(f: () -> T): T = try {
+        f()
+    } catch (e: WireTypeException) {
+        throw Refused("the file is not valid: ${e.message}")
+    } catch (e: IllegalArgumentException) {
+        throw Refused("the file is not valid: ${e.message}")
+    }
+
+    /** Reads body as a body of type [type] that has v, type and each field of [required]. */
+    private fun decode(body: ByteArray, type: String, vararg required: String): JsonObject {
+        // The strict form of signed bodies first, so that every program reads a file alike (docs/protocol.md, section 16).
+        try {
+            Strict.check(body, "v", "type", *required)
+        } catch (e: Strict.Invalid) {
+            throw Refused("the file is not valid: ${e.message}")
+        }
         val o = Wire.parse(body) ?: throw Refused("the file is not valid")
         val t = o.optString("type")
         if (t != type) throw Refused("the file is a \"$t\", not a \"$type\"")
@@ -152,12 +168,12 @@ object Releases {
     }
 
     /** The keys of keys.json by use; a key of a use this reader does not know signs nothing. */
-    private class Keys(val seq: Long, val timeMS: Long, val expiresMS: Long, val uses: List<Pair<String, ByteArray>>) {
+    internal class Keys(val seq: Long, val timeMS: Long, val expiresMS: Long, val uses: List<Pair<String, ByteArray>>) {
         fun spkis(use: String): List<ByteArray> = uses.filter { it.first == use }.map { it.second }
     }
 
-    private fun decodeKeys(body: ByteArray): Keys {
-        val o = decode(body, "keys")
+    internal fun decodeKeys(body: ByteArray): Keys = reading {
+        val o = decode(body, "keys", "seq", "time_ms", "expires_ms", "keys")
         val seq = o.optLong("seq") ?: 0
         if (seq <= 0) throw Refused("keys.json has no sequence number")
         val expires = lifetime(o)
@@ -173,13 +189,14 @@ object Releases {
         return Keys(seq, o.optLong("time_ms") ?: 0, expires, uses)
     }
 
-    private fun decodeRelease(body: ByteArray): Release {
-        val o = decode(body, "release")
+    internal fun decodeRelease(body: ByteArray): Release = reading {
+        val o = decode(body, "release", "version", "channel", "time_ms", "files")
         val version = o.optString("version") ?: ""
         val minFrom = o.optString("min_from") ?: ""
         if (parseVersion(version) == null || (minFrom.isNotEmpty() && parseVersion(minFrom) == null)) {
             throw Refused("release.json names no valid version")
         }
+        o.optLong("time_ms")
         val channel = o.optString("channel") ?: ""
         val entries = o.optArray("files")?.map { it.jsonObject } ?: emptyList()
         if (!CHANNEL.matches(channel) || entries.isEmpty() || entries.size > 256) throw Refused("release.json is not valid")
@@ -220,19 +237,12 @@ object Releases {
         val (cSeq, cRelease, cHash) = try {
             // A channel key signs channel files and nothing else.
             channel.verify(k.spkis(USE_RELEASE) + k.spkis(USE_CHANNEL))
-            val o = decode(channel.body, "channel")
-            val c = o.optString("channel") ?: ""
-            val seq = o.optLong("seq") ?: 0
-            if (!CHANNEL.matches(c) || seq <= 0) throw Refused("the channel file is not valid")
-            val expires = lifetime(o)
-            val rel = o.optString("release") ?: ""
-            val hash = o.optString("release_sha256") ?: ""
-            if (parseVersion(rel) == null || !SHA256.matches(hash)) throw Refused("the channel file names no valid release")
-            if (c != name) throw Refused("the file is for the channel \"$c\"")
-            if (nowMS >= expires) throw Refused("the file has expired")
-            if (signedAhead(o.optLong("time_ms") ?: 0, nowMS)) throw Refused("the file was signed ahead of this device's clock")
-            checkSeq(seq, floor(seen.channelSeq, seen.channelKeysSeq, seen.keysSeq, k.seq))
-            Triple(seq, rel, hash)
+            val c = decodeChannel(channel.body)
+            if (c.channel != name) throw Refused("the file is for the channel \"${c.channel}\"")
+            if (nowMS >= c.expiresMS) throw Refused("the file has expired")
+            if (signedAhead(c.timeMS, nowMS)) throw Refused("the file was signed ahead of this device's clock")
+            checkSeq(c.seq, floor(seen.channelSeq, seen.channelKeysSeq, seen.keysSeq, k.seq))
+            Triple(c.seq, c.release, c.releaseSHA256)
         } catch (e: Refused) {
             fail("$name.json", e)
         }
@@ -269,6 +279,35 @@ object Releases {
         fail("keys.json", e)
     }
 
+    /** A channel file's body, decoded and checked by itself. */
+    internal class ChannelBody(val channel: String, val seq: Long, val timeMS: Long, val expiresMS: Long, val release: String, val releaseSHA256: String)
+
+    internal fun decodeChannel(body: ByteArray): ChannelBody = reading {
+        val o = decode(body, "channel", "channel", "seq", "time_ms", "expires_ms", "release", "release_sha256")
+        val c = o.optString("channel") ?: ""
+        val seq = o.optLong("seq") ?: 0
+        if (!CHANNEL.matches(c) || seq <= 0) throw Refused("the channel file is not valid")
+        val expires = lifetime(o)
+        val rel = o.optString("release") ?: ""
+        val hash = o.optString("release_sha256") ?: ""
+        if (parseVersion(rel) == null || !SHA256.matches(hash)) throw Refused("the channel file names no valid release")
+        return ChannelBody(c, seq, o.optLong("time_ms") ?: 0, expires, rel, hash)
+    }
+
+    internal fun decodeStatus(body: ByteArray): Status = reading {
+        val o = decode(body, "attest-status", "seq", "time_ms", "expires_ms", "android_revoked")
+        val seq = o.optLong("seq") ?: 0
+        if (seq <= 0) throw Refused("attest-status.json has no sequence number")
+        val expires = lifetime(o, MAX_STATUS_LIFETIME_MS)
+        val list = o.optArray("android_revoked")?.map { e ->
+            (e as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw Refused("attest-status.json lists a number that is not a string")
+        } ?: throw Refused("attest-status.json has no list")
+        list.forEachIndexed { i, s ->
+            if (!SERIAL.matches(s) || (i > 0 && !serialLess(list[i - 1], s))) throw Refused("\"$s\" is not a serial number in order")
+        }
+        return Status(seq, o.optLong("time_ms") ?: 0, expires, o.optLong("source_ms") ?: 0, list)
+    }
+
     private fun serialLess(a: String, b: String): Boolean = if (a.length != b.length) a.length < b.length else a < b
 
     /**
@@ -280,20 +319,11 @@ object Releases {
         val k = verifyKeys(keys, roots, nowMS, seen)
         val st = try {
             status.verify(k.spkis(USE_STATUS))
-            val o = decode(status.body, "attest-status")
-            val seq = o.optLong("seq") ?: 0
-            if (seq <= 0) throw Refused("attest-status.json has no sequence number")
-            val expires = lifetime(o, MAX_STATUS_LIFETIME_MS)
-            val list = o.optArray("android_revoked")?.map { e ->
-                (e as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw Refused("attest-status.json lists a number that is not a string")
-            } ?: throw Refused("attest-status.json has no list")
-            list.forEachIndexed { i, s ->
-                if (!SERIAL.matches(s) || (i > 0 && !serialLess(list[i - 1], s))) throw Refused("\"$s\" is not a serial number in order")
+            decodeStatus(status.body).also {
+                if (nowMS >= it.expiresMS) throw Refused("the file has expired")
+                if (signedAhead(it.timeMS, nowMS)) throw Refused("the file was signed ahead of this device's clock")
+                checkSeq(it.seq, floor(seen.statusSeq, seen.statusKeysSeq, seen.keysSeq, k.seq))
             }
-            if (nowMS >= expires) throw Refused("the file has expired")
-            if (signedAhead(o.optLong("time_ms") ?: 0, nowMS)) throw Refused("the file was signed ahead of this device's clock")
-            checkSeq(seq, floor(seen.statusSeq, seen.statusKeysSeq, seen.keysSeq, k.seq))
-            Status(seq, o.optLong("time_ms") ?: 0, expires, o.optLong("source_ms") ?: 0, list)
         } catch (e: Refused) {
             fail("attest-status.json", e)
         }

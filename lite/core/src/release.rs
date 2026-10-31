@@ -183,6 +183,9 @@ impl File {
 }
 
 fn decode<'a, T: Deserialize<'a>>(body: &'a [u8], kind: &str) -> Result<T> {
+    // The strict form of signed bodies first, so that every program reads
+    // a file alike (docs/protocol.md, section 16).
+    crate::strict::check(body, &["v", "type"])?;
     let h: Head = serde_json::from_slice(body).map_err(|e| Error::with("the file is not valid", e))?;
     if h.kind != kind {
         return Err(Error::msg(format!("the file is a {:?}, not a {kind:?}", h.kind)));
@@ -252,7 +255,7 @@ pub fn compare(a: &str, b: &str) -> core::cmp::Ordering {
     parse_version(a).cmp(&parse_version(b))
 }
 
-fn decode_keys(body: &[u8]) -> Result<Keys> {
+pub(crate) fn decode_keys(body: &[u8]) -> Result<Keys> {
     let k: Keys = decode(body, "keys")?;
     if k.seq == 0 {
         return Err(Error::msg("keys.json has no sequence number"));
@@ -270,7 +273,7 @@ fn decode_keys(body: &[u8]) -> Result<Keys> {
     Ok(k)
 }
 
-fn decode_release(body: &[u8]) -> Result<Release> {
+pub(crate) fn decode_release(body: &[u8]) -> Result<Release> {
     let r: Release = decode(body, "release")?;
     if parse_version(&r.version).is_none() || (!r.min_from.is_empty() && parse_version(&r.min_from).is_none()) {
         return Err(Error::msg("release.json names no valid version"));
@@ -301,7 +304,7 @@ fn decode_release(body: &[u8]) -> Result<Release> {
     Ok(r)
 }
 
-fn decode_channel(body: &[u8]) -> Result<Channel> {
+pub(crate) fn decode_channel(body: &[u8]) -> Result<Channel> {
     let c: Channel = decode(body, "channel")?;
     if !is_channel(&c.channel) || c.seq == 0 {
         return Err(Error::msg("the channel file is not valid"));
