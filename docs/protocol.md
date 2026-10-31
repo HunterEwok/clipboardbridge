@@ -1009,7 +1009,9 @@ it is `%ProgramData%\clipboardbridge\run\control.sock`, in a directory whose pro
 list lets in the system, administrators, the service's account and the group.
 
 Next to it the service listens on the **admin socket** `admin.sock` (on Windows
-`run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
+`run\admin\admin.sock`, in a directory of its own, which the service makes before the control
+socket's and makes again at each start unless the system, the administrators or the service owns
+it), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
 `copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices`, `release`, `release-get`, `keys` (from root only) and `watch` (with
@@ -1179,9 +1181,11 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   `SIO_AF_UNIX_GETPEERPID`, with its user and session) and hand it a paste or an action only
   when that user may take it: root and the service's own user (on Windows the system and
   the service's account) take every target, and `console` only they; `desktop` and `act` go
-  to the user of an active session (logind's sessions on Linux and FreeBSD, the owner of
-  `/dev/console` on a Mac, an active Windows session), and `tmux` to a user with a session
-  (logind's, which counts one over SSH). A watcher whose user the system does not name gets
+  to the user of an active session (on Linux and FreeBSD an active graphical logind session
+  of the user's own, X11 or Wayland, so that a user signed in over SSH alone takes none; the
+  owner of `/dev/console` on a Mac; an active Windows session), and `tmux` to a user with a
+  session (logind's, active or online, which counts one over SSH; never the user's service
+  manager or a greeter). A watcher whose user the system does not name gets
   none. Where the system does not tell who is at the screen (Linux or FreeBSD without
   logind), a paste goes to any target, but a `secret` to none, and the member refuses it
   with a reason that says so. The lite member checks its `tmux`, `console` and `desktop`

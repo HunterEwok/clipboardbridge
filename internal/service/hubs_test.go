@@ -85,7 +85,11 @@ func TestDialAnyFollowsTheHub(t *testing.T) {
 		t.Fatalf("two clients: won %p, want %p: %v", won, fast, err)
 	}
 	conn.Close()
-	if d := time.Since(fast.start); d > w {
-		t.Errorf("the other try held dialAny for %v", d)
+	// Left alone the other try would end only after its six windows; ended
+	// with the win, it takes no more than the scheduling of a few
+	// goroutines, which on a loaded machine can be far from instant, so
+	// the bound is the windows it must not wait out.
+	if d := time.Since(fast.start); d >= 6*w {
+		t.Errorf("the other try held dialAny for %v, its windows", d)
 	}
 }

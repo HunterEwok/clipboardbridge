@@ -644,6 +644,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- On Windows the service makes the admin socket's directory before the control socket's, and
+  makes it again at each start unless the system, the administrators or the service owns it,
+  so no other user can own the directory of the admin socket.
+- On Linux a remote paste to the desktop, and a quick action, go only to a user with an
+  active graphical session (X11 or Wayland), no longer to one signed in over SSH alone or to a
+  user's service manager; tmux still takes a user with any session. The same on the lite
+  member.
 - After a long outage two members find each other again within seconds both ways: the
   one that lost the other earlier sent its quick browse queries while it was off the
   network and could wait minutes for the next one. A member now announces itself once when

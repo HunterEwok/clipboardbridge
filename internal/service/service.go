@@ -396,16 +396,18 @@ func Run(ctx context.Context, cfg Config) error {
 		s.content = nil
 	}
 
-	ln, err := listenControl(cfg.Socket, false)
-	if err != nil {
-		return err
-	}
-	defer ln.Close()
+	// The admin socket first: on Windows its directory is in the control
+	// socket's, whose access list lets the group make directories.
 	adminLn, err := listenControl(control.AdminSocketFor(cfg.Socket), true)
 	if err != nil {
 		return err
 	}
 	defer adminLn.Close()
+	ln, err := listenControl(cfg.Socket, false)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
 	go s.serveControl(ctx, ln, false)
 	go s.serveControl(ctx, adminLn, true)
 
