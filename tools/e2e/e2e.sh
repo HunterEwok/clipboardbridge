@@ -9,6 +9,9 @@
 #
 #   sh tools/e2e/e2e.sh path/to/cbb     # a static Linux binary
 #
+# With CBB_E2E_COVERDIR set to a directory, a cbb built with -cover writes its
+# coverage there (GOCOVERDIR in every container), for CI's coverage summary.
+#
 # The containers and the network are removed at the end.
 set -eu
 
@@ -17,6 +20,11 @@ image=${E2E_IMAGE:-debian:stable-slim}
 run=cbe2e-$$
 net=$run-net
 members="a b c"
+cover=""
+if [ -n "${CBB_E2E_COVERDIR:-}" ]; then
+	mkdir -p "$CBB_E2E_COVERDIR"
+	cover="-v $(cd "$CBB_E2E_COVERDIR" && pwd):/cover -e GOCOVERDIR=/cover"
+fi
 
 say() { printf '== %s\n' "$*"; }
 fail() {
@@ -55,7 +63,7 @@ say "starting three members"
 docker network create "$net" >/dev/null
 for m in $members; do
 	docker run -d --rm --name "$run-$m" --hostname "host-$m" --network "$net" \
-		-e CBB_SOCKET=/tmp/c.sock -v "$bin:/cb/cbb:ro" "$image" \
+		-e CBB_SOCKET=/tmp/c.sock -v "$bin:/cb/cbb:ro" $cover "$image" \
 		/cb/cbb service -state /tmp -socket /tmp/c.sock >/dev/null
 done
 for m in $members; do
@@ -131,7 +139,7 @@ eventually "clipboardbridge.local follows to $holder" resolves_to "$(ip_of "$hol
 
 say "a wrong code does not join"
 docker run -d --rm --name "$run-d" --network "$net" -e CBB_SOCKET=/tmp/c.sock \
-	-v "$bin:/cb/cbb:ro" "$image" /cb/cbb service -state /tmp -socket /tmp/c.sock >/dev/null
+	-v "$bin:/cb/cbb:ro" $cover "$image" /cb/cbb service -state /tmp -socket /tmp/c.sock >/dev/null
 members="$members d"
 eventually "d starts" cb d status
 admin=${members%% *}

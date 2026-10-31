@@ -81,6 +81,7 @@ These change nothing in a normal installation. How the tests use them is in
 | `CBB_BENCH_SEED` | the bench's random walk (G40) | The walk's seed, which the run prints, to repeat a walk step by step. |
 | `CBB_TPM_SIMULATOR` | the service, in tests | A TPM simulator's command port (`host:port`, the platform port the next one) used in place of the TPM. |
 | `CBB_TPM_REQUIRED` | Go tests of the TPM | Makes a missing `swtpm` a failure instead of a skip, as in CI. |
+| `CBB_E2E_COVERDIR` | `tools/e2e/e2e.sh` | A directory where a `cbb` built with `-cover` writes its coverage, as `GOCOVERDIR` in every container (CI's coverage, [testing](../testing.md#coverage)). |
 | `CBB_LITE` | Go tests with the lite member | The lite member's binary (`cargo build` in `lite/`). |
 | `CBB_ESP32_ON_LINUX` | `TestEmbassyJoiner` | The `esp32-on-linux` binary of `lite/embassy`, run over a TAP interface. |
 | `CBB_INTEROP_OUT` | the Swift and Kotlin kits' tests, Go's interop tests | A directory where the kits write fresh interop vectors and Go reads them; without it Go reads `testdata/interop`. |

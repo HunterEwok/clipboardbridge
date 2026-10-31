@@ -64,21 +64,21 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 
 | ID | Case | How | Needs |
 |---|---|---|---|
-| I1 | Fresh install with each installer: `install.sh` (Linux, macOS), `get.sh`, `get.sh --lite`, `install.ps1`, `get.ps1`, winget then `cbb install`, Homebrew then `install.sh --in-place`, Docker compose, the OpenWrt apk, FreeBSD's rc.d, the OPNsense plugin; `cbb version` names the build | real, fleet | phase 8 |
-| I2 | Installer options: `--express`, `--no-firewall`, `--port N` and back with `--port 8764`, `--console`, `--uinput`, `--home-cgnat on/off` and `-HomeCgnat`, `CBB_FIREWALL=express/no`, `$env:CBB_PORT`; the kept answers (`firewall.answer`, `clipboardbridge.env`, the registry) used by the next run; each firewall (ufw, firewalld, nftables, iptables, Windows Firewall, the macOS application firewall, fw4, pf, ipfw) gets exactly its rules [P6, S12] | real, fleet | phase 8 |
+| I1 | Fresh install with each installer: `install.sh` (Linux, macOS), `get.sh`, `get.sh --lite`, `install.ps1`, `get.ps1`, winget then `cbb install`, Homebrew then `install.sh --in-place`, Docker compose, the OpenWrt apk, FreeBSD's rc.d, the OPNsense plugin; `cbb version` names the build | real, fleet | |
+| I2 | Installer options: `--express`, `--no-firewall`, `--port N` and back with `--port 8764`, `--console`, `--uinput`, `--home-cgnat on/off` and `-HomeCgnat`, `CBB_FIREWALL=express/no`, `$env:CBB_PORT`; the kept answers (`firewall.answer`, `clipboardbridge.env`, the registry) used by the next run; each firewall (ufw, firewalld, nftables, iptables, Windows Firewall, the macOS application firewall, fw4, pf, ipfw) gets exactly its rules [P6, S12] | real, fleet | |
 | I3 | `get.sh` and `get.ps1` check the release: a good build installs; a tampered archive, a wrong signature, an expired manifest, an unknown key and a missing openssl are refused with a clear message; `CBB_VERSION` installs that release | feed | |
 | I4 | Uninstall and purge on each system leave nothing: service, agent, units, firewall rules, users and groups, the Apps entry on Windows, the state with `--purge`/`-Purge` and the keys kept without it [L10] | real, fleet | |
 | I5 | Install again over an install: the group, mode, settings, quick actions, remote paste switch and keys stay | real | |
 | I6 | Upgrade from the previous release one device at a time in a mixed group, copying between old and new after each step; state and keys survive; the agent restarts in every running session [L9] | real, fleet | |
 | I7 | Downgrade to the previous release over the new state: it starts or refuses clearly, and no key is lost [P14] | real, fleet | |
-| I8 | `cbb update -check` and `cbb update` on Linux, macOS and Windows from the feed: renamed into place (the running exe moved aside on Windows), the health check passes, the new version runs | feed, real | phase 10 |
-| I9 | Updates refused: a tampered file, a bad signature, an expired manifest, an older version (the highest seen is kept), `min_from` not met, a wrong platform; each named in the message | feed | phase 10 |
-| I10 | A new build that never becomes healthy is rolled back and listed as failed; the next check skips it | feed | phase 10 |
-| I11 | Each install method: Homebrew and winget refresh the service's copy; Docker, apk, pkg and FreeBSD print their own command and change nothing | real, fleet | phase 10 |
-| I12 | Automatic updates: the installers' question, the timer, `cbb update -auto on/off`; in a group one member fetches the signed manifest and archives and the others take them from it | feed, time | phase 10 |
-| I13 | The lite member updates itself on Linux; the Nano updates over the air from a member and rolls back after a bad image | feed, helper | phase 10, Nano |
-| I14 | Android updates its sideloaded APK: the signing certificate is checked first, the update needs no tap, a wrong certificate is refused | ui | phase 10, Google account |
-| I15 | The Mac app updates through Sparkle; the tray app and `cbb status` show that an update is ready | ui | phase 10, Apple account |
+| I8 | `cbb update -check` and `cbb update` on Linux, macOS and Windows from the feed: renamed into place (the running exe moved aside on Windows), the health check passes, the new version runs | feed, real | |
+| I9 | Updates refused: a tampered file, a bad signature, an expired manifest, an older version (the highest seen is kept), `min_from` not met, a wrong platform; each named in the message | feed | |
+| I10 | A new build that never becomes healthy is rolled back and listed as failed; the next check skips it | feed | |
+| I11 | Each install method: Homebrew and winget refresh the service's copy; Docker, apk, pkg and FreeBSD print their own command and change nothing | real, fleet | |
+| I12 | Automatic updates: the installers' question, the timer, `cbb update -auto on/off`; in a group one member fetches the signed manifest and archives and the others take them from it | feed, time | |
+| I13 | The lite member updates itself on Linux; the Nano updates over the air from a member and rolls back after a bad image | feed, helper | Nano |
+| I14 | Android updates its sideloaded APK: the signing certificate is checked first, the update needs no tap, a wrong certificate is refused | ui | Google account |
+| I15 | The Mac app updates through Sparkle; the tray app and `cbb status` show that an update is ready | ui | Apple account |
 | I16 | The service manager restarts a killed service on each system and in the container [F1] | real, fleet | |
 | I17 | Reboot each device: it rejoins with no action beyond booting; Windows syncs before anyone signs in [F2] | real, person | smart plug |
 | I18 | Sleep and wake (macOS, the Windows VM, the Linux desktop through `rtcwake`): in sync within 30 s, the clock column right [F3] | real, helper | |
@@ -86,8 +86,8 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | I20 | The systemd units' hardening holds (`systemd-analyze security` at or below the recorded score); the TPM reached through `/dev/tpmrm0` only | real, fleet | |
 | I21 | Logs: rotated at 1 MiB on Windows and macOS, journald on Linux, syslog on the router; the agent's own log | real | |
 | I22 | The release: every archive's `SHA256SUMS`, attestation and signed manifest agree; the Docker image's digest matches the manifest | feed | |
-| I23 | Our signed apk feed on OpenWrt: `apk add` from it, its key checked; the mips and mipsle builds boot and sync under QEMU (big-endian) | fleet | phase 8 |
-| I24 | Windows binaries carry a valid Authenticode signature; `cbb update` checks it; SmartScreen lets the installer run | real | signing, phase 10 |
+| I23 | Our signed apk feed on OpenWrt: `apk add` from it, its key checked; the mips and mipsle builds boot and sync under QEMU (big-endian) | fleet | |
+| I24 | Windows binaries carry a valid Authenticode signature; `cbb update` checks it; SmartScreen lets the installer run | real | signing |
 | I25 | The installers' errors: a failed step names its exit status; `CBB_ERROR_DETAILS=1` shows every command and the full Windows error record | real | |
 | I26 | `get.sh --lite` moves an old `cbb-lite` install to `cbb` and keeps its group | real | |
 
@@ -97,7 +97,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 
 | ID | Case | How | Needs |
 |---|---|---|---|
-| G1 | `cbb new` on Linux, Windows, macOS, the router, FreeBSD; the lite member and a container refuse it; a container with `CBB_KEYS_IN_FILE=yes` may [P35] | real, fleet | phase 8 |
+| G1 | `cbb new` on Linux, Windows, macOS, the router, FreeBSD; the lite member and a container refuse it; a container with `CBB_KEYS_IN_FILE=yes` may [P35] | real, fleet | |
 | G2 | A phone app makes the group: the root key in the Secure Enclave or the Keystore, made with an attestation challenge; the first-launch card | ui | iPhone, Android phone |
 | G3 | Each kind of device joins by code to each kind of admitter (root computer, admin computer, root phone, admin phone) [L1] | real, fleet, ui | |
 | G4 | Join paths: found by mDNS; by address; across subnets; through an SSH forward to 127.0.0.1; through the user's own VPN with private addresses; a 100.64/10 address refused unless `CBB_HOME_CGNAT=1` | fleet, real | |
@@ -141,9 +141,9 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 
 | ID | Case | How | Needs |
 |---|---|---|---|
-| G37 | A watch joins through its phone and gets the `watch` role and key (Secure Enclave on the Apple Watch, a TEE key on Wear OS); a watch without a passcode, or with wrist detection off, is not certified | ui | phase 7, Apple Watch, Wear OS watch |
-| G38 | A watch's limits: it freezes admin computers, removes ordinary devices, turns remote paste and away sync off, and nothing else; every member and kit refuses the rest (shared vectors) | fleet, ui | phase 7 |
-| G39 | Delivery from the watch: a reply through the phone, the fallback when the phone sleeps, the Android foreground service; a record sent twice counts once; the phone out of reach | ui | phase 7, Apple Watch, Wear OS watch |
+| G37 | A watch joins through its phone and gets the `watch` role and key (Secure Enclave on the Apple Watch, a TEE key on Wear OS); a watch without a passcode, or with wrist detection off, is not certified | ui | Apple Watch, Wear OS watch |
+| G38 | A watch's limits: it freezes admin computers, removes ordinary devices, turns remote paste and away sync off, and nothing else; every member and kit refuses the rest (shared vectors) | fleet, ui | |
+| G39 | Delivery from the watch: a reply through the phone, the fallback when the phone sleeps, the Android foreground service; a record sent twice counts once; the phone out of reach | ui | Apple Watch, Wear OS watch |
 
 ### 2.4 Every combination of joining and leaving
 
@@ -186,7 +186,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | D7 | Only private, unique-local and link-local addresses are published and accepted; a public source address on the member port is refused by the program and by the unit's limits | fleet | |
 | D8 | Only IPv6 between two members; link-local addresses tried last [P19] | fleet, real | |
 | D9 | Across subnets: `-peer`; the router's mDNS reflector on and off [P18] | real | |
-| D10 | The router's member port refuses its WAN side even with the firewall open by mistake | fleet, real | phase 8 |
+| D10 | The router's member port refuses its WAN side even with the firewall open by mistake | fleet, real | |
 | D11 | Dial-back: a member whose firewall drops the member port still syncs because the others dial it, and `cbb status` warns | real, fleet | |
 | D12 | Heartbeats: a ping after 5 s of silence; a silent connection closed at 15 s; a large frame gets time at 16 KiB/s | fleet | |
 | D13 | At most 32 handshakes or pairing attempts at once, a connection beyond them is closed; running out of file descriptors pauses accepting and recovers | fleet | |
@@ -273,7 +273,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | O11 | Phones: the share sheet up to 50 MB on the iPhone and 100 MiB on Android; the button saves files in Files or Downloads; an image already received is nothing new; phones serve their own copies | ui | |
 | O12 | Flatpak apps: copied files through the document portal, written files through FileTransfer | helper | |
 | O13 | Progress in `cbb status` and the apps' notification | real, ui | |
-| O14 | The router's media cache is off by default; on, a hub on the router serves media without running out of memory | fleet, real | phase 8 |
+| O14 | The router's media cache is off by default; on, a hub on the router serves media without running out of memory | fleet, real | |
 | O15 | Fetch limits: gets of at most 1 MiB, 4 MiB ahead, 64 gets per connection; chunks padded to 16 KiB; a peer that asks for more is refused | fleet | |
 
 ## 8. Remote paste (T)
@@ -400,8 +400,8 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | H6 | A container: locked down, restarted, recreated, an admin only by choice [P35] | real, fleet | |
 | H7 | Windows: before sign-in, fast user switching, lock, sign-out, RDP, ARM and x64, another port [P9, P16] | real, helper | |
 | H8 | macOS: Local Network refused and granted, the application firewall on and "block all", Universal Clipboard, the pasteboard privacy alert, Homebrew [P4, P7, P15, P23, P26] | real, helper, person | |
-| H9 | OpenWrt: procd, UCI, the NTP wait, `keep.d` across a sysupgrade, fw4 rules that live and die with the service, `GOMEMLIMIT` | fleet, real | phase 8 |
-| H10 | FreeBSD and OPNsense: rc.d, the pf anchor and ipfw, the desktop connector under Xvfb, the mdns-repeater conflict; pfSense's printed rules | fleet | phase 8 |
+| H9 | OpenWrt: procd, UCI, the NTP wait, `keep.d` across a sysupgrade, fw4 rules that live and die with the service, `GOMEMLIMIT` | fleet, real | |
+| H10 | FreeBSD and OPNsense: rc.d, the pf anchor and ipfw, the desktop connector under Xvfb, the mdns-repeater conflict; pfSense's printed rules | fleet | |
 | H11 | The lite member on the Nano ESP32: joins by the phone, syncs at home, settings in flash, reset; the QEMU self-test | helper, fleet | Nano |
 | H12 | The ZX Spectrum Next's dot command over the UART | person | ZX Next |
 | H13 | Android TV: the leanback launcher, the D-pad, joining by the QR code on the TV | ui | TV |
@@ -414,14 +414,14 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 |---|---|---|---|
 | A1 | The iPhone app: make a group, add devices (camera and the six digits), Devices, rename, remove, make admin, freeze and unfreeze, takeover, the away switch, send and fetch, settings [P27] | ui | |
 | A2 | The Android app: the same, plus the foreground service, sending through accessibility, one tap, the share sheet | ui | |
-| A3 | The watches: devices, events, the away switch, the emergency actions, the quick-action buttons, the phone out of reach [P29, P33] | ui, person | phase 7, Apple Watch, Wear OS watch |
+| A3 | The watches: devices, events, the away switch, the emergency actions, the quick-action buttons, the phone out of reach [P29, P33] | ui, person | Apple Watch, Wear OS watch |
 | A4 | The Mac app: window and menu bar, send and fetch, admin actions behind the password, a cancelled prompt changes nothing, a stopped service explained with details on and off, the remote paste target, Accessibility lost after an update shown [P31] | ui | |
 | A5 | The tray app on GNOME, KDE and Windows: the same through pkexec and UAC, in Russian too [P32] | ui | |
 | A6 | Notifications of the group's events: one per event, the switches respected, never the clipboard; prompt on the iPhone through the push sender [P28] | ui | |
 | A7 | The Dynamic Island: the timer, the shield, the result, never the text [P30] | ui, person | iPhone |
-| A8 | Collections: make, rename, move devices, the order of tiles, one level, a device in one collection; Arrange mode with drag, the menu, VoiceOver and TalkBack actions, the keyboard; search and filters; the watch shows the phone's arrangement; the paste picker grouped the same; kept per installation, never in a record | ui | phase 9b |
+| A8 | Collections: make, rename, move devices, the order of tiles, one level, a device in one collection; Arrange mode with drag, the menu, VoiceOver and TalkBack actions, the keyboard; search and filters; the watch shows the phone's arrangement; the paste picker grouped the same; kept per installation, never in a record | ui | |
 | A9 | Languages (English, Russian) and the language menu when the system's language has none; right-to-left layout; accessibility labels | ui | |
-| A10 | The F-Droid flavour without Wear OS: builds reproducibly, works without Play services [P33] | ui | phase 14 |
+| A10 | The F-Droid flavour without Wear OS: builds reproducibly, works without Play services [P33] | ui | |
 | A11 | The iPhone's background app refresh runs and syncs | person | iPhone |
 | A12 | "Sync clipboard" without opening the app: App Intents and App Shortcuts, Back Tap, the Action button, the home-screen widget on both phones, the Control Center control; one line says what it did | ui | |
 | A13 | The iPhone's share extension: text and links at once, images and files up to 50 MB, waits until a computer fetched them, at most a minute; a debug build without the app group says there is no group | ui | Apple account |

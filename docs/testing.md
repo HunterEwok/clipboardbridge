@@ -89,6 +89,33 @@ each runs, and a coverage report of the product's functions
 ([functions](testbench-functions.md)). Security cases block a release; a case that cannot
 run yet is skipped with its reason and stays on the list.
 
+## Coverage
+
+CI measures how much of the code the tests run, part by part, and its `coverage` job prints
+the table in the run's summary. `tools/coverage` adds the reports up and fails when a part
+falls more than one point below its floor in `tools/coverage/floor.json`, so coverage can
+rise but not fall. When the table says "raise the floor", raise it in the same pull request.
+
+| Part | What counts | Measured by |
+|---|---|---|
+| `go` | statements of `cmd`, `internal` and `mobile`, without `third_party` and the test fakes (`eitest`, `atvtest`, `bluetest`) | the `go coverage` job: every test across packages (`-coverpkg`, so a test of `internal/service` counts for `internal/group` too), the desktop clipboards under sway and Xvfb, the e2e's members built with `-cover`; and each system's own files from the `test` jobs on Linux, macOS and Windows |
+| `go-core` | the same, in `internal/group`, `pair`, `node`, `clip` and `hlc` | as `go` |
+| `rust-core` | lines of `lite/core/src`, without `third_party` | `cargo llvm-cov` in the `lite` job |
+| `rust-lite` | lines of `lite/src` (much of it is tested by Go's tests of the lite member, which are not counted) | as `rust-core` |
+| `swift-kit` | lines of the Swift kit's `Sources` | `swift test --enable-code-coverage` in the `phone kit (macos-latest)` job |
+| `kotlin-kit` | lines of the Kotlin kit | JaCoCo in the `Android app` job |
+
+The aims are 80% for `go` and 85% to 90% for the protocol's core in each implementation.
+A number is a hint, not the goal: a test that runs a line without checking what it did
+raises it and proves nothing.
+
+To see Go's numbers locally:
+
+```sh
+go test -coverpkg=./cmd/...,./internal/...,./mobile/... -coverprofile=cover.out ./cmd/... ./internal/... ./mobile/...
+go run ./tools/coverage -go cover.out -floor tools/coverage/floor.json
+```
+
 ## Not tested yet
 
 What has not run on real devices is listed in the [README](../README.md#status): the
