@@ -627,7 +627,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   default is in the ports table of `docs/reference/devices.md`. The pages for users and
   administrators may not tell the reader something is easy ("simply", "easily") or call
   the product `clipboardbridge` outside code, links and quotes, and every field of the
-  control socket's header must be in section 8 of `docs/protocol.md`.
+  control socket's header must be in section 8 of `docs/protocol.md`. Against a base, it
+  also reports a test that skips where it did not, and counts the Swift tests of the Xcode
+  projects' test targets too.
 - A fresh read of docs/protocol.md against the code fixed the length of CPace's channel
   identifier (88 bytes, not 83), and added what an implementation needs and could not find:
   the forwarder's and relay's framing (JSON lines, at most 1 MiB), the TLS parameters every

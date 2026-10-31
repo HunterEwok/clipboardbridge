@@ -23,10 +23,83 @@ var testFuncs = []struct {
 		regexp.MustCompile(`(?m)^func ((?:Test|Fuzz|Benchmark|Example)\w*)\(`), true},
 	{"Rust", func(n string) bool { return strings.HasSuffix(n, ".rs") },
 		regexp.MustCompile(`#\[test\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)`), false},
-	{"Swift", func(n string) bool { return strings.HasSuffix(n, ".swift") && strings.Contains(n, "/Tests/") },
+	{"Swift", swiftTest,
 		regexp.MustCompile(`(?m)^\s*(?:@Test(?:\([^)]*\))?\s+)?func\s+(test\w+|\w+)\s*\(\)\s*(?:async\s+)?(?:throws\s+)?\{`), false},
 	{"Kotlin", func(n string) bool { return strings.HasSuffix(n, ".kt") && strings.Contains(n, "/src/test/") },
 		regexp.MustCompile("@Test\\s+fun\\s+(`[^`]+`|\\w+)"), false},
+}
+
+// swiftTest tells whether a Swift file is a test's: under a folder named
+// Tests, as in a package, or one whose name ends in Tests, as an Xcode
+// project's test targets are.
+func swiftTest(name string) bool {
+	if !strings.HasSuffix(name, ".swift") {
+		return false
+	}
+	dirs := strings.Split(path.Dir(name), "/")
+	for _, d := range dirs {
+		if strings.HasSuffix(d, "Tests") {
+			return true
+		}
+	}
+	return false
+}
+
+// The ways each language skips a test or leaves it out: the calls in its
+// body, and the attributes or annotations before it.
+var skipCalls = map[string]*regexp.Regexp{
+	"Go":     regexp.MustCompile(`\.\s*Skip(?:f|Now)?\s*\(`),
+	"Rust":   regexp.MustCompile(`#\[\s*ignore\b`),
+	"Swift":  regexp.MustCompile(`\bXCTSkip(?:If|Unless)?\b|\.disabled\b`),
+	"Kotlin": regexp.MustCompile(`@Ignore\b|@Disabled\b|\bassume(?:True|False|That|NotNull)\s*\(|\bAssume\.`),
+}
+
+// testSkips counts, for each test function of the files (keyed as
+// testNames keys them), the skips in its attributes and its body: the
+// text from the attribute lines before it to the next test or the end of
+// the file.
+func testSkips(files map[string][]byte) map[string]int {
+	out := map[string]int{}
+	for name, data := range files {
+		for _, l := range testFuncs {
+			if !l.file(name) {
+				continue
+			}
+			ms := l.re.FindAllSubmatchIndex(data, -1)
+			for i, m := range ms {
+				fn := string(data[m[2]:m[3]])
+				if l.lang == "Swift" && !strings.HasPrefix(fn, "test") && !strings.Contains(string(data[m[0]:m[1]]), "@Test") {
+					continue
+				}
+				end := len(data)
+				if i+1 < len(ms) {
+					end = attrStart(data, ms[i+1][0])
+				}
+				start := attrStart(data, m[0])
+				key := l.lang + " " + fn
+				if l.byDir {
+					key = l.lang + " " + path.Dir(name) + " " + fn
+				}
+				out[key] += len(skipCalls[l.lang].FindAll(data[start:max(start, end)], -1))
+			}
+		}
+	}
+	return out
+}
+
+// attrStart returns where the attribute or annotation lines just before
+// the line of at begin: the lines that start with #[ or @.
+func attrStart(data []byte, at int) int {
+	start := strings.LastIndexByte(string(data[:at]), '\n') + 1
+	for start > 0 {
+		prev := strings.LastIndexByte(string(data[:start-1]), '\n') + 1
+		line := strings.TrimSpace(string(data[prev : start-1]))
+		if !strings.HasPrefix(line, "#[") && !strings.HasPrefix(line, "@") {
+			break
+		}
+		start = prev
+	}
+	return start
 }
 
 // testNames returns the test functions in the files, as "language
@@ -78,11 +151,14 @@ func checkTestsKept(base string, files map[string][]byte) ([]string, error) {
 		old[name] = []byte(data)
 	}
 	had, have := testNames(old), testNames(files)
+	skipped, skips := testSkips(old), testSkips(files)
 	var problems []string
 	for key, file := range had {
+		f := strings.Fields(key)
 		if _, ok := have[key]; !ok {
-			f := strings.Fields(key)
 			problems = append(problems, fmt.Sprintf("%s: the %s test %s is gone; keep it, or keep its name for the test that replaces it", file, f[0], f[len(f)-1]))
+		} else if skips[key] > skipped[key] {
+			problems = append(problems, fmt.Sprintf("%s: the %s test %s skips where it did not; a change keeps every test running", have[key], f[0], f[len(f)-1]))
 		}
 	}
 	sort.Strings(problems)
