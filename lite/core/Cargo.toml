@@ -42,6 +42,9 @@ x25519-dalek = { version = "3", default-features = false, features = ["static_se
 x509-cert = { version = "0.3", default-features = false, features = ["hazmat"] }
 
 [dev-dependencies]
+# Property tests (tests/props.rs): random inputs against the parsers and the
+# rules' promises, such as the order of records not changing the state.
+proptest = { version = "1", default-features = false, features = ["std"] }
 # The tests compare the exporter with rustls's own, which needs std.
 rustls = { version = "0.23.46", default-features = false, features = ["std"] }
 serde_json = "1"

@@ -25,7 +25,7 @@ const DIGEST: usize = 32;
 
 /// How many bytes a frame of a payload of len bytes takes in its slot.
 pub const fn frame_len(len: usize) -> usize {
-    HEADER + len + DIGEST
+    HEADER.saturating_add(len).saturating_add(DIGEST)
 }
 
 /// A frame for seq and payload, to write at the start of a slot.
@@ -44,10 +44,10 @@ pub fn frame(seq: u32, payload: &[u8]) -> Vec<u8> {
 /// no frame. It lets a reader fetch the header first and then only as much
 /// as the frame takes.
 pub fn frame_len_in(head: &[u8]) -> Option<usize> {
-    if head.len() < HEADER || &head[..4] != MAGIC {
+    if head.get(..4)? != MAGIC {
         return None;
     }
-    let len = u32::from_le_bytes(head[8..12].try_into().ok()?) as usize;
+    let len = u32::from_le_bytes(head.get(8..HEADER)?.try_into().ok()?) as usize;
     HEADER.checked_add(len)?.checked_add(DIGEST)
 }
 
@@ -55,12 +55,12 @@ pub fn frame_len_in(head: &[u8]) -> Option<usize> {
 /// None if it holds no intact frame.
 pub fn read(slot: &[u8]) -> Option<(u32, &[u8])> {
     let len = frame_len_in(slot)?;
-    let end = len - DIGEST;
-    if slot.len() < len || sha256(&slot[..end])[..] != slot[end..len] {
+    let end = len.checked_sub(DIGEST)?;
+    if sha256(slot.get(..end)?)[..] != *slot.get(end..len)? {
         return None;
     }
-    let seq = u32::from_le_bytes(slot[4..8].try_into().ok()?);
-    Some((seq, &slot[HEADER..end]))
+    let seq = u32::from_le_bytes(slot.get(4..8)?.try_into().ok()?);
+    Some((seq, slot.get(HEADER..end)?))
 }
 
 /// The newest intact copy among the two slots.
@@ -93,7 +93,7 @@ pub fn newest<'a>(a: &'a [u8], b: &'a [u8]) -> Option<Newest<'a>> {
 pub fn next(newest: Option<(usize, u32)>) -> (usize, u32) {
     match newest {
         None => (0, 0),
-        Some((slot, seq)) => (1 - slot, seq.wrapping_add(1)),
+        Some((slot, seq)) => (if slot == 0 { 1 } else { 0 }, seq.wrapping_add(1)),
     }
 }
 
@@ -136,9 +136,10 @@ impl Fields {
         let mut fields = BTreeMap::new();
         while let Some((&tag, rest)) = b.split_first() {
             let len = u32::from_le_bytes(rest.get(..4)?.try_into().ok()?) as usize;
-            let value = rest.get(4..4usize.checked_add(len)?)?;
+            let end = 4usize.checked_add(len)?;
+            let value = rest.get(4..end)?;
             fields.insert(tag, value.to_vec());
-            b = &rest[4 + len..];
+            b = rest.get(end..)?;
         }
         Some(Fields(fields))
     }

@@ -423,6 +423,7 @@ pub fn pair_client(cert: &[u8], key: &[u8], clock: &Clock) -> Result<(rustls::Cl
 
 /// A server name for the TLS client: the peer's host name, or a fixed one
 /// for an address given by hand (members do not look at it).
+#[allow(clippy::expect_used, reason = "a fixed, valid DNS name")]
 pub fn server_name(peer: Option<&DeviceId>) -> ServerName<'static> {
     let fallback = || ServerName::try_from("clipboardbridge.invalid").expect("a valid DNS name");
     match peer {

@@ -68,12 +68,14 @@ impl Exporter {
 }
 
 /// HKDF-Expand-Label with SHA-256 (RFC 8446, section 7.1).
+#[allow(clippy::expect_used, reason = "HMAC takes a key of any length, so this never fails")]
 fn expand_label(secret: &[u8], label: &[u8], context: &[u8], len: usize) -> Result<Vec<u8>> {
-    let full = 6 + label.len();
+    let full = label.len().saturating_add(6);
     if len > 255 * 32 || full > 255 || context.len() > 255 {
         return Err(Error::msg("the exporter cannot make that much"));
     }
-    let mut info = Vec::with_capacity(4 + full + context.len());
+    // All three are checked small above.
+    let mut info = Vec::with_capacity(full.saturating_add(context.len()).saturating_add(4));
     info.extend_from_slice(&(len as u16).to_be_bytes());
     info.push(full as u8);
     info.extend_from_slice(b"tls13 ");
@@ -81,7 +83,7 @@ fn expand_label(secret: &[u8], label: &[u8], context: &[u8], len: usize) -> Resu
     info.push(context.len() as u8);
     info.extend_from_slice(context);
     // HKDF-Expand (RFC 5869, section 2.3).
-    let mut out = Vec::with_capacity(len + 32);
+    let mut out = Vec::with_capacity(len.saturating_add(32));
     let mut prev: Vec<u8> = Vec::new();
     let mut i = 1u8;
     while out.len() < len {
