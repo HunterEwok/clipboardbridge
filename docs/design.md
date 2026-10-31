@@ -80,25 +80,7 @@ pictures of each arrangement are in [how it works](guide/how-it-works.md).
 
 The system context (C4 level 1): the group is the system; everything around it is outside it.
 
-```text
- the user, who copies, pastes, pairs, admits and removes devices
-      |
-      v
- +--------------------------------------------------+      +--------------------------+
- | a clipboardbridge group                          | ---> | the systems' clipboards, |
- | computers, phones, lite members, watches, TVs    |      | keyboards and screens    |
- | (members that trust each other by the group's    |      +--------------------------+
- | certificates, with no central server)            |
- +--------------------------------------------------+
-      | away from home, when the user        | signed releases
-      | chooses one                          | (cbb update)
-      v                                      v
- +--------------------------------+     +------------------------------+
- | a forwarder or a blind relay   |     | GitHub, or the dl.cbb.tools  |
- | (the project's or the user's   |     | mirror: signed releases      |
- | own; it sees ciphertext only)  |     +------------------------------+
- +--------------------------------+
-```
+![The system context: a group of devices, the user, the systems' clipboards, an optional forwarder or relay, and the release mirror](images/context.svg)
 
 ### Devices and roles
 
@@ -167,26 +149,7 @@ The parts of each implementation and what each does. The directory of each part 
 
 The containers (C4 level 2): the programs of a group and how they talk.
 
-```text
- computer (Linux, macOS, Windows, FreeBSD, routers)        phone (iPhone, iPad, Android)
- +-------------------------------------------+             +------------------------------+
- | cbb service (Go, the daemon)              |  member     | the app (SwiftUI / Compose)  |
- |  member protocol, sync, keys, the tunnel  |<----------->|  the kit: member protocol,   |
- |      ^ control socket (JSON lines)        |  TLS 1.3    |  pairing, records, tunnel    |
- |      |                                    |  TCP 8764   +------------------------------+
- | desktop connector / pasteboard agent /    |                   ^  WatchConnectivity,
- | clipboard agent, cbb CLI, tray app,       |                    |  Wearable Data Layer
- | Mac app, paste helpers                    |             +------------------------------+
- +-------------------------------------------+             | the watch app                |
-        ^                     ^                            +------------------------------+
-        | member protocol     | WireGuard (UDP 8764), maybe over VLESS (TCP 443)
-        v                     v
- +----------------------+   +---------------------------------------------+
- | lite member (Rust)   |   | the hub (a member) and, on the way, a       |
- | Linux, OpenWrt, ESP32|   | forwarder (`cbb forward`) or a relay (`cbb  |
- +----------------------+   | relay`): blind, they pass packets only      |
-                            +---------------------------------------------+
-```
+![The containers: the programs of a computer, a phone, a lite member and the hub, and how they talk](images/containers.svg)
 
 ### Linux components
 

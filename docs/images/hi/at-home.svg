@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only. Drawn by tools/diagrams/diagrams.py; edit it there. -->
-<svg xmlns="http://www.w3.org/2000/svg" lang="hi" width="720" height="250" viewBox="0 0 720 250" role="img" aria-label="घर पर हर डिवाइस सीधे हर दूसरे डिवाइस से बात करता है">
+<svg xmlns="http://www.w3.org/2000/svg" lang="hi" width="738" height="250" viewBox="0 0 738 250" role="img" aria-label="घर पर हर डिवाइस सीधे हर दूसरे डिवाइस से बात करता है">
 <title>घर पर हर डिवाइस सीधे हर दूसरे डिवाइस से बात करता है</title>
 <style>
   .bg { fill: none; }
@@ -41,18 +41,18 @@
     .lbl-bg { fill: #0d1117; stroke: #3d444d; }
   }
 </style>
-<rect class="zone" x="10" y="10" width="700" height="200" rx="14"/>
+<rect class="zone" x="10" y="10" width="718" height="200" rx="14"/>
 <text class="zone-t" x="26" y="34">घर का नेटवर्क</text>
-<g class="key"><rect class="card key" x="35.0" y="50.0" width="150" height="64" rx="10"/><g transform="translate(47.0,68)" class="ic"><rect x="8" y="2" width="12" height="24" rx="2.5"/><line x1="12.5" y1="22.5" x2="15.5" y2="22.5"/></g><text class="t" x="85.0" y="78">फ़ोन</text><text class="s" x="85.0" y="96">ऐप के साथ</text><rect class="badge" x="149.8" y="41.0" width="27.200000000000003" height="18" rx="9"/><text class="badge-t" x="163.4" y="54.0" text-anchor="middle">रूट</text></g>
-<path class="e-home" d="M110.0,114.0 L110,150"/>
-<g class=""><rect class="card " x="205.0" y="56.0" width="150" height="52" rx="10"/><g transform="translate(217.0,68)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="255.0" y="87">लैपटॉप</text></g>
-<path class="e-home" d="M280.0,108.0 L280,150"/>
-<g class=""><rect class="card " x="375.0" y="56.0" width="150" height="52" rx="10"/><g transform="translate(387.0,68)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="425.0" y="87">डेस्कटॉप</text></g>
-<path class="e-home" d="M450.0,108.0 L450,150"/>
-<g class=""><rect class="card " x="531.75" y="50.0" width="156.5" height="64" rx="10"/><g transform="translate(543.75,68)" class="ic"><rect x="4" y="7" width="20" height="14" rx="1.5"/><rect x="9" y="11" width="6" height="6"/><line x1="7" y1="4" x2="7" y2="7"/><line x1="11" y1="4" x2="11" y2="7"/><line x1="15" y1="4" x2="15" y2="7"/><line x1="19" y1="4" x2="19" y2="7"/></g><text class="t" x="581.75" y="78">Raspberry Pi</text><text class="s" x="581.75" y="96">लाइट सदस्य</text></g>
-<path class="e-home" d="M610.0,114.0 L610,150"/>
-<path class="e-home" d="M110,150 L610,150"/>
-<text class="note" x="360" y="236" text-anchor="middle">बीच में कोई सर्वर नहीं: कोई भी डिवाइस बंद हो सकता है, बाकी सिंक करते रहते हैं।</text>
-<rect class="lbl-bg" x="201.8" y="161.0" width="316.3" height="22" rx="11.0"/>
-<text class="lbl home" x="360" y="176.0" text-anchor="middle">सीधे एन्क्रिप्टेड कनेक्शन, mDNS से मिलते हैं</text>
+<g class="key"><rect class="card key" x="29.75" y="50.0" width="150" height="64" rx="10"/><g transform="translate(41.75,68)" class="ic"><rect x="8" y="2" width="12" height="24" rx="2.5"/><line x1="12.5" y1="22.5" x2="15.5" y2="22.5"/></g><text class="t" x="79.75" y="78">फ़ोन</text><text class="s" x="79.75" y="96">ऐप के साथ</text><rect class="badge" x="144.55" y="41.0" width="27.200000000000003" height="18" rx="9"/><text class="badge-t" x="158.15" y="54.0" text-anchor="middle">रूट</text></g>
+<path class="e-home" d="M104.75,114.0 L104.75,150"/>
+<g class=""><rect class="card " x="203.75" y="56.0" width="150" height="52" rx="10"/><g transform="translate(215.75,68)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="253.75" y="87">लैपटॉप</text></g>
+<path class="e-home" d="M278.75,108.0 L278.75,150"/>
+<g class=""><rect class="card " x="377.75" y="56.0" width="150" height="52" rx="10"/><g transform="translate(389.75,68)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="427.75" y="87">डेस्कटॉप</text></g>
+<path class="e-home" d="M452.75,108.0 L452.75,150"/>
+<g class=""><rect class="card " x="551.75" y="50.0" width="156.5" height="64" rx="10"/><g transform="translate(563.75,68)" class="ic"><rect x="4" y="7" width="20" height="14" rx="1.5"/><rect x="9" y="11" width="6" height="6"/><line x1="7" y1="4" x2="7" y2="7"/><line x1="11" y1="4" x2="11" y2="7"/><line x1="15" y1="4" x2="15" y2="7"/><line x1="19" y1="4" x2="19" y2="7"/></g><text class="t" x="601.75" y="78">Raspberry Pi</text><text class="s" x="601.75" y="96">लाइट सदस्य</text></g>
+<path class="e-home" d="M630.0,114.0 L630.0,150"/>
+<path class="e-home" d="M104.75,150 L630.0,150"/>
+<text class="note" x="369.0" y="236" text-anchor="middle">बीच में कोई सर्वर नहीं: कोई भी डिवाइस बंद हो सकता है, बाकी सिंक करते रहते हैं।</text>
+<rect class="lbl-bg" x="210.8" y="161.0" width="316.3" height="22" rx="11.0"/>
+<text class="lbl home" x="369.0" y="176.0" text-anchor="middle">सीधे एन्क्रिप्टेड कनेक्शन, mDNS से मिलते हैं</text>
 </svg>

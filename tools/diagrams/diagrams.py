@@ -104,6 +104,8 @@ def icon(kind, x, y):
         return f'<g {t} class="ic"><path d="M8 21h13a5 5 0 0 0 0 -10a7 7 0 0 0 -13.5 1.5A4.3 4.3 0 0 0 8 21z"/></g>'
     if kind == 'server':
         return f'<g {t} class="ic"><rect x="5" y="4" width="18" height="8" rx="1.5"/><rect x="5" y="16" width="18" height="8" rx="1.5"/><line x1="9" y1="8" x2="11" y2="8"/><line x1="9" y1="20" x2="11" y2="20"/></g>'
+    if kind == 'user':
+        return f'<g {t} class="ic"><circle cx="14" cy="9" r="5"/><path d="M4 25c0 -6 4 -9 10 -9s10 3 10 9"/></g>'
     raise ValueError(kind)
 
 class D:
@@ -113,11 +115,15 @@ class D:
     def zone(self, x, y, w, h, label):
         self.parts.append(f'<rect class="zone" x="{x}" y="{y}" width="{w}" height="{h}" rx="14"/>')
         self.parts.append(f'<text class="zone-t" x="{x+16}" y="{y+24}">{esc(label)}</text>')
+    @staticmethod
+    def cardw(title, sub=None, w=170):
+        """The width a card gets: a translation may be longer, so the card grows to hold it."""
+        if TEXTS is not None:
+            w = max(w, 62 + max(tw(tr(title)) * 1.25, tw(tr(sub)) if sub else 0))
+        return w
     def card(self, cx, cy, kind, title, sub=None, w=170, cls='', badge=None):
         h = 64 if sub else 52
-        if TEXTS is not None:
-            # A translation may be longer: the card grows to hold it.
-            w = max(w, 62 + max(tw(tr(title)) * 1.25, tw(tr(sub)) if sub else 0))
+        w = self.cardw(title, sub, w)
         x, y = cx - w/2, cy - h/2
         g = [f'<g class="{cls}">', f'<rect class="card {cls}" x="{x}" y="{y}" width="{w}" height="{h}" rx="10"/>']
         g.append(icon(kind, x + 12, cy - 14))
@@ -131,6 +137,17 @@ class D:
             bw = 8 + 6.4 * len(tr(badge))
             g.append(f'<rect class="badge" x="{x+w-bw-8}" y="{y-9}" width="{bw}" height="18" rx="9"/>')
             g.append(f'<text class="badge-t" x="{x+w-8-bw/2}" y="{y+4}" text-anchor="middle">{esc(badge)}</text>')
+        g.append('</g>')
+        self.parts.append(''.join(g))
+        return (x, y, w, h)
+    def box(self, cx, cy, title, lines=(), w=160, cls=''):
+        """A plain box with a centred title and lines of text, for the diagrams of the design document."""
+        h = 50 + 16 * (len(lines) - 1) if lines else 40
+        x, y = cx - w/2, cy - h/2
+        g = [f'<g class="{cls}">', f'<rect class="card {cls}" x="{x}" y="{y}" width="{w}" height="{h}" rx="10"/>']
+        g.append(f'<text class="t" x="{cx}" y="{y + (22 if lines else 25)}" text-anchor="middle">{esc(title)}</text>')
+        for i, l in enumerate(lines):
+            g.append(f'<text class="s" x="{cx}" y="{y + 42 + 16*i}" text-anchor="middle">{esc(l)}</text>')
         g.append('</g>')
         self.parts.append(''.join(g))
         return (x, y, w, h)
@@ -203,17 +220,24 @@ def draw():
     d.save('group')
 
     # 2. At home: no hub.
-    d = D(720, 250, "At home every device talks to every other one directly")
-    d.zone(10, 10, 700, 200, 'Home network')
-    bus = 150
-    xs = [110, 280, 450, 610]
     items = [('phone', 'Phone', 'with the app', 'key'), ('laptop', 'Laptop', None, ''), ('desktop', 'Desktop', None, ''), ('board', 'Raspberry Pi', 'lite member', '')]
-    for x, (k, t, s, cls) in zip(xs, items):
-        c = d.card(x, 82, k, t, s, w=150, cls=cls, badge='ROOT' if cls else None)
+    # The cards sit side by side; a translation may widen them, and the picture with them.
+    ws = [D.cardw(t, s_, 150) for _, t, s_, _ in items]
+    W = max(720, round(sum(ws) + 3 * 24 + 60))
+    d = D(W, 250, "At home every device talks to every other one directly")
+    d.zone(10, 10, W - 20, 200, 'Home network')
+    bus = 150
+    x = (W - sum(ws) - 3 * 24) / 2
+    xs = []
+    for w in ws:
+        xs.append(x + w / 2)
+        x += w + 24
+    for x, w, (k, t, s_, cls) in zip(xs, ws, items):
+        c = d.card(x, 82, k, t, s_, w=w, cls=cls, badge='ROOT' if cls else None)
         d.edge([bottom(c), (x, bus)], 'home', end=False)
     d.edge([(xs[0], bus), (xs[-1], bus)], 'home', end=False)
-    d.labels.append(((360, bus + 22), 'direct, encrypted connections, found by mDNS', 'home'))
-    d.note(360, 236, 'No server in the middle: any device can be off, and the others go on syncing.')
+    d.labels.append(((W / 2, bus + 22), 'direct, encrypted connections, found by mDNS', 'home'))
+    d.note(W / 2, 236, 'No server in the middle: any device can be off, and the others go on syncing.')
     d.save('at-home')
 
     # 3. Away: the hub.
@@ -276,6 +300,50 @@ def draw():
     d.note(360, 290, 'Then every device syncs with every other one, as in a group made on a phone.')
     d.save('without-app')
 
+def draw_design():
+    """The two diagrams of docs/design.md (English only: the document is)."""
+    # The system context (C4 level 1).
+    d = D(1000, 420, "The system context: a group of devices, the user, the systems' clipboards, an optional forwarder or relay, and the release mirror")
+    us = d.card(330, 50, 'user', 'The user', 'copies, pastes, pairs, admits, removes', w=310)
+    d.zone(10, 110, 640, 140, 'A Clipboard Bridge group: no central server')
+    d.card(120, 175, 'desktop', 'Computers', 'Linux, Mac, Windows', w=200, cls='key')
+    d.card(330, 175, 'phone', 'Phones', 'iPhone, iPad, Android', w=200)
+    d.card(540, 175, 'board', 'Lite, watches, TVs', 'small members', w=200)
+    d.note(330, 236, "Members trust each other by the group's certificates.")
+    cb = d.card(865, 175, 'board', "The systems' clipboards", 'keyboards and screens', w=250)
+    d.edge([(650, 175), left(cb)], 'home', label='copy, paste', at=(695, 150))
+    d.edge([bottom(us), (330, 110)], 'home', start=True)
+    fw = d.card(210, 355, 'cloud', 'Forwarder or blind relay', "the project's or yours; sees ciphertext only", w=350, cls='srv')
+    d.edge([(210, 250), top(fw)], 'tunnel', start=True, label="away from home,\nif you choose one", at=(210, 292))
+    gh = d.card(700, 355, 'server', 'GitHub or the dl.cbb.tools mirror', 'signed releases', w=340)
+    d.edge([top(gh), (700, 250)], 'home', label='cbb update', at=(700, 302))
+    d.save('context')
+
+    # The containers (C4 level 2).
+    d = D(900, 470, "The containers: the programs of a computer, a phone, a lite member and the hub, and how they talk")
+    d.zone(10, 10, 500, 290, 'Computer: Linux, macOS, Windows, FreeBSD, routers')
+    sv = d.card(260, 90, 'desktop', 'cbb service (Go)', 'member protocol, sync, keys, tunnel', w=340, cls='key')
+    bus = 160
+    bx = [96, 260, 424]
+    kids = [d.box(bx[0], 235, 'Clipboard connector', ['desktop connector,', 'pasteboard or', 'clipboard agent'], w=156),
+            d.box(bx[1], 235, 'Control clients', ['cbb CLI,', 'tray app,', 'Mac app'], w=156),
+            d.box(bx[2], 235, 'Paste helpers', ['cbb paste-helper:', 'tmux, console,', 'uinput'], w=156)]
+    d.edge([bottom(sv), (260, bus)], 'home', end=False)
+    d.edge([(bx[0], bus), (bx[2], bus)], 'home', end=False)
+    for x, k in zip(bx, kids):
+        d.edge([(x, bus), top(k)], 'home')
+    d.labels.append(((400, 136), 'control socket (JSON lines)', 'home'))
+    d.zone(580, 10, 310, 170, 'Phone: iPhone, iPad, Android')
+    app = d.box(735, 100, 'The app', ['SwiftUI or Compose', 'the kit: member protocol,', 'pairing, records, tunnel'], w=270)
+    d.edge([right(sv), (595, 90)], 'pair', start=True)
+    d.labels.append(((512, 58), 'member protocol,\nTLS 1.3, TCP 8764', 'pair'))
+    wa = d.box(735, 280, 'The watch app', ['Apple Watch, Wear OS'], w=230)
+    d.edge([top(wa), bottom(app)], 'home', start=True, label='WatchConnectivity,\nWearable Data Layer', at=(735, 205))
+    lm = d.card(150, 410, 'board', 'Lite member (Rust)', 'Linux, OpenWrt, ESP32', w=250)
+    d.edge([(150, 300), top(lm)], 'pair', start=True, label='member protocol', at=(150, 336))
+    hb = d.box(640, 412, 'The hub (a member) and, on the way,', ['a forwarder (cbb forward) or a relay', '(cbb relay): blind, they pass', 'packets only'], w=300, cls='srv')
+    d.edge([(400, 300), (400, 340), (640, 340), top(hb)], 'tunnel', start=True, label='WireGuard (UDP 8764),\nmaybe over VLESS (TCP 443)', at=(520, 340))
+    d.save('containers')
 
 def main():
     global TEXTS, LANG
@@ -284,6 +352,8 @@ def main():
         LANG, TEXTS = lang, texts_
         MISSING.clear()
         draw()
+        if lang == 'en':
+            draw_design()
         if MISSING:
             sys.exit(f'l10n/{lang}.json lacks: ' + '; '.join(sorted(MISSING)))
 
