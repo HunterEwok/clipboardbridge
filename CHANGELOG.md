@@ -36,6 +36,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   window loses one guess, and the joiner then joins directly (G8).
 - The bench's time suite runs the hub's key renewed each credential period, with a client
   away from home taking the next key ahead and one off across the switch (W12).
+- The bench's time suite checks certificates near the end of the group CA: a new member's
+  certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
   with `-cover` write which code the cases ran (docs/testbench.md, "Code coverage").
 - `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
