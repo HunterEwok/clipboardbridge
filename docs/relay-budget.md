@@ -35,7 +35,8 @@ is done (setups, record checks) is paid for by the second, with a burst, by `bud
 1. **Refuse the new.** When a cap is full, the new registration, entry or record is refused.
    Nothing a source or a group holds is taken from it to make room for another. The one
    exception is memory nobody holds: the records the forwarder remembers of groups that are
-   not registered now, which are forgotten oldest first once 32 MiB are held.
+   not registered now, which are forgotten once 32 MiB are held, from the wide network that
+   holds the most of them.
 2. **A refusal leaves the server as it was.** A refused registration, for any reason, keeps
    nothing of the refused group: no period, version, record or count; the devices and groups
    registered before stay as they were.
@@ -85,7 +86,7 @@ calls, members) and serves no stranger's group at all.
 | A group's clients | an entry per address, handshake and session | 10 s a handshake, 200 s a session | the group | 16 addresses, 64 handshakes waiting | | dropped |
 | A group's packets | forwarding | | the group | 1000 packets and 2 MiB a second | | dropped |
 | Credential version (a period's entry) | about 400 bytes in memory, 200 on disk | until the last credential it saw expires, 35 days at most | the network and wide network it came from | 256, 1024 | 100,000 | refused |
-| Remembered records (hubs from before the credentials) | their bytes | while the group is registered; after, until 32 MiB are held | the group; the network and wide network that brought them | 256 KiB a group; 1 MiB a network, 4 MiB a wide network | 32 MiB of groups not registered now | refused; the oldest unregistered group is forgotten |
+| Remembered records (hubs from before the credentials) | their bytes | while the group is registered; after, until 32 MiB of the groups that are away are held | the group; the network and wide network that brought them; while the group is away, the wide network that brought most of them | 256 KiB a group; 1 MiB a network, 4 MiB a wide network | 32 MiB and 100,000 groups that are away; the groups registered now are not counted | refused; of the groups that are away, the wide network that holds the most forgets its oldest |
 | VLESS user ID | a user of the VLESS server | with its registration | the registration | one per group | as registrations | refused |
 | Handshake to a group not known for its address | one keyed BLAKE2s per registered group | | the source address; its network; all | 10 handshakes a second; 1/16 of all; 500,000 checks a second | | dropped |
 | Handshake over VLESS | one check, against the group of its user ID | | the VLESS user ID | 10 handshakes a second | | dropped |
@@ -110,6 +111,12 @@ What the forwarder guarantees:
   every 5 s get through once the flood pauses. This is the accepted bound.
 - The memory that strangers leave is bounded by the table's numbers: 100,000 versions of
   about 400 bytes (`TestVersionsMemoryBounded`), 32 MiB of remembered records.
+- **The records of a group that is away stay** while strangers register groups with records,
+  however many: the groups registered now are not counted against the 32 MiB. Once strangers'
+  groups are away too, the forwarder forgets from the wide network that holds the most of
+  them, so a genuine group's few kilobytes go only once every other wide network holds no
+  more than that: for 10 KiB of records, over 3000 wide networks (32 MiB / 10 KiB), unless
+  the strangers are in the group's own wide network (`TestMemoryKeepsGroupsThatAreAway`).
 
 ## Tests
 
@@ -123,6 +130,7 @@ The guarantees above are tested, in Go:
 - what strangers leave behind is bounded and measured: `TestOpenRelayForgetsStrangers`,
   `TestVersionsMemoryBounded`;
 - the payers of each kind: `TestVersionsWideNetworkLeavesRoom`, `TestMemoryChargesTheSource`,
+  `TestMemoryKeepsGroupsThatAreAway`,
   `TestRecordBytesChargedToTheSource`, `TestRequestsBoundByWideNetwork`,
   `TestVLESSUsersLeaveTheScanBudget`, `TestKnownClientKeepsItsGroup`.
 

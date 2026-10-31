@@ -2150,9 +2150,10 @@ close the connection beyond that; a sender MUST stay below it.
      registers later, while the group's own hub is away, cannot leave its revocation out,
      until the forwarder restarts; it writes none of them to disk. It refuses a registration
      whose merged authority records come to more than 256 KiB, so it never keeps part of a
-     group's records. It keeps at most 32 MiB of records for all groups, and past that or
-     100,000 groups it forgets the one that registered least recently; the records of a
-     group that is registered now are never forgotten. The group CA for these records is the
+     group's records. The records of a group that is registered now are never forgotten.
+     Of the groups that are away it keeps at most 32 MiB of records and 100,000 groups; past
+     that it forgets from the wide network that holds the most of them (docs/relay-budget.md),
+     its group kept least recently first. The group CA for these records is the
      root the hub's member certificate verified to in step 2, whose tag names the group; a
      self-signed certificate the hub presents besides counts for nothing.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");
@@ -2616,7 +2617,11 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 (`1`) and `type`, so one kind of file is never taken for another; unknown fields are ignored.
 A body follows the strict form of signed bodies (Conventions), checked before its fields, and
 has every field of its row: only `min_from`, `docker`, `binaries`, `use` and `source_ms` may
-be left out. `seq` is from 1 to 2^63-1. The lite member reads no `attest-status.json`; the
+be left out, and `use` is never empty. Every key is a P-256 SubjectPublicKeyInfo with an
+uncompressed point, and every name, version, channel, serial number and hash matches its rule
+whole (a line break after it is refused). `get.sh` and `get.ps1` refuse a body they cannot
+read as the programs do: a member name that is not 1 to 64 of `a`-`z`, `0`-`9` and `_`, a
+`null`, a backslash, or a field they read written twice. `seq` is from 1 to 2^63-1. The lite member reads no `attest-status.json`; the
 vectors in `testdata/interop/strict-files.json` (section `releases`) test each row.
 
 | `type` | Signed by | Fields |
@@ -2923,7 +2928,8 @@ public key as a SubjectPublicKeyInfo, DER. Its ID is SHA-256 over `body`. Every 
 most 16 KiB. A receiver checks a body's size, then the strict form of signed bodies
 (Conventions), then its fields, before it verifies the signature; a signer checks its own
 body the same way. A `period` and a `server` credential have `tag` and `key` and no list; a
-`hubs` credential no `tag`, `key` or `members`; a `members` credential no `tag`, `key`, `hubs`
+`hubs` credential no `tag`, `key` or `members`; a `key` is a P-256 SubjectPublicKeyInfo with
+an uncompressed point; a `members` credential no `tag`, `key`, `hubs`
 or `admins`; a field a type does not have is left out or empty. Bytes and hashes are base64
 in its one form (Conventions). The vectors in `testdata/interop/strict-files.json` (section
 `credentials`) test each row in all four implementations.

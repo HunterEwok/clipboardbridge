@@ -475,6 +475,80 @@ func TestMemoryChargesTheSource(t *testing.T) {
 	}
 }
 
+// sharedRecords returns n records of about size bytes each that share one
+// body, each its own envelope: they cost the memory as much as n bodies
+// would, without the test holding them.
+func sharedRecords(n, size int, body []byte) []group.Record {
+	rs := make([]group.Record, n)
+	for i := range rs {
+		sig := make([]byte, 16)
+		rand.Read(sig)
+		rs[i] = group.Record{Body: body[:size], Sig: sig}
+	}
+	return rs
+}
+
+// The records of a genuine group that is away are not pushed out by the
+// groups of other networks: not while those are registered, since only
+// the groups that are away share the bound, nor once they leave, since
+// past it the wide network that holds the most gives up its groups first.
+// Strangers from many wide networks, each bringing all it may, register
+// groups with records, in random order with a fixed seed, and then leave.
+func TestMemoryKeepsGroupsThatAreAway(t *testing.T) {
+	registered := map[string]bool{}
+	m := newMemory(func(tag string) bool { return registered[tag] })
+	genuine := netip.MustParseAddr("198.51.100.7")
+	m.keep("genuine", genuine, fakeRecords(5, 1<<10))
+	body := make([]byte, 8<<10)
+	rng := mrand.New(mrand.NewPCG(4, 2026))
+	var strangers []string
+	for w := 0; w < 3*rememberedBytes/wideRecordBytes; w++ {
+		for i := 0; ; i++ {
+			from := netip.AddrFrom4([4]byte{byte(10 + w), 7, byte(rng.IntN(256)), 1})
+			tag := fmt.Sprintf("stranger %d %d", w, i)
+			recs := sharedRecords(1+rng.IntN(30), 1+rng.IntN(len(body)), body)
+			if m.room(tag, from, recs) != nil {
+				break
+			}
+			registered[tag] = true
+			m.keep(tag, from, recs)
+			strangers = append(strangers, tag)
+		}
+	}
+	if n := len(m.records("genuine")); n != 5 {
+		t.Fatalf("while strangers are registered a group that is away keeps %d records, want 5", n)
+	}
+	rng.Shuffle(len(strangers), func(i, j int) { strangers[i], strangers[j] = strangers[j], strangers[i] })
+	for _, tag := range strangers {
+		delete(registered, tag)
+		m.left(tag)
+		m.mu.Lock()
+		over := m.awayBytes > rememberedBytes
+		m.mu.Unlock()
+		if over {
+			t.Fatalf("the groups that are away take %d bytes, limit %d", m.awayBytes, rememberedBytes)
+		}
+	}
+	if n := len(m.records("genuine")); n != 5 {
+		t.Errorf("after strangers left a group that is away keeps %d records, want 5", n)
+	}
+	// A group that registers again is no longer away, and the bytes of the
+	// groups that are away are what they hold.
+	registered["genuine"] = true
+	m.keep("genuine", genuine, nil)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sum := 0
+	for _, g := range m.groups {
+		if g.holder != nil {
+			sum += g.bytes
+		}
+	}
+	if m.groups["genuine"].holder != nil || sum != m.awayBytes {
+		t.Errorf("the groups that are away hold %d bytes, counted %d; genuine away: %v", sum, m.awayBytes, m.groups["genuine"].holder != nil)
+	}
+}
+
 // What the forwarder holds after many strangers registered with
 // credentials and left is bounded by the table's numbers: the entries of
 // their periods, until they expire, within rememberedGroups; and the count

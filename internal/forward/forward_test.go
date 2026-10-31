@@ -793,6 +793,13 @@ func TestThroughVLESS(t *testing.T) {
 			var rk [32]byte
 			rand.Read(rk[:])
 			f, pin := startForwarderWith(t, Config{VLESS: &VLESSConfig{Listen: "127.0.0.1:0", Site: vlesstest.Site, Dest: vlesstest.Decoy(t), Key: rk}})
+			// A client that comes before the forwarder has learned the
+			// site waits for it, and its handshakes with it.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			if err := f.Ready(ctx); err != nil {
+				t.Fatal(err)
+			}
 			var obf *tunnel.Obfuscation
 			if obfuscated {
 				obf = newObfuscation(t)

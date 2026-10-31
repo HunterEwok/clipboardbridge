@@ -4,6 +4,7 @@
 package forward
 
 import (
+	"container/heap"
 	"container/list"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,15 +28,16 @@ import (
 const (
 	// rememberedGroups bounds the groups whose records, or credential
 	// versions, the forwarder keeps after their registration ends; past it
-	// the group kept least recently is forgotten first.
+	// the memory forgets as rememberedBytes says, versions the group kept
+	// least recently.
 	rememberedGroups = 100_000
 	// rememberedGroupBytes bounds the records kept for one group: a
 	// registration whose authority records come to more is refused, so
 	// that none of them is left out.
 	rememberedGroupBytes = 256 << 10
 	// rememberedBytes bounds the records kept for all groups that are not
-	// registered now; past it the group kept least recently is forgotten
-	// first.
+	// registered now; past it the wide network that holds the most of them
+	// gives up its group kept least recently.
 	rememberedBytes = 32 << 20
 	// networkRecordBytes and wideRecordBytes bound the records that the
 	// registrations from one network (an IPv4 /24 or an IPv6 /64) and from
@@ -55,17 +57,27 @@ const (
 // records from before. Nothing of them is written to disk: a group that
 // registers with a credential needs none of them (versions).
 //
-// The records of a group that is registered now are never forgotten; the
-// others are bounded in count and in bytes, per group and in all. The bytes
-// are charged to the network that brought them, by its first address,
-// which is all the memory keeps of where they came from.
+// The records of a group that is registered now are never forgotten, and
+// they are no part of what the memory keeps of the others: those, the
+// groups that are away, are bounded in count and in bytes, per group and in
+// all. Every group's bytes are charged to the network that brought them, by
+// its first address, which is all the memory keeps of where they came
+// from; a group that is away is held for the wide network that brought
+// most of its records. Past the bounds the memory forgets from the wide
+// network that holds the most, its group kept least recently first, so a
+// genuine group is forgotten only once every other wide network holds no
+// more than its own (docs/relay-budget.md).
 type memory struct {
 	mu     sync.Mutex
 	live   func(tag string) bool // whether the group is registered now; nil: none is
 	groups map[string]*kept
-	order  *list.List // of *kept, the group kept least recently first
-	bytes  int        // the size of every group's records
+	bytes  int // the size of every group's records
 	payers *budget.Count
+	// The groups that are away, by the wide network that holds them.
+	away      map[netip.Prefix]*holder
+	heaviest  holders // the holders, the one that holds the most first
+	awayBytes int
+	awayCount int
 }
 
 // kept is one group's records.
@@ -75,11 +87,50 @@ type kept struct {
 	ids   map[[sha256.Size]byte]struct{} // by envelopeKey
 	bytes int
 	paid  map[netip.Addr]int // by the network that brought them
-	elem  *list.Element
+	from  netip.Addr         // the network of the registration that kept it first
+	// While the group is away: the wide network that holds it, and its
+	// place in that one's groups.
+	holder *holder
+	elem   *list.Element
+}
+
+// holder is a wide network and the groups that are away that it holds.
+type holder struct {
+	wide   netip.Prefix
+	groups *list.List // of *kept, the group kept least recently first
+	bytes  int
+	index  int // in memory.heaviest
+}
+
+// groupWeight is what a group that is away costs besides its records: the
+// count of groups is bounded too, and a holder of many small groups weighs
+// as much as their memory.
+const groupWeight = 512
+
+func (h *holder) weight() int { return h.bytes + groupWeight*h.groups.Len() }
+
+// holders is a heap of holders, the heaviest first.
+type holders []*holder
+
+func (h holders) Len() int           { return len(h) }
+func (h holders) Less(i, j int) bool { return h[i].weight() > h[j].weight() }
+func (h holders) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+	h[i].index, h[j].index = i, j
+}
+func (h *holders) Push(x any) {
+	x.(*holder).index = len(*h)
+	*h = append(*h, x.(*holder))
+}
+func (h *holders) Pop() any {
+	old := *h
+	x := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return x
 }
 
 func newMemory(live func(tag string) bool) *memory {
-	return &memory{live: live, groups: map[string]*kept{}, order: list.New(),
+	return &memory{live: live, groups: map[string]*kept{}, away: map[netip.Prefix]*holder{},
 		payers: budget.NewCount(budget.Caps{Network: networkRecordBytes, Wide: wideRecordBytes})}
 }
 
@@ -169,12 +220,10 @@ func (m *memory) keep(tag string, from netip.Addr, records []group.Record) {
 	defer m.mu.Unlock()
 	g := m.groups[tag]
 	if g == nil {
-		g = &kept{tag: tag, ids: map[[sha256.Size]byte]struct{}{}, paid: map[netip.Addr]int{}}
-		g.elem = m.order.PushBack(g)
+		g = &kept{tag: tag, ids: map[[sha256.Size]byte]struct{}{}, paid: map[netip.Addr]int{}, from: payer}
 		m.groups[tag] = g
-	} else {
-		m.order.MoveToBack(g.elem)
 	}
+	m.returnedLocked(g)
 	for i, r := range records {
 		// Another registration of the group may have kept records meanwhile.
 		if _, ok := g.ids[ks[i]]; ok {
@@ -191,19 +240,75 @@ func (m *memory) keep(tag string, from netip.Addr, records []group.Record) {
 		m.payers.Add(payer, n)
 		m.bytes += n
 	}
-	// Forget the groups kept least recently, but never one that is
-	// registered now.
-	for e := m.order.Front(); e != nil && (len(m.groups) > rememberedGroups || m.bytes > rememberedBytes); {
-		next := e.Next()
-		if o := e.Value.(*kept); o != g && (m.live == nil || !m.live(o.tag)) {
-			m.order.Remove(e)
-			delete(m.groups, o.tag)
-			m.bytes -= o.bytes
-			for a, n := range o.paid {
-				m.payers.Remove(a, n)
-			}
+	if m.live == nil || !m.live(tag) {
+		// Its registration ended meanwhile, or the tests keep groups that
+		// none is registered for.
+		m.leftLocked(g)
+	}
+}
+
+// left tells the memory that a registration of the group ended: unless
+// another one holds the group now, the group is away from now on.
+func (m *memory) left(tag string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if g := m.groups[tag]; g != nil && g.holder == nil && (m.live == nil || !m.live(tag)) {
+		m.leftLocked(g)
+	}
+}
+
+// leftLocked counts the group among those that are away, as the one kept
+// last, after forgetting what the bounds leave no room for beside it.
+func (m *memory) leftLocked(g *kept) {
+	for (m.awayBytes+g.bytes > rememberedBytes || m.awayCount+1 > rememberedGroups) && len(m.heaviest) > 0 {
+		o := m.heaviest[0].groups.Front().Value.(*kept)
+		m.returnedLocked(o)
+		if m.live != nil && m.live(o.tag) {
+			// It registered again without records to keep.
+			continue
 		}
-		e = next
+		delete(m.groups, o.tag)
+		m.bytes -= o.bytes
+		for a, n := range o.paid {
+			m.payers.Remove(a, n)
+		}
+	}
+	// The wide network that brought most of its records holds it.
+	wide, most := budget.Of(g.from, budget.Wide), 0
+	for a, n := range g.paid {
+		if w := budget.Of(a, budget.Wide); n > most || n == most && w.Addr().Less(wide.Addr()) {
+			wide, most = w, n
+		}
+	}
+	h := m.away[wide]
+	if h == nil {
+		h = &holder{wide: wide, groups: list.New()}
+		m.away[wide] = h
+		heap.Push(&m.heaviest, h)
+	}
+	g.holder, g.elem = h, h.groups.PushBack(g)
+	h.bytes += g.bytes
+	m.awayBytes += g.bytes
+	m.awayCount++
+	heap.Fix(&m.heaviest, h.index)
+}
+
+// returnedLocked takes the group out of those that are away, if it is.
+func (m *memory) returnedLocked(g *kept) {
+	h := g.holder
+	if h == nil {
+		return
+	}
+	h.groups.Remove(g.elem)
+	g.holder, g.elem = nil, nil
+	h.bytes -= g.bytes
+	m.awayBytes -= g.bytes
+	m.awayCount--
+	if h.groups.Len() == 0 {
+		heap.Remove(&m.heaviest, h.index)
+		delete(m.away, h.wide)
+	} else {
+		heap.Fix(&m.heaviest, h.index)
 	}
 }
 

@@ -662,6 +662,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
   progressive JPEG's coefficients for every block, the black plane of a four-component one
   and the image an unusual layout or CMYK is converted to, from the frame header before any
   pixel is read, so the 384 MiB bound holds for every JPEG.
+- The forwarder counts only the groups that are away against the 32 MiB it keeps of their
+  authority records, and past it forgets from the wide network that holds the most of them
+  (docs/relay-budget.md), so the records of a group that is away outlast the groups of other
+  networks.
+- Release files are read alike by every program that checks them. Go read a file entry
+  without `size` as 0; Go, the lite member and `get.sh` took a key whose `use` is empty as a
+  release key; the lite member took a key with a compressed point; the Swift kit took a
+  channel, a name or a hash with a line break after it. All of these are refused now, and a
+  server credential's key with a compressed point too. `get.sh` and `get.ps1` refuse a body
+  with a member name in upper case, a `null`, a field written twice or no `time_ms`, as the
+  programs do, and `get.sh` no longer takes a status key whose name holds a brace for a
+  release key; `get.ps1` compares names and hashes in their case. `release-sign drill
+  -fault` makes such files for the installers' tests.
 - Server credentials and release files are read in the strict form of signed bodies, as
   records and commands are, in Go, the lite member and both phone kits: a credential before
   its signature is checked. A release file without `time_ms` or another field its table does

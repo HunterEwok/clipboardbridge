@@ -554,6 +554,12 @@ jobs:
           go run ./tools/release-sign drill "$RUNNER_TEMP/other" "$RUNNER_TEMP/other.pem"
           CBB_RELEASE_ROOTS="$RUNNER_TEMP/other.pem" refused "keys.json from other roots"
           CBB_RELEASE_ROOTS='' refused "keys.json from throwaway roots instead of the pinned ones"
+          # keys.json with each fault that no reader takes.
+          for f in empty-use upper-case twice null no-time status-brace; do
+            go run ./tools/release-sign drill -version 0.6.0 -fault "$f" "$rel" "$RUNNER_TEMP/roots.pem"
+            refused "keys.json with the fault $f"
+          done
+          go run ./tools/release-sign drill -version 0.6.0 "$rel" "$RUNNER_TEMP/roots.pem"
           sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out"
           rm "$rel/stable.json"
           refused "no stable.json"
@@ -917,6 +923,14 @@ jobs:
             $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
             Write-Host $out
             if ($out -notmatch 'failed') { throw 'get.ps1 installed a release.json of another channel' }
+            # keys.json with each fault that no reader takes.
+            foreach ($f in 'empty-use', 'upper-case', 'twice', 'null', 'no-time', 'status-brace') {
+              cmd /c "go run ./tools/release-sign drill -version 0.6.0 -fault $f `"$rel`" `"$roots`" 2>&1"
+              if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
+              $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
+              Write-Host $out
+              if ($out -notmatch 'failed') { throw "get.ps1 installed a release whose keys.json has the fault $f" }
+            }
             cmd /c "go run ./tools/release-sign drill -version 0.6.0 -channel-key `"$rel`" `"$roots`" 2>&1"
             if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
             Remove-Item (Join-Path $rel 'stable.json')

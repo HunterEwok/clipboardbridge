@@ -227,6 +227,7 @@ func (f *Forwarder) serveRegistration(raw net.Conn) {
 		f.mu.Lock()
 		f.dropRegLocked(r)
 		f.mu.Unlock()
+		f.memory.left(r.tag)
 	}()
 	enc := json.NewEncoder(r.conn)
 	gone := make(chan struct{})
@@ -438,6 +439,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		f.mu.Lock()
 		f.dropRegLocked(r)
 		f.mu.Unlock()
+		f.memory.left(tag)
 		return nil, err
 	}
 	raw.SetDeadline(time.Time{})
