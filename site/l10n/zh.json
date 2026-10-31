@@ -192,6 +192,8 @@
   "The servers' budget": "服务器的预算",
   "Differential fuzzing": "差分模糊测试",
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "四种实现以相同方式读取被修改的消息体和记录集，在 CI 中及每晚运行",
+  "Group records, version 2": "群组记录，第 2 版",
+  "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "群组权限记录的下一种格式，以及计算它们的唯一规则，用于 0.6",
   "Security policy": "安全政策",
   "Set up in three steps": "三步完成设置",
   "Settings and environment variables": "设置和环境变量",

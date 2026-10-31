@@ -114,7 +114,9 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 
 ### Next
 
-- **42.** **Planned for 0.7, first.** A simpler protocol for the group's authority, so that
+- **42.** **Points 1, 2, 3 and 9 are being built for 0.6**
+    ([records-v2.md](records-v2.md)), without a migration from `v:1`: groups made before
+    are set up again. The rest stays planned for 0.7. A simpler protocol for the group's authority, so that
     fewer of its rules can be read two ways. Today a signer's powers are derived from the
     records (whether a root is a computer, whether an admin CA is a phone's, a computer's or
     a watch's), removing an admin undoes what it signed so the remover lists in `keep` what

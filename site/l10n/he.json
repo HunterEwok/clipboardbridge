@@ -192,6 +192,8 @@
   "The servers' budget": "התקציב של השרתים",
   "Differential fuzzing": "פאזינג דיפרנציאלי",
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "ארבעת המימושים קוראים באותו אופן גופים וקבוצות רשומות ששונו, ב-CI ובכל לילה",
+  "Group records, version 2": "רשומות הקבוצה, גרסה 2",
+  "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "המבנה הבא של רשומות הסמכות של הקבוצה והכלל היחיד שמחשב אותן, עבור 0.6",
   "Security policy": "מדיניות אבטחה",
   "Set up in three steps": "הגדרה בשלושה צעדים",
   "Settings and environment variables": "הגדרות ומשתני סביבה",
