@@ -203,4 +203,5 @@ func updates(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	})
 	getScript(ctx, r, f, fd, builds)
 	groupUpdate(ctx, r, f, fd, builds)
+	installers(ctx, r, f, builds)
 }

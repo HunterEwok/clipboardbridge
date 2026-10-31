@@ -19,6 +19,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   every refusal, a rollback and the update method (I8 to I11), and `get.sh` against the same
   feed, each refusal named (I3), and in a group of two the second member taking the archive
   from the first, with the timer turned on and off (I12).
+- The bench's fleet runs install.sh's options against a bare nftables firewall (I2), uninstall
+  with and without `--purge` checked against what was there before (I4), an upgrade in a group
+  one member at a time (I6) and the previous release installed over the new state (I7).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
   with `-cover` write which code the cases ran (docs/testbench.md, "Code coverage").
 - `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
