@@ -16,7 +16,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   stranger learns (S21), the forwarder's hub rule (W30) and fuzzing for `-fuzz-for` (S20).
 - The bench's fleet runs the key-file warnings (K11), the join matrix (G41, Y6) and, in a
   systemd container, `cbb update` from a test feed signed by `tools/release-sign`: the install,
-  every refusal, a rollback and the update method (I8 to I11).
+  every refusal, a rollback and the update method (I8 to I11), and `get.sh` against the same
+  feed, each refusal named (I3).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
   with `-cover` write which code the cases ran (docs/testbench.md, "Code coverage").
 - `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
