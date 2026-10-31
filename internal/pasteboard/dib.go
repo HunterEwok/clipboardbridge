@@ -256,7 +256,11 @@ func decodeImage(typ string, data []byte) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || imageBytes(typ, data, cfg) > maxImageBytes {
+	n, err := imageBytes(typ, data, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || n > maxImageBytes {
 		return nil, fmt.Errorf("pasteboard: an image of %d by %d pixels", cfg.Width, cfg.Height)
 	}
 	if typ == clip.TypeJPEG {
@@ -265,20 +269,21 @@ func decodeImage(typ string, data []byte) (image.Image, error) {
 	return png.Decode(bytes.NewReader(data))
 }
 
-// imageBytes is what the image of cfg, from data, takes in memory decoded
-// and as the DIB of CF_DIBV5 (4 bytes a pixel), as image/png and image/jpeg
-// decode it: a PNG's transparency turns gray into NRGBA or NRGBA64. An
-// unknown model counts as the largest.
-func imageBytes(typ string, data []byte, cfg image.Config) int64 {
+// imageBytes is what the image of cfg, from data, takes in memory while
+// image/png or image/jpeg decodes it, and as the DIB of CF_DIBV5 (4 bytes a
+// pixel). A PNG's transparency turns gray into NRGBA or NRGBA64, and an
+// unknown model counts as the largest; a JPEG is counted by jpegBytes.
+func imageBytes(typ string, data []byte, cfg image.Config) (int64, error) {
+	if typ == clip.TypeJPEG {
+		return jpegBytes(data, cfg)
+	}
 	var n int64 = 8
 	switch m := cfg.ColorModel; {
 	case m == color.GrayModel:
 		n = 1
 	case m == color.Gray16Model:
 		n = 2
-	case m == color.YCbCrModel:
-		n = 3 // the most, without subsampling
-	case m == color.RGBAModel, m == color.NRGBAModel, m == color.CMYKModel:
+	case m == color.RGBAModel, m == color.NRGBAModel:
 		n = 4
 	default:
 		if _, ok := m.(color.Palette); ok {
@@ -290,7 +295,124 @@ func imageBytes(typ string, data []byte, cfg image.Config) int64 {
 			n *= 4
 		}
 	}
-	return int64(cfg.Width) * int64(cfg.Height) * (n + 4)
+	return int64(cfg.Width) * int64(cfg.Height) * (n + 4), nil
+}
+
+// jpegBytes is what image/jpeg takes to decode the JPEG of cfg, from data,
+// and the DIB of CF_DIBV5 made of it. It works on whole blocks: the planes
+// of the components, one plane more for the black of a four-component
+// image, the RGBA or CMYK image it converts to when the planes are not one
+// of the usual YCbCr layouts, and for a progressive JPEG the coefficients
+// it keeps for every block of every component (a block of 64 int32s).
+func jpegBytes(data []byte, cfg image.Config) (int64, error) {
+	l, err := readJPEGLayout(data)
+	if err != nil {
+		return 0, err
+	}
+	maxH, maxV := 1, 1
+	for _, c := range l.comps {
+		maxH, maxV = max(maxH, c.h), max(maxV, c.v)
+	}
+	mxx := (int64(l.width) + int64(8*maxH) - 1) / int64(8*maxH)
+	myy := (int64(l.height) + int64(8*maxV) - 1) / int64(8*maxV)
+	area := 8 * int64(maxH) * mxx * 8 * int64(maxV) * myy // the whole blocks' pixels
+	var n int64
+	switch len(l.comps) {
+	case 1:
+		n = area
+	case 3:
+		n = 3 * area
+		if cfg.ColorModel != color.YCbCrModel || !jpegUsualLayout(l.comps, maxH, maxV) {
+			n += 4 * area
+		}
+	default:
+		n = 3*area + area + 4*area // YCbCr, black, and the CMYK image
+	}
+	if l.progressive {
+		for _, c := range l.comps {
+			n += mxx * myy * int64(c.h) * int64(c.v) * 64 * 4
+		}
+	}
+	return n + 4*int64(cfg.Width)*int64(cfg.Height), nil
+}
+
+// jpegUsualLayout reports whether image/jpeg decodes these components into
+// an image.YCbCr of its own ratios, without converting them.
+func jpegUsualLayout(c []jpegComp, maxH, maxV int) bool {
+	if c[1] != c[2] || c[0].h != maxH || c[0].v != maxV || maxH%c[1].h != 0 || maxV%c[1].v != 0 {
+		return false
+	}
+	switch maxH/c[1].h<<4 | maxV/c[1].v {
+	case 0x11, 0x12, 0x21, 0x22, 0x41, 0x42:
+		return true
+	}
+	return false
+}
+
+type jpegComp struct{ h, v int }
+
+type jpegLayout struct {
+	progressive   bool
+	width, height int
+	comps         []jpegComp
+}
+
+// readJPEGLayout reads a JPEG's markers up to its frame header (SOF0, SOF1
+// or SOF2, the frames image/jpeg decodes): its size, whether it is
+// progressive and the sampling factors of its components.
+func readJPEGLayout(data []byte) (jpegLayout, error) {
+	bad := errors.New("pasteboard: a JPEG without a frame header that can be read")
+	if len(data) < 2 || data[0] != 0xFF || data[1] != 0xD8 {
+		return jpegLayout{}, bad
+	}
+	for i := 2; ; {
+		for i < len(data) && data[i] == 0xFF {
+			i++ // a marker and its fill bytes
+		}
+		if i >= len(data) || data[i-1] != 0xFF {
+			return jpegLayout{}, bad
+		}
+		m := data[i]
+		i++
+		if m == 0x01 || (m >= 0xD0 && m <= 0xD7) {
+			continue // no length
+		}
+		if len(data)-i < 2 {
+			return jpegLayout{}, bad
+		}
+		n := int(binary.BigEndian.Uint16(data[i:]))
+		if n < 2 || n > len(data)-i {
+			return jpegLayout{}, bad
+		}
+		seg := data[i+2 : i+n]
+		i += n
+		switch m {
+		case 0xC0, 0xC1, 0xC2:
+			if len(seg) < 6 {
+				return jpegLayout{}, bad
+			}
+			l := jpegLayout{
+				progressive: m == 0xC2,
+				height:      int(binary.BigEndian.Uint16(seg[1:])),
+				width:       int(binary.BigEndian.Uint16(seg[3:])),
+			}
+			nc := int(seg[5])
+			if (nc != 1 && nc != 3 && nc != 4) || len(seg) < 6+3*nc {
+				return jpegLayout{}, bad
+			}
+			for k := range nc {
+				hv := seg[6+3*k+1]
+				h, v := int(hv>>4), int(hv&0x0F)
+				if h < 1 || h > 4 || v < 1 || v > 4 {
+					return jpegLayout{}, bad
+				}
+				l.comps = append(l.comps, jpegComp{h, v})
+			}
+			return l, nil
+		case 0xDA, 0xD9:
+			return jpegLayout{}, bad // a scan or the end before the frame
+		}
+	}
 }
 
 // pngTransparent reports whether a PNG has a tRNS chunk before its image

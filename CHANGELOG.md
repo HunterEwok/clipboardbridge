@@ -658,6 +658,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The memory a received JPEG takes on a Windows member is counted as image/jpeg uses it: a
+  progressive JPEG's coefficients for every block, the black plane of a four-component one
+  and the image an unusual layout or CMYK is converted to, from the frame header before any
+  pixel is read, so the 384 MiB bound holds for every JPEG.
 - Server credentials and release files are read in the strict form of signed bodies, as
   records and commands are, in Go, the lite member and both phone kits: a credential before
   its signature is checked. A release file without `time_ms` or another field its table does
