@@ -60,22 +60,38 @@ pub fn may_take(uid: Option<u32>, target: &str, at_screen: impl Fn(u32, &str) ->
     }
 }
 
-/// Asks logind: the desktop goes to the user of an active session, tmux to
-/// a user with a session, as one over SSH. Without logind nothing tells who
-/// is at the screen.
+/// Asks logind: the desktop goes to the user of an active graphical
+/// session, tmux to a user with a session, as one over SSH. Without logind
+/// nothing tells who is at the screen.
 pub fn at_screen(uid: u32, target: &str) -> Verdict {
     let Some(list) = loginctl(&["list-sessions", "--no-legend"]) else {
         return Verdict::Unchecked;
     };
-    let user = format!("User={uid}");
     for id in list.lines().filter_map(|l| l.split_whitespace().next()) {
-        let props = loginctl(&["show-session", id, "-p", "User", "-p", "State"]).unwrap_or_default();
-        let has = |kv: &str| props.lines().any(|l| l.trim() == kv);
-        if has(&user) && (has("State=active") || target == crate::service::TMUX && has("State=online")) {
+        let props = loginctl(&["show-session", id, "-p", "User", "-p", "State", "-p", "Class", "-p", "Type"])
+            .unwrap_or_default();
+        if at_screen_in(&props, uid, target) {
             return Verdict::Allowed;
         }
     }
     Verdict::Refused
+}
+
+/// Whether a session whose logind properties are props puts the user uid at
+/// the screen for target, as Go's atScreenIn: a session of the user's own
+/// (not its service manager or a greeter); for tmux any that is active or
+/// online, as over SSH; for the desktop an active graphical one, X11 or
+/// Wayland, so that a user signed in over SSH alone takes none.
+fn at_screen_in(props: &str, uid: u32, target: &str) -> bool {
+    let get = |k: &str| props.lines().find_map(|l| l.trim().strip_prefix(k)?.strip_prefix('=')).unwrap_or("");
+    if get("User") != uid.to_string() || !get("Class").starts_with("user") {
+        return false;
+    }
+    let state = get("State");
+    if target == crate::service::TMUX {
+        return state == "active" || state == "online";
+    }
+    state == "active" && matches!(get("Type"), "x11" | "wayland")
 }
 
 fn loginctl(args: &[&str]) -> Option<String> {
@@ -107,5 +123,23 @@ mod tests {
         assert_eq!(may_take(Some(other), TMUX, screen), Verdict::Allowed);
         assert_eq!(may_take(Some(other + 1), DESKTOP, screen), Verdict::Refused);
         assert_eq!(may_take(Some(other), DESKTOP, |_, _| Verdict::Unchecked), Verdict::Unchecked);
+    }
+
+    #[test]
+    fn ssh_alone_is_not_at_the_screen() {
+        let session =
+            |state: &str, class: &str, typ: &str| format!("User=1003\nState={state}\nClass={class}\nType={typ}\n");
+        for (name, props, desktop, tmux) in [
+            ("a desktop on X11", session("active", "user", "x11"), true, true),
+            ("a desktop on Wayland", session("active", "user", "wayland"), true, true),
+            ("a desktop in the background", session("online", "user", "wayland"), false, true),
+            ("SSH", session("active", "user", "tty"), false, true),
+            ("the service manager", session("active", "manager", "unspecified"), false, false),
+            ("the login screen", session("active", "greeter", "wayland"), false, false),
+            ("another user", "User=1000\nState=active\nClass=user\nType=x11\n".to_string(), false, false),
+        ] {
+            assert_eq!(at_screen_in(&props, 1003, DESKTOP), desktop, "{name}: the desktop");
+            assert_eq!(at_screen_in(&props, 1003, TMUX), tmux, "{name}: tmux");
+        }
     }
 }

@@ -1179,9 +1179,11 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   `SIO_AF_UNIX_GETPEERPID`, with its user and session) and hand it a paste or an action only
   when that user may take it: root and the service's own user (on Windows the system and
   the service's account) take every target, and `console` only they; `desktop` and `act` go
-  to the user of an active session (logind's sessions on Linux and FreeBSD, the owner of
-  `/dev/console` on a Mac, an active Windows session), and `tmux` to a user with a session
-  (logind's, which counts one over SSH). A watcher whose user the system does not name gets
+  to the user of an active session (on Linux and FreeBSD an active graphical logind session
+  of the user's own, X11 or Wayland, so that a user signed in over SSH alone takes none; the
+  owner of `/dev/console` on a Mac; an active Windows session), and `tmux` to a user with a
+  session (logind's, active or online, which counts one over SSH; never the user's service
+  manager or a greeter). A watcher whose user the system does not name gets
   none. Where the system does not tell who is at the screen (Linux or FreeBSD without
   logind), a paste goes to any target, but a `secret` to none, and the member refuses it
   with a reason that says so. The lite member checks its `tmux`, `console` and `desktop`
