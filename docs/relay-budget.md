@@ -78,6 +78,11 @@ What the relay guarantees:
 - **Requests**: strangers in fewer than 4 wide networks (256 / 64), or over IPv6 in fewer
   than 2 providers (256 / 128), cannot take every request slot, and each slot is free again
   within 5 s.
+- **Setups**: strangers in fewer than 2 wide networks (256 / 128), or over IPv6 in fewer
+  than 2 providers, cannot take every setup slot, and each is free again within 15 s. One
+  provider may hold half of the setups and half of the requests being read: these slots are
+  short-lived and refilled in seconds, so this is the accepted bound; the state that lasts
+  (registrations, records) takes at least 4 providers.
 - After strangers register and leave, the relay keeps nothing of them but their sources'
   allowances, which it forgets once full again (`TestOpenRelayForgetsStrangers`).
 
