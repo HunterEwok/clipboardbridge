@@ -295,7 +295,10 @@ if (Test-Path -LiteralPath $dataDir) {
 	$item = Get-Item -LiteralPath $dataDir -Force
 	$owner = $null
 	if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-		$owner = (Get-Acl -LiteralPath $dataDir).GetOwner([Security.Principal.SecurityIdentifier]).Value
+		# Not Get-Acl: its module does not always load in the PowerShell
+		# that runs this script.
+		$acl = New-Object Security.AccessControl.DirectorySecurity -ArgumentList $dataDir, ([Security.AccessControl.AccessControlSections]::Owner)
+		$owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
 	}
 	$me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 	if ($owner -notin @('S-1-5-32-544', 'S-1-5-18', $me)) {
