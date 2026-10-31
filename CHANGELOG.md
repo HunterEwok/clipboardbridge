@@ -521,6 +521,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The Android app's root and admin keys sign for 30 seconds after the fingerprint, the face
+  or the screen lock, not five minutes; keys made by earlier versions keep their window,
+  and the app asks again after 25 seconds either way.
 - A remote paste with a line break needs the device user's leave for Enter on every target
   of a computer and of the lite member, a desktop session too: a shell or console window
   there may take the paste without bracketing it. Without that leave such a paste is
