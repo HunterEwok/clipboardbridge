@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/cryptotest"
+	"testing/synctest"
 
 	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
@@ -110,8 +112,14 @@ func TestV2Vectors(t *testing.T) {
 	if *update {
 		var cases []vectorCase
 		collecting = &cases
+		// A fixed random source and the bubble's fixed clock make the same
+		// keys, certificates and signatures each time, so that a change of
+		// the rules changes only the cases it touches.
 		for _, s := range scenarios {
-			t.Run(s.name, s.fn)
+			t.Run(s.name, func(t *testing.T) {
+				cryptotest.SetGlobalRandom(t, 1)
+				synctest.Test(t, s.fn)
+			})
 		}
 		collecting = nil
 		data, err := json.MarshalIndent(vectorFile{
