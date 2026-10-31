@@ -9,6 +9,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm") version "2.4.21"
+    // Test coverage for CI's summary (docs/testing.md, "Coverage").
+    jacoco
 }
 
 group = "io.github.hunterewok.clipboardbridge"
@@ -37,6 +39,12 @@ tasks.test {
     // The interop vectors live at the repository's root.
     systemProperty("interop.dir", rootDir.resolve("../../../testdata/interop").canonicalPath)
     testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+}
+
+// build/reports/jacoco/test/jacocoTestReport.xml, which tools/coverage reads.
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports { xml.required.set(true); html.required.set(false) }
 }
 
 // A script that runs InteropMain, the Kotlin twin of clipboardbridge-interop,
