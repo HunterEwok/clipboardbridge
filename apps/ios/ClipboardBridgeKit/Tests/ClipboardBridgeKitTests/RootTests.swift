@@ -315,7 +315,11 @@ final class RootTests: XCTestCase {
     /// TestRemovedAdminCases: an admin phone removed by the current root
     /// after a handover, or by another admin phone, signs a root record
     /// afterwards, for a root of its own that revokes the group's roots and
-    /// admins; that root is not known either, in any order.
+    /// admins; that root is not known either. A root an admin phone hands
+    /// on counts only when no root that may count removes that phone; two
+    /// such roots that would remove each other's phones do not count, and
+    /// both phones are removed. Every case, with each record first and last
+    /// in turn (Go checks every order).
     func testGoRemovedAdmins() throws {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<6 { url.deleteLastPathComponent() }
@@ -328,9 +332,16 @@ final class RootTests: XCTestCase {
             var roots: Int
         }
         let cases = try JSONDecoder().decode([V].self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-removed-admins.json")))
-        XCTAssertEqual(cases.count, 2)
+        XCTAssertGreaterThanOrEqual(cases.count, 7)
         for v in cases {
-            for (name, recs) in [("as written", v.records), ("reversed", Array(v.records.reversed()))] {
+            let n = v.records.count
+            var orders: [(String, [Member.Record])] = []
+            for start in 0..<n {
+                let forward = (0..<n).map { v.records[(start + $0) % n] }
+                orders.append(("from \(start)", forward))
+                orders.append(("from \(start), reversed", Array(forward.reversed())))
+            }
+            for (name, recs) in orders {
                 var set = RecordSet()
                 _ = set.addAll(recs, groupCA: v.group_ca)
                 XCTAssertEqual(set.roots.count, v.roots, "\(v.name), \(name)")

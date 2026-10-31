@@ -557,6 +557,46 @@ public struct RecordSet: Codable, Equatable, Sendable {
 
         /// The admin CA key that e, a device record of a phone signed by the
         /// own key of one of roots, names; nil for any other record.
+        /// The roots the group CA hands on to: by the roots' own keys, by
+        /// the admin computers, and by the admin phones under these roots
+        /// that are not in removed; with nil by no phone (Go's handedOn).
+        private static func handedOn(_ entries: [Entry], _ ca: Set<Data>, removed: Set<Data>?) -> Set<Data> {
+            var known = ca
+            var grew = true
+            while grew {
+                grew = false
+                let phones = removed == nil ? [] : phoneAdmins(entries, known)
+                for e in entries where e.body.type == "root" && known.contains(e.anchor) {
+                    let byPhone = phones.contains(e.signer) && !(removed?.contains(e.signer) ?? true)
+                    guard e.signer == e.anchor || computerHandOver(e, entries) || byPhone else { continue }
+                    if let root = e.body.root, let rk = try? Records.keyHash(cert: root), known.insert(rk).inserted { grew = true }
+                }
+            }
+            return known
+        }
+
+        /// The admin CAs of the phones that the own keys of roots certified.
+        private static func phoneAdmins(_ entries: [Entry], _ roots: Set<Data>) -> Set<Data> {
+            Set(entries.compactMap { phoneAdmin(of: $0, roots: roots) })
+        }
+
+        /// The keys that a revoke from the own key of one of roots names,
+        /// and those that a revoke from an admin phone under them names when
+        /// no such revoke names that phone, each with the IDs of the records
+        /// that name it (Go's removals).
+        private static func removals(_ entries: [Entry], _ roots: Set<Data>) -> [Data: [Data]] {
+            let phones = phoneAdmins(entries, roots)
+            var out: [Data: [Data]] = [:]
+            for e in entries where e.body.type == "revoke" && e.signer == e.anchor && roots.contains(e.anchor) {
+                for key in e.body.keys ?? [] { out[key, default: []].append(Records.id(e.record)) }
+            }
+            let byRoot = Set(out.keys)
+            for e in entries where e.body.type == "revoke" && phones.contains(e.signer) && roots.contains(e.anchor) && !byRoot.contains(e.signer) {
+                for key in e.body.keys ?? [] { out[key, default: []].append(Records.id(e.record)) }
+            }
+            return out
+        }
+
         private static func phoneAdmin(of e: Entry, roots: Set<Data>) -> Data? {
             guard e.body.type == "device", Records.role(e.body.role) == "phone", e.signer == e.anchor, roots.contains(e.signer) else {
                 return nil
@@ -566,44 +606,25 @@ public struct RecordSet: Codable, Equatable, Sendable {
 
         private mutating func evaluate(groupCA: Data, roots: [Data]) {
             let all = Set(roots.compactMap { try? Records.keyHash(cert: $0) })
-            // The known roots, until nothing is added.
-            var k: Set<Data> = Set([try? Records.keyHash(cert: groupCA)].compactMap { $0 })
-            // The admin CAs that are removed: named by a revoke from the own
-            // key of a known root, or from an admin phone's admin CA under a
-            // known root that no such revoke from a root names. Such an admin
-            // phone's root records no longer count. The roots are known in
-            // rounds, each phone's root records judged by the removals of the
-            // roots known before them, as Go's knownRoots.
-            var removed: Set<Data> = []
+            // The roots that surely count and those that may count, in turns
+            // until neither changes, as Go's knownRoots: a root counts only
+            // when it surely counts, and an admin phone that a root that may
+            // count removes is removed when no root that counts removes it.
+            let ca = Set([try? Records.keyHash(cert: groupCA)].compactMap { $0 })
+            var k = Self.handedOn(entries, ca, removed: nil)
+            var disputed: [Data: [Data]] = [:]
             while true {
-                // The roots the own keys and the computers' admin CAs hand on to.
-                var handed = true
-                while handed {
-                    handed = false
-                    for e in entries where e.body.type == "root" && k.contains(e.anchor)
-                        && (e.signer == e.anchor || Self.computerHandOver(e, entries)) {
-                        if let root = e.body.root, let rk = try? Records.keyHash(cert: root), k.insert(rk).inserted { handed = true }
+                let may = Self.handedOn(entries, ca, removed: Set(Self.removals(entries, k).keys))
+                let next = Self.handedOn(entries, ca, removed: Set(Self.removals(entries, may).keys))
+                if next.count == k.count {
+                    let removed = Self.removals(entries, k)
+                    let phones = Self.phoneAdmins(entries, k)
+                    for (key, ids) in Self.removals(entries, may) where phones.contains(key) && removed[key] == nil {
+                        disputed[key] = ids
                     }
+                    break
                 }
-                let phones = Set(entries.compactMap { Self.phoneAdmin(of: $0, roots: k) })
-                var byRootKey: Set<Data> = []
-                for e in entries where e.body.type == "revoke" && e.signer == e.anchor && k.contains(e.anchor) {
-                    for key in e.body.keys ?? [] {
-                        byRootKey.insert(key)
-                        removed.insert(key)
-                    }
-                }
-                for e in entries where e.body.type == "revoke" && phones.contains(e.signer) && k.contains(e.anchor)
-                    && !byRootKey.contains(e.signer) {
-                    removed.formUnion(e.body.keys ?? [])
-                }
-                // The roots that admin phones that are not removed hand on to.
-                var grew = false
-                for e in entries where e.body.type == "root" && k.contains(e.anchor) && e.signer != e.anchor
-                    && phones.contains(e.signer) && !removed.contains(e.signer) {
-                    if let root = e.body.root, let rk = try? Records.keyHash(cert: root), k.insert(rk).inserted { grew = true }
-                }
-                if !grew { break }
+                k = next
             }
             known = k
             var byRoot: [Data: [Entry]] = [:]
@@ -624,7 +645,15 @@ public struct RecordSet: Codable, Equatable, Sendable {
                 if let a = Self.phoneAdmin(of: e, roots: known), standsForRoots(e.signer, a) { phoneAdmin.insert(a) }
                 if e.body.type == "device", Records.role(e.body.role) == "watch", rootSigned(e), let a = e.body.admin { watch.insert(a) }
             }
+            // An admin phone whose removal is in dispute is removed, by the
+            // records that would remove it.
             var disabled: Set<Data> = []
+            for (key, ids) in disputed {
+                phoneAdmin.remove(key)
+                disabled.insert(key)
+                revoked.insert(key)
+                revokers[key] = ids
+            }
             for e in entries where e.body.type == "revoke" && (rootSigned(e) || (phoneAdmin.contains(e.signer) && known.contains(e.anchor))) {
                 for key in e.body.keys ?? [] where privileged.contains(key) && (rootSigned(e) || !known.contains(key)) {
                     disabled.insert(key)

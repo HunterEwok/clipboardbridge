@@ -668,6 +668,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The roots a group knows are found from two sides until they settle (docs/protocol.md,
+  section 10, rule 2), in every implementation. A root that an admin phone hands the group
+  to counts only when no root that may count removes that phone, so a removal by a new root
+  holds whichever phone's record made that root known. Where two admin phones hand the
+  group to roots that would remove each other's phone, neither root counts and both phones
+  are removed. More cases in `testdata/interop/go-removed-admins.json`, which Go checks in
+  every order, and the differential corpus gives every record set in other orders too.
 - A connection through the hub's tunnel that closes right after it opens no longer stops
   the relay or a hub: the tunnel keeps each connection's addresses from when it was set up,
   on a computer and in the phones' tunnel, and drops one that is gone before it is taken.

@@ -899,12 +899,13 @@ impl Records {
     /// Works out the revocations in strata that do not depend on each other
     /// in a circle, as Go's group.Records.eval.
     fn evaluate(&self) -> Eval {
+        let (roots, disputed) = self.known_roots();
         let mut ev = Eval {
             revoked: BTreeSet::new(),
             revokers: BTreeMap::new(),
             phone_admin: BTreeSet::new(),
             watch: BTreeSet::new(),
-            roots: self.known_roots(),
+            roots,
             freezes: BTreeMap::new(),
             frozen_keys: BTreeSet::new(),
         };
@@ -942,7 +943,15 @@ impl Records {
                 ev.watch.insert(a);
             }
         }
+        // An admin phone whose removal is in dispute (known_roots) is
+        // removed, by the records that would remove it.
         let mut disabled = BTreeSet::new();
+        for (k, ids) in disputed {
+            ev.phone_admin.remove(&k);
+            disabled.insert(k);
+            ev.revoked.insert(k);
+            ev.revokers.insert(k, ids);
+        }
         for (id, r) in &self.by_id {
             let from_phone = ev.phone_admin.contains(&r.signer) && ev.roots.contains(&r.anchor);
             if r.body.kind != "revoke" || !(ev.root_signed(r) || from_phone) {
@@ -1023,63 +1032,46 @@ impl Records {
         ev
     }
 
-    /// The roots whose own signatures may count: the group CA and the new
-    /// root of every root record that a known root's own key, or an admin
-    /// phone under a known root while no revocation from that root's own
-    /// key names the admin phone's admin CA, signed, or that an admin
-    /// computer signed under a root that is a computer (computer_hand_over).
-    fn known_roots(&self) -> BTreeSet<KeyHash> {
-        let mut known = BTreeSet::from([self.ca_key]);
-        // The admin CAs that are removed: named by a revoke from the own key
-        // of a known root, or from an admin phone's admin CA under a known
-        // root that no such revoke from a root names. Such an admin phone's
-        // root records no longer count. The roots are known in rounds, each
-        // phone's root records judged by the removals of the roots known
-        // before them, as Go's knownRoots.
-        let mut removed = BTreeSet::new();
+    /// The roots whose own signatures may count, and the admin phones whose
+    /// removal is in dispute with the records that would remove them, as
+    /// Go's knownRoots: the roots that surely count and those that may count
+    /// are found in turns until neither changes, and a root counts only when
+    /// it surely counts.
+    #[allow(clippy::type_complexity)]
+    fn known_roots(&self) -> (BTreeSet<KeyHash>, BTreeMap<KeyHash, Vec<Envelope>>) {
+        let mut sure = self.handed_on(None);
         loop {
-            // The roots the own keys and the computers' admin CAs hand on to.
-            loop {
-                let mut grew = false;
-                for r in self.by_id.values() {
-                    let Some(root) = &r.root else { continue };
-                    if !known.contains(&r.anchor) || (r.signer != r.anchor && !self.computer_hand_over(r)) {
-                        continue;
-                    }
-                    grew |= known.insert(root.key_hash());
-                }
-                if !grew {
-                    break;
-                }
+            let may = self.handed_on(Some(&self.removals(&sure).into_keys().collect()));
+            let next = self.handed_on(Some(&self.removals(&may).into_keys().collect()));
+            if next.len() == sure.len() {
+                let removed = self.removals(&sure);
+                let phones = self.phone_admins(&sure);
+                let disputed = self
+                    .removals(&may)
+                    .into_iter()
+                    .filter(|(k, _)| phones.contains(k) && !removed.contains_key(k))
+                    .collect();
+                return (sure, disputed);
             }
-            let phones: BTreeSet<KeyHash> = self.by_id.values().filter_map(|r| phone_admin_of(r, &known)).collect();
-            let mut by_root = BTreeSet::new();
-            for r in self.by_id.values() {
-                if r.body.kind == "revoke" && r.signer == r.anchor && known.contains(&r.anchor) {
-                    for k in &r.body.keys {
-                        by_root.insert(*k);
-                        removed.insert(*k);
-                    }
-                }
-            }
-            for r in self.by_id.values() {
-                if r.body.kind == "revoke"
-                    && phones.contains(&r.signer)
-                    && known.contains(&r.anchor)
-                    && !by_root.contains(&r.signer)
-                {
-                    removed.extend(r.body.keys.iter().copied());
-                }
-            }
-            // The roots that admin phones that are not removed hand on to.
+            sure = next;
+        }
+    }
+
+    /// The roots the group CA hands on to: by the roots' own keys, by the
+    /// admin computers (computer_hand_over), and by the admin phones under
+    /// these roots that are not in removed; with None by no phone.
+    fn handed_on(&self, removed: Option<&BTreeSet<KeyHash>>) -> BTreeSet<KeyHash> {
+        let mut known = BTreeSet::from([self.ca_key]);
+        loop {
+            let phones = if removed.is_some() { self.phone_admins(&known) } else { BTreeSet::new() };
             let mut grew = false;
             for r in self.by_id.values() {
                 let Some(root) = &r.root else { continue };
-                if !known.contains(&r.anchor)
-                    || r.signer == r.anchor
-                    || !phones.contains(&r.signer)
-                    || removed.contains(&r.signer)
-                {
+                if !known.contains(&r.anchor) {
+                    continue;
+                }
+                let by_phone = phones.contains(&r.signer) && removed.is_some_and(|m| !m.contains(&r.signer));
+                if r.signer != r.anchor && !self.computer_hand_over(r) && !by_phone {
                     continue;
                 }
                 grew |= known.insert(root.key_hash());
@@ -1088,6 +1080,39 @@ impl Records {
                 return known;
             }
         }
+    }
+
+    /// The admin CAs of the phones that the own keys of roots certified.
+    fn phone_admins(&self, roots: &BTreeSet<KeyHash>) -> BTreeSet<KeyHash> {
+        self.by_id.values().filter_map(|r| phone_admin_of(r, roots)).collect()
+    }
+
+    /// The keys that a revoke from the own key of one of roots names, and
+    /// those that a revoke from an admin phone under them names when no such
+    /// revoke names that phone, each with the records that name it.
+    fn removals(&self, roots: &BTreeSet<KeyHash>) -> BTreeMap<KeyHash, Vec<Envelope>> {
+        let phones = self.phone_admins(roots);
+        let mut out: BTreeMap<KeyHash, Vec<Envelope>> = BTreeMap::new();
+        for (id, r) in &self.by_id {
+            if r.body.kind == "revoke" && r.signer == r.anchor && roots.contains(&r.anchor) {
+                for k in &r.body.keys {
+                    out.entry(*k).or_default().push(*id);
+                }
+            }
+        }
+        let by_root: BTreeSet<KeyHash> = out.keys().copied().collect();
+        for (id, r) in &self.by_id {
+            if r.body.kind == "revoke"
+                && phones.contains(&r.signer)
+                && roots.contains(&r.anchor)
+                && !by_root.contains(&r.signer)
+            {
+                for k in &r.body.keys {
+                    out.entry(*k).or_default().push(*id);
+                }
+            }
+        }
+        out
     }
 
     /// Whether a device record counts, as Go's Records.counts: signed

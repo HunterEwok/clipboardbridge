@@ -1474,17 +1474,25 @@ set.
    `chain` that verifies to the group CA, or to a root records may be signed under (rule 7).
    Other records are dropped. A member takes at most 1024 records signed by one signer, so
    a stolen admin cannot fill the set.
-2. **Signers and their powers.** The **known roots** are the group CA and the roots found
-   in rounds. A round first adds the new root of every `root` record that a known root's own
-   key signed, or that a computer's admin CA signed under a known root that is a computer,
-   until nothing is added. Then an admin CA is **removed** when a `revoke` record names it
-   that a known root's own key signed, or that an admin phone's admin CA under a known root
-   signed while no `revoke` record from a known root's own key names that signer; an admin
-   CA once removed stays removed. Last, the round adds the new root of every `root` record
-   that an admin phone's admin CA that is not removed signed under a known root, and the
-   rounds repeat until one adds nothing. An admin phone that any root of the group, or
-   another admin phone, removed thus hands the group to nobody, whenever it signs, and a
-   root that a phone's `root` record makes known cannot undo a removal found before it.
+2. **Signers and their powers.** The roots **handed on to** from a set of admin phones
+   that are taken as removed are the group CA and, until nothing is added, the new root of
+   every `root` record signed under one of them by its own key, by a computer's admin CA
+   under a root that is a computer, or by an admin phone's admin CA that is not taken as
+   removed. The **removals** of a set of roots are the keys that a `revoke` record names
+   that one of those roots' own keys signed, or that an admin phone's admin CA under one of
+   them signed while no such `revoke` record from a root's own key names that signer. The
+   **known roots** are found from two sides in turns. The sure roots start as those handed
+   on to with every admin phone taken as removed. Each turn takes the roots that may count
+   as those handed on to with the removals of the sure roots taken as removed, then the new
+   sure roots as those handed on to with the removals of the roots that may count taken as
+   removed; the turns end when the sure roots stay the same. The known roots are the sure
+   roots. An admin phone under a known root is **removed** when the removals of the known
+   roots name it, or when the removals of the roots that may count name it: then the
+   `revoke` records that name it there are the records that revoked it (rule 3). An admin
+   phone that a root of the group, or another admin phone, removed thus hands the group to
+   nobody, whenever it signs. Where two admin phones hand the group to roots that would
+   each remove the other phone, neither root is known and both phones are removed; the
+   result does not depend on the order of the records.
    A root is a **computer** when its own key
    signed a `device` record with `by` = `device` and role `full` and none with role
    `phone`; the admin CA must be named in `admin` by a `device` record that root's own key
@@ -1500,6 +1508,9 @@ set.
    `device` record that a known root's own key signed, and every admin CA that signed a
    record. An `admin` in a record an admin CA signed makes no key an admin's.
 3. The **revoked set**, in strata that do not depend on each other in a circle:
+   - an admin phone that only the removals of roots that may count remove (rule 2) is
+     revoked and disabled, by the `revoke` records that name it there, and its admin CA is
+     not an admin phone's from then on;
    - a `revoke` record signed by a known root's own key counts;
    - an admin or root key that a `revoke` record from a known root's own key, or an admin
      or non-root key that one from an admin phone's admin CA under a known root, names is
