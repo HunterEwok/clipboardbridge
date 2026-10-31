@@ -724,6 +724,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   environment.
 - `CBB_ROOTLESS` set to anything but `1` no longer hides a rootless install from the Go
   commands, and a linked `~/.local` or `~/.local/bin` is resolved as the lite member does.
+- `cbb update` takes a release name from the channel file, and a version asked for, only when
+  it is a version, before it builds an address from it, on computers and the lite member. The
+  lite member's downloads stop after 30 minutes and write no more than their limit to the
+  disk with wget and uclient-fetch too, and curl takes the address as it is.
 - Every frame of the member protocol holds only integers written as in signed bodies, members
   a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
   computers, the lite member and both phones alike, where some took `-0` for 0 before.
