@@ -88,13 +88,15 @@ impl Manifest {
         let mut paths = 0;
         let mut seen = BTreeSet::new();
         for p in &self.parts {
+            // Paths compare as a receiver writes them: two that save_path
+            // makes one would land in one place.
             let key = if files {
                 if p.path.is_empty() || !p.kind.is_empty() {
                     return Err(Error::msg("a manifest mixes files and clipboard data"));
                 }
                 check_path(&p.path)?;
                 paths += p.path.len();
-                &p.path
+                save_path(&p.path)
             } else {
                 if p.kind.is_empty() || p.dir {
                     return Err(Error::msg("a manifest mixes files and clipboard data"));
@@ -102,11 +104,12 @@ impl Manifest {
                 if !TYPES.contains(&p.kind.as_str()) {
                     return Err(Error::msg(format!("unknown media type {:?}", p.kind)));
                 }
-                &p.kind
+                p.kind.clone()
             };
-            if !seen.insert(key.as_str()) {
-                return Err(Error::msg(format!("{key:?} is twice in a manifest")));
+            if seen.contains(&key) {
+                return Err(Error::msg(format!("{key:?} is twice in a manifest, as a receiver writes it")));
             }
+            seen.insert(key);
             if p.dir {
                 if p.size != 0 || p.sha256.is_some() {
                     return Err(Error::msg("a folder in a manifest has a size or a hash"));
@@ -137,23 +140,26 @@ impl Manifest {
     }
 }
 
-/// Checks that no file of a copy is also inside a file.
+/// Checks that no file of a copy is also inside a file, by the paths as a
+/// receiver writes them (save_path).
 fn check_tree(parts: &[Part]) -> Result<()> {
-    let kind: BTreeMap<&str, bool> = parts.iter().map(|p| (p.path.as_str(), p.dir)).collect();
-    for p in parts {
-        for (i, _) in p.path.match_indices('/') {
-            if kind.get(&p.path[..i]) == Some(&false) {
-                return Err(Error::msg(format!("{:?} is inside the file {:?}", p.path, &p.path[..i])));
+    let saved: Vec<(String, bool)> = parts.iter().map(|p| (save_path(&p.path), p.dir)).collect();
+    let kind: BTreeMap<&str, bool> = saved.iter().map(|(path, dir)| (path.as_str(), *dir)).collect();
+    for (path, _) in &saved {
+        for (i, _) in path.match_indices('/') {
+            if kind.get(&path[..i]) == Some(&false) {
+                return Err(Error::msg(format!("{:?} is inside the file {:?}", path, &path[..i])));
             }
         }
     }
     Ok(())
 }
 
-/// Checks a path of a manifest: names joined by "/", each a clean name.
+/// Checks a path of a manifest: names joined by "/", each a clean name, at
+/// most MAX_PATH bytes as a receiver writes it (save_path).
 pub fn check_path(path: &str) -> Result<()> {
-    if path.is_empty() || path.len() > MAX_PATH {
-        return Err(Error::msg(format!("a path of {} bytes", path.len())));
+    if path.is_empty() || path.len() > MAX_PATH || save_path(path).len() > MAX_PATH {
+        return Err(Error::msg(format!("a path of {} bytes as a receiver writes it", save_path(path).len())));
     }
     for name in path.split('/') {
         check_name(name)?;
@@ -162,12 +168,13 @@ pub fn check_path(path: &str) -> Result<()> {
 }
 
 /// Checks one name of a path as Go's clip.CheckName does: 1 to 255 bytes,
-/// not "." or "..", no control characters, separators or characters
+/// as a receiver writes it too (save_name), not "." or "..", no control characters, separators or characters
 /// Windows does not allow, no dot or space at the end, no name Windows
 /// reserves.
 pub fn check_name(name: &str) -> Result<()> {
     let bad = name.is_empty()
         || name.len() > MAX_NAME
+        || save_name(name).len() > MAX_NAME
         || name == "."
         || name == ".."
         || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
@@ -207,6 +214,11 @@ fn device(name: &str) -> bool {
             None => false,
         },
     }
+}
+
+/// save_name for each name of a path, as Go's clip.SavePath.
+pub fn save_path(path: &str) -> String {
+    path.split('/').map(save_name).collect::<Vec<_>>().join("/")
 }
 
 /// The name under which a receiver writes a name that check_name took, as

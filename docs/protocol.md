@@ -566,7 +566,10 @@ a manifest may hold since earlier members send them: `COM0`, `LPT0`, `COM` or `L
 by `¹`, `²` or `³`, `CONIN$` and `CONOUT$`, and any of these names with spaces before the
 first dot (`CON .txt`). A receiver MUST take such a name and write it with `_` after the part
 before the first dot (`COM0_`, `CON _.txt`), and a sender SHOULD give its own names that form
-before it sends them; `testdata/interop/media-names.json` holds the cases. Every number in a manifest is an integer written as in signed
+before it sends them; `testdata/interop/media-names.json` holds the cases. The paths are
+checked as the receiver writes them too: a receiver MUST refuse a manifest in which a name
+grows past 255 bytes or a path past 4096 bytes that way, two paths become one (`COM0.txt`
+and `COM0_.txt`), or a file becomes one that another path goes through. Every number in a manifest is an integer written as in signed
 bodies (Conventions, "Signed bodies"): no `-0`, fraction or exponent. A receiver MUST refuse a
 manifest that breaks any of these rules (the vectors of
 `strict-generated.json` cite them as `manifests/size` and `manifests/parts`; a manifest is no
