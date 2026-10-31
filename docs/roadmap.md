@@ -269,6 +269,11 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     - The Swift code that stays in Swift (the network, `AppModel`, `LiveGroup`): the
       Thread Sanitizer in the Mac app's CI job, then the Swift 6 language mode with its
       strict checks of concurrency.
+- **45.** **Planned after 0.6.** Two things the rules core does not yet allow:
+    - One device in several groups (a family's and a work group, or a phone that helps in a
+      relative's group): every call into the core and every saved state names its group.
+    - A temporary guest: a device record with an end date, after which the device leaves the
+      group without being removed by hand.
 
 ## Devices that are hard to type into
 
