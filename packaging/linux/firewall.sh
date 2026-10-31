@@ -67,8 +67,12 @@ nets() {
 	if [ "$(sed -n 's/^CBB_HOME_CGNAT=//p' /etc/clipboardbridge/clipboardbridge.env 2>/dev/null | tail -n 1)" = 1 ]; then
 		echo 100.64.0.0/10
 	fi
-	echo fe80::/10
-	echo fc00::/7
+	# A kernel without IPv6 (ipv6.disable=1) has no IPv6 networks, and
+	# ufw refuses rules for them.
+	if [ -d /proc/sys/net/ipv6 ]; then
+		echo fe80::/10
+		echo fc00::/7
+	fi
 }
 
 # rules prints the rules clipboardbridge needs, one numbered line each.
@@ -210,6 +214,8 @@ open() {
 	ufw)
 		echo ufw >"$state"
 		for net in $(nets); do
+			# ufw with IPV6=no in /etc/default/ufw takes no IPv6 rules.
+			case $net in *:*) grep -q '^IPV6=no' /etc/default/ufw 2>/dev/null && continue ;; esac
 			ufw allow proto udp from "$net" to any port 5353 comment 'clipboardbridge mDNS' >/dev/null
 			for p in "$@"; do
 				ufw allow proto tcp from "$net" to any port "$p" comment clipboardbridge >/dev/null

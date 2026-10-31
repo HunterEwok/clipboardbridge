@@ -40,6 +40,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   window loses one guess, and the joiner then joins directly (G8).
 - The bench's time suite runs the hub's key renewed each credential period, with a client
   away from home taking the next key ahead and one off across the switch (W12).
+- The bench's fleet runs install.sh again over an install (I5), the unit's sandbox score and
+  TPM device (I20), the ufw rules install.sh adds and removes (S12), `get.sh --lite` over an
+  old `cbb-lite` (I26), the hub's addresses allowed only while a join by invitation runs
+  (G15), the invitation file as a secret (S7), a removed client reaching no one (S6) and the
+  lite member's options (H5).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
@@ -720,6 +725,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- install.sh no longer fails with ufw on a computer whose kernel has no IPv6
+  (`ipv6.disable=1`) or whose ufw has `IPV6=no`: the firewall rules then name the IPv4
+  home networks only.
 - The pairing window issues a joiner's certificate by the time-scaled build's clock, as the
   renewals do, so the bench can check a join near the end of the group CA (K5); a release
   build is unchanged.

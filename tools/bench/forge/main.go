@@ -92,6 +92,13 @@ func main() {
 		}
 		return
 	}
+	if flag.NArg() > 0 && inviteCase(flag.Arg(0)) {
+		if err := runInvite(flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if flag.NArg() > 0 && fetchCase(flag.Arg(0)) {
 		if err := runFetch(*state, group.DeviceID(*to), *addr, flag.Arg(0)); err != nil {
 			fmt.Fprintln(os.Stderr, "forge:", err)
