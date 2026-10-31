@@ -628,7 +628,7 @@ fn mode_line(mode: &str) -> String {
 }
 
 fn cmd_paste_receive(g: &Global, args: &[String]) -> Result<()> {
-    let usage = || Error::msg("usage: cbb paste-receive [on [-enter] [-console] | off]");
+    let usage = || Error::msg("usage: cbb paste-receive [on [-enter] [-console] [-no-lock-check] | off]");
     let mut h = control::Header { op: "status".into(), ..Default::default() };
     for (i, a) in args.iter().enumerate() {
         match (i, a.as_str(), flag(a)) {
@@ -638,6 +638,7 @@ fn cmd_paste_receive(g: &Global, args: &[String]) -> Result<()> {
             }
             (1.., _, Some("enter")) if h.name == "on" => h.enter = true,
             (1.., _, Some("console")) if h.name == "on" => h.console = true,
+            (1.., _, Some("no-lock-check")) if h.name == "on" => h.no_lock_check = true,
             _ => return Err(usage()),
         }
     }
@@ -666,10 +667,15 @@ fn paste_line(p: &control::Paste) -> String {
         }
         (false, false) => "Remote paste is on: the group's admins may paste here, without Enter.",
     };
+    let line = if p.no_lock_check {
+        format!("{line} It pastes also where nothing tells whether the session is locked.")
+    } else {
+        line.to_string()
+    };
     if p.targets.is_empty() {
         return format!("{line} Nothing here can paste yet: the tmux and console helpers do it.");
     }
-    line.into()
+    line
 }
 
 const ACTION_USAGE: &str =

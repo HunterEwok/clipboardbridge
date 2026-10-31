@@ -1918,8 +1918,11 @@ locker's keyboard grab, and a uinput device is a real keyboard to the compositor
 display manager and the text console. So every target checks right before it injects that
 its session is active and not locked (logind's `LockedHint`, a locker that runs only while the screen is locked and tells logind nothing, such as swaylock or hyprlock, `org.freedesktop.ScreenSaver`,
 X11's MIT-SCREEN-SAVER, `CGSessionCopyCurrentDictionary` on the Mac, `OpenInputDesktop` on
-Windows) and refuses otherwise. Lock, login and disk-encryption screens are never typed in
-software; only a USB keyboard such as the Nano ESP32's reaches them, typed on purpose.
+Windows) and refuses otherwise. Where nothing says whether the session is locked (Linux or
+FreeBSD without logind, logind not answering, or no `LockedHint`), a target refuses too, as
+it does not know; the device's user may let it paste then (`cbb paste-receive on
+-no-lock-check`), and a locker that runs still stops it. Lock, login and disk-encryption
+screens are never typed in software; only a USB keyboard such as the Nano ESP32's reaches them, typed on purpose.
 
 Senders: the iPhone and Android apps (a "Paste on…" action with the devices list) and admin
 computers (`cbb paste --on DEVICE`, from standard input or the clipboard; later the Mac

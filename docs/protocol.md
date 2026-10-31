@@ -1101,6 +1101,7 @@ Header fields (all omitted when empty):
 | `method` | string | `paste-on`, `inject`: `paste` (the clipboard and the paste keys, the default) or `type` |
 | `enter` | bool | `paste-on`, `inject`: press Enter after the text; `paste-receive on`: allow that |
 | `console` | bool | `paste-receive on`: allow text consoles and root's tmux |
+| `no_lock_check` | bool | `paste-receive on`: let a target paste where nothing tells whether the session is locked, which it refuses otherwise; `inject`: that this device allows it |
 | `all` | bool | `paste-receive off`, `actions-off`: on every device of the group |
 | `actions` | array | `action-set`: one quick action, `{name, on?, by?, any_key?, command?}`: on or off, the admins it lets run it (by key), any admin, and for an action of the user's own its program and arguments; in `status`, this device's actions, the presets first |
 | `inject` | string | `watch`: the remote paste target the watcher offers, `desktop`, `tmux` or `console` |
@@ -1223,7 +1224,7 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   an app press keys once its user allowed it in Accessibility, and the service and its
   pasteboard agent are not apps; without it the member refuses with a reason that says so. `status` shows the
   switches and the targets of the connected watchers as `paste: {on, enter, console,
-  targets}`.
+  no_lock_check, targets}`.
 - Reports with an unknown `kind` or `via`, and other `op`s, are logged and ignored.
 - The socket's group is for the clipboard, while a remote paste and an action go to one
   user's screen or console. So the service MUST read the user at the other end of a watcher

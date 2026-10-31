@@ -62,9 +62,15 @@ func TestSettingsAndLog(t *testing.T) {
 	if s, _ := Load(dir); !s.On || !s.Enter || s.Console {
 		t.Errorf("saved: %+v", s)
 	}
-	Save(dir, Settings{Enter: true})
-	if s, _ := Load(dir); s.Enter {
-		t.Error("Enter stays on when remote paste is off")
+	if err := Save(dir, Settings{On: true, NoLockCheck: true}); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := Load(dir); !s.On || !s.NoLockCheck || s.Enter {
+		t.Errorf("saved without the lock check: %+v", s)
+	}
+	Save(dir, Settings{Enter: true, NoLockCheck: true})
+	if s, _ := Load(dir); s.Enter || s.NoLockCheck {
+		t.Error("a switch stays on when remote paste is off")
 	}
 	for i := range LogSize + 5 {
 		if err := Append(dir, Entry{TimeMS: int64(i), By: fmt.Sprint(i), Len: i, Method: "paste", Result: "done"}); err != nil {

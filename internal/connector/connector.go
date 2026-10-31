@@ -104,6 +104,24 @@ func WithKeysGrant(ctx context.Context, grant string) context.Context {
 	return context.WithValue(ctx, keysGrant{}, grant)
 }
 
+type noLockCheck struct{}
+
+// WithoutLockCheck returns ctx for an inject whose device lets a target
+// paste where it cannot tell whether the session is locked.
+func WithoutLockCheck(ctx context.Context, yes bool) context.Context {
+	if !yes {
+		return ctx
+	}
+	return context.WithValue(ctx, noLockCheck{}, true)
+}
+
+// NoLockCheck reports whether the inject that ctx carries out may paste
+// where the target cannot tell whether the session is locked.
+func NoLockCheck(ctx context.Context) bool {
+	yes, _ := ctx.Value(noLockCheck{}).(bool)
+	return yes
+}
+
 // KeysGrant returns the grant of the inject that ctx carries out, which the
 // uinput helper needs to press its keys, or "".
 func KeysGrant(ctx context.Context) string {
@@ -473,7 +491,7 @@ func injected(ctx context.Context, tgt Target, m *control.Message, logf func(str
 		ans.Error, ans.Refused = "this watcher does not paste", true
 		return ans
 	}
-	err := tgt.Inject(WithKeysGrant(ctx, m.Keys), string(m.Payload), m.Method, m.Enter, m.Kind == control.KindSecret)
+	err := tgt.Inject(WithoutLockCheck(WithKeysGrant(ctx, m.Keys), m.NoLockCheck), string(m.Payload), m.Method, m.Enter, m.Kind == control.KindSecret)
 	var r *Refusal
 	switch {
 	case err == nil:

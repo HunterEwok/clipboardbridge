@@ -38,8 +38,10 @@ fn refuse<T>(why: impl Into<String>) -> std::result::Result<T, Fail> {
 pub trait Target {
     /// Its name in the watch request: tmux or console.
     fn name(&self) -> &'static str;
-    /// Puts text where the focus is: pasted or typed, with Enter after it.
-    fn inject(&self, text: &str, method: &str, enter: bool) -> std::result::Result<(), Fail>;
+    /// Puts text where the focus is: pasted or typed, with Enter after it;
+    /// no_lock_check lets it paste where nothing tells whether the session
+    /// is locked.
+    fn inject(&self, text: &str, method: &str, enter: bool, no_lock_check: bool) -> std::result::Result<(), Fail>;
 }
 
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
@@ -89,7 +91,7 @@ fn session(socket: &Path, target: &dyn Target, log: &dyn Fn(&str)) -> Result<()>
             continue;
         }
         let text = String::from_utf8_lossy(&m.payload);
-        let res = target.inject(&text, &m.header.method, m.header.enter);
+        let res = target.inject(&text, &m.header.method, m.header.enter, m.header.no_lock_check);
         control::write(&mut w, &Message::new(answer(target.name(), m.header.seq, res, log), Vec::new()))?;
     }
     Ok(())
@@ -250,7 +252,7 @@ impl Target for Tmux {
         if self.console { "console" } else { "tmux" }
     }
 
-    fn inject(&self, text: &str, method: &str, enter: bool) -> std::result::Result<(), Fail> {
+    fn inject(&self, text: &str, method: &str, enter: bool, _no_lock_check: bool) -> std::result::Result<(), Fail> {
         let pane = pane(&self.output(&["list-clients", "-F", "#{client_activity} #{client_flags} #{pane_id}"])?)?;
         match method {
             "paste" => {
@@ -403,7 +405,7 @@ impl Target for Console {
         "console"
     }
 
-    fn inject(&self, text: &str, method: &str, enter: bool) -> std::result::Result<(), Fail> {
+    fn inject(&self, text: &str, method: &str, enter: bool, no_lock_check: bool) -> std::result::Result<(), Fail> {
         if method != "paste" && method != "type" {
             return refuse(format!("the console pastes or types, not {method:?}"));
         }
@@ -417,14 +419,31 @@ impl Target for Console {
         match session_on(tty) {
             Err(e) => return refuse(format!("cannot tell who is logged in on the console: {}", e.message())),
             Ok(None) => return refuse("no one is logged in on the active console"),
-            Ok(Some(id))
-                if loginctl(&["show-session", &id, "-p", "LockedHint", "--value"]).is_ok_and(|v| v.trim() == "yes") =>
-            {
-                return refuse("the console's session is locked");
+            Ok(Some(id)) => {
+                let hint = loginctl(&["show-session", &id, "-p", "LockedHint", "--value"]);
+                if let Some(why) = lock_refusal(hint.as_deref().ok(), no_lock_check) {
+                    return refuse(why);
+                }
             }
-            Ok(Some(_)) => {}
         }
         type_into(tty, &console_bytes(text, enter))
+    }
+}
+
+/// The reason a target gives when nothing tells whether the session is
+/// locked and its user did not allow pastes without the check, as Go's
+/// lockcheck.Unknown.
+const UNKNOWN_LOCK: &str = "this device cannot tell whether its session is locked, as logind does not say, so it takes no remote paste; its user may allow pastes without that check with cbb paste-receive on -no-lock-check";
+
+/// Why a session whose LockedHint logind gave as hint (None when loginctl
+/// failed) takes no paste: it is locked, or logind did not say yes or no
+/// and no_lock_check does not let the paste go on then.
+fn lock_refusal(hint: Option<&str>, no_lock_check: bool) -> Option<&'static str> {
+    match hint.map(str::trim) {
+        Some("yes") => Some("the console's session is locked"),
+        Some("no") => None,
+        _ if no_lock_check => None,
+        _ => Some(UNKNOWN_LOCK),
     }
 }
 
@@ -509,6 +528,22 @@ fn loginctl(args: &[&str]) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A console pastes only where logind says its session is not locked,
+    /// unless its user allowed pastes without the check.
+    #[test]
+    fn unknown_lock_state() {
+        for (hint, want, without) in [
+            (Some("yes\n"), Some("the console's session is locked"), Some("the console's session is locked")),
+            (Some("no\n"), None, None),
+            (Some(""), Some(UNKNOWN_LOCK), None),
+            (Some("maybe"), Some(UNKNOWN_LOCK), None),
+            (None, Some(UNKNOWN_LOCK), None),
+        ] {
+            assert_eq!(lock_refusal(hint, false), want, "{hint:?}");
+            assert_eq!(lock_refusal(hint, true), without, "{hint:?}, without the check");
+        }
+    }
 
     #[test]
     fn helper_files_match_go() {

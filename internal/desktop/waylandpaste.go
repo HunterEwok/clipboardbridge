@@ -78,7 +78,7 @@ func (w *Wayland) Inject(ctx context.Context, text, method string, enter, secret
 		}
 		return keysInject(ctx, w.kb, w, text, method, enter, secret)
 	}
-	if why := lockcheck.Reason(); why != "" {
+	if why := lockcheck.Reason(connector.NoLockCheck(ctx)); why != "" {
 		return &connector.Refusal{Reason: why}
 	}
 	if w.inj.vk == 0 {

@@ -112,14 +112,17 @@ type Header struct {
 	// the watcher offers ("desktop", "tmux" or "console"), none if empty;
 	// PasteOnly, in a watch request, says the watcher holds no clipboard
 	// and only pastes, like the Mac app; Refused, in an injected answer,
-	// says the target refused rather than failed.
-	Method    string `json:"method,omitempty"`
-	Enter     bool   `json:"enter,omitempty"`
-	Console   bool   `json:"console,omitempty"`
-	All       bool   `json:"all,omitempty"`
-	Inject    string `json:"inject,omitempty"`
-	PasteOnly bool   `json:"paste_only,omitempty"`
-	Refused   bool   `json:"refused,omitempty"`
+	// says the target refused rather than failed. NoLockCheck, in
+	// paste-receive on and in an inject, lets a target paste where it
+	// cannot tell whether the session is locked.
+	Method      string `json:"method,omitempty"`
+	Enter       bool   `json:"enter,omitempty"`
+	Console     bool   `json:"console,omitempty"`
+	All         bool   `json:"all,omitempty"`
+	Inject      string `json:"inject,omitempty"`
+	PasteOnly   bool   `json:"paste_only,omitempty"`
+	Refused     bool   `json:"refused,omitempty"`
+	NoLockCheck bool   `json:"no_lock_check,omitempty"`
 	// Keys, in an inject to a desktop session, is the grant that the
 	// session's desktop connector hands the uinput helper, which asks the
 	// service with keys whether it may press the paste's keys.
@@ -280,10 +283,11 @@ type Action struct {
 // Paste describes remote paste on this device: the switches its user set
 // and the targets the connected watchers offer.
 type Paste struct {
-	On      bool     `json:"on,omitempty"`
-	Enter   bool     `json:"enter,omitempty"`
-	Console bool     `json:"console,omitempty"`
-	Targets []string `json:"targets,omitempty"`
+	On          bool     `json:"on,omitempty"`
+	Enter       bool     `json:"enter,omitempty"`
+	Console     bool     `json:"console,omitempty"`
+	NoLockCheck bool     `json:"no_lock_check,omitempty"`
+	Targets     []string `json:"targets,omitempty"`
 }
 
 // Keyboard describes this computer as a Bluetooth keyboard (cbb keyboard):

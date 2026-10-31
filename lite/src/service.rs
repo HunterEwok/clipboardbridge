@@ -75,6 +75,9 @@ struct Inject {
     text: String,
     method: String,
     enter: bool,
+    /// The target may paste where nothing tells whether the session is
+    /// locked (remotepaste::Settings).
+    no_lock_check: bool,
     kind: String,
     name: String,
     done: SyncSender<(String, String)>,
@@ -806,6 +809,7 @@ impl Service {
                 text: text.to_string(),
                 method: body.mode.clone(),
                 enter: body.enter,
+                no_lock_check: set.no_lock_check,
                 kind: body.paste_kind.clone(),
                 name: name.to_string(),
                 done,
@@ -847,7 +851,13 @@ impl Service {
             self.watchers.lock().unwrap().iter().filter(|w| !w.target.is_empty()).map(|w| w.target.clone()).collect();
         targets.sort();
         targets.dedup();
-        Some(control::Paste { on: set.on, enter: set.enter, console: set.console, targets })
+        Some(control::Paste {
+            on: set.on,
+            enter: set.enter,
+            console: set.console,
+            no_lock_check: set.no_lock_check,
+            targets,
+        })
     }
 
     /// cbb paste-receive on or off: only this device's own user turns
@@ -865,13 +875,21 @@ impl Service {
                 "only an admin turns remote paste off on another device; the lite member is never one: use the phone app or a full member"
             }));
         }
-        if h.name == "off" && (h.enter || h.console) {
-            return Err(Error::msg("-enter and -console go with on"));
+        if h.name == "off" && (h.enter || h.console || h.no_lock_check) {
+            return Err(Error::msg("-enter, -console and -no-lock-check go with on"));
         }
         self.node()?;
-        let set = remotepaste::Settings { on: h.name == "on", enter: h.enter, console: h.console };
+        let set = remotepaste::Settings {
+            on: h.name == "on",
+            enter: h.enter,
+            console: h.console,
+            no_lock_check: h.no_lock_check,
+        };
         remotepaste::save(&self.state_dir, set).map_err(|e| e.context("saving the remote paste settings"))?;
-        (self.log)(&format!("cbb: remote paste is {} here (enter {}, console {})", h.name, set.enter, set.console));
+        (self.log)(&format!(
+            "cbb: remote paste is {} here (enter {}, console {}, no lock check {})",
+            h.name, set.enter, set.console, set.no_lock_check
+        ));
         let status = Status { paste: self.paste_status(), ..Default::default() };
         Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
     }
@@ -1145,6 +1163,7 @@ impl Service {
                                     seq,
                                     method: i.method,
                                     enter: i.enter,
+                                    no_lock_check: i.no_lock_check,
                                     kind: i.kind,
                                     name: i.name,
                                     ..Default::default()

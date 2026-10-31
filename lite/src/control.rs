@@ -56,6 +56,10 @@ pub struct Header {
     pub enter: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub console: bool,
+    /// In paste-receive on and in an inject: a target may paste where
+    /// nothing tells whether the session is locked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_lock_check: bool,
     /// In a watch request, the paste target the watcher offers: desktop,
     /// tmux or console.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -137,6 +141,8 @@ pub struct Paste {
     pub enter: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub console: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_lock_check: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<String>,
 }
