@@ -283,13 +283,14 @@ and `seen` with what it held, the current root's records among them. A claim:
   another claim under the same root that is not void or cancelled (one claim at a time: a
   claim made while another waits, or after it took effect, counts for nothing);
 - is **disputed** when a counting admin `revoke` or `freeze` names the claimant's admin key
-  or member key, the claimant had not seen it, and its author had seen no record of the
-  claimed root. An admin who objects to a claim removes the claimant, and the group stops
-  fully until the current root decides: a `resolve` of the claim cancels it and the removal
-  stands, a `resolve` of the removal lets the claim go on. A removal whose author had seen
-  a record of the claimed root was written after the handover; it neither disputes nor
-  holds back the claim and counts under the new root, where that root's own removals cut it
-  as usual;
+  or member key and the claimant had not seen it, whatever else its author had seen. An
+  admin who objects to a claim removes the claimant, and the group stops fully until the
+  current root decides: a `resolve` of the claim cancels it and the removal stands, a
+  `resolve` of the removal lets the claim go on. Nothing in `seen` tells a removal written
+  after the handover, since a claimed root can sign before its claim takes effect. After the
+  handover an admin removes under an admin CA of the new root, which counts only under that
+  root, and the apps always sign with the admin CA of the newest root on the path; a removal
+  of the claimant under the old root's admin CA disputes the claim even then;
 - **takes effect** when the delay has passed on that member and it is none of the above,
   it is the only such claim under the current root, and no root's freeze holds its
   claimant. Its new root becomes the current root and starts its own `seq` at 1; the old
@@ -307,8 +308,9 @@ version 1 did; an admin CA from the old root still signs while the old root is o
 
 So a removed or stolen admin phone cannot take the group: its claim waits, the root cancels
 it, a second claim or a removal of the claimant stops the group instead of choosing, and
-once a new root removes it, nothing it signs counts. What it can do without the root, by
-pretending it had not seen a record, is stop the group: never take it.
+once a new root removes it, nothing it signs counts under that root. What it can do without
+the root, by pretending it had not seen a record or by removing the claimant under its old
+admin CA, is stop the group: never take it.
 
 ### Certificates
 
