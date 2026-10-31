@@ -2753,7 +2753,10 @@ A computer whose member key is in a TPM (above) proves it to the group's root in
    encrypts 32 random bytes to the EK for the AK's name (`TPM2_MakeCredential`'s format) and
    sends `credential`, the ID object, and `secret`, the encrypted seed.
 3. **`tpm-activated`**, the device to the root: `secret` holds what `TPM2_ActivateCredential`
-   recovered with the AK and the EK, which the TPM does only when both are its own.
+   recovered with the AK and the EK, which the TPM does only when both are its own. The device
+   opens a credential only from the group's root (the device and key of the root's own
+   device record, not revoked) and one at a time, since the TPM's work holds up the member
+   key's signatures.
 
 When it holds the 32 bytes, the root records the device's keys as `proven`, kind `tpm`, and
 `proof` the hex SHA-256 of the EK certificate. Anything that fails is logged and changes

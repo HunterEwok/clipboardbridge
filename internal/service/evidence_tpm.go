@@ -136,10 +136,27 @@ func (s *Service) tpmEvidence(peer group.DeviceID, chain []*x509.Certificate, e 
 	return nil
 }
 
-// tpmCredential opens, with this device's TPM, the credential a root
-// sent, and sends back what it held. The value proves nothing to anyone
-// but the one who chose it, so any member may ask.
-func (s *Service) tpmCredential(peer group.DeviceID, e node.Evidence) error {
+// tpmCredential opens, with this device's TPM, the credential the group's
+// root sent, and sends back what it held. Only the root sends one, and the
+// TPM opens one at a time: each takes the TPM that the member key's
+// signatures need too.
+func (s *Service) tpmCredential(peer group.DeviceID, cert *x509.Certificate, e node.Evidence) error {
+	var root group.DeviceID
+	var key group.KeyHash
+	revoked := true
+	s.recMu.Lock()
+	if s.records != nil {
+		root, key = s.records.RootMember()
+		revoked = s.records.Revoked(key)
+	}
+	s.recMu.Unlock()
+	if root == "" || peer != root || group.KeyHashOf(cert) != key || revoked {
+		return errors.New("a TPM credential from a device that is not the group's root")
+	}
+	if !s.tpmOpening.TryLock() {
+		return errors.New("a TPM credential while the TPM opens another")
+	}
+	defer s.tpmOpening.Unlock()
 	s.mu.Lock()
 	nd := s.nd
 	s.mu.Unlock()

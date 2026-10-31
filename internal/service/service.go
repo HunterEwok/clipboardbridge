@@ -238,9 +238,12 @@ type Service struct {
 	attEvidence map[group.DeviceID]peerEvidence
 	// tpmMu guards this device's TPM attestation and, on the root, the
 	// credentials sent to peers (evidence_tpm.go); taken alone.
-	tpmMu       sync.Mutex
-	tpmAtt      *tpmAttestation
-	tpmPending  map[group.DeviceID]tpmPending
+	tpmMu      sync.Mutex
+	tpmAtt     *tpmAttestation
+	tpmPending map[group.DeviceID]tpmPending
+	// tpmOpening is held while the TPM opens a root's credential, one at
+	// a time.
+	tpmOpening  sync.Mutex
 	recMu       sync.Mutex         // guards records; taken after mu, never before
 	records     *group.Records     // the group's device records; nil while in no group
 	creds       *group.Credentials // the group's server credentials, under recMu as records

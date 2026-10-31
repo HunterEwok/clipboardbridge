@@ -4,9 +4,13 @@
 package service
 
 import (
+	"crypto/x509"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/tpmkey"
 	"github.com/HunterEwok/clipboardbridge/internal/tpmkey/tpmtest"
 )
@@ -72,4 +76,60 @@ func TestTPMEvidenceUnknownMaker(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// TestTPMCredentialOnlyFromRoot checks that a device takes TPM credentials
+// to open only from the group's root, by its key, one at a time.
+func TestTPMCredentialOnlyFromRoot(t *testing.T) {
+	now := time.Now()
+	root, err := group.Create(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs := group.NewRecords(root.GroupCA.Cert)
+	key := group.KeyHashOf(root.Cert)
+	r, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: group.Tag(root.GroupCA.Cert), Device: root.ID,
+		Name: "pi", Role: group.RoleFull, Key: &key, By: root.ID, TimeMS: now.UnixMilli()}, root.GroupCA.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, errs := recs.AddAll([]group.Record{r}); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	other, err := group.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := group.NewDeviceID()
+	member, err := root.GroupCA.IssueMember(dev, &other.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{records: recs}
+	cred := node.Evidence{Format: node.EvidenceTPMCredential, Key: node.EvidenceMember}
+	notRoot := "not the group's root"
+	for name, c := range map[string]struct {
+		peer group.DeviceID
+		cert *x509.Certificate
+	}{
+		"a member":                 {dev, member},
+		"a member named the root":  {root.ID, member},
+		"the root's key elsewhere": {dev, root.Cert},
+	} {
+		if err := s.tpmCredential(c.peer, c.cert, cred); err == nil || !strings.Contains(err.Error(), notRoot) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// The root gets as far as the TPM, which this device has none of here.
+	if err := s.tpmCredential(root.ID, root.Cert, cred); err == nil || strings.Contains(err.Error(), notRoot) {
+		t.Errorf("the root: %v", err)
+	}
+	s.tpmOpening.Lock()
+	if err := s.tpmCredential(root.ID, root.Cert, cred); err == nil || !strings.Contains(err.Error(), "opens another") {
+		t.Errorf("while the TPM opens one: %v", err)
+	}
+	s.tpmOpening.Unlock()
+	if err := (&Service{}).tpmCredential(root.ID, root.Cert, cred); err == nil || !strings.Contains(err.Error(), notRoot) {
+		t.Errorf("in no group: %v", err)
+	}
 }

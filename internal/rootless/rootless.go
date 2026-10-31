@@ -27,8 +27,8 @@ var is = sync.OnceValue(func() bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
-	if v, ok := os.LookupEnv(Env); ok {
-		return v == "1"
+	if os.Getenv(Env) == "1" {
+		return true
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -38,15 +38,26 @@ var is = sync.OnceValue(func() bool {
 	if err != nil {
 		return false
 	}
-	if p, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = p
-	}
-	return exe == filepath.Join(home, Bin)
+	return sameFile(exe, filepath.Join(home, Bin))
 })
 
-// Is reports whether this program is a rootless install: CBB_ROOTLESS=1,
-// or else the program is the one install.sh --rootless put in
-// ~/.local/bin, so that the user's own commands find the user's service.
+// sameFile tells whether a and b name one path once their links are
+// resolved, as the lite member's rootless::is compares them, so that a
+// linked ~/.local or ~/.local/bin still counts.
+func sameFile(a, b string) bool {
+	if p, err := filepath.EvalSymlinks(a); err == nil {
+		a = p
+	}
+	if p, err := filepath.EvalSymlinks(b); err == nil {
+		b = p
+	}
+	return a == b
+}
+
+// Is reports whether this program is a rootless install: CBB_ROOTLESS=1
+// (another value counts as unset), or else the program is the one
+// install.sh --rootless put in ~/.local/bin, so that the user's own
+// commands find the user's service.
 func Is() bool { return is() }
 
 // dir returns the XDG directory of env, or home/fallback.

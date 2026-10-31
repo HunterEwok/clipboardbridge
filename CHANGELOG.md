@@ -715,6 +715,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
   neither the administrators nor the system owns, instead of resetting what is inside it.
 - A paste typed on a Bluetooth keyboard or a Roku after its answer stops once remote paste is
   turned off or the sender's command no longer holds, and each takes one text at a time.
+- A computer whose member key is in a TPM opens a credential only from the group's root and
+  one at a time, so other members cannot keep its TPM busy.
+- An EK certificate counts only in the form of TCG's EK profile: no CA, a key for decrypting,
+  the EK purpose when it names purposes and the TPM's maker in its alternative name.
+- The tray app on Linux runs only a `cbb` that root owns and no one else may change, never
+  one found on `PATH`, and on Windows finds Program Files from the system, not from the
+  environment.
+- `CBB_ROOTLESS` set to anything but `1` no longer hides a rootless install from the Go
+  commands, and a linked `~/.local` or `~/.local/bin` is resolved as the lite member does.
 - Every frame of the member protocol holds only integers written as in signed bodies, members
   a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
   computers, the lite member and both phones alike, where some took `-0` for 0 before.
