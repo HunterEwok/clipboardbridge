@@ -79,5 +79,5 @@ The defaults of [your own servers](../admin/self-hosting.md).
 |---|---|---|
 | Groups at once | 100,000 hubs | 4,096 with `-open`; no limit for the groups `-group` names |
 | Devices of one group | 16 client addresses | 64 devices at once |
-| Registrations from one address, one network (/24 or /64), one wide network (/16 or /48) | 16, 64, 256 | 16, 64, 256 with `-open` |
+| Registrations from one address, one network (/24 or /64), one wide network (/16 or /48), one IPv6 provider (/32) | 16, 64, 256, 1024 | 16, 64, 256, 1024 with `-open` |
 | Traffic of one group, both ways | 1,000 packets and 2 MiB a second | 1 MiB a second with `-open` |

@@ -68,6 +68,33 @@ func TestRequestsBoundByWideNetwork(t *testing.T) {
 	}
 }
 
+// The registrations from the wide networks of one IPv6 provider, however
+// many, are bounded by the provider's share, so a provider's customers
+// cannot take every group's place on an open relay between them.
+func TestRegistrationsBoundByProvider(t *testing.T) {
+	r, _ := startWith(t, Config{Open: true})
+	l := DefaultOpenLimits
+	taken := 0
+	for w := 0; w < l.PerProvider/l.PerWide+2; w++ {
+		for n := range l.PerWide / l.PerNetwork {
+			for a := range l.PerNetwork / l.PerAddress {
+				from := netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, byte(w), 0, byte(n), 15: byte(a + 1)})
+				for i := range l.PerAddress {
+					if _, err := fakeMember(r, fmt.Sprintf("%04x%04x%04x%04x", w, n, a, i), from); err == nil {
+						taken++
+					}
+				}
+			}
+		}
+	}
+	if taken != l.PerProvider {
+		t.Errorf("the wide networks of one provider registered %d devices, want %d", taken, l.PerProvider)
+	}
+	if _, err := fakeMember(r, "ffffffffffffffff", netip.MustParseAddr("2001:db9::1")); err != nil {
+		t.Errorf("a group from another provider: %v", err)
+	}
+}
+
 // The records a network brings to an open relay are bounded, whatever
 // group they are of, so the groups of one network cannot take the records'
 // room in all.

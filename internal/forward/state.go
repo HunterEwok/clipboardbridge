@@ -31,17 +31,20 @@ const stateLabel = "clipboardbridge forwarder state"
 const writeDelay = 2 * time.Second
 
 // networkTags bounds the entries one network (an IPv4 /24 or an IPv6 /64)
-// may add to the table while they last, and wideTags those of one wide
-// network (an IPv4 /16 or an IPv6 /48), so that filling the table takes
-// rememberedGroups/wideTags wide networks (docs/relay-budget.md).
+// may add to the table while they last, wideTags those of one wide network
+// (an IPv4 /16 or an IPv6 /48) and providerTags those of one IPv6 provider
+// (a /32), so that filling the table takes rememberedGroups/wideTags wide
+// networks, and for IPv6 rememberedGroups/providerTags providers
+// (docs/relay-budget.md).
 const (
-	networkTags = 256
-	wideTags    = 1024
+	networkTags  = 256
+	wideTags     = 1024
+	providerTags = 4096
 )
 
 // tagCaps are the caps of the entries by the source that added them; the
 // table's own bound is rememberedGroups.
-var tagCaps = budget.Caps{Network: networkTags, Wide: wideTags}
+var tagCaps = budget.Caps{Network: networkTags, Wide: wideTags, Provider: providerTags}
 
 // errTableFull is what a registration with a new tag is refused with when
 // the table, or its network's share of it, is full.
@@ -58,8 +61,8 @@ var errTableFull = errors.New("this forwarder cannot remember another group now;
 // An entry stays until the newest credential it recorded has expired, since
 // before that an older credential of the period would be accepted if it were
 // forgotten. The table holds at most rememberedGroups entries, each network
-// at most networkTags of the entries it added and each wide network at most
-// wideTags; a tag new to the table is refused when any of these is reached
+// at most networkTags of the entries it added, each wide network at most
+// wideTags and each IPv6 provider at most providerTags; a tag new to the table is refused when any of these is reached
 // and nothing has expired, and no entry is dropped to make room. With a file the table outlives a restart;
 // it is written a moment after a change, and when the forwarder closes.
 type versions struct {

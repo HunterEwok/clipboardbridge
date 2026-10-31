@@ -63,8 +63,9 @@ type Limits struct {
 	// being set up, from one address, from one network (an IPv4 /24 or an
 	// IPv6 /64) and from one wide network (an IPv4 /16 or an IPv6 /48), so
 	// that nobody fills the forwarder from a few hosts; 16, 64 and 256 if
-	// zero.
-	PerAddress, PerNetwork, PerWide int
+	// zero. PerProvider bounds them from one IPv6 /32, which holds tens of
+	// thousands of /48s; 1024 if zero.
+	PerAddress, PerNetwork, PerWide, PerProvider int
 }
 
 // DefaultLimits are generous for clipboard texts and small enough that a
@@ -81,6 +82,7 @@ var DefaultLimits = Limits{
 	PerAddress:  16,
 	PerNetwork:  64,
 	PerWide:     256,
+	PerProvider: 1024,
 }
 
 // How long the forwarder remembers a handshake and a session. WireGuard
@@ -314,7 +316,10 @@ func Listen(cfg Config) (*Forwarder, error) {
 	if f.limits.PerWide <= 0 {
 		f.limits.PerWide = DefaultLimits.PerWide
 	}
-	f.from = budget.NewCount(budget.Caps{Address: f.limits.PerAddress, Network: f.limits.PerNetwork, Wide: f.limits.PerWide})
+	if f.limits.PerProvider <= 0 {
+		f.limits.PerProvider = DefaultLimits.PerProvider
+	}
+	f.from = budget.NewCount(budget.Caps{Address: f.limits.PerAddress, Network: f.limits.PerNetwork, Wide: f.limits.PerWide, Provider: f.limits.PerProvider})
 	f.scans = newBucket(f.limits.ScanRate, time.Now())
 	if _, err := rand.Read(f.mask[:]); err != nil {
 		udp.Close()
