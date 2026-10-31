@@ -35,12 +35,6 @@ func (r *Relay) state() string {
 	for tag, rs := range r.records {
 		lines = append(lines, fmt.Sprintf("records %s %d %d %s", tag, rs.set.Len(), rs.bytes, rs.set.Digest()))
 	}
-	for a, n := range r.fromIP {
-		lines = append(lines, fmt.Sprintf("from %s %d", a, n))
-	}
-	for nw, n := range r.fromNet {
-		lines = append(lines, fmt.Sprintf("from %s %d", nw, n))
-	}
 	for tag := range r.tagLocks {
 		lines = append(lines, "lock "+tag)
 	}
@@ -48,7 +42,7 @@ func (r *Relay) state() string {
 		lines = append(lines, "call "+t)
 	}
 	slices.Sort(lines)
-	return fmt.Sprintf("%s\nrecord bytes %d", strings.Join(lines, "\n"), r.recordBytes)
+	return fmt.Sprintf("%s\nheld:\n%s\nrecord bytes:\n%s", strings.Join(lines, "\n"), r.held, r.recordBytes)
 }
 
 // A registration the relay refuses leaves it as it was: whatever the
