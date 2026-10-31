@@ -568,11 +568,18 @@ public struct RecordSet: Codable, Equatable, Sendable {
             let all = Set(roots.compactMap { try? Records.keyHash(cert: $0) })
             // The known roots, until nothing is added.
             var k: Set<Data> = Set([try? Records.keyHash(cert: groupCA)].compactMap { $0 })
+            // The admin CAs each root's own key revoked: such an admin
+            // phone's root records under that root no longer count.
+            var removed: Set<Data> = []
+            for e in entries where e.body.type == "revoke" && e.signer == e.anchor {
+                for key in e.body.keys ?? [] { removed.insert(e.anchor + key) }
+            }
             while true {
                 let phones = Set(entries.compactMap { Self.phoneAdmin(of: $0, roots: k) })
                 var grew = false
                 for e in entries where e.body.type == "root" && k.contains(e.anchor)
-                    && (e.signer == e.anchor || phones.contains(e.signer) || Self.computerHandOver(e, entries)) {
+                    && (e.signer == e.anchor || (phones.contains(e.signer) && !removed.contains(e.anchor + e.signer))
+                        || Self.computerHandOver(e, entries)) {
                     if let root = e.body.root, let rk = try? Records.keyHash(cert: root), k.insert(rk).inserted { grew = true }
                 }
                 if !grew { break }

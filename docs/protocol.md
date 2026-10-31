@@ -1401,8 +1401,10 @@ set.
    a stolen admin cannot fill the set.
 2. **Signers and their powers.** The **known roots** are the group CA and the new root of
    every `root` record that a known root's own key, or an admin phone's admin CA under a
-   known root, signed, or that a computer's admin CA signed under a known root that is a
-   computer (repeated until nothing is added). A root is a **computer** when its own key
+   known root that no `revoke` record from that root's own key names, signed, or that a
+   computer's admin CA signed under a known root that is a computer (repeated until nothing
+   is added). An admin phone that the root removed thus hands the group to nobody, whenever
+   it signs. A root is a **computer** when its own key
    signed a `device` record with `by` = `device` and role `full` and none with role
    `phone`; the admin CA must be named in `admin` by a `device` record that root's own key
    signed, and no `revoke` record from that root's own key may name it. In a group whose

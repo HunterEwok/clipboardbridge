@@ -287,6 +287,30 @@ final class RootTests: XCTestCase {
         }
     }
 
+    /// Reads testdata/interop/go-removed-admin.json, from Go's
+    /// TestRemovedAdminVectors: an admin phone that the root removed signs a
+    /// root record afterwards, for a root of its own that revokes the
+    /// group's root and admins; that root is not known, so none of it
+    /// counts, in any order.
+    func testGoRemovedAdmin() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
+            var group_ca: Data
+            var records: [Member.Record]
+            var keys: [Key]
+            var roots: Int
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-removed-admin.json")))
+        for (name, recs) in [("as written", v.records), ("reversed", v.records.reversed())] {
+            var set = RecordSet()
+            for r in recs { _ = set.add(r, groupCA: v.group_ca) }
+            XCTAssertEqual(set.roots.count, v.roots, name)
+            for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(name): \(k.name)") }
+        }
+    }
+
     /// Reads testdata/interop/go-authority.json, from Go's
     /// TestGoAuthorityVectors: a device is an admin, with the role and store
     /// of that record, only by a record a root's own key signed, and a

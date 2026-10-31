@@ -1007,17 +1007,28 @@ impl Records {
 
     /// The roots whose own signatures may count: the group CA and the new
     /// root of every root record that a known root's own key, or an admin
-    /// phone under a known root, signed, or that an admin computer signed
-    /// under a root that is a computer (computer_hand_over).
+    /// phone under a known root while no revocation from that root's own
+    /// key names the admin phone's admin CA, signed, or that an admin
+    /// computer signed under a root that is a computer (computer_hand_over).
     fn known_roots(&self) -> BTreeSet<KeyHash> {
         let mut known = BTreeSet::from([self.ca_key]);
+        // The admin CAs each root's own key revoked: such an admin phone's
+        // root records under that root no longer count.
+        let removed: BTreeSet<(KeyHash, KeyHash)> = self
+            .by_id
+            .values()
+            .filter(|r| r.body.kind == "revoke" && r.signer == r.anchor)
+            .flat_map(|r| r.body.keys.iter().map(|k| (r.anchor, *k)))
+            .collect();
         loop {
             let phones: BTreeSet<KeyHash> = self.by_id.values().filter_map(|r| phone_admin_of(r, &known)).collect();
             let mut grew = false;
             for r in self.by_id.values() {
                 let Some(root) = &r.root else { continue };
                 if !known.contains(&r.anchor)
-                    || (r.signer != r.anchor && !phones.contains(&r.signer) && !self.computer_hand_over(r))
+                    || (r.signer != r.anchor
+                        && !(phones.contains(&r.signer) && !removed.contains(&(r.anchor, r.signer)))
+                        && !self.computer_hand_over(r))
                 {
                     continue;
                 }

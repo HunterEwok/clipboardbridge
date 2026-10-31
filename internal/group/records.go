@@ -1143,12 +1143,23 @@ func (s *Records) eval() *evaluation {
 
 // knownRoots returns the roots whose own signatures may count: the group CA
 // and the new root of every root record that a known root's own key or an
-// admin phone under a known root signed, or that an admin computer signed
+// admin phone under a known root signed, while no revocation from that
+// root's own key names the admin phone's admin CA, or that an admin computer signed
 // under a root that is a computer (computerHandOver). A root that a
 // computer's admin CA named in any other case is not one of them, so its
 // key, which that admin holds, signs nothing that counts.
 func (s *Records) knownRoots() map[KeyHash]bool {
 	known := map[KeyHash]bool{s.caKey: true}
+	// The admin CAs each root's own key revoked: such an admin phone's root
+	// records under that root no longer count.
+	removed := map[[2]KeyHash]bool{}
+	for _, r := range s.byID {
+		if r.body.Type == RecordRevoke && r.signer == r.anchor {
+			for _, k := range r.body.Keys {
+				removed[[2]KeyHash{r.anchor, k}] = true
+			}
+		}
+	}
 	for {
 		phones := map[KeyHash]bool{}
 		for _, r := range s.byID {
@@ -1158,7 +1169,8 @@ func (s *Records) knownRoots() map[KeyHash]bool {
 		}
 		grew := false
 		for _, r := range s.byID {
-			if r.root == nil || !known[r.anchor] || r.signer != r.anchor && !phones[r.signer] && !s.computerHandOver(r) {
+			phone := phones[r.signer] && !removed[[2]KeyHash{r.anchor, r.signer}]
+			if r.root == nil || !known[r.anchor] || r.signer != r.anchor && !phone && !s.computerHandOver(r) {
 				continue
 			}
 			if k := KeyHashOf(r.root); !known[k] {

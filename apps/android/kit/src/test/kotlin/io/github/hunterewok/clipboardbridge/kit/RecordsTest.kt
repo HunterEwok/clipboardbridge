@@ -175,6 +175,28 @@ class RecordsTest {
     }
 
     /**
+     * testdata/interop/go-removed-admin.json, from Go's TestRemovedAdminVectors:
+     * an admin phone that the root removed signs a root record afterwards,
+     * for a root of its own that revokes the group's root and admins; that
+     * root is not known, so none of it counts, in any order.
+     */
+    @Test
+    fun goRemovedAdmin() {
+        val v = Interop.read("go-removed-admin.json").jsonObject
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+        val ca = b64(v.str("group_ca"))
+        for ((name, recs) in listOf("as written" to records, "reversed" to records.reversed())) {
+            val set = RecordSet()
+            for (r in recs) set.add(r, ca)
+            assertEquals(v.getValue("roots").jsonPrimitive.int, set.roots.size, name)
+            for (k in v.getValue("keys").jsonArray) {
+                val o = k.jsonObject
+                assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), "$name: ${o.str("name")}")
+            }
+        }
+    }
+
+    /**
      * testdata/interop/go-authority.json, from Go's TestGoAuthorityVectors: a
      * device is an admin, with the role and store of that record, only by a
      * record a root's own key signed, and a removed admin's records no

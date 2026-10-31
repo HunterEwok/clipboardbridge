@@ -558,13 +558,18 @@ class RecordSet {
             // The known roots, until nothing is added.
             val k = mutableSetOf<Key>()
             rootKey(groupCA)?.let(k::add)
+            // The admin CAs each root's own key revoked: such an admin
+            // phone's root records under that root no longer count.
+            val removed = entries.filter { it.body.type == "revoke" && it.signer == it.anchor }
+                .flatMap { e -> e.body.keys.orEmpty().map { e.anchor to Key(it) } }.toSet()
             while (true) {
                 val phones = entries.mapNotNull { phoneAdminOf(it, k) }.toSet()
                 var grew = false
                 for (e in entries) {
                     val root = e.body.root ?: continue
                     if (e.body.type != "root" || e.anchor !in k) continue
-                    if (e.signer != e.anchor && e.signer !in phones && !computerHandOver(e)) continue
+                    val phone = e.signer in phones && (e.anchor to e.signer) !in removed
+                    if (e.signer != e.anchor && !phone && !computerHandOver(e)) continue
                     val rk = rootKey(root) ?: continue
                     if (k.add(rk)) grew = true
                 }
