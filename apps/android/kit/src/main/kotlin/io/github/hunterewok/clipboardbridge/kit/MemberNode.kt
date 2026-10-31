@@ -576,7 +576,7 @@ class MemberNode(
     }
 
     /** A fetch in progress on a connection: the chunks of its part, and whether the peer said it has none. */
-    private class Fetching {
+    internal class Fetching {
         val chunks = LinkedBlockingQueue<Any>(CHUNK_QUEUE)
         @Volatile var missing = false
     }

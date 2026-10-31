@@ -198,13 +198,6 @@ final class ContentTests: XCTestCase {
         }
         XCTFail("timed out")
     }
-}
-
-final class Events: @unchecked Sendable {
-    private let lock = NSLock()
-    private var events: [Member.Event] = []
-    func add(_ e: Member.Event) { lock.withLock { events.append(e) } }
-    var all: [Member.Event] { lock.withLock { events } }
 
     /// While a part is served, a cancel of a part that is neither queued
     /// nor served is not kept, as in Go, so the peer's cancels hold at most
@@ -225,4 +218,11 @@ final class Events: @unchecked Sendable {
         XCTAssertEqual(c.cancelledParts, 1)
         XCTAssertTrue(c.cancelled(part, since: 0))
     }
+}
+
+final class Events: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [Member.Event] = []
+    func add(_ e: Member.Event) { lock.withLock { events.append(e) } }
+    var all: [Member.Event] { lock.withLock { events } }
 }
