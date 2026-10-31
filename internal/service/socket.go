@@ -720,6 +720,9 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		fail(c, err)
 		return
 	}
+	if s.cfg.joinID != nil {
+		j.ID = s.cfg.joinID()
+	}
 	var id *group.Identity
 	var after func(bool)
 	switch {
