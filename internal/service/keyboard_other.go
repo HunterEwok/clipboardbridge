@@ -35,6 +35,6 @@ func (s *Service) keyboardStatus() *control.Keyboard { return s.kbd.status() }
 
 func (s *Service) keyboardPastes() bool { return false }
 
-func (s *Service) keyboardPaste(group.CommandBody, string, bool) (node.Result, bool) {
+func (s *Service) keyboardPaste(group.CommandBody, string, bool, func() bool) (node.Result, bool) {
 	return node.Result{}, false
 }

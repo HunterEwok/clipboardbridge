@@ -713,6 +713,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   longer keeps the service from starting.
 - The Windows installer moves aside a data folder in ProgramData that is a link or that
   neither the administrators nor the system owns, instead of resetting what is inside it.
+- A paste typed on a Bluetooth keyboard or a Roku after its answer stops once remote paste is
+  turned off or the sender's command no longer holds, and each takes one text at a time.
 - Every frame of the member protocol holds only integers written as in signed bodies, members
   a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
   computers, the lite member and both phones alike, where some took `-0` for 0 before.
