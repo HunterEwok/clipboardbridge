@@ -46,6 +46,18 @@ public enum Commands {
         public var forwarder: Forwarder?
         public var endpoints: [String]?
         public var clients: [PhoneHub.Client]?
+
+        /// Whether the order is valid, as Go's HubOrder.check: a forwarder
+        /// with an address and a key, or an address at least; at most 8
+        /// addresses and maxHubClients clients, each a device ID once with
+        /// keys of 32 bytes.
+        var valid: Bool {
+            let endpoints = endpoints ?? [], clients = clients ?? []
+            if let f = forwarder, f.endpoint.isEmpty || f.key.isEmpty { return false }
+            guard forwarder != nil || !endpoints.isEmpty, endpoints.count <= 8, clients.count <= Commands.maxHubClients else { return false }
+            var seen = Set<String>()
+            return clients.allSatisfy { Records.isDeviceID($0.device) && seen.insert($0.device).inserted && $0.key.count == 32 && $0.psk.count == 32 }
+        }
     }
 
     /// The most clients a hub command hands over, as many as a hub keeps.
@@ -242,7 +254,9 @@ public enum Commands {
         guard b.type == "action" || (b.action ?? "").isEmpty else { throw refuse("a \(b.type) command names an action") }
         switch b.type {
         case "mode": guard let m = b.mode, !m.isEmpty, b.hub == nil else { throw refuse("a mode command names no mode") }
-        case "hub": guard b.hub != nil, (b.mode ?? "").isEmpty else { throw refuse("a hub command has no order") }
+        case "hub":
+            guard let h = b.hub, (b.mode ?? "").isEmpty else { throw refuse("a hub command has no order") }
+            guard h.valid else { throw refuse("a hub command's order is not valid") }
         case "paste-off", "actions-off", "away-off": guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("a \(b.type) command carries an order") }
         case "action":
             guard b.hub == nil, (b.mode ?? "").isEmpty else { throw refuse("an action command carries an order") }

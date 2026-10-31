@@ -8,6 +8,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
+  a name, the order of the checks is written down, and section 10 has a table of every
+  record field with its JSON type, the types that need it and its values; section 15 says
+  the same for commands. `testdata/interop/strict-generated.json`, which Go's
+  `TestStrictGenerated` writes from these tables, holds some 2000 bodies of records, commands
+  and manifests with the verdict and the rule each one tests; Go, the lite member and both
+  phone kits read it, and the Go test fails when the file is not what the tables give.
 - The two text diagrams of `docs/design.md` (the system context and the containers) are
   pictures now, drawn by `tools/diagrams` like the others, with a light and a dark theme.
 - On the website the pictures of the documentation are drawn in chalk on a board in a walnut
@@ -644,6 +651,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The lite member and both phone apps check a hub command's order as Go does: a forwarder with an
+  address and a key or an address at least, at most 8 addresses and 256 clients, each client
+  a device ID once with keys of 32 bytes.
 - On Windows the service makes the admin socket's directory before the control socket's, and
   makes it again at each start unless the system, the administrators or the service owns it,
   so no other user can own the directory of the admin socket.
