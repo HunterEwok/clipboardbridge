@@ -2613,7 +2613,11 @@ bytes), which picks the key to verify with. A body is at most 256 KiB. Every bod
 (`1`) and `type`, so one kind of file is never taken for another; unknown fields are ignored.
 A body follows the strict form of signed bodies (Conventions), checked before its fields, and
 has every field of its row: only `min_from`, `docker`, `binaries`, `use` and `source_ms` may
-be left out. `seq` is from 1 to 2^63-1. The lite member reads no `attest-status.json`; the
+be left out, and `use` is never empty. Every key is a P-256 SubjectPublicKeyInfo with an
+uncompressed point, and every name, version, channel, serial number and hash matches its rule
+whole (a line break after it is refused). `get.sh` and `get.ps1` refuse a body they cannot
+read as the programs do: a member name that is not 1 to 64 of `a`-`z`, `0`-`9` and `_`, a
+`null`, a backslash, or a field they read written twice. `seq` is from 1 to 2^63-1. The lite member reads no `attest-status.json`; the
 vectors in `testdata/interop/strict-files.json` (section `releases`) test each row.
 
 | `type` | Signed by | Fields |
@@ -2920,7 +2924,8 @@ public key as a SubjectPublicKeyInfo, DER. Its ID is SHA-256 over `body`. Every 
 most 16 KiB. A receiver checks a body's size, then the strict form of signed bodies
 (Conventions), then its fields, before it verifies the signature; a signer checks its own
 body the same way. A `period` and a `server` credential have `tag` and `key` and no list; a
-`hubs` credential no `tag`, `key` or `members`; a `members` credential no `tag`, `key`, `hubs`
+`hubs` credential no `tag`, `key` or `members`; a `key` is a P-256 SubjectPublicKeyInfo with
+an uncompressed point; a `members` credential no `tag`, `key`, `hubs`
 or `admins`; a field a type does not have is left out or empty. Bytes and hashes are base64
 in its one form (Conventions). The vectors in `testdata/interop/strict-files.json` (section
 `credentials`) test each row in all four implementations.
