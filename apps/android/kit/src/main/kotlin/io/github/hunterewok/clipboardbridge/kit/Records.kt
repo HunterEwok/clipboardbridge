@@ -83,13 +83,16 @@ object Records {
             /** The members every record's body has. */
             private val FIELDS = arrayOf("v", "type", "group", "time_ms")
 
+            /** A body is at most this long. */
+            private const val MAX_BODY = 8 shl 10
+
             /**
              * The body in data, or null when it does not decode or is not
              * valid: in the strict form of signed bodies, checked as Go's
              * RecordBody.check.
              */
             fun decode(data: ByteArray): Body? {
-                if (!Strict.ok(data, *FIELDS)) return null
+                if (data.size > MAX_BODY || !Strict.ok(data, *FIELDS)) return null
                 val o = Wire.parse(data) ?: return null
                 return try {
                     Body(
@@ -237,6 +240,8 @@ object Records {
 /** Bytes compared by content, for sets and maps. */
 internal data class Key(val hex: String) {
     constructor(b: ByteArray) : this(b.toHex())
+
+    val bytes: ByteArray get() = ByteArray(hex.length / 2) { hex.substring(2 * it, 2 * it + 2).toInt(16).toByte() }
 }
 
 /**
@@ -296,7 +301,17 @@ class RecordSet {
         override fun hashCode(): Int = id.hashCode()
     }
 
-    private fun known(id: ByteArray): Boolean = list.any { Records.id(it).contentEquals(id) }
+    /**
+     * The ID and the signer's key hash of each record: a body that several signers signed is a record for each, so
+     * which signer's copy came first changes nothing.
+     */
+    private val envelopes = mutableSetOf<Pair<Key, Key>>()
+
+    /** Whether the set holds exactly r: its body with the same signature and chain. */
+    private fun holds(r: Member.Record): Boolean = list.any { o ->
+        o.body.contentEquals(r.body) && o.sig.contentEquals(r.sig) &&
+            (o.chain ?: emptyList()).let { c -> val rc = r.chain ?: emptyList(); c.size == rc.size && c.zip(rc).all { (x, y) -> x.contentEquals(y) } }
+    }
 
     /**
      * Adds a record signed under one of the group's roots, by the root's
@@ -309,7 +324,7 @@ class RecordSet {
      */
     fun add(r: Member.Record, groupCA: ByteArray): Boolean {
         if (this.groupCA == null) this.groupCA = groupCA
-        if (!this.groupCA.contentEqualsOrNull(groupCA) || known(Records.id(r))) return false
+        if (!this.groupCA.contentEqualsOrNull(groupCA) || holds(r)) return false
         if (rootList.isEmpty()) rootList.add(groupCA)
         val body = Records.Body.decode(r.body) ?: return false
         if (body.v != Records.VERSION || body.group != GroupCertificates.tag(groupCA)) return false
@@ -321,10 +336,12 @@ class RecordSet {
             if (pathLength != 1 || runCatching { GroupCertificates.checkRoot(root) }.isFailure) return false
         }
         val signer = Key(anchor.second)
+        val envelope = Key(Records.id(r)) to signer
         val n = perSigner[signer] ?: 0
-        if (n >= MAX_PER_ADMIN) return false
+        if (envelope in envelopes || n >= MAX_PER_ADMIN) return false
         if (list.size >= MAX && (list.size >= MAX + MAX_PER_ADMIN || signer != anchorKey || anchorKey !in Eval(this).onPath)) return false
         perSigner[signer] = n + 1
+        envelopes.add(envelope)
         list.add(r)
         if (body.type == "device" && signer == anchorKey) {
             val bit = when (Records.role(body.role)) {
@@ -383,7 +400,7 @@ class RecordSet {
             for (r in pending) {
                 if (add(r, groupCA)) {
                     fresh.add(r)
-                } else if (!known(Records.id(r))) {
+                } else if (!holds(r)) {
                     rest.add(r)
                 }
             }
@@ -541,13 +558,18 @@ class RecordSet {
             // The known roots, until nothing is added.
             val k = mutableSetOf<Key>()
             rootKey(groupCA)?.let(k::add)
+            // The admin CAs each root's own key revoked: such an admin
+            // phone's root records under that root no longer count.
+            val removed = entries.filter { it.body.type == "revoke" && it.signer == it.anchor }
+                .flatMap { e -> e.body.keys.orEmpty().map { e.anchor to Key(it) } }.toSet()
             while (true) {
                 val phones = entries.mapNotNull { phoneAdminOf(it, k) }.toSet()
                 var grew = false
                 for (e in entries) {
                     val root = e.body.root ?: continue
                     if (e.body.type != "root" || e.anchor !in k) continue
-                    if (e.signer != e.anchor && e.signer !in phones && !computerHandOver(e)) continue
+                    val phone = e.signer in phones && (e.anchor to e.signer) !in removed
+                    if (e.signer != e.anchor && !phone && !computerHandOver(e)) continue
                     val rk = rootKey(root) ?: continue
                     if (k.add(rk)) grew = true
                 }
@@ -777,7 +799,7 @@ class RecordSet {
                     val b = e.body
                     b.type == "device" && e.signer == st.anchor && e.anchor == st.anchor &&
                         ((b.device != null && b.device == b.by) || b.admin?.let { Key(it) } == st.signer)
-                }.sortedWith { a, b -> compareBytes(Records.id(a.record), Records.id(b.record)) }.forEach { out.add(it.record) }
+                }.sortedWith(BY_ENVELOPE).forEach { out.add(it.record) }
             }
             return out
         }
@@ -794,7 +816,7 @@ class RecordSet {
             val seen = mutableSetOf<String>()
             val out = mutableListOf<Member.Record>()
             fun add(r: Member.Record) {
-                if (seen.add(Key(Records.id(r)).hex)) out.add(r)
+                if (seen.add(Key(Records.id(r)).hex + Key(r.sig).hex)) out.add(r)
             }
             pathRecords.forEach(::add)
             val ev = Eval(this)
@@ -802,7 +824,7 @@ class RecordSet {
                 val b = e.body
                 b.type == "device" && e.signer == e.anchor && (b.admin != null || (b.device != null && b.device == b.by))
             }.mapNotNull { it.body.device }.toSet()
-            for (e in ev.entries.sortedBy { it.id.hex }) {
+            for (e in ev.entries.sortedWith(BY_ENVELOPE)) {
                 if (e.body.type != "device" || (e.signer == e.anchor && e.body.device in governs)) add(e.record)
             }
             return out
@@ -826,9 +848,9 @@ class RecordSet {
             fun newer(e: Entry, cur: Entry): Boolean = if (e.body.timeMS != cur.body.timeMS) {
                 e.body.timeMS > cur.body.timeMS
             } else {
-                compareBytes(Records.id(e.record), Records.id(cur.record)) >= 0
+                BY_ENVELOPE.compare(e, cur) > 0
             }
-            for (e in ev.entries.sortedBy { it.id.hex }) { // by record ID, as Go, so the keys come in the same order
+            for (e in ev.entries.sortedWith(BY_ENVELOPE)) { // by record ID, as Go, so the keys come in the same order
                 val b = e.body
                 if (b.type != "device") continue
                 val d = b.device ?: continue
@@ -981,11 +1003,14 @@ class RecordSet {
         return (own.body.device ?: return null) to Key(own.body.key ?: return null)
     }
 
-    /** SHA-256 over the sorted record IDs, base64, as the hello carries it; null for an empty set. */
+    /**
+     * SHA-256 over each record's ID and signer's key hash, sorted by ID and then signer, base64, as the hello carries
+     * it; null for an empty set.
+     */
     val digest: String?
         get() {
             if (list.isEmpty()) return null
-            val ids = list.map { Records.id(it) }.sortedWith { a, b -> compareBytes(a, b) }
+            val ids = Eval(this).entries.sortedWith(BY_ENVELOPE).map { it.id.bytes + it.signer.bytes }
             val h = java.security.MessageDigest.getInstance("SHA-256")
             for (id in ids) h.update(id)
             return Base64.getEncoder().encodeToString(h.digest())
@@ -1006,6 +1031,9 @@ class RecordSet {
          * of an admin that filled it.
          */
         const val MAX_PER_ADMIN = 1024
+
+        /** Entries by ID and then signer, as Go sorts records; lower-case hex sorts as the bytes do. */
+        private val BY_ENVELOPE = compareBy<Entry>({ it.id.hex }, { it.signer.hex })
 
         private const val NAMED_PHONE = 1
         private const val NAMED_OTHER = 2

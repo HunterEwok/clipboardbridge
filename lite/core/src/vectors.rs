@@ -270,6 +270,62 @@ fn go_admins() {
     assert_eq!(s.digest(), v["digest"].as_str().unwrap());
 }
 
+/// One body signed by two signers is two records, and the set says the same
+/// whichever came first: the root's removal of an admin phone counts though
+/// a computer admin's copy of it came first (go-envelopes.json, as Go's
+/// TestEnvelopeVectors writes it).
+#[test]
+fn go_envelopes() {
+    let v = vectors("go-envelopes.json");
+    let rs = records(&v["records"]);
+    let mut reversed = rs.clone();
+    reversed.reverse();
+    let only_computer = rs[..3].to_vec();
+    for (name, recs) in
+        [("as written", &rs), ("reversed", &reversed), ("the computer admin's copy only", &only_computer)]
+    {
+        let mut s = Records::new(&cert(&v["group_ca"]));
+        for r in recs {
+            s.add(r).unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+        for r in recs {
+            assert!(!s.add(r).unwrap(), "{name}: a record held already was new again");
+        }
+        let full = recs.len() == rs.len();
+        for k in v["keys"].as_array().unwrap() {
+            let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+            assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap() && full, "{name}: {}", k["name"]);
+        }
+        if full {
+            assert_eq!(s.len() as u64, v["count"].as_u64().unwrap(), "{name}");
+            assert_eq!(s.digest(), v["digest"].as_str().unwrap(), "{name}");
+        }
+    }
+}
+
+/// An admin phone that the root removed signs a root record afterwards, for
+/// a root of its own that revokes the group's root and admins: that root is
+/// not known, so none of it counts, in any order (go-removed-admin.json, as
+/// Go's TestRemovedAdminVectors writes it).
+#[test]
+fn go_removed_admin() {
+    let v = vectors("go-removed-admin.json");
+    let rs = records(&v["records"]);
+    let mut reversed = rs.clone();
+    reversed.reverse();
+    for (name, recs) in [("as written", &rs), ("reversed", &reversed)] {
+        let mut s = Records::new(&cert(&v["group_ca"]));
+        for r in recs {
+            let _ = s.add(r);
+        }
+        assert_eq!(s.roots().len() as u64, v["roots"].as_u64().unwrap(), "{name}");
+        for k in v["keys"].as_array().unwrap() {
+            let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+            assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{name}: {}", k["name"]);
+        }
+    }
+}
+
 /// A device is an admin, with the role and store of that record, only by a
 /// record a root's own key signed, and a removed admin's records no longer
 /// decide a device's entry (go-authority.json, as Go's

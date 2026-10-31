@@ -80,13 +80,18 @@ func (r *Relay) checkRecords(tag string, root *x509.Certificate, from netip.Addr
 	}
 	var missing []group.Record
 	size := 0
-	seen := map[[sha256.Size]byte]bool{}
+	// A body may come under several signers, each a record of its own.
+	type held struct {
+		id  [sha256.Size]byte
+		sig string
+	}
+	seen := map[held]bool{}
 	for _, rec := range recs {
-		id := rec.ID()
-		if seen[id] || rs.set.Has(id) {
+		k := held{rec.ID(), string(rec.Sig)}
+		if seen[k] || rs.set.Has(rec) {
 			continue
 		}
-		seen[id] = true
+		seen[k] = true
 		missing = append(missing, rec)
 		size += recordSize(rec)
 	}

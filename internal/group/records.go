@@ -290,6 +290,9 @@ func SignRecord(body RecordBody, key crypto.Signer, chain ...*x509.Certificate) 
 // signed bodies.
 func parseRecordBody(data []byte) (RecordBody, error) {
 	var body RecordBody
+	if len(data) > maxRecordBody {
+		return body, errors.New("group: the record is too large")
+	}
 	if err := checkStrict(data, "v", "type", "group", "time_ms"); err != nil {
 		return body, err
 	}
@@ -382,6 +385,13 @@ type signedRecord struct {
 	root   *x509.Certificate // the new root of a root record
 }
 
+// envelope names one signer's signature of a record body: a set keeps every
+// signer's, so which of them a device saw first changes nothing.
+type envelope struct {
+	id     [sha256.Size]byte
+	signer KeyHash
+}
+
 // Records is the set of a group's records. It only grows; what it says
 // depends on the records alone, never on the order in which they were added
 // (docs/protocol.md, section 10). It is not safe for concurrent use.
@@ -389,7 +399,10 @@ type Records struct {
 	groupCA *x509.Certificate
 	tag     string
 	caKey   KeyHash
-	byID    map[[sha256.Size]byte]*signedRecord
+	// byID holds each body under every signer that signed it, and sigs the
+	// exact records held, by body.
+	byID map[envelope]*signedRecord
+	sigs map[[sha256.Size]byte][]Record
 	// roots are the roots records may be signed under: the group CA and
 	// the new root of every root record that may make it a known root
 	// (mayBeKnown); the others wait in pending.
@@ -416,7 +429,8 @@ func NewRecords(groupCA *x509.Certificate) *Records {
 		groupCA:   groupCA,
 		tag:       Tag(groupCA),
 		caKey:     caKey,
-		byID:      map[[sha256.Size]byte]*signedRecord{},
+		byID:      map[envelope]*signedRecord{},
+		sigs:      map[[sha256.Size]byte][]Record{},
 		roots:     map[KeyHash]*x509.Certificate{caKey: groupCA},
 		named:     map[KeyHash]map[KeyHash]uint8{},
 		own:       map[KeyHash]uint8{},
@@ -431,28 +445,38 @@ const (
 	namedWatch
 )
 
-// Len returns the number of records.
+// Len returns the number of records, a body that several signers signed
+// counting once for each.
 func (s *Records) Len() int { return len(s.byID) }
 
-// Has reports whether the set holds the record with the ID id, so that a
-// caller can tell which of a batch Add would have to verify.
-func (s *Records) Has(id [sha256.Size]byte) bool {
-	_, ok := s.byID[id]
-	return ok
+// Has reports whether the set holds exactly the record r, its body with
+// the same signature and chain, so that a caller can tell which of a batch
+// Add would have to verify.
+func (s *Records) Has(r Record) bool {
+	for _, o := range s.sigs[r.ID()] {
+		if bytes.Equal(o.Sig, r.Sig) && slices.EqualFunc(o.Chain, r.Chain, bytes.Equal) {
+			return true
+		}
+	}
+	return false
 }
 
-// Add checks a record and adds it. It reports whether the record was new; a
-// record that is not valid for this group is an error. The limits are
-// checked after the signature, so that a record nobody signed never fills
-// the set.
+// Add checks a record and adds it. It reports whether the record was new: a
+// body that the set holds signed by another signer is, and the same body
+// signed again by the same signer is not. A record that is not valid for
+// this group is an error. The limits are checked after the signature, so
+// that a record nobody signed never fills the set.
 func (s *Records) Add(r Record) (bool, error) {
-	id := r.ID()
-	if _, ok := s.byID[id]; ok {
+	if s.Has(r) {
 		return false, nil
 	}
 	sr, err := s.verify(r)
 	if err != nil {
 		return false, err
+	}
+	key := envelope{sr.id, sr.signer}
+	if _, ok := s.byID[key]; ok {
+		return false, nil
 	}
 	if s.perSigner[sr.signer] >= MaxPerAdmin {
 		return false, errors.New("group: too many records from one signer")
@@ -461,7 +485,8 @@ func (s *Records) Add(r Record) (bool, error) {
 		return false, errors.New("group: too many records")
 	}
 	s.perSigner[sr.signer]++
-	s.byID[id] = sr
+	s.byID[key] = sr
+	s.sigs[sr.id] = append(s.sigs[sr.id], r)
 	s.ev = nil
 	b := sr.body
 	if b.Type == RecordDevice && sr.signer == sr.anchor {
@@ -550,9 +575,6 @@ func (s *Records) AddAll(rs []Record) (fresh []Record, errs []error) {
 }
 
 func (s *Records) verify(r Record) (*signedRecord, error) {
-	if len(r.Body) > maxRecordBody {
-		return nil, errors.New("group: the record is too large")
-	}
 	body, err := parseRecordBody(r.Body)
 	if err != nil {
 		return nil, err
@@ -705,11 +727,15 @@ func (s *Records) PathRecords() []Record {
 // device (docs/protocol.md, section 13); the other devices' records, with
 // their names, stay in the group.
 func (s *Records) AuthorityRecords() []Record {
-	seen := map[[sha256.Size]byte]bool{}
+	type held struct {
+		id  [sha256.Size]byte
+		sig string
+	}
+	seen := map[held]bool{}
 	var out []Record
 	add := func(r Record) {
-		if id := r.ID(); !seen[id] {
-			seen[id] = true
+		if k := (held{r.ID(), string(r.Sig)}); !seen[k] {
+			seen[k] = true
 			out = append(out, r)
 		}
 	}
@@ -1117,12 +1143,23 @@ func (s *Records) eval() *evaluation {
 
 // knownRoots returns the roots whose own signatures may count: the group CA
 // and the new root of every root record that a known root's own key or an
-// admin phone under a known root signed, or that an admin computer signed
+// admin phone under a known root signed, while no revocation from that
+// root's own key names the admin phone's admin CA, or that an admin computer signed
 // under a root that is a computer (computerHandOver). A root that a
 // computer's admin CA named in any other case is not one of them, so its
 // key, which that admin holds, signs nothing that counts.
 func (s *Records) knownRoots() map[KeyHash]bool {
 	known := map[KeyHash]bool{s.caKey: true}
+	// The admin CAs each root's own key revoked: such an admin phone's root
+	// records under that root no longer count.
+	removed := map[[2]KeyHash]bool{}
+	for _, r := range s.byID {
+		if r.body.Type == RecordRevoke && r.signer == r.anchor {
+			for _, k := range r.body.Keys {
+				removed[[2]KeyHash{r.anchor, k}] = true
+			}
+		}
+	}
 	for {
 		phones := map[KeyHash]bool{}
 		for _, r := range s.byID {
@@ -1132,7 +1169,8 @@ func (s *Records) knownRoots() map[KeyHash]bool {
 		}
 		grew := false
 		for _, r := range s.byID {
-			if r.root == nil || !known[r.anchor] || r.signer != r.anchor && !phones[r.signer] && !s.computerHandOver(r) {
+			phone := phones[r.signer] && !removed[[2]KeyHash{r.anchor, r.signer}]
+			if r.root == nil || !known[r.anchor] || r.signer != r.anchor && !phone && !s.computerHandOver(r) {
 				continue
 			}
 			if k := KeyHashOf(r.root); !known[k] {
@@ -1548,11 +1586,14 @@ func newer(a, b *signedRecord) bool {
 	if a.body.TimeMS != b.body.TimeMS {
 		return a.body.TimeMS > b.body.TimeMS
 	}
-	ai, bi := a.ID(), b.ID()
-	return bytes.Compare(ai[:], bi[:]) > 0
+	if c := bytes.Compare(a.id[:], b.id[:]); c != 0 {
+		return c > 0
+	}
+	return bytes.Compare(a.signer[:], b.signer[:]) > 0
 }
 
-// All returns every record, sorted by ID.
+// All returns every record, sorted by ID and, for a body several signers
+// signed, by signer.
 func (s *Records) All() []Record {
 	ids := s.sortedIDs()
 	out := make([]Record, len(ids))
@@ -1562,24 +1603,32 @@ func (s *Records) All() []Record {
 	return out
 }
 
-func (s *Records) sortedIDs() [][sha256.Size]byte {
-	ids := make([][sha256.Size]byte, 0, len(s.byID))
+func (s *Records) sortedIDs() []envelope {
+	ids := make([]envelope, 0, len(s.byID))
 	for id := range s.byID {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return bytes.Compare(ids[i][:], ids[j][:]) < 0 })
+	sort.Slice(ids, func(i, j int) bool {
+		if c := bytes.Compare(ids[i].id[:], ids[j].id[:]); c != 0 {
+			return c < 0
+		}
+		return bytes.Compare(ids[i].signer[:], ids[j].signer[:]) < 0
+	})
 	return ids
 }
 
-// Digest returns SHA-256 over the sorted record IDs in base64, the value a
-// hello carries; "" for an empty set.
+// Digest returns SHA-256 over each record's ID and signer's key hash, sorted
+// as All sorts them, in base64: the value a hello carries; "" for an empty
+// set. Two sets with the same bodies under different signers differ, so
+// devices that saw a body from different signers exchange their records.
 func (s *Records) Digest() string {
 	if len(s.byID) == 0 {
 		return ""
 	}
 	h := sha256.New()
-	for _, id := range s.sortedIDs() {
-		h.Write(id[:])
+	for _, e := range s.sortedIDs() {
+		h.Write(e.id[:])
+		h.Write(e.signer[:])
 	}
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
