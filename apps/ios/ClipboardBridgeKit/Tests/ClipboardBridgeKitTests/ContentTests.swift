@@ -179,6 +179,26 @@ final class ContentTests: XCTestCase {
         XCTAssertEqual(m.size, 6)
     }
 
+    /// testdata/interop/media-names.json, as Go's TestNameVectors writes
+    /// it: the kit takes the names Go takes, writes the device names of
+    /// Windows under Go's names and cleans names as Go does.
+    func testNameVectors() throws {
+        struct Case: Decodable {
+            var name, clean: String
+            var valid: Bool
+            var save: String?
+        }
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        let cases = try JSONDecoder().decode([Case].self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/media-names.json")))
+        XCTAssertFalse(cases.isEmpty)
+        for c in cases {
+            XCTAssertEqual(Media.checkName(c.name), c.valid, c.name)
+            if c.valid { XCTAssertEqual(Media.saveName(c.name), c.save, c.name) }
+            XCTAssertEqual(Media.cleanName(c.name), c.clean, c.name)
+        }
+    }
+
     func testMemoryContentKeepsTheNewest() {
         let store = MemoryContent(maxBytes: 10)
         let one = store.put(Data(repeating: 1, count: 6))

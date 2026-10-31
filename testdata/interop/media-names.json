@@ -1,0 +1,197 @@
+[
+	{
+		"name": "report.pdf",
+		"valid": true,
+		"save": "report.pdf",
+		"clean": "report.pdf"
+	},
+	{
+		"name": "CON",
+		"valid": false,
+		"clean": "CON_"
+	},
+	{
+		"name": "con.txt",
+		"valid": false,
+		"clean": "con_.txt"
+	},
+	{
+		"name": "nul.tar.gz",
+		"valid": false,
+		"clean": "nul_.tar.gz"
+	},
+	{
+		"name": "Aux",
+		"valid": false,
+		"clean": "Aux_"
+	},
+	{
+		"name": "PRN.",
+		"valid": false,
+		"clean": "PRN_._"
+	},
+	{
+		"name": "com1",
+		"valid": false,
+		"clean": "com1_"
+	},
+	{
+		"name": "LPT9.log",
+		"valid": false,
+		"clean": "LPT9_.log"
+	},
+	{
+		"name": "COM0",
+		"valid": true,
+		"save": "COM0_",
+		"clean": "COM0_"
+	},
+	{
+		"name": "lpt0.txt",
+		"valid": true,
+		"save": "lpt0_.txt",
+		"clean": "lpt0_.txt"
+	},
+	{
+		"name": "COM¹",
+		"valid": true,
+		"save": "COM¹_",
+		"clean": "COM¹_"
+	},
+	{
+		"name": "lpt².doc",
+		"valid": true,
+		"save": "lpt²_.doc",
+		"clean": "lpt²_.doc"
+	},
+	{
+		"name": "COM³.x.y",
+		"valid": true,
+		"save": "COM³_.x.y",
+		"clean": "COM³_.x.y"
+	},
+	{
+		"name": "COM⁴",
+		"valid": true,
+		"save": "COM⁴",
+		"clean": "COM⁴"
+	},
+	{
+		"name": "COM10",
+		"valid": true,
+		"save": "COM10",
+		"clean": "COM10"
+	},
+	{
+		"name": "COMx",
+		"valid": true,
+		"save": "COMx",
+		"clean": "COMx"
+	},
+	{
+		"name": "LPT",
+		"valid": true,
+		"save": "LPT",
+		"clean": "LPT"
+	},
+	{
+		"name": "CONIN$",
+		"valid": true,
+		"save": "CONIN$_",
+		"clean": "CONIN$_"
+	},
+	{
+		"name": "conout$.log",
+		"valid": true,
+		"save": "conout$_.log",
+		"clean": "conout$_.log"
+	},
+	{
+		"name": "CONIN",
+		"valid": true,
+		"save": "CONIN",
+		"clean": "CONIN"
+	},
+	{
+		"name": "CONERR$",
+		"valid": true,
+		"save": "CONERR$",
+		"clean": "CONERR$"
+	},
+	{
+		"name": "CON .txt",
+		"valid": true,
+		"save": "CON _.txt",
+		"clean": "CON _.txt"
+	},
+	{
+		"name": "nul  .x",
+		"valid": true,
+		"save": "nul  _.x",
+		"clean": "nul  _.x"
+	},
+	{
+		"name": "COM1 .txt",
+		"valid": true,
+		"save": "COM1 _.txt",
+		"clean": "COM1 _.txt"
+	},
+	{
+		"name": "com0 ",
+		"valid": false,
+		"clean": "com0 _"
+	},
+	{
+		"name": " CON.txt",
+		"valid": true,
+		"save": " CON.txt",
+		"clean": " CON.txt"
+	},
+	{
+		"name": "CON_.txt",
+		"valid": true,
+		"save": "CON_.txt",
+		"clean": "CON_.txt"
+	},
+	{
+		"name": "conın$",
+		"valid": true,
+		"save": "conın$",
+		"clean": "conın$"
+	},
+	{
+		"name": "ſom1",
+		"valid": true,
+		"save": "ſom1",
+		"clean": "ſom1"
+	},
+	{
+		"name": "CON.́",
+		"valid": false,
+		"clean": "CON_.́"
+	},
+	{
+		"name": "COŃ.txt",
+		"valid": true,
+		"save": "COŃ.txt",
+		"clean": "COŃ.txt"
+	},
+	{
+		"name": "ＣＯＮ",
+		"valid": true,
+		"save": "ＣＯＮ",
+		"clean": "ＣＯＮ"
+	},
+	{
+		"name": "console",
+		"valid": true,
+		"save": "console",
+		"clean": "console"
+	},
+	{
+		"name": "comX.txt",
+		"valid": true,
+		"save": "comX.txt",
+		"clean": "comX.txt"
+	}
+]

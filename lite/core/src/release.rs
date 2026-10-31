@@ -173,11 +173,12 @@ impl File {
             if sha256(spki)[..] != self.key[..] {
                 continue;
             }
-            let key = crate::certs::p256_spki(spki).ok_or_else(|| Error::msg("a key is not P-256"))?;
-            let sig = Signature::from_der(&self.sig).map_err(|_| Error::msg("the signature is not valid"))?;
-            return key.verify(&self.body, &sig).map_err(|_| Error::msg("the signature is not valid"));
+            // As Go's release.ErrSignature, each of these is an answer.
+            let key = crate::certs::p256_spki(spki).ok_or_else(|| Error::msg("a key is not P-256").answer())?;
+            let sig = Signature::from_der(&self.sig).map_err(|_| Error::msg("the signature is not valid").answer())?;
+            return key.verify(&self.body, &sig).map_err(|_| Error::msg("the signature is not valid").answer());
         }
-        Err(Error::msg("the signature is not valid"))
+        Err(Error::msg("the signature is not valid").answer())
     }
 }
 
@@ -341,7 +342,7 @@ pub fn verify_keys(f: &File, roots: &[&[u8]], now_ms: i64, seen: &Seen) -> Resul
         return Err(Error::msg("keys.json was signed ahead of this device's clock"));
     }
     if k.seq < seen.keys_seq {
-        return Err(Error::msg("keys.json is older than one already seen"));
+        return Err(Error::msg("keys.json is older than one already seen").answer());
     }
     Ok(k)
 }
@@ -382,7 +383,7 @@ pub fn check(
     }
     let at = floor(seen.channel_seq, seen.channel_keys_seq, seen.keys_seq, k.seq);
     if c.seq < at {
-        return Err(Error::msg(format!("{name}.json is older than one already seen")));
+        return Err(Error::msg(format!("{name}.json is older than one already seen")).answer());
     }
     if c.seq - at > MAX_SEQ_STEP {
         return Err(Error::msg(format!("{name}.json is too far ahead of the one already seen")));
@@ -399,7 +400,7 @@ pub fn check(
         )));
     }
     if !seen.version.is_empty() && compare(&r.version, &seen.version).is_lt() {
-        return Err(Error::msg("release.json is older than a release already seen"));
+        return Err(Error::msg("release.json is older than a release already seen").answer());
     }
     let version = if !seen.version.is_empty() && compare(&seen.version, &r.version).is_gt() {
         seen.version.clone()
