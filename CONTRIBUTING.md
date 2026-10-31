@@ -95,6 +95,7 @@ go vet ./...
 go tool staticcheck ./...
 go tool govulncheck ./...
 go tool actionlint             # GitHub Actions workflows
+pipx run zizmor==1.31.1 --offline --min-severity low .github/workflows   # their security
 go run ./tools/repocheck       # English only, license headers, copied code, no programs or files over 1 MiB, documentation links and names
 go run ./tools/tokens -check   # apps/design/tokens.json -> Swift and Kotlin, WCAG contrast
 go run ./tools/icon -check     # the app icon
@@ -114,6 +115,7 @@ The lite member (Rust, the `lite` job in CI):
 ```sh
 cd lite && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 cargo build -p clipboardbridge-core --target riscv32imac-unknown-none-elf   # the core without an OS
+cargo deny --locked check licenses bans sources   # the crates' licenses and sources (lite/deny.toml, CI's advisories job)
 cargo build --release && cd .. && CBB_LITE=$PWD/lite/target/release/cbb \
   go test ./internal/service -run TestLiteMember   # joins by the phone, syncs with Go members, and through the hub's tunnel
 ```

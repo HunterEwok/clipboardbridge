@@ -38,11 +38,14 @@ jobs:
           else
             echo "No branch channel yet: release-sign publish makes it with the first signed release."
           fi
+      # This checkout keeps its token: the next steps push to the branch channel.
+      # The job uploads no artifact, so nothing carries the token out.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.branch.outputs.exists == 'true'
         with:
           ref: channel
           path: channel
+          persist-credentials: true # zizmor: ignore[artipacked]
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.branch.outputs.exists == 'true'
         with:
