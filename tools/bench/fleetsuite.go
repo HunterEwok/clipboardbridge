@@ -98,6 +98,7 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"S20-fuzz", func() { fuzzing(ctx, r, f, timeout) }},
 		{"K11-file-keys", func() { fileKeys(ctx, r, f, timeout) }},
 		{"G41-matrix", func() { joinMatrix(ctx, r, f, timeout) }},
+		{"I8-update", func() { updates(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
