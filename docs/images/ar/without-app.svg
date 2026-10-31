@@ -47,15 +47,15 @@
 <g class=""><rect class="card " x="485.0" y="198.0" width="170" height="64" rx="10"/><g transform="translate(497.0,216)" class="ic"><rect x="8" y="2" width="12" height="24" rx="2.5"/><line x1="12.5" y1="22.5" x2="15.5" y2="22.5"/></g><text class="t" x="535.0" y="226" direction="rtl" text-anchor="end">iPhone</text><text class="s" x="535.0" y="244" direction="rtl" text-anchor="end">مع الاختصار</text></g>
 <path class="e-pair" d="M235.0,140.0 L485.0,140.0"/>
 <path class="a-pair" d="M485.0,140.0 L477.0,135.6 L477.0,144.4z"/>
-<path class="e-pair" d="M330,140 L330,50 L485.0,50.0"/>
+<path class="e-pair" d="M280.0,140 L280.0,50 L485.0,50.0"/>
 <path class="a-pair" d="M485.0,50.0 L477.0,45.6 L477.0,54.4z"/>
-<path class="e-pair" d="M330,140 L330,230 L485.0,230.0"/>
+<path class="e-pair" d="M280.0,140 L280.0,230 L485.0,230.0"/>
 <path class="a-pair" d="M485.0,230.0 L477.0,225.6 L477.0,234.4z"/>
 <text class="note" x="360" y="290" text-anchor="middle" direction="rtl">بعدها يتزامن كل جهاز مع كل جهاز آخر، كما في مجموعة أُنشئت على هاتف.</text>
-<rect class="lbl-bg" x="342.1" y="129.0" width="125.9" height="22" rx="11.0"/>
-<text class="lbl pair" x="405" y="144.0" text-anchor="middle" direction="rtl">رمز من ستة أرقام</text>
-<rect class="lbl-bg" x="342.1" y="39.0" width="125.9" height="22" rx="11.0"/>
-<text class="lbl pair" x="405" y="54.0" text-anchor="middle" direction="rtl">رمز من ستة أرقام</text>
-<rect class="lbl-bg" x="324.2" y="219.0" width="161.6" height="22" rx="11.0"/>
-<text class="lbl pair" x="405" y="234.0" text-anchor="middle" direction="rtl">ملف التعريف والاختصار</text>
+<rect class="lbl-bg" x="319.6" y="129.0" width="125.9" height="22" rx="11.0"/>
+<text class="lbl pair" x="382.5" y="144.0" text-anchor="middle" direction="rtl">رمز من ستة أرقام</text>
+<rect class="lbl-bg" x="319.6" y="39.0" width="125.9" height="22" rx="11.0"/>
+<text class="lbl pair" x="382.5" y="54.0" text-anchor="middle" direction="rtl">رمز من ستة أرقام</text>
+<rect class="lbl-bg" x="301.7" y="219.0" width="161.6" height="22" rx="11.0"/>
+<text class="lbl pair" x="382.5" y="234.0" text-anchor="middle" direction="rtl">ملف التعريف والاختصار</text>
 </svg>

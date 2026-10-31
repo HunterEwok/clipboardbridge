@@ -483,6 +483,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The documentation's pictures are laid out better: in the forwarder picture the home side
+  moves right and the hub's line has room for its label; in the hub picture the hub's neighbours
+  hang on one trunk; in the group and without-app pictures the branch stands close to the root.
 - On the website the rectangles of the documentation's pictures keep their top corners (the
   site's cut-corner pane style had been applied to them), and the cards of the at-home picture
   no longer overlap in Russian and Swahili: the picture widens to hold them.
