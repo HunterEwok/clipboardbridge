@@ -31,7 +31,7 @@ var automated = map[string][]string{
 	"W1": {"away"}, "W10": {"away", "fleet"}, "W13": {"away", "fleet"}, "W14": {"away", "fleet"}, "W15": {"away", "fleet"},
 	"W31": {"away", "fleet"}, "W36": {"relay", "fleet"}, "W3": {"fleet"}, "W11": {"fleet"}, "W18": {"fleet"},
 	"W19": {"fleet"}, "W20": {"fleet"}, "W32": {"fleet"}, "W33": {"fleet"}, "W34": {"fleet"}, "W35": {"fleet"},
-	"W37": {"fleet"}, "W38": {"fleet"}, "W4": {"fleet"}, "W21": {"fleet"}, "W40": {"fleet"},
+	"W30": {"fleet"}, "W37": {"fleet"}, "W38": {"fleet"}, "W4": {"fleet"}, "W21": {"fleet"}, "W40": {"fleet"},
 	// Security.
 	"S10": {"full"}, "S11": {"full"}, "S15": {"full"}, "S16": {"full"},
 	"S3": {"fleet"}, "S4": {"fleet"}, "S5": {"fleet"}, "S8": {"fleet"},
