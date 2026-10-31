@@ -202,4 +202,5 @@ func updates(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		return runsVersion(ctx, d, "0.6.1")
 	})
 	getScript(ctx, r, f, fd, builds)
+	groupUpdate(ctx, r, f, fd, builds)
 }
