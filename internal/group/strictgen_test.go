@@ -32,6 +32,8 @@ type genVector struct {
 	Body  []byte `json:"body"`
 	PadAt int    `json:"pad_at,omitempty"`
 	Pad   int    `json:"pad,omitempty"`
+	// Kind names the body's kind where the reader needs it.
+	Kind string `json:"kind,omitempty"`
 }
 
 // Full returns the body with its padding.
@@ -782,15 +784,18 @@ func makeGenVectors() genVectors {
 	return v
 }
 
-// encodeGenVectors writes the vectors one to a line, so that a change to
-// the tables shows as a change of those lines.
-func encodeGenVectors(v genVectors) []byte {
+// A genSection is a named list of vectors.
+type genSection struct {
+	name string
+	l    []genVector
+}
+
+// encodeSections writes the vectors one to a line, so that a change to the
+// tables shows as a change of those lines.
+func encodeSections(sections []genSection) []byte {
 	var b bytes.Buffer
 	b.WriteString("{\n")
-	for i, s := range []struct {
-		name string
-		l    []genVector
-	}{{"records", v.Records}, {"commands", v.Commands}, {"manifests", v.Manifests}} {
+	for i, s := range sections {
 		fmt.Fprintf(&b, "  %q: [\n", s.name)
 		for j, c := range s.l {
 			line, err := json.Marshal(c)
@@ -805,13 +810,17 @@ func encodeGenVectors(v genVectors) []byte {
 			b.WriteByte('\n')
 		}
 		b.WriteString("  ]")
-		if i < 2 {
+		if i < len(sections)-1 {
 			b.WriteByte(',')
 		}
 		b.WriteByte('\n')
 	}
 	b.WriteString("}\n")
 	return b.Bytes()
+}
+
+func encodeGenVectors(v genVectors) []byte {
+	return encodeSections([]genSection{{"records", v.Records}, {"commands", v.Commands}, {"manifests", v.Manifests}})
 }
 
 // TestStrictGenerated checks that testdata/interop/strict-generated.json is

@@ -444,3 +444,52 @@ func TestLifetimeInRange(t *testing.T) {
 		}
 	}
 }
+
+// TestStrictFiles reads the release files of
+// testdata/interop/strict-files.json, which internal/group's
+// TestStrictGeneratedFiles writes from the tables of docs/protocol.md.
+func TestStrictFiles(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "interop", "strict-files.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Releases []struct {
+			Name, Rule, Kind string
+			Valid            bool
+			Body             []byte
+			PadAt            int `json:"pad_at"`
+			Pad              int
+		}
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Releases) == 0 {
+		t.Fatal("no release files")
+	}
+	for _, c := range v.Releases {
+		body := c.Body
+		if c.Pad > 0 {
+			body = append(append(append([]byte{}, body[:c.PadAt]...), strings.Repeat("a", c.Pad)...), body[c.PadAt:]...)
+		}
+		var err error
+		switch {
+		case len(body) > MaxBody:
+			err = errors.New("too large")
+		case c.Kind == TypeKeys:
+			_, err = decodeKeys(body)
+		case c.Kind == TypeRelease:
+			_, err = decodeRelease(body)
+		case c.Kind == TypeChannel:
+			_, err = decodeChannel(body)
+		case c.Kind == TypeStatus:
+			_, err = decodeStatus(body)
+		default:
+			t.Fatalf("%s: unknown kind %q", c.Name, c.Kind)
+		}
+		if (err == nil) != c.Valid {
+			t.Errorf("%q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
+		}
+	}
+}

@@ -46,11 +46,10 @@ object ServerCredentials {
 
         /** Checks the signature and returns the body; it checks neither who signed it nor the group. */
         fun open(): Body {
-            if (body.size > MAX_BODY) throw Refused("the credential is too large")
+            val b = Body.parse(body)
             if (p256PublicKey(key) == null) throw Refused("the credential's key is not a P-256 key")
             if (!verifySignature(key, body, sig)) throw Refused("the credential's signature does not verify")
-            val o = Wire.parse(body) ?: throw Refused("the credential does not decode")
-            return Body.fromJson(o).also { it.check() }
+            return b
         }
 
         override fun equals(other: Any?): Boolean =
@@ -110,6 +109,22 @@ object ServerCredentials {
         }
 
         companion object {
+            /** Reads and checks a credential's body: its size, the strict form of signed bodies, then its fields. */
+            internal fun parse(data: ByteArray): Body {
+                if (data.size > MAX_BODY) throw Refused("the credential is too large")
+                try {
+                    Strict.check(data, "v", "type", "group", "version", "expires_ms")
+                } catch (e: Strict.Invalid) {
+                    throw Refused("the credential is not valid: ${e.message}")
+                }
+                val o = Wire.parse(data) ?: throw Refused("the credential does not decode")
+                return try {
+                    fromJson(o).also { it.check() }
+                } catch (e: WireTypeException) {
+                    throw Refused("the credential does not decode: ${e.message}")
+                }
+            }
+
             fun fromJson(o: JsonObject): Body = Body(
                 v = o.optLong("v") ?: 0, type = o.optString("type") ?: "", group = o.optString("group") ?: "",
                 version = o.optLong("version") ?: 0, expiresMS = o.optLong("expires_ms") ?: 0, tag = o.optString("tag") ?: "",
@@ -180,6 +195,7 @@ object ServerCredentials {
     fun sign(b: Body, key: CertificateSigner): Credential {
         b.check()
         val data = Wire.encode(b.toJson())
+        Body.parse(data)
         return Credential(data, key.signature(data), key.publicKeyDER)
     }
 
