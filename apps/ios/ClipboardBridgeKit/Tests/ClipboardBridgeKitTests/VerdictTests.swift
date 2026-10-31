@@ -6,6 +6,15 @@ import Crypto
 import Foundation
 import XCTest
 
+// The verdicts' fields (docs/differential.md), outside the test class, whose
+// methods Objective-C sees on macOS, where the two hex overloads would clash.
+private func hex(_ d: Data?) -> String { (d ?? Data()).map { String(format: "%02x", $0) }.joined() }
+private func hex(_ s: String?) -> String { hex(Data((s ?? "").utf8)) }
+private func hashes(_ l: [Data]?) -> String { (l ?? []).map { hex($0) }.joined(separator: ".") }
+private func bit(_ b: Bool) -> String { b ? "1" : "0" }
+private func sha(_ d: Data) -> Data { Data(SHA256.hash(data: d)) }
+private func taken(_ pairs: [(String, String)]) -> String { "taken" + pairs.map { " \($0.0)=\($0.1)" }.joined() }
+
 /// The kit's verdicts on a corpus of tools/difffuzz (docs/differential.md):
 /// one line per case, which the comparison checks against the other
 /// implementations' lines. It runs on the corpus that CBB_VERDICTS names and
@@ -18,14 +27,6 @@ final class VerdictTests: XCTestCase {
         var records: [Member.Record]?
         var keys: [Data]?
     }
-
-    func hex(_ d: Data?) -> String { (d ?? Data()).map { String(format: "%02x", $0) }.joined() }
-    func hex(_ s: String?) -> String { hex(Data((s ?? "").utf8)) }
-    func hashes(_ l: [Data]?) -> String { (l ?? []).map { hex($0) }.joined(separator: ".") }
-    func bit(_ b: Bool) -> String { b ? "1" : "0" }
-    func sha(_ d: Data) -> Data { Data(SHA256.hash(data: d)) }
-
-    func taken(_ pairs: [(String, String)]) -> String { "taken" + pairs.map { " \($0.0)=\($0.1)" }.joined() }
 
     /// A reader refuses with its own error; any other is a verdict of its
     /// own, which no other reader gives.
