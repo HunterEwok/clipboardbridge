@@ -95,6 +95,7 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"D11-dial-back", func() { dialBack(ctx, r, f, timeout) }},
 		{"S21-stranger", func() { stranger(ctx, r, f, timeout) }},
 		{"W30-forwarder", func() { forwarderRules(ctx, r, f, timeout) }},
+		{"S20-fuzz", func() { fuzzing(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
