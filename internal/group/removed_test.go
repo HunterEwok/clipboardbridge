@@ -6,8 +6,10 @@ package group
 import (
 	"crypto/x509"
 	"encoding/json"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -296,8 +298,16 @@ func TestRemovedAdminCases(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Every order, in one batch: a record signed under a new root is
-		// taken together with the handover that makes it known.
-		permute(len(c.Records), func(order []int) {
+		// taken together with the handover that makes it known. Where P-256
+		// has no assembly (qemu's MIPS in CI), checking every signature
+		// again for each of the 7! orders takes longer than the job, so
+		// there the test takes a fixed choice of orders; the other jobs
+		// take them all.
+		orders := permute
+		if !fastP256() {
+			orders = someOrders
+		}
+		orders(len(c.Records), func(order []int) {
 			if t.Failed() {
 				return
 			}
@@ -319,6 +329,41 @@ func TestRemovedAdminCases(t *testing.T) {
 		if t.Failed() {
 			return
 		}
+	}
+}
+
+// fastP256 reports whether Go's P-256 has assembly on this architecture,
+// so that verifying signatures is fast.
+func fastP256() bool {
+	switch runtime.GOARCH {
+	case "amd64", "arm64", "ppc64le", "s390x":
+		return true
+	}
+	return false
+}
+
+// someOrders calls f with a fixed choice of orders of 0..n-1: the order
+// given, reversed, each element first and each last with the rest in
+// order, and 100 orders from a fixed seed.
+func someOrders(n int, f func([]int)) {
+	p := make([]int, n)
+	for i := range p {
+		p[i] = i
+	}
+	f(slices.Clone(p))
+	rev := slices.Clone(p)
+	slices.Reverse(rev)
+	f(rev)
+	for i := range n {
+		rest := slices.Delete(slices.Clone(p), i, i+1)
+		f(append([]int{i}, rest...))
+		f(append(slices.Clone(rest), i))
+	}
+	r := rand.New(rand.NewPCG(1, 2))
+	for range 100 {
+		q := slices.Clone(p)
+		r.Shuffle(n, func(i, j int) { q[i], q[j] = q[j], q[i] })
+		f(q)
 	}
 }
 
