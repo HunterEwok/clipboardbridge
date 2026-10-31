@@ -100,6 +100,7 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"G41-matrix", func() { joinMatrix(ctx, r, f, timeout) }},
 		{"I8-update", func() { updates(ctx, r, f, timeout) }},
 		{"O9-cache", func() { cache(ctx, r, f, timeout) }},
+		{"U9-lite", func() { liteMember(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
