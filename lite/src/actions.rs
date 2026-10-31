@@ -39,6 +39,10 @@ pub struct Action {
     pub by: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub any_key: bool,
+    /// The program of a full member's own action, kept as it was so that
+    /// saving the shared file loses nothing; the lite member never runs it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command: Vec<String>,
 }
 
 /// This device's actions.
@@ -79,9 +83,10 @@ impl Settings {
         }
     }
 
-    /// The actions that are on.
+    /// The presets that are on: a full member's own actions in the same
+    /// file are not the lite member's to offer.
     pub fn on(&self) -> Vec<String> {
-        self.actions.iter().filter(|a| a.on).map(|a| a.name.clone()).collect()
+        self.actions.iter().filter(|a| a.on && PRESETS.contains(&a.name.as_str())).map(|a| a.name.clone()).collect()
     }
 
     /// Every preset as it stands, for cbb action.
@@ -388,7 +393,7 @@ mod tests {
         let mut s = load(&dir).unwrap();
         assert_eq!(s, Settings::default());
         s.set(Action { name: RESTART.into(), on: true, ..Default::default() });
-        s.set(Action { name: REBOOT.into(), on: true, by: vec!["phone".into()], any_key: false });
+        s.set(Action { name: REBOOT.into(), on: true, by: vec!["phone".into()], ..Default::default() });
         save(&dir, &s).unwrap();
         let s = load(&dir).unwrap();
         assert_eq!(s.on(), [REBOOT, RESTART], "the presets keep their order");
@@ -396,13 +401,21 @@ mod tests {
         let mut off = s.clone();
         off.all_off();
         assert!(off.on().is_empty() && off.get(REBOOT).by == ["phone"]);
-        // The full member's file reads too, with its own actions left out.
+        // The full member's file reads too: its own actions are not offered
+        // here, and saving keeps them as they were.
         std::fs::write(
             dir.join(SETTINGS_FILE),
             r#"{"actions":[{"name":"reboot","on":true,"any_key":true},{"name":"backup","on":true,"command":["/bin/true"]}]}"#,
         )
         .unwrap();
-        assert!(load(&dir).unwrap().get(REBOOT).any_key);
+        let mut s = load(&dir).unwrap();
+        assert!(s.get(REBOOT).any_key);
+        assert_eq!(s.on(), [REBOOT]);
+        s.set(Action { name: RESTART.into(), on: true, ..Default::default() });
+        save(&dir, &s).unwrap();
+        let s = load(&dir).unwrap();
+        assert_eq!(s.get("backup").command, ["/bin/true"]);
+        assert!(s.get("backup").on);
         for i in 0..LOG_SIZE + 3 {
             let e = Entry { time_ms: i as i64, action: REBOOT.into(), result: "done".into(), ..Default::default() };
             append(&dir, e).unwrap();

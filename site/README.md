@@ -187,6 +187,8 @@ echo "https://cbb.tools/preview?key=$SECRET"
 ```
 
 Open that link once in each browser that should see the site: it sets a cookie for a year.
+The key must be 16 to 128 letters, digits, `-` or `_` (the hex above is), and `/preview`
+takes a few tries a minute from one address.
 The secret stays on the server; anyone given the link sees the site too. `/attest/`, the
 counter and `/static/` stay open. To launch, make the file
 `map $cookie_cbb_preview $cbb_closed { default 0; }` and `sudo nginx -t && sudo systemctl

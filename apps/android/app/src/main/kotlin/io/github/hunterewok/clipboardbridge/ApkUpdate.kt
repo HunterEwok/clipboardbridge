@@ -88,9 +88,14 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
         android.os.Handler(context.mainLooper).post { onChange() }
     }
 
-    /** What the last check took; the version is left out, as cbb update does, so that a channel may go back to an older release. */
+    /** What the last check took, with the highest version seen, which cbb update keeps too: a channel never goes back below it. */
     private fun seen(): Releases.Seen =
-        Releases.Seen(prefs.getLong(KEYS_SEQ, 0), prefs.getLong(CHANNEL_SEQ, 0), channelKeysSeq = prefs.getLong(CHANNEL_KEYS_SEQ, 0))
+        Releases.Seen(
+            prefs.getLong(KEYS_SEQ, 0),
+            prefs.getLong(CHANNEL_SEQ, 0),
+            version = prefs.getString(SEEN_VERSION, "") ?: "",
+            channelKeysSeq = prefs.getLong(CHANNEL_KEYS_SEQ, 0),
+        )
 
     /** Checks once a day while [automatic] is on, and installs a newer release it finds. */
     fun runIfDue() {
@@ -153,7 +158,8 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
         val named = Releases.named(channel) ?: throw Releases.Refused("$CHANNEL_FILE names no valid release")
         val release = file(get(url(base, RELEASE_FILE, named), Releases.MAX_BODY), RELEASE_FILE)
         val (r, next) = Releases.check(keys, channel, release, roots, CHANNEL, System.currentTimeMillis(), seen())
-        prefs.edit().putLong(KEYS_SEQ, next.keysSeq).putLong(CHANNEL_SEQ, next.channelSeq).putLong(CHANNEL_KEYS_SEQ, next.channelKeysSeq).apply()
+        prefs.edit().putLong(KEYS_SEQ, next.keysSeq).putLong(CHANNEL_SEQ, next.channelSeq).putLong(CHANNEL_KEYS_SEQ, next.channelKeysSeq)
+            .putString(SEEN_VERSION, next.version).apply()
         if (Releases.compare(r.version, installed) <= 0) {
             found = null
             return null
@@ -268,6 +274,7 @@ class ApkUpdate(private val context: Context, private val roots: List<ByteArray>
         private const val KEYS_SEQ = "keysSeq"
         private const val CHANNEL_SEQ = "channelSeq"
         private const val CHANNEL_KEYS_SEQ = "channelKeysSeq"
+        private const val SEEN_VERSION = "seenVersion"
 
         /** F-Droid's client, which updates the F-Droid build. */
         const val FDROID = "org.fdroid.fdroid"

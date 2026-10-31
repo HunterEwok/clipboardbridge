@@ -1311,8 +1311,9 @@ final class LiveGroup: GroupController {
 
         /// Carries out a command a member sent: a mode or away-off command
         /// an admin of the group signed for me, not expired and not carried
-        /// out before. A phone takes no hub command. Returns the result and
-        /// what the caller still has to change.
+        /// out before. A phone takes no hub command, no remote paste and no
+        /// quick action. Returns the result and what the caller still has to
+        /// change.
         func take(_ c: Member.Record, from peer: String?, records: RecordBox, me: String) -> (Member.CommandResult, Change?) {
             let id = Commands.id(of: c) ?? ""
             func refused(_ reason: String) -> (Member.CommandResult, Change?) {
@@ -1343,8 +1344,21 @@ final class LiveGroup: GroupController {
                 modeLog.notice("\(body.by, privacy: .public) turned sync away from home off")
                 return (Member.CommandResult(id: body.id, status: "done"), .awayOff)
             }
-            guard body.type == "mode" else {
+            switch body.type {
+            case "mode":
+                break
+            case "paste-off", "actions-off":
+                // This phone takes no remote paste and has no quick
+                // actions, so nothing of them stays on.
+                return (Member.CommandResult(id: body.id, status: "done"), nil)
+            case "paste":
+                return refused("this phone takes no remote paste")
+            case "action":
+                return refused("a phone has no quick actions")
+            case "hub":
                 return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
+            default:
+                return refused("this phone does not know the command \(body.type)")
             }
             guard let mode = body.mode, Member.modes.contains(mode) else { return refused("unknown sync mode \(body.mode ?? "")") }
             do {

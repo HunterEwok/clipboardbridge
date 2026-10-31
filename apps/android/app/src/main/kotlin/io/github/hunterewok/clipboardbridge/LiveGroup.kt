@@ -936,8 +936,13 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
                 }.apply { isDaemon = true }.start()
                 return Member.CommandResult(body.id, "done")
             }
+            // A phone has no quick actions, so none of them stays on.
+            "actions-off" -> return Member.CommandResult(body.id, "done")
+            "action" -> return refused("a phone has no quick actions")
+            "hub" -> return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
+            "mode" -> {}
+            else -> return refused("this phone does not know the command ${body.type}")
         }
-        if (body.type != "mode") return refused("a phone does not become the hub by a command; move the hub from the phone that is the hub")
         val mode = body.mode?.takeIf { it in Member.MODES } ?: return refused("unknown sync mode ${body.mode}")
         return try {
             setOwnMode(mode)

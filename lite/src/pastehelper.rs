@@ -383,9 +383,20 @@ fn run_console(socket: &Path) -> Result<()> {
 pub struct Console;
 
 /// Lockers that run only while they lock, for those that do not tell
-/// logind (internal/lockcheck).
-const LOCKERS: &[&str] =
-    &["swaylock", "hyprlock", "waylock", "gtklock", "i3lock", "slock", "xsecurelock", "physlock", "vlock"];
+/// logind, the same as internal/lockcheck's: KDE's greeter is the only sign
+/// of its lock screen on FreeBSD.
+const LOCKERS: &[&str] = &[
+    "swaylock",
+    "hyprlock",
+    "waylock",
+    "gtklock",
+    "i3lock",
+    "slock",
+    "xsecurelock",
+    "physlock",
+    "vlock",
+    "kscreenlocker_greet",
+];
 
 impl Target for Console {
     fn name(&self) -> &'static str {

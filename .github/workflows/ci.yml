@@ -545,6 +545,10 @@ jobs:
           refused "an archive that release.json does not list"
           cp "$RUNNER_TEMP/good.tar.gz" "$rel/clipboardbridge-linux-amd64.tar.gz"
           (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
+          # A release of another channel that stable.json names.
+          go run ./tools/release-sign drill -version 0.6.0 -release-channel beta "$rel" "$RUNNER_TEMP/roots.pem"
+          refused "a release.json of another channel"
+          go run ./tools/release-sign drill -version 0.6.0 "$rel" "$RUNNER_TEMP/roots.pem"
           # Another project's roots.
           mkdir "$RUNNER_TEMP/other" && echo other >"$RUNNER_TEMP/other/SHA256SUMS"
           go run ./tools/release-sign drill "$RUNNER_TEMP/other" "$RUNNER_TEMP/other.pem"
@@ -907,6 +911,14 @@ jobs:
             Write-Host $out
             if ($out -notmatch 'failed') { throw 'get.ps1 took keys.json from throwaway roots' }
             $env:CBB_RELEASE_ROOTS = $roots
+            # A release of another channel that stable.json names.
+            cmd /c "go run ./tools/release-sign drill -version 0.6.0 -channel-key -release-channel beta `"$rel`" `"$roots`" 2>&1"
+            if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
+            $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
+            Write-Host $out
+            if ($out -notmatch 'failed') { throw 'get.ps1 installed a release.json of another channel' }
+            cmd /c "go run ./tools/release-sign drill -version 0.6.0 -channel-key `"$rel`" `"$roots`" 2>&1"
+            if ($LASTEXITCODE -ne 0) { throw 'release-sign drill failed' }
             Remove-Item (Join-Path $rel 'stable.json')
             $out = Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
             Write-Host $out

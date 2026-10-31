@@ -166,7 +166,8 @@
 			if ($ch.Value.channel -ne 'stable') { throw "stable.json is not the stable channel's" }
 			if ([long]$ch.Value.expires_ms -le $nowMS) { throw 'stable.json has expired; check the clock, or try again later' }
 			$sum = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($rel.Bytes) | ForEach-Object { $_.ToString('x2') })
-			if ($ch.Value.release_sha256 -ne $sum -or $ch.Value.release -ne $rel.Value.version) {
+			# The release must be one for this channel, as cbb update checks.
+			if ($ch.Value.release_sha256 -ne $sum -or $ch.Value.release -ne $rel.Value.version -or $rel.Value.channel -ne $ch.Value.channel) {
 				throw 'release.json is not the release stable.json names; not installing'
 			}
 		} elseif ("v$($rel.Value.version)" -ne $version) {

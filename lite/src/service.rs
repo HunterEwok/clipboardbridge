@@ -666,7 +666,13 @@ impl Service {
             }
         }
         let mut set = actions::load(&self.state_dir)?;
-        set.set(actions::Action { name: a.name.clone(), on: a.on, by: a.by.clone(), any_key: a.any_key });
+        set.set(actions::Action {
+            name: a.name.clone(),
+            on: a.on,
+            by: a.by.clone(),
+            any_key: a.any_key,
+            ..Default::default()
+        });
         actions::save(&self.state_dir, &set).map_err(|e| e.context("saving the quick actions"))?;
         node.set_actions(set.on());
         (self.log)(&format!("cbb: the action {} is {} here", a.name, if a.on { "on" } else { "off" }));
