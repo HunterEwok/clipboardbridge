@@ -27,7 +27,10 @@ mkdir -p "$out"
 # the release profile strips, so they are read from a debug build of the host.
 bindings() {
 	cargo build --locked -p clipboardbridge-ffi
-	lib=$(ls target/debug/libcbb_ffi.so target/debug/libcbb_ffi.dylib 2>/dev/null | head -n 1)
+	lib=
+	for f in target/debug/libcbb_ffi.so target/debug/libcbb_ffi.dylib; do
+		if [ -f "$f" ]; then lib=$f; fi
+	done
 	cargo run --locked -q -p clipboardbridge-ffi --features bindgen --bin uniffi-bindgen -- \
 		generate --no-format --library "$lib" --language "$1" --out-dir "$2"
 }
