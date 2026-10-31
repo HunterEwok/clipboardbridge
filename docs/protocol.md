@@ -1009,7 +1009,9 @@ it is `%ProgramData%\clipboardbridge\run\control.sock`, in a directory whose pro
 list lets in the system, administrators, the service's account and the group.
 
 Next to it the service listens on the **admin socket** `admin.sock` (on Windows
-`run\admin\admin.sock`, in a directory of its own), with mode 0600: only root and the
+`run\admin\admin.sock`, in a directory of its own, which the service makes before the control
+socket's and makes again at each start unless the system, the administrators or the service owns
+it), with mode 0600: only root and the
 service's user (on Windows the system, administrators and the service's account) can
 connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket takes only
 `copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices`, `release`, `release-get`, `keys` (from root only) and `watch` (with

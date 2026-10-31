@@ -29,6 +29,16 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	// The admin socket's directory sits in run\, where the group may make
+	// directories: one that another user made first would stay that user's,
+	// who could change its access list whatever the service sets. It is
+	// made again unless the system, the administrators or the service owns
+	// it.
+	if admin {
+		if err := ownDir(dir); err != nil {
+			return nil, err
+		}
+	}
 	sddl, err := controlSDDL(admin)
 	if err != nil {
 		return nil, err
@@ -56,6 +66,47 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 	ul := ln.(*net.UnixListener)
 	ul.SetUnlinkOnClose(false)
 	return &controlListener{UnixListener: ul, path: path}, nil
+}
+
+// ownDir makes sure the directory dir belongs to the system, the
+// administrators or the service's own account: one owned by anybody else
+// is removed and made again.
+func ownDir(dir string) error {
+	for range 2 {
+		ok, err := trustedOwner(dir)
+		if err != nil {
+			return fmt.Errorf("the owner of %s: %w", dir, err)
+		}
+		if ok {
+			return nil
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("%s belongs to another user", dir)
+}
+
+// trustedOwner reports whether the system, the administrators or the
+// service's own account owns the file or directory at path.
+func trustedOwner(path string) (bool, error) {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return false, err
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return false, err
+	}
+	tu, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return false, err
+	}
+	return owner.IsWellKnown(windows.WinLocalSystemSid) || owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) ||
+		owner.Equals(tu.User.Sid), nil
 }
 
 // controlSDDL describes the access list of the socket's directory, which
