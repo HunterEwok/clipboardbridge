@@ -123,7 +123,7 @@ object Pairing {
          */
         val isValid: Boolean
             get() {
-                if ((os !in OSES && !(os == "none" && role == LITE)) || name.isEmpty() || name.toByteArray().size > 64 || hasControl(name)) return false
+                if ((os !in OSES && !(os == "none" && role == LITE)) || name.isEmpty() || name.toByteArray().size > 64 || !printable(name)) return false
                 if (role != null && role != LITE) return false
                 val k = adminKey ?: return true
                 return isPhone(os) && p256PublicKey(k) != null
@@ -214,7 +214,27 @@ object Pairing {
             throw FrameException(e.message ?: "bad frame header")
         }
 
-    internal fun hasControl(s: String): Boolean = s.codePoints().anyMatch { Character.getType(it) == Character.CONTROL.toInt() }
+    /**
+     * Whether every character of s may be in a name, as Go's unicode.IsPrint
+     * says: a letter, mark, number, punctuation, symbol or the ASCII space; no
+     * control, format, private-use, unassigned or other space.
+     */
+    internal fun printable(s: String): Boolean =
+        s.codePoints().allMatch { cp ->
+            cp == ' '.code ||
+                when (Character.getType(cp).toByte()) {
+                    Character.UPPERCASE_LETTER, Character.LOWERCASE_LETTER, Character.TITLECASE_LETTER,
+                    Character.MODIFIER_LETTER, Character.OTHER_LETTER,
+                    Character.NON_SPACING_MARK, Character.COMBINING_SPACING_MARK, Character.ENCLOSING_MARK,
+                    Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER,
+                    Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION, Character.START_PUNCTUATION,
+                    Character.END_PUNCTUATION, Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
+                    Character.OTHER_PUNCTUATION,
+                    Character.MATH_SYMBOL, Character.CURRENCY_SYMBOL, Character.MODIFIER_SYMBOL, Character.OTHER_SYMBOL,
+                    -> true
+                    else -> false
+                }
+        }
 }
 
 /**

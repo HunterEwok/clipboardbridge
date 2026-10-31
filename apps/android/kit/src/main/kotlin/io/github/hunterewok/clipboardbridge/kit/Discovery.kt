@@ -78,12 +78,16 @@ class MemberDialer(
     /** The members connected on the home network: their TLS handshake passed. */
     val connected: Set<String> get() = synchronized(lock) { direct.toSet() }
 
-    /** Takes the members browsing finds now. Those of another group are ignored. */
+    /**
+     * Takes the members browsing finds now. Those of another group are ignored;
+     * beyond MAX_DIALED, the members not dialed yet wait for a later update.
+     */
     fun update(members: Set<FoundMember>) = synchronized(lock) {
         if (stopped) return
         found = members.filter { it.group == group }.map { it.device }.toSet()
-        for (d in found) {
+        for (d in found.sorted()) {
             if (threads[d] != null) continue
+            if (threads.size >= MAX_DIALED) break
             threads[d] = Thread({ keep(FoundMember(d, group)) }, "dial $d").apply {
                 isDaemon = true
                 start()
@@ -101,6 +105,11 @@ class MemberDialer(
     }
 
     private fun stillWanted(d: String) = synchronized(lock) { !stopped && d in found }
+
+    companion object {
+        /** How many found members are dialed at once, as on the lite member: a host that announces many members of the group starts no more. */
+        const val MAX_DIALED = 64
+    }
 
     private fun keep(m: FoundMember) {
         var wait = firstWaitMS

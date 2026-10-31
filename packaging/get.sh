@@ -305,8 +305,10 @@ verify_release() {
 			fail "stable.json is not signed by a release or channel key; not installing"
 		[ "$(field channel "$tmp/channel.body")" = stable ] || fail "stable.json is not the stable channel's"
 		[ "$(number expires_ms "$tmp/channel.body")" -gt "$now_ms" ] || fail "stable.json has expired; check the clock, or try again later"
+		# The release must be one for this channel, as cbb update checks.
 		if [ "$(field release_sha256 "$tmp/channel.body")" != "$(sha256 "$tmp/release.body")" ] ||
-			[ "$(field release "$tmp/channel.body")" != "$got_version" ]; then
+			[ "$(field release "$tmp/channel.body")" != "$got_version" ] ||
+			[ "$(field channel "$tmp/release.body")" != stable ]; then
 			fail "release.json is not the release stable.json names; not installing"
 		fi
 	else

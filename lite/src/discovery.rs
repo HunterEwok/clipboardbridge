@@ -26,6 +26,9 @@ const MAX_WAIT: Duration = Duration::from_secs(30);
 const STEADY: Duration = Duration::from_secs(30);
 /// At most this many connections may be in their TLS handshake at once.
 const MAX_HANDSHAKES: usize = 16;
+/// The members found by browsing that are dialed at once, as Go's mDNS
+/// cache reports at most.
+const MAX_FOUND: usize = 64;
 
 /// The addresses of a found member; None once it is gone.
 type Addrs = Arc<Mutex<Option<Vec<SocketAddr>>>>;
@@ -189,10 +192,16 @@ fn browse(
                 if addrs.is_empty() {
                     continue;
                 }
-                node.found(&id, true);
                 match found.get(&id) {
-                    Some(cur) => *cur.lock().unwrap() = Some(addrs),
+                    Some(cur) => {
+                        node.found(&id, true);
+                        *cur.lock().unwrap() = Some(addrs)
+                    }
+                    // Anyone on the network can announce the group's tag, so
+                    // the members dialed are bounded, as in Go.
+                    None if found.len() >= MAX_FOUND => continue,
                     None => {
+                        node.found(&id, true);
                         log(&format!("cbb: found {id} at {}", addrs[0]));
                         let cur: Addrs = Arc::new(Mutex::new(Some(addrs)));
                         found.insert(id.clone(), cur.clone());

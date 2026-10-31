@@ -494,6 +494,7 @@ func drill(args []string) error {
 	fs := flag.NewFlagSet("drill", flag.ExitOnError)
 	version := fs.String("version", "0.0.1", "the release's version")
 	channelKey := fs.Bool("channel-key", false, "sign stable.json with a channel key, as the server renews it")
+	relChannel := fs.String("release-channel", "stable", "the channel release.json names, which stable.json names it under anyway, for the installers' tests")
 	fs.Parse(args)
 	if fs.NArg() != 2 {
 		return errors.New("drill needs the directory and the file for the roots")
@@ -512,7 +513,7 @@ func drill(args []string) error {
 			roots = append(roots, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: spki})...)
 		}
 	}
-	r, err := buildManifest(dir, *version, "stable", "", "")
+	r, err := buildManifest(dir, *version, *relChannel, "", "")
 	if err != nil {
 		return err
 	}

@@ -80,12 +80,17 @@ public actor MemberDialer {
     /// passed.
     public var connected: Set<String> { direct }
 
+    /// How many found members are dialed at once, as on the lite member: a
+    /// host that announces many members of the group starts no more.
+    public static let maxDialed = 64
+
     /// Takes the members browsing finds now. Those of another group are
-    /// ignored.
+    /// ignored; beyond maxDialed, the members not dialed yet wait for a
+    /// later update.
     public func update(_ members: Set<FoundMember>) {
         guard !stopped else { return }
         found = Set(members.filter { $0.group == group }.map(\.device))
-        for d in found where tasks[d] == nil {
+        for d in found.sorted() where tasks[d] == nil && tasks.count < Self.maxDialed {
             let m = FoundMember(device: d, group: group)
             tasks[d] = Task { await self.keep(m) }
         }

@@ -19,6 +19,9 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
 
     let connection: NWConnection
     let queue = DispatchQueue(label: "clipboardbridge.tls")
+    /// The ALPN protocol the handshake must agree on; nil only for tests'
+    /// own parameters.
+    let alpn: String?
     /// The peer's certificate chain, DER, leaf first, once the handshake is
     /// done.
     public private(set) var peerChain: [Data] = []
@@ -44,13 +47,18 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
         let tcp = NWProtocolTCP.Options()
         tcp.connectionTimeout = Self.connectTimeout
         connection = NWConnection(to: endpoint, using: NWParameters(tls: tls, tcp: tcp))
+        self.alpn = alpn
     }
 
-    /// A connection a TLSListener accepted; start runs its handshake.
-    init(accepted: NWConnection) { connection = accepted }
+    /// A connection a TLSListener with the ALPN protocol alpn accepted;
+    /// start runs its handshake.
+    init(accepted: NWConnection, alpn: String) { (connection, self.alpn) = (accepted, alpn) }
 
     /// A connection with parameters of its own, for tests.
-    init(endpoint: NWEndpoint, parameters: NWParameters) { connection = NWConnection(to: endpoint, using: parameters) }
+    init(endpoint: NWEndpoint, parameters: NWParameters) {
+        connection = NWConnection(to: endpoint, using: parameters)
+        alpn = nil
+    }
 
     /// TLS 1.3 options with the ALPN protocol and identity, presenting
     /// chain after the identity's certificate, and verifyChain deciding on
@@ -61,6 +69,10 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
         let sec = tls.securityProtocolOptions
         sec_protocol_options_set_min_tls_protocol_version(sec, .TLSv13)
         sec_protocol_options_add_tls_application_protocol(sec, alpn)
+        // No session resumes without the peer's certificate (docs/protocol.md,
+        // section 4, "TLS"): no tickets, no resumption.
+        sec_protocol_options_set_tls_tickets_enabled(sec, false)
+        sec_protocol_options_set_tls_resumption_enabled(sec, false)
         var leaf: SecCertificate?
         SecIdentityCopyCertificate(identity, &leaf)
         let extra = chain.compactMap { SecCertificateCreateWithData(nil, $0 as CFData) }
@@ -103,7 +115,14 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
                 switch state {
                 case .ready:
                     guard once.claim() else { return }
-                    self?.peerChain = self?.certificateChain() ?? []
+                    guard let self else { return c.resume(throwing: Failure.closed) }
+                    // Both sides check the protocol agreed on: a peer that
+                    // offers none ends the handshake without one.
+                    if let alpn = self.alpn, self.negotiatedProtocol != alpn {
+                        self.connection.cancel()
+                        return c.resume(throwing: Failure.notReady("the peer did not agree on the protocol \(alpn)"))
+                    }
+                    self.peerChain = self.certificateChain()
                     c.resume()
                 case .failed(let e), .waiting(let e):
                     guard once.claim() else { return }
@@ -150,6 +169,12 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
 
     var tlsMetadata: sec_protocol_metadata_t? {
         (connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata)?.securityProtocolMetadata
+    }
+
+    /// The ALPN protocol the handshake agreed on, nil when none.
+    var negotiatedProtocol: String? {
+        guard let meta = tlsMetadata, let p = sec_protocol_metadata_get_negotiated_protocol(meta) else { return nil }
+        return String(cString: p)
     }
 
     func certificateChain() -> [Data] {
@@ -199,6 +224,7 @@ public final class TLSTransport: ClosableTransport, @unchecked Sendable {
 public final class TLSListener: @unchecked Sendable {
     let listener: NWListener
     let queue = DispatchQueue(label: "clipboardbridge.tls.listener")
+    let alpn: String
     private let connections: AsyncStream<TLSTransport>
     private let yield: AsyncStream<TLSTransport>.Continuation
 
@@ -210,6 +236,7 @@ public final class TLSListener: @unchecked Sendable {
     public init(port: UInt16 = 0, alpn: String, identity: SecIdentity, chain: [Data] = [], loopback: Bool = false,
                 service: (name: String, txt: [String: String])? = nil,
                 verifyChain: @escaping @Sendable ([Data]) -> Bool) throws {
+        self.alpn = alpn
         let tls = TLSTransport.options(alpn: alpn, identity: identity, chain: chain, server: true, verifyChain: verifyChain)
         let params = NWParameters(tls: tls)
         params.includePeerToPeer = false
@@ -227,7 +254,8 @@ public final class TLSListener: @unchecked Sendable {
     /// Starts listening and returns the port once it is ready.
     public func start() async throws -> UInt16 {
         let yield = yield
-        listener.newConnectionHandler = { yield.yield(TLSTransport(accepted: $0)) }
+        let alpn = alpn
+        listener.newConnectionHandler = { yield.yield(TLSTransport(accepted: $0, alpn: alpn)) }
         return try await withCheckedThrowingContinuation { (c: CheckedContinuation<UInt16, Error>) in
             let once = TLSTransport.Once()
             listener.stateUpdateHandler = { [weak self] state in

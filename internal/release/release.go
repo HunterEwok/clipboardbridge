@@ -684,6 +684,13 @@ func Compare(a, b string) int {
 	return 0
 }
 
+// IsVersion reports whether s is a version of the form X.Y.Z or
+// X.Y.Z-rc.N, the only names a release has.
+func IsVersion(s string) bool {
+	_, ok := parseVersion(s)
+	return ok
+}
+
 // parseVersion returns X, Y, Z and the release candidate's number, or
 // finalRelease for a release.
 func parseVersion(s string) ([4]int, bool) {

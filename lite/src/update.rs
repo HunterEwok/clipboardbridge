@@ -14,7 +14,7 @@
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cbb_core::certs::{hex, sha256};
@@ -224,45 +224,95 @@ impl std::fmt::Display for Source {
 
 /// Downloads url to path with the first of curl, wget and uclient-fetch
 /// that the system has: https only, also after a redirect where the tool
-/// can be told, with the User-Agent cbb and nothing about this device.
+/// can be told, with the User-Agent cbb and nothing about this device. The
+/// tool writes to a pipe, so that no more than max bytes reach the disk
+/// (the RAM on OpenWrt), and it is stopped after FETCH_TIME.
 fn fetch(url: &str, path: &Path, max: u64) -> Result<()> {
-    let out = path.to_string_lossy().to_string();
-    let max = max.to_string();
+    let max_s = max.to_string();
+    let time = FETCH_TIME.as_secs().to_string();
     let tools: [(&str, Vec<&str>); 3] = [
         (
             "curl",
             vec![
                 "-fsSL",
+                "-g",
                 "--proto",
                 "=https",
                 "--proto-redir",
                 "=https",
                 "--max-filesize",
-                &max,
+                &max_s,
+                "--max-time",
+                &time,
                 "-A",
                 "cbb",
-                "-o",
-                &out,
                 url,
             ],
         ),
-        ("wget", vec!["-q", "-U", "cbb", "-O", &out, url]),
-        ("uclient-fetch", vec!["-q", "-O", &out, url]),
+        ("wget", vec!["-q", "-U", "cbb", "-O", "-", url]),
+        ("uclient-fetch", vec!["-q", "-O", "-", url]),
     ];
     for (tool, args) in tools {
-        match Command::new(tool).args(&args).output() {
+        let child =
+            Command::new(tool).args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
+        match child {
             Err(e) if e.kind() == ErrorKind::NotFound => continue,
             Err(e) => return Err(Error::with(format!("cannot run {tool}"), e)),
-            Ok(o) if o.status.success() => return Ok(()),
-            Ok(o) => {
-                return Err(Error::msg(format!(
-                    "{tool} could not download {url}: {}",
-                    String::from_utf8_lossy(&o.stderr).trim()
-                )));
-            }
+            Ok(child) => return fetch_with(tool, url, child, path, max),
         }
     }
     Err(Error::msg("downloading needs curl, wget or uclient-fetch, and this system has none"))
+}
+
+/// The longest a download may take.
+const FETCH_TIME: Duration = Duration::from_secs(30 * 60);
+
+/// Copies what child writes to path, at most max bytes, and stops it when
+/// it writes more or takes longer than FETCH_TIME.
+fn fetch_with(tool: &str, url: &str, mut child: std::process::Child, path: &Path, max: u64) -> Result<()> {
+    use std::io::Read;
+    let mut out = child.stdout.take().expect("piped");
+    let mut err = child.stderr.take().expect("piped");
+    let errs = std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = err.by_ref().take(64 << 10).read_to_end(&mut b);
+        b
+    });
+    let pid = child.id();
+    let (done, stop) = std::sync::mpsc::channel::<()>();
+    let watch = std::thread::spawn(move || {
+        if stop.recv_timeout(FETCH_TIME).is_err() {
+            // SAFETY: kill has no memory preconditions, and the child is
+            // waited for only after this thread is joined, so pid is
+            // still its.
+            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+        }
+    });
+    let copied = (|| -> std::io::Result<u64> {
+        let mut f = fs::File::create(path)?;
+        std::io::copy(&mut out.by_ref().take(max + 1), &mut f)
+    })();
+    if !matches!(copied, Ok(n) if n <= max) {
+        let _ = child.kill();
+    }
+    drop(out);
+    drop(done);
+    let _ = watch.join();
+    let status = child.wait();
+    let stderr = errs.join().unwrap_or_default();
+    let res = match (copied, status) {
+        (Err(e), _) => Err(Error::with(format!("cannot write the download of {url}"), e)),
+        (Ok(n), _) if n > max => Err(Error::msg(format!("{url} is larger than {max} bytes"))),
+        (Ok(_), Ok(s)) if s.success() => Ok(()),
+        (Ok(_), Ok(_)) => {
+            Err(Error::msg(format!("{tool} could not download {url}: {}", String::from_utf8_lossy(&stderr).trim())))
+        }
+        (Ok(_), Err(e)) => Err(Error::with(format!("cannot run {tool}"), e)),
+    };
+    if res.is_err() {
+        let _ = fs::remove_file(path);
+    }
+    res
 }
 
 /// The release a check found.
@@ -317,6 +367,11 @@ impl Updater<'_> {
                 let names: Names = serde_json::from_slice(&ch.body).unwrap_or(Names { release: String::new() });
                 if names.release.is_empty() {
                     return Err(Error::msg(format!("{CHANNEL}.json names no release")));
+                }
+                // The name goes into the release's address before the
+                // channel file is checked, so it must be a version.
+                if release::parse_version(&names.release).is_none() {
+                    return Err(Error::msg(format!("{CHANNEL}.json names a release that is not a version")));
                 }
                 let rel = src.file("release.json", &names.release, &self.work)?;
                 Ok((keys, ch, rel))
@@ -800,6 +855,39 @@ mod tests {
         fs::write(dir.join("release.json"), serde_json::to_vec(&data).unwrap()).unwrap();
         let (res, installs, _) = run(&dir, "0.6.0", "", &mut State::default());
         assert!(res.is_err() && installs.is_empty());
+        // A channel that names something else than a version, refused
+        // before the name makes an address.
+        let dir = tmp("name");
+        publish(&dir, "0.6.1", 1, None);
+        let body = serde_json::to_vec(&serde_json::json!({"release": "0.6.1/../x"})).unwrap();
+        write(&dir, &format!("{CHANNEL}.json"), &File { body, sig: vec![1], key: vec![1] });
+        let (res, installs, _) = run(&dir, "0.6.0", "", &mut State::default());
+        assert!(res.unwrap_err().for_user().contains("not a version"));
+        assert!(installs.is_empty());
+    }
+
+    /// A download stops at its limit and leaves no more on the disk.
+    #[test]
+    fn fetch_is_bounded() {
+        let dir = tmp("fetch");
+        let path = dir.join("out");
+        let child = Command::new("sh")
+            .args(["-c", "head -c 100000 /dev/zero"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let err = fetch_with("sh", "test", child, &path, 1000).unwrap_err();
+        assert!(err.for_user().contains("larger than 1000"), "{}", err.for_user());
+        assert!(!path.exists(), "the part of a refused download stays");
+        let child = Command::new("sh")
+            .args(["-c", "printf abc"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        fetch_with("sh", "test", child, &path, 1000).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"abc");
     }
 
     #[test]

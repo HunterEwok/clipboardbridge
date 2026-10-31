@@ -48,6 +48,9 @@ const MTU: usize = 1280;
 const ENDPOINT_WAIT: Duration = Duration::from_secs(10);
 const MAX_ENDPOINTS: usize = 8;
 const TCP_BUFFER: usize = 64 << 10;
+/// The connections through the tunnel's local port at once; this member
+/// makes one or two.
+const MAX_BRIDGES: usize = 32;
 const HANDSHAKE_RATE_LIMIT: u64 = 100;
 const MAX_POLL: Duration = Duration::from_millis(250);
 
@@ -194,13 +197,20 @@ pub fn hub_from_offer(from: &DeviceId, o: &TunnelOffer) -> Result<Hub> {
     if o.hub_key.len() != 32 || o.psk.len() != 32 || !o.next_key.is_empty() && o.next_key.len() != 32 {
         return Err(Error::msg("the hub's offer does not have 32-byte keys"));
     }
+    // As in Go: a key of zeros is no key.
+    if o.hub_key.iter().all(|&b| b == 0) || o.psk.iter().all(|&b| b == 0) {
+        return Err(Error::msg("the hub's offer has a key of zeros"));
+    }
     if o.endpoints.len() > MAX_ENDPOINTS {
         return Err(Error::msg(format!("the hub's offer has more than {MAX_ENDPOINTS} addresses")));
     }
     let endpoints = o
         .endpoints
         .iter()
-        .map(|e| e.parse::<SocketAddr>().context(format!("the hub's offer has a bad address {e:?}")))
+        .map(|e| match e.parse::<SocketAddr>() {
+            Ok(a) if a.port() != 0 => Ok(a),
+            _ => Err(Error::msg(format!("the hub's offer has a bad address {e:?}"))),
+        })
         .collect::<Result<Vec<_>>>()?;
     addr(from.as_str()).ok_or_else(|| Error::msg(format!("{from} is not a device ID")))?;
     Ok(Hub {
@@ -481,7 +491,14 @@ impl Pump {
     }
 
     fn accept(&mut self) {
-        while let Ok((s, _)) = self.ln.accept() {
+        while let Ok((s, from)) = self.ln.accept() {
+            // The port is on the loopback, where every local user may
+            // connect: only this member's own user is let through, and only
+            // so many at once.
+            if self.bridges.len() >= MAX_BRIDGES || !own_user(&tcp_table(), from, self.ln.local_addr().ok()) {
+                let _ = s.shutdown(Shutdown::Both);
+                continue;
+            }
             if s.set_nonblocking(true).is_err() {
                 continue;
             }
@@ -659,9 +676,66 @@ impl Pump {
     }
 }
 
+/// The kernel's table of IPv4 TCP sockets, or "" where there is none.
+fn tcp_table() -> String {
+    std::fs::read_to_string("/proc/net/tcp").unwrap_or_default()
+}
+
+/// Reports whether the socket at from, connected to the listener at to,
+/// belongs to this process's user by table, the text of /proc/net/tcp.
+/// Without the table (a system without /proc) it cannot tell and lets the
+/// connection through.
+fn own_user(table: &str, from: SocketAddr, to: Option<SocketAddr>) -> bool {
+    let (SocketAddr::V4(from), Some(SocketAddr::V4(to))) = (from, to) else { return true };
+    if table.is_empty() {
+        return true;
+    }
+    // Addresses are written as the kernel holds them: the IPv4 address in
+    // the host's byte order, the port in network order.
+    let hex = |a: std::net::SocketAddrV4| format!("{:08X}:{:04X}", u32::from_ne_bytes(a.ip().octets()), a.port());
+    let (local, remote) = (hex(from), hex(to));
+    // SAFETY: geteuid has no preconditions.
+    let me = unsafe { libc::geteuid() };
+    table.lines().skip(1).any(|l| {
+        let f: Vec<&str> = l.split_whitespace().collect();
+        f.len() > 7 && f[1] == local && f[2] == remote && f[7].parse::<u32>().ok() == Some(me)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_port_takes_its_own_user() {
+        let ln = TcpListener::bind("127.0.0.1:0").unwrap();
+        let c = TcpStream::connect(ln.local_addr().unwrap()).unwrap();
+        let (_s, from) = ln.accept().unwrap();
+        assert_eq!(from, c.local_addr().unwrap());
+        let to = ln.local_addr().ok();
+        let table = tcp_table();
+        if !table.is_empty() {
+            assert!(own_user(&table, from, to), "this process's own connection");
+        }
+        // The same connection under another user's uid, and an unknown one.
+        let hex = |a: SocketAddr| match a {
+            SocketAddr::V4(a) => format!("{:08X}:{:04X}", u32::from_ne_bytes(a.ip().octets()), a.port()),
+            _ => unreachable!(),
+        };
+        // SAFETY: geteuid has no preconditions.
+        let other = unsafe { libc::geteuid() } + 1;
+        let line = |uid: u32| {
+            format!(
+                "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n   0: {} {} 01 00000000:00000000 00:00000000 00000000 {uid:5} 0 1 1\n",
+                hex(from),
+                hex(to.unwrap())
+            )
+        };
+        assert!(!own_user(&line(other), from, to));
+        assert!(own_user(&line(other - 1), from, to));
+        assert!(!own_user("header\n", from, to), "a connection the table does not show");
+        assert!(own_user("", from, to), "no table");
+    }
 
     #[test]
     fn addresses() {
@@ -700,6 +774,15 @@ mod tests {
         assert!(tried[1].next.is_empty());
         let bad = r#"{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","psk":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","next_key":"AQE="}"#;
         assert!(hub_from_offer(&id, &serde_json::from_str(bad).unwrap()).is_err());
+        // Keys of zeros and a port 0, which Go refuses too.
+        let zero = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        for bad in [
+            format!(r#"{{"hub_key":"{zero}","psk":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="}}"#),
+            format!(r#"{{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","psk":"{zero}"}}"#),
+            r#"{"hub_key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","psk":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=","endpoints":["192.0.2.1:0"]}"#.to_string(),
+        ] {
+            assert!(hub_from_offer(&id, &serde_json::from_str(&bad).unwrap()).is_err(), "{bad}");
+        }
     }
 
     #[test]

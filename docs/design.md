@@ -95,7 +95,7 @@ The system context (C4 level 1): the group is the system; everything around it i
 | Small Linux device      | the lite member, `cbb`            | `cbb copy`/`paste`/`watch`; no desktop clipboard               |
 | Apple Watch, Wear OS watch | the watch app, through its phone | shows the group, sends commands as an admin                 |
 | Android TV, set-top box | the Android app                   | as an Android phone                                            |
-| Arduino Nano ESP32      | the lite member's firmware        | types received text as a USB keyboard                          |
+| Arduino Nano ESP32      | the lite member's firmware        | a USB keyboard on its console only (`console-type` build); takes no remote paste yet |
 | ZX Spectrum Next        | `.cbb`, through its Pi's lite member | sends and receives on demand                               |
 
 Linux machines, Windows PCs, Macs and lite members are equal **members** of a **group**, and
@@ -1853,8 +1853,8 @@ among admins (a home group has one or two admins, so a vote decides nothing).
 
 An admin device sends a text to one chosen member and has it pasted where that member's
 focus is: a window, a terminal, a text console. Nobody touches the target. It is meant for
-devices without a keyboard (a Raspberry Pi on a TV, a kiosk, a console login) and, through
-the Nano ESP32's USB keyboard, for a computer that runs no Clipboard Bridge at all. For
+devices without a keyboard (a Raspberry Pi on a TV, a kiosk, a console login) and, later
+through the Nano ESP32's USB keyboard, for a computer that runs no Clipboard Bridge at all. For
 running commands on a headless Pi, SSH stays the better tool; remote paste reaches what SSH
 does not, the screen's own session.
 
@@ -1907,7 +1907,7 @@ pasted newline before the user sees it. The `enter` flag presses Enter afterward
 | Android | the app's accessibility service: the clipboard, then `ACTION_PASTE` on the focused input node (or `ACTION_SET_TEXT`) | views without an editable node (some terminals and games); not on the lock screen |
 | iPhone, iPad | not possible: iOS lets no app put text into another app | sender only |
 | the lite member on Linux | the console helper or tmux, as on Linux | as Linux |
-| Nano ESP32 | its USB keyboard (`lite/esp32`, `usb.rs`) types into the computer it is plugged into | only the characters of the layout set on the board, which must match the host's |
+| Nano ESP32 | not yet: the firmware takes no commands; its USB keyboard (`lite/esp32`, `usb.rs`) types only what its console's `type` gives it, in a `console-type` build | only the characters of the layout set on the board, which must match the host's |
 | ZX Spectrum Next | none: `.cbb` runs only when started | |
 
 **The lock check.** Synthetic input does not stop at a lock screen: XTEST events pass a
@@ -1916,7 +1916,7 @@ display manager and the text console. So every target checks right before it inj
 its session is active and not locked (logind's `LockedHint`, a locker that runs only while the screen is locked and tells logind nothing, such as swaylock or hyprlock, `org.freedesktop.ScreenSaver`,
 X11's MIT-SCREEN-SAVER, `CGSessionCopyCurrentDictionary` on the Mac, `OpenInputDesktop` on
 Windows) and refuses otherwise. Lock, login and disk-encryption screens are never typed in
-software; only the Nano ESP32's USB keyboard reaches them, on an explicit paste.
+software; only a USB keyboard such as the Nano ESP32's reaches them, typed on purpose.
 
 Senders: the iPhone and Android apps (a "Paste on…" action with the devices list) and admin
 computers (`cbb paste --on DEVICE`, from standard input or the clipboard; later the Mac

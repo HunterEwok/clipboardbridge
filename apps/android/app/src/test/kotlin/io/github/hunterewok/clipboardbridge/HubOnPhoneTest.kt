@@ -139,8 +139,12 @@ class HubOnPhoneTest {
         assertEquals(listOf(null, pc), offers.map { it.hub })
         assertArrayEquals(ByteArray(32) { 8 }, offers[1].psk)
         assertTrue(HubState.decode(saved!!.encode())!!.clients.single().met)
-        // The other hub, a client too, does not get its own offer back.
-        h.offers(pc, ByteArray(32) { 2 }, ByteArray(32) { 3 })
+        // The other hub, a client too, does not get its own offer back. A
+        // new client makes the hub share again; one it knows is no news.
+        var admitted = 0
+        h.offers(pc, ByteArray(32) { 2 }, ByteArray(32) { 3 }) { admitted++ }
+        h.offers(pc, ByteArray(32) { 2 }, ByteArray(32) { 3 }) { admitted++ }
+        assertEquals(1, admitted)
         assertEquals(1, h.offersFor(pc, emptyList()).size)
         assertEquals(2, h.offersFor(tv, emptyList()).size)
     }

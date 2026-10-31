@@ -242,10 +242,13 @@ public final class HubOnPhone: @unchecked Sendable {
     /// MemberNode's hub: this hub's own, then the group's other hubs' it
     /// passes on, in order (docs/protocol.md, section 11, "Several hubs");
     /// none while the hub is off or has no forwarder, or when the key is
-    /// refused.
-    public func offers(device: String, key: Data, psk: Data? = nil, order: [String] = []) -> [Member.TunnelOffer] {
+    /// refused. admitted runs once a new client is kept: the other hubs
+    /// take this hub's clients from what it shares, so it shares again, as
+    /// a computer does.
+    public func offers(device: String, key: Data, psk: Data? = nil, order: [String] = [],
+                       admitted: () -> Void = {}) -> [Member.TunnelOffer] {
         guard let h = offering else { return [] }
-        return h.offers(device: device, key: key, psk: psk, order: order, changed: { self.clientsChanged($0) },
+        return h.offers(device: device, key: key, psk: psk, order: order, changed: { self.clientsChanged($0); admitted() },
                         refused: { self.log("refused a client", $0) })
     }
 

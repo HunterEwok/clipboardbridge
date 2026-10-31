@@ -231,8 +231,10 @@ func (s *Service) keyboardPastes() bool {
 // sends pastes there; ok is false when they go to this computer's screen.
 // Keys go straight in there, so a line break presses Enter: a text with
 // one is refused unless the user allowed Enter. The answer is done once
-// typing starts, as a long text takes longer than the sender waits.
-func (s *Service) keyboardPaste(body group.CommandBody, text string, enter bool) (node.Result, bool) {
+// typing starts, as a long text takes longer than the sender waits; typing
+// stops when still says the paste may no longer go on, or the user turns
+// the keyboard's pastes off.
+func (s *Service) keyboardPaste(body group.CommandBody, text string, enter bool, still func() bool) (node.Result, bool) {
 	set, err := blekeyboard.Load(s.cfg.StateDir)
 	if err != nil || !set.On || !set.Pastes {
 		return node.Result{}, false
@@ -258,10 +260,13 @@ func (s *Service) keyboardPaste(body group.CommandBody, text string, enter bool)
 		res.Status, res.Reason = node.ResultFailed, err.Error()
 		return res, true
 	}
-	go func() {
-		if err := k.Type(context.Background(), text, set.Layout, set.Rate); err != nil {
-			s.logf("cbb: typing a paste from %s on the Bluetooth keyboard: %v", body.By, err)
-		}
-	}()
+	on := func() bool {
+		set, err := blekeyboard.Load(s.cfg.StateDir)
+		return err == nil && set.On && set.Pastes && still()
+	}
+	if !s.typeLater("the Bluetooth keyboard", on, func(ctx context.Context) error { return k.Type(ctx, text, set.Layout, set.Rate) }) {
+		res.Reason = "the Bluetooth keyboard is still typing the last paste; send this one when it is done"
+		return res, true
+	}
 	return node.Result{ID: body.ID, Status: node.ResultDone}, true
 }

@@ -115,6 +115,10 @@ func (s *Service) tunnelKeyOffered(peer group.DeviceID, chain []*x509.Certificat
 		}
 		s.logf("cbb: %s can reach this hub away from home", peer)
 		s.hubPeersLocked()
+		// The other hubs take this hub's clients from what it shares,
+		// sent when they met; a client admitted since is shared now, so
+		// that it reaches them when this hub is off.
+		s.shareLocked()
 	}
 	offers := s.hubOffersLocked(st, peer, m.PresharedKey[:])
 	if offers == nil {

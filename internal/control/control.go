@@ -449,10 +449,16 @@ func (r *Reader) Read() (*Message, error) {
 		return nil, fmt.Errorf("control: bad payload length %d", m.Len)
 	}
 	if m.Len > 0 {
-		m.Payload = make([]byte, m.Len)
-		if _, err := io.ReadFull(r.r, m.Payload); err != nil {
+		// Read the payload as it arrives, rather than allocating what the
+		// header promises before a byte of it came.
+		p, err := io.ReadAll(io.LimitReader(r.r, int64(m.Len)))
+		if err != nil {
 			return nil, err
 		}
+		if len(p) != m.Len {
+			return nil, io.ErrUnexpectedEOF
+		}
+		m.Payload = p
 	}
 	return &m, nil
 }

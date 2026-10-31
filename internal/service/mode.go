@@ -176,7 +176,7 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 	case group.CommandHub:
 		return s.takeHub(body)
 	case group.CommandPaste:
-		return s.pasted(body, from)
+		return s.pasted(body, c, from)
 	case group.CommandPasteOff:
 		return s.pasteOff(body)
 	case group.CommandAction:

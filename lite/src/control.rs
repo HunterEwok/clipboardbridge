@@ -240,8 +240,13 @@ impl<R: Read> Reader<R> {
         if header.len > MAX_PAYLOAD {
             return Err(Error::msg(format!("a bad payload length {}", header.len)));
         }
-        let mut payload = vec![0; header.len];
-        self.r.read_exact(&mut payload).context("the connection broke")?;
+        // Read the payload as it arrives, rather than allocating what the
+        // header promises before a byte of it came.
+        let mut payload = Vec::new();
+        (&mut self.r).take(header.len as u64).read_to_end(&mut payload).context("the connection broke")?;
+        if payload.len() != header.len {
+            return Err(Error::msg("the connection broke in the middle of a message"));
+        }
         Ok(Some(Message { header, payload }))
     }
 }
