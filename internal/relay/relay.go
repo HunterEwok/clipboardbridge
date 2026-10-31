@@ -46,7 +46,6 @@ const (
 	maxRequestsGroup  = 32  // of them from one group
 	maxRequestsSource = 32  // of them from devices registered from one IP address
 	maxRequestsNet    = 64  // of them from devices registered from one IPv4 /24 or IPv6 /64
-	maxRequestsWide   = 64  // of them from devices registered from one IPv4 /16 or IPv6 /48
 )
 
 // Timeouts: setupTimeout bounds a registration, requestTimeout the wait for
@@ -107,12 +106,10 @@ type Relay struct {
 	// requestWait is how long a connection in a tunnel may take to send
 	// its request line: requestTimeout, longer in tests.
 	requestWait time.Duration
-	// reqIP, reqNet and reqWide count the requests being read by the
-	// address, the network and the wider network the device registered
-	// from.
-	reqIP   map[netip.Addr]int
-	reqNet  map[netip.Prefix]int
-	reqWide map[netip.Prefix]int
+	// reqIP and reqNet count the requests being read by the address and the
+	// network the device registered from.
+	reqIP  map[netip.Addr]int
+	reqNet map[netip.Prefix]int
 	// records are each group's authority records, from all its members'
 	// registrations, verified once and kept in memory while the relay runs.
 	records     map[string]*recordSet
@@ -215,7 +212,7 @@ func Listen(cfg Config) (*Relay, error) {
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
 		records: map[string]*recordSet{}, tagLocks: map[string]*tagLock{}, allow: newAllowance(), now: time.Now,
-		reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}, reqWide: map[netip.Prefix]int{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
+		reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
 		setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}, requestWait: requestTimeout}
 	if cfg.Open {
 		r.limits = cfg.Limits.withDefaults()
@@ -310,12 +307,12 @@ func (r *Relay) freeSlot(from netip.Addr) {
 }
 
 // takeRequestLocked counts a request of m being read; false when there
-// are too many, of m, of its group, of the address, network or wider
-// network it registered from, or in all.
+// are too many, of m, of its group, of the address or network it registered
+// from, or in all.
 func (r *Relay) takeRequestLocked(m *member) bool {
-	nw, wide := networkOf(m.from), wideNetworkOf(m.from)
+	nw := networkOf(m.from)
 	if m.dropped || r.requesting >= maxRequests || m.reading >= maxRequestsOne ||
-		r.reqIP[m.from] >= maxRequestsSource || r.reqNet[nw] >= maxRequestsNet || r.reqWide[wide] >= maxRequestsWide ||
+		r.reqIP[m.from] >= maxRequestsSource || r.reqNet[nw] >= maxRequestsNet ||
 		m.greads != nil && *m.greads >= maxRequestsGroup {
 		return false
 	}
@@ -323,7 +320,6 @@ func (r *Relay) takeRequestLocked(m *member) bool {
 	m.reading++
 	r.reqIP[m.from]++
 	r.reqNet[nw]++
-	r.reqWide[wide]++
 	if m.greads != nil {
 		*m.greads++
 	}
@@ -336,7 +332,6 @@ func (r *Relay) freeRequest(m *member) {
 	m.reading--
 	countDown(r.reqIP, m.from)
 	countDown(r.reqNet, networkOf(m.from))
-	countDown(r.reqWide, wideNetworkOf(m.from))
 	if m.greads != nil {
 		*m.greads--
 	}

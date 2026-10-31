@@ -19,7 +19,7 @@ import (
 
 // newRequestRelay is a relay with only what the counting of requests needs.
 func newRequestRelay() *Relay {
-	return &Relay{reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}, reqWide: map[netip.Prefix]int{}}
+	return &Relay{reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}}
 }
 
 // The requests being read are also counted by the address and the network
@@ -72,42 +72,6 @@ func TestRequestsBoundBySourceAndGroup(t *testing.T) {
 	}
 	if r.reqIP[one] != maxRequestsSource-maxRequestsOne {
 		t.Errorf("%d requests counted for the address after some were read, want %d", r.reqIP[one], maxRequestsSource-maxRequestsOne)
-	}
-}
-
-// Networks next to each other, which one provider usually gives one
-// customer, count together too: they leave the slots to others as one
-// network would.
-func TestRequestsBoundByWiderNetwork(t *testing.T) {
-	// The address a of the network n of 2001:db8:1::/48 or 192.0.0.0/16.
-	v6 := func(n, a int) netip.Addr {
-		return netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, byte(n), 15: byte(a + 1)})
-	}
-	v4 := func(n, a int) netip.Addr { return netip.AddrFrom4([4]byte{192, 0, byte(n), byte(a + 1)}) }
-	for name, addr := range map[string]func(n, a int) netip.Addr{"IPv6": v6, "IPv4": v4} {
-		r := newRequestRelay()
-		got := 0
-		r.mu.Lock()
-		for n := range maxRequests / maxRequestsNet {
-			for a := range maxRequestsNet / maxRequestsSource {
-				for range maxRequestsSource / maxRequestsOne {
-					m := &member{from: addr(n, a), greads: new(int)}
-					for range maxRequestsOne {
-						if r.takeRequestLocked(m) {
-							got++
-						}
-					}
-				}
-			}
-		}
-		genuine := r.takeRequestLocked(&member{from: netip.MustParseAddr("198.51.100.9"), greads: new(int)})
-		r.mu.Unlock()
-		if got != maxRequestsWide {
-			t.Errorf("%s: networks of one wider network hold %d requests, want %d", name, got, maxRequestsWide)
-		}
-		if !genuine {
-			t.Errorf("%s: a device from elsewhere refused after the wider network took its share", name)
-		}
 	}
 }
 
