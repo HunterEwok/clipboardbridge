@@ -3,11 +3,13 @@
 
 package io.github.hunterewok.clipboardbridge.kit
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -50,11 +52,34 @@ class StrictTest {
     @Test
     fun generated() {
         val v = Interop.read("strict-generated.json").jsonObject
+        for (kind in listOf("records", "commands", "manifests")) assertTrue(v.getValue(kind).jsonArray.isNotEmpty(), "no $kind")
+        val wrong = strictWrong(v)
+        assertTrue(wrong.isEmpty(), "${wrong.size} vectors read otherwise:\n" + wrong.joinToString("\n"))
+    }
+
+    /** testdata/interop/strict-mutants-*.json: valid bodies changed byte by byte, each with the verdict of the tables of docs/protocol.md. */
+    @Test
+    fun mutants() {
+        val wrong = mutableListOf<String>()
+        var n = 0
+        generateSequence(1) { it + 1 }.map { File(Interop.dir, "strict-mutants-$it.json") }.takeWhile { it.exists() }.forEach { f ->
+            val v = Interop.read(f.name).jsonObject
+            n += listOf("records", "commands").sumOf { v[it]?.jsonArray?.size ?: 0 }
+            wrong += strictWrong(v)
+        }
+        assertTrue(n > 0, "no mutant vectors")
+        assertTrue(wrong.isEmpty(), "${wrong.size} vectors read otherwise:\n" + wrong.joinToString("\n"))
+    }
+
+    /**
+     * The vectors of a file in the form of strict-generated.json that the kit reads otherwise. A record is taken when
+     * its decoder returns a body and a command when its parser does; a reader refuses only by returning null or by its
+     * own exception, so any other exception fails the test.
+     */
+    private fun strictWrong(v: JsonObject): List<String> {
         val wrong = mutableListOf<String>()
         for (kind in listOf("records", "commands", "manifests")) {
-            val cases = v.getValue(kind).jsonArray
-            assertTrue(cases.isNotEmpty(), "no $kind")
-            for (c in cases) {
+            for (c in v[kind]?.jsonArray ?: continue) {
                 val o = c.jsonObject
                 var body = b64(o.str("body"))
                 o["pad"]?.let {
@@ -62,15 +87,20 @@ class StrictTest {
                     body = body.copyOfRange(0, at) + ByteArray(it.jsonPrimitive.int) { 'a'.code.toByte() } + body.copyOfRange(at, body.size)
                 }
                 val got = when (kind) {
-                    "records" -> runCatching { Records.Body.decode(body) != null }
-                    "commands" -> runCatching { Commands.parse(body) }.map { true }
-                    else -> runCatching { Wire.parse(body)?.let { Media.Manifest.fromJson(it) }?.isValid == true }
-                }.getOrDefault(false)
+                    "records" -> Records.Body.decode(body) != null
+                    "commands" -> try {
+                        Commands.parse(body)
+                        true
+                    } catch (_: Commands.Refused) {
+                        false
+                    }
+                    else -> runCatching { Wire.parse(body)?.let { Media.Manifest.fromJson(it) }?.isValid == true }.getOrDefault(false)
+                }
                 val valid = o.getValue("valid").jsonPrimitive.boolean
                 if (got != valid) wrong += "$kind ${o.str("name")} (${o.str("rule")}): valid $valid, got $got"
             }
         }
-        assertTrue(wrong.isEmpty(), "${wrong.size} vectors read otherwise:\n" + wrong.joinToString("\n"))
+        return wrong
     }
 
     /** strict-files.json: the server credentials and release files, as Go's TestStrictGeneratedFiles writes them. */

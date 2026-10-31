@@ -151,8 +151,10 @@ func TestSetupsChargedPerSecond(t *testing.T) {
 	now := time.Unix(1000, 0)
 	r := &Relay{setups: budget.NewCount(setupCaps), allow: newAllowance(), now: func() time.Time { return now }}
 	one, other := netip.MustParseAddr("203.0.113.7"), netip.MustParseAddr("198.51.100.1")
+	// A source is refused well before 1024 setups; the bound keeps a
+	// relay that never refuses from holding the test.
 	setups := func() (n int) {
-		for r.takeSlot(one) {
+		for n < 1024 && r.takeSlot(one) {
 			r.freeSlot(one)
 			n++
 		}
@@ -167,6 +169,32 @@ func TestSetupsChargedPerSecond(t *testing.T) {
 	now = now.Add(time.Second)
 	if n, want := setups(), int(addressRate/setupCost); n != want {
 		t.Fatalf("%d setups in the next second, want %d", n, want)
+	}
+}
+
+// The setups from the networks of one wide network are bounded by the wide
+// network, even when each network holds less than its own share: three
+// networks of one IPv4 /16 set up as many as each may, and only
+// maxSetupsWide of them are held; another wide network still sets up.
+func TestSetupsBoundByWideNetwork(t *testing.T) {
+	const networks = 3
+	if networks*maxSetupsNetwork <= maxSetupsWide || networks*maxSetupsNetwork >= maxSetups {
+		t.Fatal("the networks must hold more than the wide network's share and less than all")
+	}
+	r := &Relay{setups: budget.NewCount(setupCaps), allow: newAllowance(), now: func() time.Time { return time.Unix(1000, 0) }}
+	held := 0
+	for n := range networks {
+		for i := range maxSetupsNetwork {
+			if r.takeSlot(netip.AddrFrom4([4]byte{198, 51, byte(n), byte(i)})) {
+				held++
+			}
+		}
+	}
+	if held != maxSetupsWide {
+		t.Errorf("the networks of one wide network hold %d setups, want %d", held, maxSetupsWide)
+	}
+	if !r.takeSlot(netip.MustParseAddr("203.0.113.7")) {
+		t.Error("another wide network refused")
 	}
 }
 

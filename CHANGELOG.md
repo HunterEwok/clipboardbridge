@@ -18,6 +18,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - `testdata/interop/strict-files.json`, written by Go's `TestStrictGeneratedFiles` the same
   way, holds some 1500 bodies of server credentials and release files; all four
   implementations read it.
+- `testdata/interop/strict-mutants-1.json` and `-2.json` hold 485 record bodies changed byte by
+  byte from valid ones, each with the verdict of the tables; all four implementations read
+  them.
 - Differential fuzzing (`docs/differential.md`): `tools/difffuzz` changes the bodies of the
   interop vectors and their record sets at random from a seed, each of Go, the lite member and
   both phone kits writes its verdict on every case, and the `differential` job of CI fails on
@@ -749,9 +752,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   every signer's copy of a record its hub sends, as a group's records do, and a refused
   registration no longer drops the group's earlier one. Hubs and devices see the new
   refusals as ordinary ones; nothing on the wire changes.
-- A root record that an admin phone signs counts only while no revocation from its root's own
-  key names that admin phone, as for an admin computer, so a removed admin phone hands the
-  group to nobody. The same on computers, the lite member and both phones.
+- A root record that an admin phone signs counts only while no known root's own key, and no
+  other admin phone that is not removed itself, has revoked that admin phone, so a removed
+  admin phone hands the group to nobody, whichever root or admin removed it. Known roots
+  are found in rounds, and a removal found in one stays, so the result does not depend on
+  the order of the records (docs/protocol.md, section 10, rule 2). The same on computers,
+  the lite member and both phones, checked against `testdata/interop/go-removed-admins.json`.
 - Every member reads a group's records alike in all implementations: a body signed by more
   than one signer is kept under each signer, so what a device makes of the records no longer
   depends on whose copy came first, and the records digest of the hello covers each record's

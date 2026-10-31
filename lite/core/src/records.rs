@@ -1030,23 +1030,55 @@ impl Records {
     /// computer signed under a root that is a computer (computer_hand_over).
     fn known_roots(&self) -> BTreeSet<KeyHash> {
         let mut known = BTreeSet::from([self.ca_key]);
-        // The admin CAs each root's own key revoked: such an admin phone's
-        // root records under that root no longer count.
-        let removed: BTreeSet<(KeyHash, KeyHash)> = self
-            .by_id
-            .values()
-            .filter(|r| r.body.kind == "revoke" && r.signer == r.anchor)
-            .flat_map(|r| r.body.keys.iter().map(|k| (r.anchor, *k)))
-            .collect();
+        // The admin CAs that are removed: named by a revoke from the own key
+        // of a known root, or from an admin phone's admin CA under a known
+        // root that no such revoke from a root names. Such an admin phone's
+        // root records no longer count. The roots are known in rounds, each
+        // phone's root records judged by the removals of the roots known
+        // before them, as Go's knownRoots.
+        let mut removed = BTreeSet::new();
         loop {
+            // The roots the own keys and the computers' admin CAs hand on to.
+            loop {
+                let mut grew = false;
+                for r in self.by_id.values() {
+                    let Some(root) = &r.root else { continue };
+                    if !known.contains(&r.anchor) || (r.signer != r.anchor && !self.computer_hand_over(r)) {
+                        continue;
+                    }
+                    grew |= known.insert(root.key_hash());
+                }
+                if !grew {
+                    break;
+                }
+            }
             let phones: BTreeSet<KeyHash> = self.by_id.values().filter_map(|r| phone_admin_of(r, &known)).collect();
+            let mut by_root = BTreeSet::new();
+            for r in self.by_id.values() {
+                if r.body.kind == "revoke" && r.signer == r.anchor && known.contains(&r.anchor) {
+                    for k in &r.body.keys {
+                        by_root.insert(*k);
+                        removed.insert(*k);
+                    }
+                }
+            }
+            for r in self.by_id.values() {
+                if r.body.kind == "revoke"
+                    && phones.contains(&r.signer)
+                    && known.contains(&r.anchor)
+                    && !by_root.contains(&r.signer)
+                {
+                    removed.extend(r.body.keys.iter().copied());
+                }
+            }
+            // The roots that admin phones that are not removed hand on to.
             let mut grew = false;
             for r in self.by_id.values() {
                 let Some(root) = &r.root else { continue };
                 if !known.contains(&r.anchor)
-                    || (r.signer != r.anchor
-                        && !(phones.contains(&r.signer) && !removed.contains(&(r.anchor, r.signer)))
-                        && !self.computer_hand_over(r))
+                    || r.signer == r.anchor
+                    || !phones.contains(&r.signer)
+                    || removed.contains(&r.signer)
                 {
                     continue;
                 }

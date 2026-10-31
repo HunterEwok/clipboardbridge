@@ -7,10 +7,13 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
@@ -76,6 +79,32 @@ func TestRefusedRegistrationLeavesState(t *testing.T) {
 		}
 		return err
 	}
+	// A device of a group the relay holds no device of, whose own records
+	// revoke its certificate: the relay keeps nothing of them, and the
+	// bytes they cost its source are given back.
+	gone := newGroup(t)
+	self := newDevice(t, gone)
+	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(gone.Cert), TimeMS: time.Now().UnixMilli(),
+		Keys: []group.KeyHash{group.KeyHashOf(self.cert.Leaf)}}, gone.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	self.records = append(deviceRecords(t, gone, 2), revoke)
+	before := r.state()
+	if err := reg(self); err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Errorf("a device its own records remove: %v, want a refusal for %q", err, "removed")
+	}
+	if after := r.settled(t); after != before {
+		t.Errorf("a device its own records remove changed the relay\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	r.mu.Lock()
+	_, keeps := r.records[group.Tag(gone.Cert)]
+	held := r.recordBytes.Held(netip.MustParseAddr("127.0.0.1"), budget.Address)
+	r.mu.Unlock()
+	if keeps || held != 0 {
+		t.Errorf("after a device its own records remove the relay keeps its records %v and %d bytes of its source", keeps, held)
+	}
+
 	// A group that sends records, a group with credentials, and one more
 	// with two devices: the relay serves as many groups as it may, and all
 	// registrations come from 127.0.0.1, at its limit too.

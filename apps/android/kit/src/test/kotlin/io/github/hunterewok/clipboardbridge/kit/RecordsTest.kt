@@ -197,6 +197,37 @@ class RecordsTest {
     }
 
     /**
+     * testdata/interop/go-removed-admins.json, from Go's TestRemovedAdminCases:
+     * an admin phone removed by the current root after a handover, or by
+     * another admin phone, signs a root record afterwards, for a root of its
+     * own that revokes the group's roots and admins; that root is not known
+     * either, in any order.
+     */
+    @Test
+    fun goRemovedAdmins() {
+        val cases = Interop.read("go-removed-admins.json").jsonArray
+        assertEquals(2, cases.size)
+        for (c in cases) {
+            val v = c.jsonObject
+            val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+            val ca = b64(v.str("group_ca"))
+            for ((name, recs) in listOf("as written" to records, "reversed" to records.reversed())) {
+                val set = RecordSet()
+                set.addAll(recs, ca)
+                assertEquals(v.getValue("roots").jsonPrimitive.int, set.roots.size, "${v.str("name")}, $name")
+                for (k in v.getValue("keys").jsonArray) {
+                    val o = k.jsonObject
+                    assertEquals(
+                        o.getValue("revoked").jsonPrimitive.boolean,
+                        set.isRevoked(b64(o.str("key"))),
+                        "${v.str("name")}, $name: ${o.str("name")}",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * testdata/interop/go-authority.json, from Go's TestGoAuthorityVectors: a
      * device is an admin, with the role and store of that record, only by a
      * record a root's own key signed, and a removed admin's records no

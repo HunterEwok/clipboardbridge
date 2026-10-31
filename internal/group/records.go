@@ -1142,35 +1142,60 @@ func (s *Records) eval() *evaluation {
 }
 
 // knownRoots returns the roots whose own signatures may count: the group CA
-// and the new root of every root record that a known root's own key or an
-// admin phone under a known root signed, while no revocation from that
-// root's own key names the admin phone's admin CA, or that an admin computer signed
-// under a root that is a computer (computerHandOver). A root that a
-// computer's admin CA named in any other case is not one of them, so its
-// key, which that admin holds, signs nothing that counts.
+// and the new root of every root record that a known root's own key signed,
+// that an admin computer signed under a root that is a computer
+// (computerHandOver), or that an admin phone under a known root signed
+// while it is not removed. A root that a computer's admin CA named in any
+// other case is not one of them, so its key, which that admin holds, signs
+// nothing that counts.
 func (s *Records) knownRoots() map[KeyHash]bool {
 	known := map[KeyHash]bool{s.caKey: true}
-	// The admin CAs each root's own key revoked: such an admin phone's root
-	// records under that root no longer count.
-	removed := map[[2]KeyHash]bool{}
-	for _, r := range s.byID {
-		if r.body.Type == RecordRevoke && r.signer == r.anchor {
-			for _, k := range r.body.Keys {
-				removed[[2]KeyHash{r.anchor, k}] = true
+	// The admin CAs that are removed: named by a revoke from the own key of a
+	// known root, or from an admin phone's admin CA under a known root that
+	// no such revoke from a root names. Such an admin phone's root records
+	// no longer count. The roots are known in rounds, each phone's root
+	// records judged by the removals of the roots known before them, so a
+	// root that a phone's record makes known cannot keep that phone from
+	// being removed, and nothing depends on order.
+	removed := map[KeyHash]bool{}
+	for {
+		// The roots the own keys and the computers' admin CAs hand on to.
+		for grew := true; grew; {
+			grew = false
+			for _, r := range s.byID {
+				if r.root == nil || !known[r.anchor] || r.signer != r.anchor && !s.computerHandOver(r) {
+					continue
+				}
+				if k := KeyHashOf(r.root); !known[k] {
+					known[k], grew = true, true
+				}
 			}
 		}
-	}
-	for {
 		phones := map[KeyHash]bool{}
 		for _, r := range s.byID {
 			if a := phoneAdminOf(r, known); a != nil {
 				phones[*a] = true
 			}
 		}
+		byRoot := map[KeyHash]bool{}
+		for _, r := range s.byID {
+			if r.body.Type == RecordRevoke && r.signer == r.anchor && known[r.anchor] {
+				for _, k := range r.body.Keys {
+					byRoot[k], removed[k] = true, true
+				}
+			}
+		}
+		for _, r := range s.byID {
+			if r.body.Type == RecordRevoke && phones[r.signer] && known[r.anchor] && !byRoot[r.signer] {
+				for _, k := range r.body.Keys {
+					removed[k] = true
+				}
+			}
+		}
+		// The roots that admin phones that are not removed hand on to.
 		grew := false
 		for _, r := range s.byID {
-			phone := phones[r.signer] && !removed[[2]KeyHash{r.anchor, r.signer}]
-			if r.root == nil || !known[r.anchor] || r.signer != r.anchor && !phone && !s.computerHandOver(r) {
+			if r.root == nil || !known[r.anchor] || r.signer == r.anchor || !phones[r.signer] || removed[r.signer] {
 				continue
 			}
 			if k := KeyHashOf(r.root); !known[k] {

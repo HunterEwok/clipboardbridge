@@ -225,8 +225,14 @@ func TestRefusedRegistrationLeavesForwarder(t *testing.T) {
 	}
 	f.versions.mu.Unlock()
 	for _, size := range []int{8 << 10, 256} {
-		for i := 0; f.memory.room("filler", netip.MustParseAddr("127.0.0.1"), fakeRecords(1, size)) == nil; i++ {
+		// The network is full within its share in records of this size.
+		bound := networkRecordBytes/size + 1
+		i := 0
+		for ; i < bound && f.memory.room("filler", netip.MustParseAddr("127.0.0.1"), fakeRecords(1, size)) == nil; i++ {
 			f.memory.keep(fmt.Sprintf("filler %d %d", size, i/30), netip.MustParseAddr("127.0.0.1"), fakeRecords(1, size))
+		}
+		if i == bound {
+			t.Fatalf("the network kept %d records of %d bytes and was not refused", i, size)
 		}
 	}
 	period2, periodKey2, hubKey2, hubCert2 := newPeriod(t, now)
@@ -482,15 +488,21 @@ func TestVersionsProviderLeavesRoom(t *testing.T) {
 func TestMemoryChargesTheSource(t *testing.T) {
 	m := newMemory(func(string) bool { return true })
 	from := netip.MustParseAddr("2001:db8:5::7")
-	kept := 0
-	for i := 0; ; i++ {
+	// Each registration brings 30 records of 8 KiB: the network is
+	// refused within its share and one more, which bounds the loop.
+	kept, refused := 0, false
+	for i := 0; i <= networkRecordBytes/(30*(8<<10))+1; i++ {
 		recs := fakeRecords(30, 8<<10)
 		tag := fmt.Sprintf("g%d", i)
 		if m.room(tag, from, recs) != nil {
+			refused = true
 			break
 		}
 		m.keep(tag, from, recs)
 		kept++
+	}
+	if !refused {
+		t.Fatalf("one network kept %d registrations and was not refused", kept)
 	}
 	if _, _, n := m.total(); n > networkRecordBytes {
 		t.Errorf("one network brought %d bytes, limit %d", n, networkRecordBytes)
@@ -500,6 +512,46 @@ func TestMemoryChargesTheSource(t *testing.T) {
 	}
 	if err := m.room("other", netip.MustParseAddr("2001:db8:6::7"), fakeRecords(30, 8<<10)); err != nil {
 		t.Errorf("another network refused: %v", err)
+	}
+}
+
+// The records that the networks of one wide network bring are bounded by
+// the wide network, even when each network brings less than its own
+// share: five networks of one IPv6 /48 bring all they may, and together
+// they keep no more than wideRecordBytes; another wide network still
+// brings records.
+func TestMemoryChargesTheWideNetwork(t *testing.T) {
+	const networks = 5
+	if networks*networkRecordBytes <= wideRecordBytes {
+		t.Fatal("the networks must be able to bring more than the wide network's share")
+	}
+	m := newMemory(func(string) bool { return true })
+	body := make([]byte, 8<<10)
+	// A registration of 30 records of 8 KiB; a network is refused within
+	// its share and one more, which bounds each loop.
+	per := 30
+	bound := networkRecordBytes/(per*len(body)) + 2
+	for n := range networks {
+		from := netip.MustParseAddr(fmt.Sprintf("2001:db8:7:%x::7", n))
+		refused := false
+		for i := 0; i < bound; i++ {
+			recs := sharedRecords(per, len(body), body)
+			tag := fmt.Sprintf("g%d %d", n, i)
+			if m.room(tag, from, recs) != nil {
+				refused = true
+				break
+			}
+			m.keep(tag, from, recs)
+		}
+		if !refused {
+			t.Fatalf("network %d was not refused", n)
+		}
+	}
+	if _, _, n := m.total(); n > wideRecordBytes {
+		t.Errorf("the networks of one wide network brought %d bytes, limit %d", n, wideRecordBytes)
+	}
+	if err := m.room("other", netip.MustParseAddr("2001:db8:8::7"), fakeRecords(per, len(body))); err != nil {
+		t.Errorf("another wide network refused: %v", err)
 	}
 }
 
@@ -530,17 +582,24 @@ func TestMemoryKeepsGroupsThatAreAway(t *testing.T) {
 	body := make([]byte, 8<<10)
 	rng := mrand.New(mrand.NewPCG(4, 2026))
 	var strangers []string
+	// A registration brings at least one record of more than 64 bytes, so
+	// a wide network is refused within wideRecordBytes/64 of them.
 	for w := 0; w < 3*rememberedBytes/wideRecordBytes; w++ {
-		for i := 0; ; i++ {
+		refused := false
+		for i := 0; i < wideRecordBytes/64; i++ {
 			from := netip.AddrFrom4([4]byte{byte(10 + w), 7, byte(rng.IntN(256)), 1})
 			tag := fmt.Sprintf("stranger %d %d", w, i)
 			recs := sharedRecords(1+rng.IntN(30), 1+rng.IntN(len(body)), body)
 			if m.room(tag, from, recs) != nil {
+				refused = true
 				break
 			}
 			registered[tag] = true
 			m.keep(tag, from, recs)
 			strangers = append(strangers, tag)
+		}
+		if !refused {
+			t.Fatalf("wide network %d was not refused", w)
 		}
 	}
 	if n := len(m.records("genuine")); n != 5 {

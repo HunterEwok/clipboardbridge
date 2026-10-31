@@ -1469,12 +1469,18 @@ set.
    `chain` that verifies to the group CA, or to a root records may be signed under (rule 7).
    Other records are dropped. A member takes at most 1024 records signed by one signer, so
    a stolen admin cannot fill the set.
-2. **Signers and their powers.** The **known roots** are the group CA and the new root of
-   every `root` record that a known root's own key, or an admin phone's admin CA under a
-   known root that no `revoke` record from that root's own key names, signed, or that a
-   computer's admin CA signed under a known root that is a computer (repeated until nothing
-   is added). An admin phone that the root removed thus hands the group to nobody, whenever
-   it signs. A root is a **computer** when its own key
+2. **Signers and their powers.** The **known roots** are the group CA and the roots found
+   in rounds. A round first adds the new root of every `root` record that a known root's own
+   key signed, or that a computer's admin CA signed under a known root that is a computer,
+   until nothing is added. Then an admin CA is **removed** when a `revoke` record names it
+   that a known root's own key signed, or that an admin phone's admin CA under a known root
+   signed while no `revoke` record from a known root's own key names that signer; an admin
+   CA once removed stays removed. Last, the round adds the new root of every `root` record
+   that an admin phone's admin CA that is not removed signed under a known root, and the
+   rounds repeat until one adds nothing. An admin phone that any root of the group, or
+   another admin phone, removed thus hands the group to nobody, whenever it signs, and a
+   root that a phone's `root` record makes known cannot undo a removal found before it.
+   A root is a **computer** when its own key
    signed a `device` record with `by` = `device` and role `full` and none with role
    `phone`; the admin CA must be named in `admin` by a `device` record that root's own key
    signed, and no `revoke` record from that root's own key may name it. In a group whose
