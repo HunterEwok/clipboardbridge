@@ -698,6 +698,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - The lite member no longer stops the download tool after it has finished, so a download
   the tool ends a moment after its output stands.
+- A replaced image's or file's parts leave the cache 10 minutes after the copy that replaced
+  them even when no further copy comes; the service sweeps the cache every minute instead of
+  only on the next copy.
 - Uninstalling on Linux also removes what the installer created and nothing else uses
   any more: an `/etc/tmux.conf` left with only blank lines and an empty `/etc/xdg/autostart`.
 - A JPEG pasted on Windows stays within the image memory bound: the PNG that goes on the

@@ -585,3 +585,26 @@ func (s *Service) nodeContent() node.Content {
 	}
 	return contents{s.content, releaseContent{s}}
 }
+
+// contentSweepEvery is how often the service deletes the parts of replaced
+// copies once contentKeep has passed, so they go on time when no further
+// copy comes to replace them (design.md, "Images and files", "Storage").
+const contentSweepEvery = time.Minute
+
+// sweepContent deletes the cache's old parts every contentSweepEvery until
+// ctx ends.
+func (s *Service) sweepContent(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		s.mediaMu.Lock()
+		limit := s.limits.Home
+		s.mediaMu.Unlock()
+		s.content.sweep(limit)
+	}
+}

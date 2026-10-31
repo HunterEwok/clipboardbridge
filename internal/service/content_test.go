@@ -4,9 +4,11 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -79,5 +81,59 @@ func TestLeftPartsSwept(t *testing.T) {
 	}
 	if n := cacheBytes(t, dir); n != 2*limit {
 		t.Errorf("%d bytes held after an hour, want the current copy's and the fetch's", n)
+	}
+}
+
+// TestReplacedPartsSweptWithoutNextCopy: the service deletes a replaced
+// copy's part once contentKeep has passed even when no later copy comes
+// to replace the one after it.
+func TestReplacedPartsSweptWithoutNextCopy(t *testing.T) {
+	var mu sync.Mutex
+	now := time.Unix(1_800_000_000, 0)
+	clock := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	dir := filepath.Join(t.TempDir(), contentDir)
+	store, err := openContent(dir, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const limit = 1 << 20
+	data := []byte("a copied file's only part")
+	f, err := store.temp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write(data)
+	sum := sha256.Sum256(data)
+	if err := store.commit(f, sum, int64(len(data))); err != nil {
+		t.Fatal(err)
+	}
+	store.setCurrent(&clip.Manifest{Size: int64(len(data)), Parts: []clip.Part{{SHA256: sum[:], Size: int64(len(data))}}}, limit)
+	store.setCurrent(&clip.Manifest{Size: 0}, limit) // a text copy replaces it, and nothing follows
+
+	s := &Service{content: store, limits: mediaLimits{Home: limit, Away: limit}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.sweepContent(ctx, 5*time.Millisecond)
+
+	time.Sleep(50 * time.Millisecond)
+	if !store.has(sum) {
+		t.Fatal("the replaced part went before contentKeep")
+	}
+	mu.Lock()
+	now = now.Add(contentKeep + time.Second)
+	mu.Unlock()
+	deadline := time.Now().Add(5 * time.Second)
+	for store.has(sum) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the part replaced %v ago is still in the cache", contentKeep)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := os.Stat(store.path(sum)); !os.IsNotExist(err) {
+		t.Errorf("the part's file: %v", err)
 	}
 }
