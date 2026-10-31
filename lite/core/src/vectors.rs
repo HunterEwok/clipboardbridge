@@ -759,10 +759,39 @@ fn strict() {
 #[test]
 fn strict_generated() {
     let v = vectors("strict-generated.json");
+    for kind in ["records", "commands", "manifests"] {
+        assert!(!v[kind].as_array().unwrap().is_empty(), "no {kind}");
+    }
+    let wrong = strict_wrong(&v);
+    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+}
+
+/// The mutant vectors (strict-mutants-*.json): valid bodies changed byte by
+/// byte, each with the verdict of the tables of docs/protocol.md.
+#[test]
+fn strict_mutants() {
+    let mut wrong = Vec::new();
+    let mut n = 0;
+    for i in 1.. {
+        let name = format!("strict-mutants-{i}.json");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop").join(&name);
+        if !path.exists() {
+            break;
+        }
+        let v = vectors(&name);
+        n += v["records"].as_array().unwrap().len();
+        wrong.extend(strict_wrong(&v));
+    }
+    assert!(n > 0, "no mutant vectors");
+    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+}
+
+/// strict_wrong returns the vectors of a file in the form of
+/// strict-generated.json that the lite member reads otherwise.
+fn strict_wrong(v: &Value) -> Vec<String> {
     let mut wrong = Vec::new();
     for kind in ["records", "commands", "manifests"] {
-        let cases = v[kind].as_array().unwrap();
-        assert!(!cases.is_empty(), "no {kind}");
+        let Some(cases) = v[kind].as_array() else { continue };
         for c in cases {
             let mut body = bytes(&c["body"]);
             if let Some(pad) = c["pad"].as_u64() {
@@ -786,7 +815,7 @@ fn strict_generated() {
             }
         }
     }
-    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+    wrong
 }
 
 /// The server credentials and release files of strict-files.json, which

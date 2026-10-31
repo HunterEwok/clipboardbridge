@@ -81,6 +81,42 @@ final class StrictTests: XCTestCase {
         XCTAssert(wrong.isEmpty, "\(wrong.count) vectors read otherwise:\n" + wrong.joined(separator: "\n"))
     }
 
+    /// testdata/interop/strict-mutants-*.json: valid bodies changed byte by
+    /// byte, each with the verdict of the tables of docs/protocol.md.
+    func testMutants() throws {
+        struct Case: Decodable {
+            var name, rule: String
+            var valid: Bool
+            var body: Data
+            var pad_at, pad: Int?
+
+            var full: Data {
+                guard let pad, let pad_at else { return body }
+                return body.prefix(pad_at) + Data(repeating: UInt8(ascii: "a"), count: pad) + body.dropFirst(pad_at)
+            }
+        }
+        struct Vectors: Decodable { var records, commands: [Case]? }
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        var wrong: [String] = []
+        var n = 0
+        for i in 1... {
+            let file = url.appendingPathComponent("testdata/interop/strict-mutants-\(i).json")
+            guard FileManager.default.fileExists(atPath: file.path) else { break }
+            let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: file))
+            for c in v.records ?? [] {
+                n += 1
+                if (Records.Body.decode(c.full) != nil) != c.valid { wrong.append("records \(c.name) (\(c.rule)): valid \(c.valid)") }
+            }
+            for c in v.commands ?? [] {
+                n += 1
+                if ((try? Commands.parse(c.full)) != nil) != c.valid { wrong.append("commands \(c.name) (\(c.rule)): valid \(c.valid)") }
+            }
+        }
+        XCTAssert(n > 0, "no mutant vectors")
+        XCTAssert(wrong.isEmpty, "\(wrong.count) vectors read otherwise:\n" + wrong.joined(separator: "\n"))
+    }
+
     /// strict-files.json: the server credentials and release files, as Go's
     /// TestStrictGeneratedFiles writes them.
     func testGeneratedFiles() throws {
