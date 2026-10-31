@@ -211,7 +211,7 @@ func StartHub(cfg HubConfig) (*Hub, error) {
 		dev.Close()
 		return nil, fmt.Errorf("tunnel: listening in the hub's tunnel: %w", err)
 	}
-	h.listener = l
+	h.listener = addrListener{l}
 	return h, nil
 }
 
@@ -358,7 +358,7 @@ func (c *Client) Dial(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tunnel: dialing the hub: %w", err)
 	}
-	return conn, nil
+	return withAddrs(conn)
 }
 
 // Received returns how many bytes of WireGuard's the client has had from

@@ -668,6 +668,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A connection through the hub's tunnel that closes right after it opens no longer stops
+  the relay or a hub: the tunnel keeps each connection's addresses from when it was set up,
+  on a computer and in the phones' tunnel, and drops one that is gone before it is taken.
 - A copy of files may hold the other device names of Windows (`COM0`, `LPT0`, `COM` or `LPT`
   with a superscript digit, `CONIN$`, `CONOUT$`, and these with spaces before the dot): a
   computer writes them with `_` after the name's base, and every program gives its own
