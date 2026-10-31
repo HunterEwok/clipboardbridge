@@ -716,6 +716,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The pairing window issues a joiner's certificate by the time-scaled build's clock, as the
+  renewals do, so the bench can check a join near the end of the group CA (K5); a release
+  build is unchanged.
 - The lite member no longer stops the download tool after it has finished, so a download
   the tool ends a moment after its output stands.
 - A replaced image's or file's parts leave the cache 10 minutes after the copy that replaced
