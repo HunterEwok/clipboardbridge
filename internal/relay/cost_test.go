@@ -241,6 +241,13 @@ func registerWith(t *testing.T, link Link, ca *group.CA, recs []group.Record) er
 // is held to what it may start by the second.
 func TestRecordsVerifiedOnce(t *testing.T) {
 	r, link := startWith(t, Config{Open: true, Limits: Limits{PerAddress: 100, PerNetwork: 100, GroupRecordBytes: 4 << 20}})
+	// The allowance's clock stands still, so what the test spends does not
+	// come back while the registrations take their time (the race detector
+	// makes them slow).
+	stopped := time.Now()
+	r.mu.Lock()
+	r.now = func() time.Time { return stopped }
+	r.mu.Unlock()
 	ca := newGroup(t)
 	recs := deviceRecords(t, ca, group.MaxPerAdmin)
 	if err := registerWith(t, link, ca, recs); err != nil {
@@ -266,8 +273,8 @@ func TestRecordsVerifiedOnce(t *testing.T) {
 		}
 	}
 	// Three setups, and no check of a record: only a little of the
-	// allowance, and what the seconds in between gave back.
-	if spent := before - units(); spent > 3*setupCost+addressRate*5 {
+	// allowance.
+	if spent := before - units(); spent > 3*setupCost {
 		t.Errorf("sending the same records again spent %.0f units of the allowance", spent)
 	}
 	// New records of a group of its own are what the allowance is for.
