@@ -15,7 +15,6 @@ use alloc::vec::Vec;
 
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
-use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
 
 use crate::certs::{KeyHash, b64, hex, sha256};
@@ -92,7 +91,7 @@ impl Credential {
 }
 
 fn p256_key(spki: &[u8]) -> Result<VerifyingKey> {
-    VerifyingKey::from_public_key_der(spki).map_err(|_| Error::msg("the credential's key is not a P-256 key"))
+    crate::certs::p256_spki(spki).ok_or_else(|| Error::msg("the credential's key is not a P-256 key"))
 }
 
 /// Whether s is a tag: 16 lower-case hex characters.

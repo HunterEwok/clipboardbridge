@@ -227,8 +227,10 @@ public enum Releases {
 
     static func hex(_ d: Data) -> String { d.map { String(format: "%02x", $0) }.joined() }
 
+    /// Whether pattern matches all of s. ICU's `$` also matches before a
+    /// final line break, so the match must cover the whole string.
     static func matches(_ s: String, _ pattern: String) -> Bool {
-        s.range(of: pattern, options: .regularExpression) != nil
+        s.range(of: pattern, options: .regularExpression) == s.startIndex..<s.endIndex
     }
 
     static let sha256RE = "^[0-9a-f]{64}$"
@@ -265,6 +267,8 @@ public enum Releases {
         for key in k.keys {
             guard !key.name.isEmpty, key.name.utf8.count <= 64 else { throw Refused("a key has no valid name") }
             guard P256.Signing.PublicKey(spki: key.key) != nil else { throw Refused("a key is not P-256") }
+            // A release key's use is left out, never written empty.
+            guard key.use != "" else { throw Refused("a key's use is empty") }
         }
         return k
     }

@@ -74,6 +74,22 @@ pub fn random_bytes<const N: usize>() -> [u8; N] {
     b
 }
 
+/// The SubjectPublicKeyInfo of a P-256 key up to its point, which follows
+/// uncompressed (`0x04`, X, Y), as Go's x509 and the phone kits take it.
+const P256_SPKI_PREFIX: [u8; 27] = [
+    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce,
+    0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00, 0x04,
+];
+
+/// The P-256 key in spki, a SubjectPublicKeyInfo with an uncompressed
+/// point; a compressed point is refused, as Go refuses it.
+pub fn p256_spki(spki: &[u8]) -> Option<VerifyingKey> {
+    if spki.len() != 91 || spki[..27] != P256_SPKI_PREFIX {
+        return None;
+    }
+    VerifyingKey::from_sec1_bytes(&spki[26..]).ok()
+}
+
 pub fn hex(b: &[u8]) -> String {
     b.iter().map(|c| format!("{c:02x}")).collect()
 }
