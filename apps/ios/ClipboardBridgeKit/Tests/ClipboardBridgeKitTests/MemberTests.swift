@@ -114,6 +114,21 @@ final class MemberTests: XCTestCase {
         XCTAssertEqual(laptop.device?.cleaned, laptop.device)
     }
 
+    func testRecordsGoInMessagesOfAboutOneMiB() throws {
+        // 1024 records of the largest body: more than one frame holds.
+        let rs = (0..<1024).map { i in
+            Member.Record(body: Data(repeating: UInt8(i % 256), count: 8 << 10), sig: Data(repeating: 1, count: 72))
+        }
+        XCTAssertThrowsError(try Member.encode(.records(rs)))
+        let chunks = Member.Record.chunks(rs)
+        XCTAssertGreaterThan(chunks.count, 8)
+        XCTAssertEqual(Array(chunks.joined()), rs)
+        for c in chunks {
+            XCTAssertLessThanOrEqual(try Member.encode(.records(c)).count, Member.Record.chunk * 5 / 4)
+        }
+        XCTAssertEqual(Member.Record.chunks([]).count, 0)
+    }
+
     func testDeviceInfoCleaned() {
         let bad = Member.DeviceInfo(form: "toaster", osVersion: String(repeating: "9", count: 33), version: "1\n2", mac: "A4:83:E7:01:02:0F")
         XCTAssertNil(bad.cleaned)

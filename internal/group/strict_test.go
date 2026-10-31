@@ -179,6 +179,10 @@ func makeStrictVectors() strictVectors {
 	file := func(total int, size string) []byte {
 		return []byte(fmt.Sprintf(`{"size":%d,"parts":[{"path":"f","size":%s,"sha256":"%s"}]}`, total, size, vecHash))
 	}
+	// two is a manifest of two empty files at the paths a and b.
+	two := func(a, b string) []byte {
+		return []byte(`{"size":0,"parts":[{"path":"` + a + `","size":0,"sha256":"` + vecHash + `"},{"path":"` + b + `","size":0,"sha256":"` + vecHash + `"}]}`)
+	}
 	v.Manifests = []strictVector{
 		r("a folder", true, part("")),
 		r("a folder with a null hash", true, part(`,"sha256":null`)),
@@ -196,6 +200,12 @@ func makeStrictVectors() strictVectors {
 		r("a manifest of negative zero bytes", false, []byte(`{"size":-0,"parts":[{"path":"f","size":0,"sha256":"`+vecHash+`"}]}`)),
 		r("a manifest of negative zero bytes with a folder", false, []byte(`{"size":-0,"parts":[{"path":"d","dir":true}]}`)),
 		r("a manifest of zero bytes with a folder", true, []byte(`{"size":0,"parts":[{"path":"d","dir":true}]}`)),
+		// Paths compare byte for byte: names in NFC and NFD, or the Kelvin
+		// sign and K, are two paths, and a "/" that a combining mark follows
+		// still separates names.
+		r("two names in NFC and NFD", true, two("\u00e9", "e\u0301")),
+		r("the Kelvin sign and K", true, two("\u212a", "K")),
+		r("a slash before a combining mark", true, []byte(`{"size":0,"parts":[{"path":"a","dir":true},{"path":"a/\u0301b","dir":true}]}`)),
 	}
 	return v
 }

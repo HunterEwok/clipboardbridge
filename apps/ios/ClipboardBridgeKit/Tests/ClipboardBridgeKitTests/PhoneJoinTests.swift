@@ -189,6 +189,35 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertFalse(admitted.confirmed)
     }
 
+    /// A self-signed certificate with a P-384 key for the device ID
+    /// 0123456789abcdef0123456789abcdef.
+    static let p384Cert = Data(base64Encoded: "MIIB6DCCAW6gAwIBAgIUAZv1zxaQendV3vrzM9UqL0xFbGQwCgYIKoZIzj0EAwIwKzEpMCcGA1UEAwwgMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwHhcNMjYxMDMxMDgwMTA3WhcNMzYxMDI4MDgwMTA3WjArMSkwJwYDVQQDDCAwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjB2MBAGByqGSM49AgEGBSuBBAAiA2IABGPVHQzOkUL3/eN4mcZqO6tU7B6YS8I21tzGWFeoddh3g8gFJ+lvOeXnWNDs5Kb4ewC4C7xajcObF96dLzHm4iJLndLCPs6Ry8yp+n1Qq2iNjfdEP6DbDovujn61huXGe6NTMFEwHQYDVR0OBBYEFOiZlbxuz4DpfnxiZUCH1Uk1ltN+MB8GA1UdIwQYMBaAFOiZlbxuz4DpfnxiZUCH1Uk1ltN+MA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDaAAwZQIxAL+QMr4a6NK+ye/WnoyqP6zSKvX2m36eBB4JLFFWRDXxvuDkkxbOyY1qZTgnAIK79AIwe1vxP94FlJL73T9uTn9I9VolozxxhdFHmsM+uW9t+sFJU14EH1l/ci4PaH7hPKkz")!
+
+    /// A transport that only shows a TLS handshake's certificates.
+    final class Certs: FrameTransport {
+        let peerChain: [Data]
+        init(_ chain: [Data]) { peerChain = chain }
+        func write(_ data: Data) async throws { throw CancellationError() }
+        func read(exactly n: Int) async throws -> Data { throw CancellationError() }
+    }
+
+    func testMemberRefusesAJoinerKeyOrChainAsAComputerDoes() async throws {
+        let root = try PhoneGroup.create(caSigner: SoftwareSigner(), memberKey: SoftwareSigner().publicKeyDER, now: t0)
+        let l = try Listener()
+        for (t, cert, why) in [(Certs([Self.p384Cert]), Self.p384Cert, "the joining device's key is not a P-256 key"),
+                               (Certs([l.cert, root.memberCert]), l.cert, "the joining device must send exactly one certificate")] {
+            do {
+                _ = try await PairingMember.admit(over: t, code: "123456", memberCert: root.memberCert, joinerCert: cert, sessionID: sid,
+                                                  memberAD: .init(device: root.device, group: root.tag)) { _, _, _ in
+                    throw CancellationError()
+                }
+                XCTFail("admitted: \(why)")
+            } catch {
+                XCTAssertEqual(error as? PairingMember.Failure, .badJoiner(why))
+            }
+        }
+    }
+
     func testInfo() throws {
         let key = SoftwareSigner().publicKeyDER
         XCTAssertTrue(Pairing.Info(name: "iPhone", os: "ios", adminKey: key).isValid)
@@ -196,6 +225,10 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertFalse(Pairing.Info(name: "pi", os: "linux", adminKey: key).isValid, "only a phone sends an admin key")
         XCTAssertFalse(Pairing.Info(name: "iPhone", os: "ios", adminKey: Data([1, 2, 3])).isValid)
         XCTAssertTrue(Pairing.Info(name: "pc", os: "windows").isValid, "a Windows PC joins as a computer")
+        XCTAssertTrue(Pairing.Info(name: "Café — ПК 1", os: "linux").isValid)
+        for bad in ["a\u{7}b", "evil\u{202E}gpj", "a\u{200B}b", "a\u{E000}b", "a\u{A0}b", "a\u{2028}b"] {
+            XCTAssertFalse(Pairing.Info(name: bad, os: "linux").isValid, "a name is printable, as in Go: \(bad.unicodeScalars.map { String($0.value, radix: 16) })")
+        }
         XCTAssertFalse(Pairing.Info(name: "mac", os: "darwin").isValid)
         XCTAssertFalse(Pairing.Info(name: "pi", os: "none").isValid)
         XCTAssertTrue(Pairing.Info(name: "Pixel", os: "android", adminKey: key).isValid, "an Android phone joins as a phone")

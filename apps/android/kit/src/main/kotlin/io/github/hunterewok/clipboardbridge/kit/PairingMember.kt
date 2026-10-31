@@ -59,6 +59,10 @@ object PairingMember {
         val joiner = CertificateInfo(joinerCert)
         val device = joiner.commonName
         if (device == null || !GroupCertificates.isDeviceID(device)) throw Failure("the device's certificate names no device ID")
+        // As a computer admits one (docs/protocol.md, section 6): a single
+        // certificate with a P-256 key, the key the welcome certifies.
+        if (t.peerChain.size > 1) throw Failure("the joining device must send exactly one certificate")
+        if (p256PublicKey(joiner.publicKey) == null) throw Failure("the joining device's key is not a P-256 key")
         val first = t.readFrame()
         if (taken(device)) {
             runCatching { t.writeFrame(Pairing.Frame(error = Pairing.ErrorCode.TAKEN.wire)) }

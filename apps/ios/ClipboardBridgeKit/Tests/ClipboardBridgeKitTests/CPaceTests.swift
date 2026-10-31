@@ -80,6 +80,35 @@ final class CPaceTests: XCTestCase {
         XCTAssertThrowsError(try b.finish(peerMessage: [UInt8](repeating: 0, count: 32), peerAD: []))
     }
 
+    /// The scalar_mult_vfy vectors of draft-irtf-cfrg-cpace-21, Appendix
+    /// B.1.10, as Go's TestLowOrder and the lite member run them: u0 to u5
+    /// and u7 encode low order points, non-canonical ones included, and a
+    /// party that receives one aborts; it takes the others.
+    func testLowOrderVectors() throws {
+        let vectors: [(String, String)] = [
+        ("0000000000000000000000000000000000000000000000000000000000000000", ""),
+        ("0100000000000000000000000000000000000000000000000000000000000000", ""),
+        ("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f", ""),
+        ("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800", ""),
+        ("5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157", ""),
+        ("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f", ""),
+        ("daffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "d8e2c776bbacd510d09fd9278b7edcd25fc5ae9adfba3b6e040e8d3b71b21806"),
+        ("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f", ""),
+        ("dbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "c85c655ebe8be44ba9c0ffde69f2fe10194458d137f09bbff725ce58803cdb38"),
+        ("d9ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "db64dafa9b8fdd136914e61461935fe92aa372cb056314e1231bc4ec12417456"),
+        ("cdeb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b880", "e062dcd5376d58297be2618c7498f55baa07d7e03184e8aada20bca28888bf7a"),
+        ("4c9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f11d7", "993c6ad11c4c29da9a56f7691fd0ff8d732e49de6250b6c2e80003ff4629a175"),
+        ]
+        for (i, (u, q)) in vectors.enumerated() {
+            var a = try CPace(role: .initiator, password: prs, channelID: ci, sessionID: sid, ad: [])
+            if q.isEmpty {
+                XCTAssertThrowsError(try a.finish(peerMessage: unhex(u), peerAD: []), "u\(i)")
+            } else {
+                XCTAssertNoThrow(try a.finish(peerMessage: unhex(u), peerAD: []), "u\(i)")
+            }
+        }
+    }
+
     func testPrependLen() {
         XCTAssertEqual(CPace.prependLen([]), [0])
         XCTAssertEqual(CPace.prependLen([UInt8](repeating: 1, count: 128)).prefix(2), [0x80, 0x01])

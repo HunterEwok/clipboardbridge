@@ -767,6 +767,20 @@ All notable changes to clipboardbridge are documented in this file. The format f
   that it gives a desktop watcher no grant for the uinput helper; `docs/design.md` no longer
   lists the Nano ESP32 as a remote paste target, and the limits per sender are named as
   such.
+- Both phones admit a joining computer as computers do: its name must be printable (no
+  format, private-use or invisible characters), it must send one certificate, and its key
+  must be a P-256 key.
+- Both phones send their records in messages of about 1 MiB, as computers do, so a large
+  set no longer fails to reach a member that is behind.
+- The iPhone checks the protocol a TLS handshake agreed on and turns session tickets and
+  resumption off, as the other members do.
+- Both phones dial at most 64 members found on the network at once, and take a hub's offer
+  only with keys that are not all zeros and endpoints with a port, as computers do.
+- The iPhone compares the paths of a copied folder byte for byte, so names in NFC and NFD
+  are two files, as on the other members; `strict.json` has these manifests now.
+- A phone that is the hub shares a client it admits with the group's other hubs at once, as
+  a computer does.
+- The phone kits run CPace's low-order vectors, as Go and the lite member do.
 - Every frame of the member protocol holds only integers written as in signed bodies, members
   a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
   computers, the lite member and both phones alike, where some took `-0` for 0 before.

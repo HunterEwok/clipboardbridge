@@ -822,12 +822,18 @@ final class LiveGroup: GroupController {
         let isHub = g.isAdmin && hub.isOn
         var answer: (@Sendable (String, Data, Data?, [Data]) -> [Member.TunnelOffer])?
         var sharing: (@Sendable (String, [Data]) -> Member.HubShare?)?
+        let nodeRef = Ref<MemberNode>()
         if isHub {
-            answer = { device, key, psk, _ in hub.offers(device: device, key: key, psk: psk, order: box.hubOrder) }
-            sharing = { peer, chain in box.mayHost(peer, chain: chain) ? hub.share() : nil }
+            let share: @Sendable (String, [Data]) -> Member.HubShare? = { peer, chain in box.mayHost(peer, chain: chain) ? hub.share() : nil }
+            answer = { device, key, psk, _ in
+                // A client admitted now is shared with the other hubs at
+                // once, so that it reaches them when this phone is off.
+                hub.offers(device: device, key: key, psk: psk, order: box.hubOrder,
+                           admitted: { Task { await nodeRef.value?.sendHubs(share) } })
+            }
+            sharing = share
         }
         let offered: Data? = isHub ? nil : awayState.flatMap { try? GoTunnels().publicKey($0.key) }
-        let nodeRef = Ref<MemberNode>()
         let modeBox = modeBox, device = g.device, recent = Self.recentCopyMS
         let node = MemberNode(engine: SyncEngine(device: g.device, clock: HybridClock()), name: UIDevice.current.name, os: "ios",
                               device: Self.ownDevice, records: box, renew: { renewer.renew($0) }, adminCA: { admins.group.computerAdminCA(for: $0) },

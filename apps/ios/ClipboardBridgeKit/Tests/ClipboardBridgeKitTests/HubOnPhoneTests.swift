@@ -138,8 +138,12 @@ final class HubOnPhoneTests: XCTestCase {
         _ = try h.invite(group: "tag", lifetime: 3600, guestPort: 5555)
         XCTAssertEqual(t.invited, ["tag", #"["203.0.113.9:8764"]"#, "3600", "5555"])
 
-        // A new client reaches the running tunnel; a removed one leaves it.
-        _ = h.offer(device: tv, key: Data(repeating: 4, count: 32))
+        // A new client reaches the running tunnel, and the hub shares again
+        // for it; one it knows already is no news. A removed one leaves it.
+        var admitted = 0
+        _ = h.offers(device: tv, key: Data(repeating: 4, count: 32), admitted: { admitted += 1 })
+        _ = h.offers(device: tv, key: Data(repeating: 4, count: 32), admitted: { admitted += 1 })
+        XCTAssertEqual(admitted, 1)
         XCTAssertTrue(t.held.contains(tv))
         XCTAssertEqual(h.prune { $0 != pc }, [pc])
         XCTAssertFalse(t.held.contains(pc))

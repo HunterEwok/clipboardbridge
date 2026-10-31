@@ -81,6 +81,16 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertTrue(dialing.isEmpty)
     }
 
+    func testDialsAtMostMaxDialed() async throws {
+        let phone = MemberNode(engine: SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock()), name: nil)
+        let d = MemberDialer(node: phone, group: "g1", firstWait: 10, maxWait: 10) { _ in throw POSIXError(.ECONNREFUSED) }
+        let many = Set((0..<200).map { FoundMember(device: String(repeating: "0", count: 29) + String(format: "%03d", $0), group: "g1") })
+        await d.update(many)
+        let dialing = await d.dialing
+        XCTAssertEqual(dialing.count, MemberDialer.maxDialed)
+        await d.stop()
+    }
+
     func testDialFailuresBackOff() async throws {
         let phone = MemberNode(engine: SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock()), name: nil)
         let peers = Peers()

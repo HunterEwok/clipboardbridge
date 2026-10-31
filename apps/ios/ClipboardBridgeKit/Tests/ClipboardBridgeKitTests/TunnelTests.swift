@@ -8,6 +8,16 @@ import XCTest
 /// The tunnel key in the phone's hello and the hub's offer for it
 /// (docs/protocol.md, section 11).
 final class TunnelTests: XCTestCase {
+    func testOfferChecksAsGo() {
+        let (k, p) = (Data(repeating: 2, count: 32), Data(repeating: 3, count: 32))
+        XCTAssertTrue(Member.TunnelOffer(hubKey: k, psk: p, endpoints: ["192.0.2.1:8764", "[2001:db8::1]:65535"]).isValid)
+        XCTAssertFalse(Member.TunnelOffer(hubKey: Data(count: 32), psk: p).isValid, "a hub key of zeros")
+        XCTAssertFalse(Member.TunnelOffer(hubKey: k, psk: Data(count: 32)).isValid, "a preshared key of zeros")
+        for e in ["192.0.2.1:0", "192.0.2.1", "192.0.2.1:65536", "192.0.2.1:+1", ":8764x", "[2001:db8::1]"] {
+            XCTAssertFalse(Member.TunnelOffer(hubKey: k, psk: p, endpoints: [e]).isValid, e)
+        }
+    }
+
     func testNodeOffersTheTunnelKeyAndKeepsTheOffer() async throws {
         let key = Data(repeating: 1, count: 32)
         let (offers, got) = AsyncStream.makeStream(of: (String?, Member.TunnelOffer).self)
