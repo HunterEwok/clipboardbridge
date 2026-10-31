@@ -2152,7 +2152,8 @@ close the connection beyond that; a sender MUST stay below it.
      whose merged authority records come to more than 256 KiB, so it never keeps part of a
      group's records. The records of a group that is registered now are never forgotten.
      Of the groups that are away it keeps at most 32 MiB of records and 100,000 groups; past
-     that it forgets from the wide network that holds the most of them (docs/relay-budget.md),
+     that it forgets from the provider (an IPv6 /32, an IPv4 /16) that holds the most of them
+     (docs/relay-budget.md),
      its group kept least recently first. The group CA for these records is the
      root the hub's member certificate verified to in step 2, whose tag names the group; a
      self-signed certificate the hub presents besides counts for nothing.
@@ -2251,8 +2252,8 @@ own packets. Another forwarder SHOULD bound each group and each source likewise,
 group or network can starve the others.
 
 Registrations, held or being set up, are bounded at 16 from one address, 64 from one
-network, an IPv4 /24 or an IPv6 /64, and 256 from one wide network, an IPv4 /16 or an IPv6
-/48; the forwarder closes a connection past any of them at once. A handshake to a new group
+network, an IPv4 /24 or an IPv6 /64, 256 from one wide network, an IPv4 /16 or an IPv6
+/48, and 1024 from one IPv6 provider, a /32; the forwarder closes a connection past any of them at once. A handshake to a new group
 is checked against each registered group, so it costs one check per group. These checks are
 bounded at 500 000 a second for all sources together, and one network gets a sixteenth of
 that. A single handshake costs a network at most its whole budget, so one still passes now
@@ -2274,8 +2275,8 @@ HMAC-SHA256 of the tag and the SHA-256 of the period key, with a counter and the
 the last credential it saw (`expires`, Unix milliseconds; a file without it is read as 35
 days from the start, and never more than 35 days from when it was kept). An entry is kept until that expiry, since forgetting it sooner would
 let an older credential of the period pass. The table holds at most 100,000 periods, one
-network (an IPv4 /24 or an IPv6 /64) at most 256 of those it added and one wide network (an
-IPv4 /16 or an IPv6 /48) at most 1024; a tag new to the table is refused while any of these
+network (an IPv4 /24 or an IPv6 /64) at most 256 of those it added, one wide network (an
+IPv4 /16 or an IPv6 /48) at most 1024 and one IPv6 provider (a /32) at most 4096; a tag new to the table is refused while any of these
 is full and nothing has expired, and no entry is ever dropped to make room. The file is written at most 2 s after a change, and when the forwarder stops,
 outside the lock the lookups use. The HMAC key is
 HMAC-SHA256 under the forwarder's private key (PKCS #8) of `clipboardbridge forwarder
@@ -2395,23 +2396,24 @@ ID, and a device's pseudonym changes with each period.
    device told for its port, and closes any other.
 4. Limits per group: 64 devices, 16 calls waiting for one device, 256 joined connections.
    Limits of the setups, on every relay: 256 registrations being set up at a time, at most 16
-   of them from one IP address, 64 from one network (an IPv4 /24 or an IPv6 /64) and 128
-   from one wide network (an IPv4 /16 or an IPv6 /48), each setup also paid for by the
-   second: an address may start 16 a second, a network 64 and a wide network 256, with a
-   burst; and, counted apart, 256 requests inside the tunnels being read at a time, at most
-   16 of them from one device, 32 from one group, 32 from the devices that registered from
-   one IP address, 64 from one network and 64 from one wide network. A connection in a tunnel sends
+   of them from one IP address, 64 from one network (an IPv4 /24 or an IPv6 /64), 128
+   from one wide network (an IPv4 /16 or an IPv6 /48) and 128 from one IPv6 provider (a
+   /32), each setup also paid for by the second: an address may start 16 a second, a network
+   64, a wide network 256 and an IPv6 provider 512, with a burst; and, counted apart, 256
+   requests inside the tunnels being read at a time, at most 16 of them from one device, 32
+   from one group, 32 from the devices that registered from one IP address, 64 from one
+   network, 64 from one wide network and 128 from one IPv6 provider. A connection in a tunnel sends
    its request line within 5 s. The relay closes a connection over a limit at once.
    A device, in turn, ends its watch on a note longer than 64 KiB or an `online` list of
    more than 64 names or with a name that is not a device ID or a pseudonym (32 or 64
    lowercase hex characters), and leaves unanswered a call with such a name, a ticket that
    is not 32 lowercase hex characters, or past 16 calls it is answering at once.
 5. An open relay also limits: 4096 groups at a time; 16 registrations from one IP address,
-   64 from one network (an IPv4 /24 or an IPv6 /64) and 256 from one wide network (an IPv4
-   /16 or an IPv6 /48); and 1 MiB a second of copying for each group, both ways together,
+   64 from one network (an IPv4 /24 or an IPv6 /64), 256 from one wide network (an IPv4
+   /16 or an IPv6 /48) and 1024 from one IPv6 provider (a /32); and 1 MiB a second of copying for each group, both ways together,
    after a burst of two seconds' worth. It keeps at most 256 KiB of a group's authority
-   records, 1 MiB of the records one network brought and 4 MiB of those one wide network
-   brought, and 128 MiB of all groups' records, and refuses a registration that would take
+   records, 1 MiB of the records one network brought, 4 MiB of those one wide network
+   brought and 16 MiB of those one IPv6 provider brought, and 128 MiB of all groups' records, and refuses a registration that would take
    it past any of them rather than keep part of them. It verifies
    a record once, when it first gets it, and keeps the verified set, so a group's later
    registrations that send the same records cost no checks; each new record is charged to

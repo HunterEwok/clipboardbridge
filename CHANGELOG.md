@@ -658,6 +658,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The open relay and the forwarder count what one IPv6 provider (a /32) holds, as they count
+  a wide network: registrations (1024), credential versions (4096), records (16 MiB),
+  setups and requests being read, and the setups and record checks paid by the second; the
+  forwarder forgets the records of groups that are away from the provider that holds the
+  most (docs/relay-budget.md). An IPv4 /16 is its own provider.
 - The forwarder counts only the groups that are away against the 32 MiB it keeps of their
   authority records, and past it forgets from the wide network that holds the most of them
   (docs/relay-budget.md), so the records of a group that is away outlast the groups of other

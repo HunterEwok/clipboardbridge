@@ -36,16 +36,18 @@ const (
 	// that none of them is left out.
 	rememberedGroupBytes = 256 << 10
 	// rememberedBytes bounds the records kept for all groups that are not
-	// registered now; past it the wide network that holds the most of them
-	// gives up its group kept least recently.
+	// registered now; past it the provider (an IPv6 /32, an IPv4 /16) that
+	// holds the most of them gives up its group kept least recently.
 	rememberedBytes = 32 << 20
-	// networkRecordBytes and wideRecordBytes bound the records that the
-	// registrations from one network (an IPv4 /24 or an IPv6 /64) and from
-	// one wide network (an IPv4 /16 or an IPv6 /48) bring, registered or
-	// not: a registration whose new records would take its source past them
-	// is refused (docs/relay-budget.md).
-	networkRecordBytes = 4 * rememberedGroupBytes
-	wideRecordBytes    = 16 * rememberedGroupBytes
+	// networkRecordBytes, wideRecordBytes and providerRecordBytes bound the
+	// records that the registrations from one network (an IPv4 /24 or an
+	// IPv6 /64), from one wide network (an IPv4 /16 or an IPv6 /48) and from
+	// one IPv6 provider (a /32) bring, registered or not: a registration
+	// whose new records would take its source past them is refused
+	// (docs/relay-budget.md).
+	networkRecordBytes  = 4 * rememberedGroupBytes
+	wideRecordBytes     = 16 * rememberedGroupBytes
+	providerRecordBytes = 64 * rememberedGroupBytes
 )
 
 // memory keeps in memory, for each group that registered with records (a
@@ -62,18 +64,18 @@ const (
 // groups that are away, are bounded in count and in bytes, per group and in
 // all. Every group's bytes are charged to the network that brought them, by
 // its first address, which is all the memory keeps of where they came
-// from; a group that is away is held for the wide network that brought
-// most of its records. Past the bounds the memory forgets from the wide
-// network that holds the most, its group kept least recently first, so a
-// genuine group is forgotten only once every other wide network holds no
-// more than its own (docs/relay-budget.md).
+// from; a group that is away is held for the provider (an IPv6 /32, an
+// IPv4 /16) that brought most of its records. Past the bounds the memory
+// forgets from the provider that holds the most, its group kept least
+// recently first, so a genuine group is forgotten only once every other
+// provider holds no more than its own (docs/relay-budget.md).
 type memory struct {
 	mu     sync.Mutex
 	live   func(tag string) bool // whether the group is registered now; nil: none is
 	groups map[string]*kept
 	bytes  int // the size of every group's records
 	payers *budget.Count
-	// The groups that are away, by the wide network that holds them.
+	// The groups that are away, by the provider that holds them.
 	away      map[netip.Prefix]*holder
 	heaviest  holders // the holders, the one that holds the most first
 	awayBytes int
@@ -88,18 +90,19 @@ type kept struct {
 	bytes int
 	paid  map[netip.Addr]int // by the network that brought them
 	from  netip.Addr         // the network of the registration that kept it first
-	// While the group is away: the wide network that holds it, and its
-	// place in that one's groups.
+	// While the group is away: the provider that holds it, and its place
+	// in that one's groups.
 	holder *holder
 	elem   *list.Element
 }
 
-// holder is a wide network and the groups that are away that it holds.
+// holder is a provider (an IPv6 /32, an IPv4 /16) and the groups that are
+// away that it holds.
 type holder struct {
-	wide   netip.Prefix
-	groups *list.List // of *kept, the group kept least recently first
-	bytes  int
-	index  int // in memory.heaviest
+	provider netip.Prefix
+	groups   *list.List // of *kept, the group kept least recently first
+	bytes    int
+	index    int // in memory.heaviest
 }
 
 // groupWeight is what a group that is away costs besides its records: the
@@ -131,7 +134,7 @@ func (h *holders) Pop() any {
 
 func newMemory(live func(tag string) bool) *memory {
 	return &memory{live: live, groups: map[string]*kept{}, away: map[netip.Prefix]*holder{},
-		payers: budget.NewCount(budget.Caps{Network: networkRecordBytes, Wide: wideRecordBytes})}
+		payers: budget.NewCount(budget.Caps{Network: networkRecordBytes, Wide: wideRecordBytes, Provider: providerRecordBytes})}
 }
 
 // envelopeKey names a record as the memory keeps it: one body may come
@@ -186,7 +189,7 @@ func keys(records []group.Record) [][sha256.Size]byte {
 
 // room reports whether the records that a registration from the address
 // from would add to what the memory keeps for the group fit within what
-// its network and wide network may bring. It changes nothing.
+// its network, wide network and provider may bring. It changes nothing.
 func (m *memory) room(tag string, from netip.Addr, records []group.Record) error {
 	ks := keys(records)
 	m.mu.Lock()
@@ -273,17 +276,17 @@ func (m *memory) leftLocked(g *kept) {
 			m.payers.Remove(a, n)
 		}
 	}
-	// The wide network that brought most of its records holds it.
-	wide, most := budget.Of(g.from, budget.Wide), 0
+	// The provider that brought most of its records holds it.
+	prov, most := budget.Of(g.from, budget.Provider), 0
 	for a, n := range g.paid {
-		if w := budget.Of(a, budget.Wide); n > most || n == most && w.Addr().Less(wide.Addr()) {
-			wide, most = w, n
+		if p := budget.Of(a, budget.Provider); n > most || n == most && p.Addr().Less(prov.Addr()) {
+			prov, most = p, n
 		}
 	}
-	h := m.away[wide]
+	h := m.away[prov]
 	if h == nil {
-		h = &holder{wide: wide, groups: list.New()}
-		m.away[wide] = h
+		h = &holder{provider: prov, groups: list.New()}
+		m.away[prov] = h
 		heap.Push(&m.heaviest, h)
 	}
 	g.holder, g.elem = h, h.groups.PushBack(g)
@@ -306,7 +309,7 @@ func (m *memory) returnedLocked(g *kept) {
 	m.awayCount--
 	if h.groups.Len() == 0 {
 		heap.Remove(&m.heaviest, h.index)
-		delete(m.away, h.wide)
+		delete(m.away, h.provider)
 	} else {
 		heap.Fix(&m.heaviest, h.index)
 	}
