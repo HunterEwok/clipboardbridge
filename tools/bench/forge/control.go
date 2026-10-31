@@ -64,8 +64,10 @@ func runControl(path string, cases []string) error {
 			return fmt.Errorf("unknown control socket case %s", name)
 		}
 		if hold > 0 {
-			// Connections that send nothing, all open at once while a
-			// status request is made.
+			// Connections of one user that send nothing, all open at once:
+			// the service keeps a user's first 64 and closes the rest, a
+			// status request of the same user waits for a free place, and
+			// answers once the idle ones are gone.
 			var conns []net.Conn
 			for range hold {
 				c, err := net.Dial("unix", path)
@@ -74,15 +76,28 @@ func runControl(path string, cases []string) error {
 				}
 				conns = append(conns, c)
 			}
-			err := status(path)
+			time.Sleep(time.Second)
+			closed := 0
+			one := make([]byte, 1)
+			for _, c := range conns {
+				c.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+				if _, err := c.Read(one); !isTimeout(err) {
+					closed++
+				}
+			}
+			held := "answered while open"
+			if err := status(path); err != nil {
+				held = "refused while open"
+			}
 			for _, c := range conns {
 				c.Close()
 			}
-			if err != nil {
-				fmt.Printf("%s: %d open, status: %v\n", name, len(conns), err)
-			} else {
-				fmt.Printf("%s: %d open, status answered\n", name, len(conns))
+			time.Sleep(500 * time.Millisecond)
+			after := "answered after"
+			if err := status(path); err != nil {
+				after = "after: " + err.Error()
 			}
+			fmt.Printf("%s: %d open, %d closed, status %s, %s\n", name, len(conns), closed, held, after)
 			continue
 		}
 		fmt.Printf("%s: %s\n", name, exchange(path, send))
@@ -122,6 +137,11 @@ func exchange(path string, b []byte) string {
 		return "answered: " + h.Error
 	}
 	return "answered"
+}
+
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 // status asks the service for its status, as cbb status does.

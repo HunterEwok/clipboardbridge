@@ -109,7 +109,24 @@ func quickActions(ctx context.Context, r *Report, f *Fleet, timeout time.Duratio
 		if err := succeeds(ctx, t, "cbb action enable restart -yes", "", "restart: on, for every admin"); err != nil {
 			return err
 		}
+		pid := func() string {
+			out, _ := Run(ctx, t, "pgrep -f '^cbb service' || true", "")
+			return strings.TrimSpace(out)
+		}
+		before := pid()
 		if err := succeeds(ctx, admin, "cbb action -on "+t.Name+" restart", "", "ran restart"); err != nil {
+			return err
+		}
+		// The service restarts a moment after its result went out: wait for
+		// the new one before the sync, so the restart does not land in the
+		// cases after.
+		if err := eventually(ctx, timeout, func() error {
+			if now := pid(); now == "" || now == before {
+				return fmt.Errorf("%s's service has not restarted", t.Name)
+			}
+			_, err := Run(ctx, t, "cbb status", "")
+			return err
+		}); err != nil {
 			return err
 		}
 		return eventually(ctx, timeout, func() error { return syncs(ctx, g, root, t, "after the restart", timeout) })

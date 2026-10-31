@@ -406,6 +406,14 @@ func bigTransfers(ctx context.Context, r *Report, f *Fleet, timeout time.Duratio
 			return err
 		}
 		got, err := pastedFile(ctx, to, 3*time.Minute)
+		// The member's loop starts the service again; the next case copies
+		// on it, so wait until it answers.
+		if up := eventually(ctx, time.Minute, func() error {
+			_, err := Run(ctx, from, "cbb status", "")
+			return err
+		}); up != nil {
+			return up
+		}
 		switch {
 		case err != nil:
 			// The copy may be gone with the sender's memory; the receiver
