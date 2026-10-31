@@ -138,6 +138,7 @@ and `a`-`f`.
 | `claim` | `root`, `seen` | an admin's claim to take the group over with a new root |
 | `resolve` | `records` | the current root voids the records it names: a cancelled claim, one side of a conflict, one of two records with one number |
 | `settings` | `takeover_delay_ms` | the root's settings for the group |
+| `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
 
 ### Field rows
 
@@ -158,9 +159,12 @@ and `a`-`f`.
 | `records` | array of strings | `thaw`, `resolve`, one at least | sorted record IDs |
 | `root` | string | `claim` | the new root CA certificate, DER, base64: self-signed, a CA with path length 1, a P-256 key |
 | `takeover_delay_ms` | integer | none | from 0 to 604 800 000 (7 days); absent means 259 200 000 (72 hours) |
+| `heads` | array of objects | `checkpoint`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": 1 or more, "id": the ID of that signer's record with that seq}` |
+| `keep` | array of strings | none | sorted record IDs: the records below the heads that still count |
 
 A field that a type does not list is refused in it (`form/unknown`), and so is a field
-with an empty value (`form/empty`). An envelope's body is at most 8 KiB.
+with an empty value (`form/empty`). An envelope's body is at most 8 KiB, a checkpoint's
+64 KiB.
 
 `seen` names every signer whose records the author held, its own included: the root's key,
 every admin key, and a removed admin's key too. A record that removes or freezes an admin
@@ -188,6 +192,7 @@ those of the newest such record (the highest `seq` of that root) that names it.
 | `thaw` | a root's own key, or an admin with `thaw` and `remove-admins` |
 | `claim` | an admin with `takeover`, under the current root |
 | `resolve`, `settings` | the current root's own key |
+| `checkpoint` | a root's own key |
 
 A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
 names any key its signer may not remove or freeze. The powers the apps and `cbb`
@@ -224,6 +229,30 @@ sibling (another record of its signer with the same `seq`), the records whose `p
 passes through it count for nothing too, so `resolve` ends two histories by naming the first
 record of the branch that goes. Without a sibling only the named record goes, and the
 signer's chain goes on through it.
+
+### Checkpoints
+
+A group's records only grow, and a member keeps at most 1 MiB of them (1024 records). A root's
+own key signs a `checkpoint` so that members may drop what no longer matters: `heads` names,
+for each signer, its newest record the checkpoint covers, and `keep` the records below the
+heads that still count: the newest `device` record of each device, the `revoke`, `freeze` and
+`thaw` records that count, the newest `settings`, every claim not yet decided and the records
+its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
+by themselves when the records pass three quarters of either limit.
+
+The checkpoint that counts is, of the records of type `checkpoint` that a root on the path
+signed within its cut and whose chain is whole down to seq 1 or to one of the records it names,
+the newest: a later root on the path, then a higher `seq`. With it, a record of a signer in
+`heads` with a `seq` at or below that head's, other than the head and the records in `keep`,
+is left out as if it were not in the set, whether the member still holds it or not; it is
+not listed in the state's `ignored`, so the state is the same with it and without it. A prev
+chain is whole when it reaches seq 1 or a record that the checkpoint names, so the records
+after the heads and the records in `keep` count without the ones dropped below them, and two
+histories below a head that the checkpoint does not keep end with it.
+
+A member may delete the records the checkpoint that counts leaves out. A checkpoint that
+leaves out a record that mattered changes the state for every member alike; only a root signs
+one, and the root always wins.
 
 ### Removals and freezes keep what the author saw
 

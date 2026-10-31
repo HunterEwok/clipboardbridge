@@ -26,6 +26,10 @@ use crate::strict;
 /// The largest record body a member takes (8 KiB).
 pub const MAX_BODY: usize = 8 << 10;
 
+/// The largest body of a checkpoint (64 KiB), which lists the live records
+/// of the whole group.
+pub const MAX_CHECKPOINT_BODY: usize = 64 << 10;
+
 /// The one signature algorithm of version 2: ECDSA P-256 with SHA-256, DER.
 pub const ALG_ES256: &str = "es256";
 
@@ -45,6 +49,7 @@ pub const TYPE_THAW: &str = "thaw";
 pub const TYPE_CLAIM: &str = "claim";
 pub const TYPE_RESOLVE: &str = "resolve";
 pub const TYPE_SETTINGS: &str = "settings";
+pub const TYPE_CHECKPOINT: &str = "checkpoint";
 
 pub const POWER_ADMIT: &str = "admit";
 pub const POWER_RENEW: &str = "renew";
@@ -127,6 +132,16 @@ pub struct Seen {
     pub seq: i64,
 }
 
+/// One entry of a checkpoint's heads: a signer's newest record the
+/// checkpoint covers.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Head {
+    pub key: Hash,
+    pub seq: i64,
+    pub id: Hash,
+}
+
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -182,6 +197,11 @@ pub struct Body {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub takeover_delay_ms: Option<i64>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub heads: Vec<Head>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keep: Vec<Hash>,
 }
 
 const COMMON: [&str; 7] = ["v", "alg", "type", "group", "signer", "seq", "time_ms"];
@@ -207,6 +227,7 @@ fn allowed(kind: &str) -> Option<&'static [&'static str]> {
         TYPE_THAW | TYPE_RESOLVE => &["records"],
         TYPE_CLAIM => &["root", "seen"],
         TYPE_SETTINGS => &["takeover_delay_ms"],
+        TYPE_CHECKPOINT => &["heads", "keep"],
         _ => return None,
     })
 }
@@ -237,6 +258,8 @@ impl Body {
         add(!self.records.is_empty(), "records");
         add(!self.root.is_empty(), "root");
         add(self.takeover_delay_ms.is_some(), "takeover_delay_ms");
+        add(!self.heads.is_empty(), "heads");
+        add(!self.keep.is_empty(), "keep");
         n
     }
 
@@ -254,12 +277,20 @@ impl Body {
     /// field its type does not know and none empty, and each field against
     /// its row (docs/records-v2.md, "Field rows").
     pub fn parse(data: &[u8]) -> Result<Body> {
-        if data.len() > MAX_BODY {
-            return Err(Error::msg(format!("a record body of {} bytes is over {MAX_BODY}", data.len())));
+        if data.len() > MAX_CHECKPOINT_BODY {
+            return Err(Error::msg(format!("a record body of {} bytes is over {MAX_CHECKPOINT_BODY}", data.len())));
         }
         strict::check_canonical(data, &COMMON)?;
         let b: Body = serde_json::from_slice(data).map_err(|e| Error::msg(format!("a record body: {e}")))?;
         b.check()?;
+        if data.len() > b.max_body() {
+            return Err(Error::msg(format!(
+                "a {} record body of {} bytes is over {}",
+                b.kind,
+                data.len(),
+                b.max_body()
+            )));
+        }
         if b.encode()? != data {
             return Err(Error::msg("a record body has an empty field or a value not in its one form"));
         }
@@ -272,7 +303,14 @@ impl Body {
         self.commands.sort();
         self.keys.sort();
         self.records.sort();
+        self.keep.sort();
+        self.heads.sort_by_key(|h| h.key);
         self.seen.sort_by_key(|s| s.key);
+    }
+
+    /// The largest body of the body's type.
+    pub fn max_body(&self) -> usize {
+        if self.kind == TYPE_CHECKPOINT { MAX_CHECKPOINT_BODY } else { MAX_BODY }
     }
 
     fn check(&self) -> Result<()> {
@@ -318,6 +356,20 @@ impl Body {
                     return Err(Error::msg("a claim needs root and seen"));
                 }
                 check_seen(&self.seen)
+            }
+            TYPE_CHECKPOINT => {
+                if self.heads.is_empty() {
+                    return Err(Error::msg("a checkpoint needs heads"));
+                }
+                for (i, h) in self.heads.iter().enumerate() {
+                    if h.seq < 1 || h.seq > MAX_SEQ {
+                        return Err(Error::msg(format!("a head's seq {} is not from 1 to {MAX_SEQ}", h.seq)));
+                    }
+                    if i > 0 && self.heads[i - 1].key >= h.key {
+                        return Err(Error::msg("heads is not sorted by key, each once"));
+                    }
+                }
+                sorted_hashes(&self.keep, "keep")
             }
             _ => match self.takeover_delay_ms {
                 Some(d) if !(0..=MAX_DELAY).contains(&d) => {
@@ -744,6 +796,11 @@ fn newer(input: &Input, state: &State, roots: &BTreeMap<Hash, Cert>) -> Vec<Hash
     ids.into_iter().take(MAX_NEWER).collect()
 }
 
+/// The IDs a checkpoint names: its heads and keep.
+fn anchors_of(b: &Body) -> BTreeSet<Hash> {
+    b.heads.iter().map(|h| h.id).chain(b.keep.iter().copied()).collect()
+}
+
 /// A verified record with the root that issued its admin CA.
 struct Rec {
     s: Signed,
@@ -875,6 +932,11 @@ struct Epoch<'a> {
     on_path: BTreeMap<Hash, usize>,
     cuts: BTreeMap<Hash, i64>,
     cur: Hash,
+    /// The checkpoint that counts, its heads by signer, and the IDs of its
+    /// heads and keep, where a prev chain may end.
+    cp: Option<usize>,
+    heads: BTreeMap<Hash, Head>,
+    anchors: BTreeSet<Hash>,
     voided: BTreeSet<Hash>,
     counted: Vec<bool>,
     forked: BTreeMap<Hash, i64>,
@@ -901,6 +963,9 @@ impl<'a> Epoch<'a> {
             on_path,
             cuts,
             cur,
+            cp: None,
+            heads: BTreeMap::new(),
+            anchors: BTreeSet::new(),
             voided: BTreeSet::new(),
             counted: vec![false; n],
             forked: BTreeMap::new(),
@@ -914,6 +979,7 @@ impl<'a> Epoch<'a> {
             stop_full: false,
             pending: None,
         };
+        ep.checkpoint();
         ep.voided = ep.voids();
         for (signer, rs) in &e.by_sig {
             ep.chain(*signer, rs);
@@ -954,7 +1020,7 @@ impl<'a> Epoch<'a> {
         let mut v = BTreeSet::new();
         for &i in rs {
             let r = self.r(i);
-            if r.admin() || r.b().kind != TYPE_RESOLVE || !self.whole(i, &by_id) {
+            if r.admin() || r.b().kind != TYPE_RESOLVE || self.dropped(i) || !self.whole(i, &by_id, &self.anchors) {
                 continue;
             }
             v.extend(r.b().records.iter().copied());
@@ -962,11 +1028,50 @@ impl<'a> Epoch<'a> {
         v
     }
 
-    /// Reports whether i's prev chain down to seq 1 is held, each step one
-    /// seq lower.
-    fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>) -> bool {
+    /// Finds the checkpoint that counts in this epoch: of a root on the
+    /// path's own records of type checkpoint, within that root's cut and
+    /// with a whole chain down to seq 1 or to one of its own anchors, the
+    /// newest (a later root on the path, then a higher seq).
+    fn checkpoint(&mut self) {
+        let mut best: Option<usize> = None;
+        for signer in self.on_path.keys() {
+            let rs = self.of(signer);
+            let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.r(i).s.id, i)).collect();
+            for &i in rs {
+                let b = self.r(i).b();
+                if self.r(i).admin() || b.kind != TYPE_CHECKPOINT {
+                    continue;
+                }
+                if matches!(self.cuts.get(signer), Some(cut) if b.seq > *cut) {
+                    continue;
+                }
+                if !self.whole(i, &by_id, &anchors_of(b)) || best.is_some_and(|c| !self.newer(i, c)) {
+                    continue;
+                }
+                best = Some(i);
+            }
+        }
+        self.cp = best;
+        if let Some(c) = best {
+            let b = self.r(c).b();
+            self.anchors = anchors_of(b);
+            self.heads = b.heads.iter().map(|h| (h.key, *h)).collect();
+        }
+    }
+
+    /// Reports whether the checkpoint that counts leaves record i out: a
+    /// record at or below its signer's head that is neither the head nor
+    /// kept.
+    fn dropped(&self, i: usize) -> bool {
+        let r = self.r(i);
+        matches!(self.heads.get(&r.b().signer), Some(h) if r.b().seq <= h.seq && !self.anchors.contains(&r.s.id))
+    }
+
+    /// Reports whether i's prev chain down to seq 1, or to a record whose ID
+    /// is one of anchors, is held, each step one seq lower.
+    fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>, anchors: &BTreeSet<Hash>) -> bool {
         let mut steps = 0;
-        while self.r(i).b().seq > 1 {
+        while self.r(i).b().seq > 1 && !anchors.contains(&self.r(i).s.id) {
             let Some(&p) = self.r(i).b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
             if self.r(p).b().seq != self.r(i).b().seq - 1 || steps > MAX_SEQ {
                 return false;
@@ -979,7 +1084,10 @@ impl<'a> Epoch<'a> {
 
     /// Finds which of one signer's records count: whole chains, not on a
     /// branch a resolve voided, below the lowest seq with two records.
-    fn chain(&mut self, signer: Hash, rs: &[usize]) {
+    fn chain(&mut self, signer: Hash, all: &[usize]) {
+        // What the checkpoint leaves out is as if it were not in the set.
+        let rs: Vec<usize> = all.iter().copied().filter(|&i| !self.dropped(i)).collect();
+        let rs = rs.as_slice();
         let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.r(i).s.id, i)).collect();
         let mut by_seq: BTreeMap<i64, usize> = BTreeMap::new();
         for &i in rs {
@@ -990,14 +1098,14 @@ impl<'a> Epoch<'a> {
             if self.voided.contains(&r.s.id) && by_seq[&r.b().seq] > 1 {
                 return true;
             }
-            if r.b().seq == 1 {
+            if r.b().seq == 1 || self.anchors.contains(&r.s.id) {
                 return false;
             }
             i = by_id[r.b().prev.as_ref().unwrap_or(&Hash::default())];
         };
         let mut live: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
         for &i in rs {
-            if self.whole(i, &by_id) && !dead(i) {
+            if self.whole(i, &by_id, &self.anchors) && !dead(i) {
                 live.entry(self.r(i).b().seq).or_default().push(i);
             }
         }
@@ -1271,7 +1379,9 @@ impl<'a> Epoch<'a> {
     /// Why record i does not count in this epoch; None when it counts.
     fn why_not(&self, i: usize) -> Option<&'static str> {
         let r = self.r(i);
-        Some(if self.counts(i) {
+        Some(if self.counts(i) || self.dropped(i) {
+            // A dropped record is left out as if the member had already
+            // dropped it, so that the state is the same with it and without.
             return None;
         } else if !self.counted[i] {
             WHY_HISTORY
@@ -1308,8 +1418,12 @@ impl<'a> Epoch<'a> {
         }
         let forked: Vec<(Hash, i64)> = self.forked.iter().map(|(k, v)| (*k, *v)).collect();
         for (signer, seq) in forked {
-            let records =
-                self.of(&signer).iter().filter(|&&i| self.r(i).b().seq == seq).map(|&i| self.r(i).s.id).collect();
+            let records = self
+                .of(&signer)
+                .iter()
+                .filter(|&&i| self.r(i).b().seq == seq && !self.dropped(i))
+                .map(|&i| self.r(i).s.id)
+                .collect();
             self.conflicts.push(Conflict { kind: "two_histories", records, signers: vec![signer] });
             if self.on_path.contains_key(&signer) {
                 self.stop_full = true;
@@ -1384,6 +1498,7 @@ impl<'a> Epoch<'a> {
             if c.b().kind != TYPE_CLAIM
                 || !c.admin()
                 || c.issuer != Some(self.cur)
+                || self.dropped(i)
                 || !self.counted[i] && !self.voided.contains(&c.s.id)
             {
                 continue;

@@ -14,6 +14,7 @@ import (
 	"maps"
 	"math/rand/v2"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -596,6 +597,106 @@ func TestClaimDisputed(t *testing.T) {
 	w.sign("cancel", "root", authority.Body{Type: authority.TypeResolve, Records: []authority.Hash{c.ID()}}, nil)
 	if s := w.evalAll(first); s.Stop != "none" || len(s.Roots) != 1 || !revoked(s, w.adminKey("B")) {
 		t.Fatalf("after the root cancels the claim A's removal should stand: %s", mustEncode(t, s))
+	}
+}
+
+// checkpoint has the root sign a checkpoint of everything signed so far
+// that keeps the records in keep, and returns it.
+func (w *world) checkpoint(signer string, keep ...authority.Record) authority.Record {
+	var heads []authority.Head
+	for k, n := range w.seq {
+		heads = append(heads, authority.Head{Key: k, Seq: n, ID: w.last[k]})
+	}
+	var ids []authority.Hash
+	for _, r := range keep {
+		ids = append(ids, r.ID())
+	}
+	return w.sign("checkpoint", signer, authority.Body{Type: authority.TypeCheckpoint, Heads: heads, Keep: ids}, nil)
+}
+
+// pruned returns the world's records without those the checkpoint cp
+// lets a member drop.
+func (w *world) pruned(cp authority.Record) []authority.Record {
+	b, err := authority.ParseBody(cp.Body)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	named := map[authority.Hash]bool{}
+	heads := map[authority.Hash]int64{}
+	for _, h := range b.Heads {
+		named[h.ID], heads[h.Key] = true, h.Seq
+	}
+	for _, id := range b.Keep {
+		named[id] = true
+	}
+	var out []authority.Record
+	for _, r := range w.recs {
+		rb, err := authority.ParseBody(r.Body)
+		if err != nil {
+			w.t.Fatal(err)
+		}
+		if h, ok := heads[rb.Signer]; ok && rb.Seq <= h && !named[r.ID()] {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// TestCheckpoint: a root's checkpoint lets members drop the records it
+// covers and does not keep, and the state is the same with them, without
+// them and before the checkpoint, also with a disputed claim waiting.
+func TestCheckpoint(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	w.makeAdmin("B", "phone", phonePowers)
+	w.device("A", "D1", "full", nil, nil, false)
+	d1 := w.device("A", "D1", "full", nil, nil, false)
+	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(1000))}, nil)
+	settings := w.sign("settings 2", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(2000))}, nil)
+	c := w.claim("B", "R2", nil)
+	rm := w.sign("A removes B", "A", revoke(w.adminKey("B"), w.members["B"]), nil)
+	first := map[authority.Hash]int64{c.ID(): 0}
+	w.now = 5000
+	before := mustEncode(t, w.evalAll(first))
+	if !strings.Contains(before, `"disputed"`) {
+		t.Fatalf("the claim should be disputed: %s", before)
+	}
+
+	// An admin's checkpoint counts for nothing.
+	w2 := w.fork()
+	bad := w2.checkpoint("A", d1)
+	s := w2.evalAll(first)
+	if len(s.Ignored) != 1 || s.Ignored[0].Record != bad.ID() || s.Ignored[0].Why != authority.WhyPower {
+		t.Fatalf("an admin's checkpoint should be ignored for power: %s", mustEncode(t, s))
+	}
+
+	var keep []authority.Record
+	for _, n := range []string{"device rootphone by root", "device A by root", "device B by root"} {
+		keep = append(keep, w.byName[n])
+	}
+	keep = append(keep, d1, settings, c, rm)
+	cp := w.checkpoint("root", keep...)
+	if got := mustEncode(t, w.evalAll(first)); got != before {
+		t.Fatalf("the checkpoint changed the state:\n got %s\nwant %s", got, before)
+	}
+	pruned := w.pruned(cp)
+	if len(pruned) != len(w.recs)-2 {
+		t.Fatalf("the checkpoint should let two records go, %d of %d are left", len(pruned), len(w.recs))
+	}
+	if got := mustEncode(t, w.eval(pruned, first)); got != before {
+		t.Fatalf("the pruned set gives another state:\n got %s\nwant %s", got, before)
+	}
+
+	// A record after the checkpoint chains to it: the root cancels the
+	// claim, and the pruned set says so as the full set does.
+	w.sign("cancel", "root", authority.Body{Type: authority.TypeResolve, Records: []authority.Hash{c.ID()}}, nil)
+	full := w.evalAll(first)
+	if full.Stop != "none" || !revoked(full, w.adminKey("B")) {
+		t.Fatalf("the root's cancel should end the dispute: %s", mustEncode(t, full))
+	}
+	if got, want := mustEncode(t, w.eval(w.pruned(cp), first)), mustEncode(t, full); got != want {
+		t.Fatalf("after the checkpoint the pruned set gives another state:\n got %s\nwant %s", got, want)
 	}
 }
 

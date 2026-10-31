@@ -251,6 +251,9 @@ type epoch struct {
 	cuts   map[Hash]int64
 	cur    Hash
 
+	cp      *rec          // the checkpoint that counts, nil without one
+	heads   map[Hash]Head // its heads by signer
+	anchors map[Hash]bool // the IDs of its heads and keep, where a prev chain may end
 	voided  map[Hash]bool
 	counted map[Hash]bool // records whose chain is whole, before any fork, not voided
 	forked  map[Hash]int64
@@ -269,6 +272,7 @@ func (e *evaluation) epoch(path []Hash, cuts map[Hash]int64) *epoch {
 	for i, h := range path {
 		ep.onPath[h] = i
 	}
+	ep.checkpoint()
 	ep.voided = ep.voids()
 	ep.counted = map[Hash]bool{}
 	for signer, rs := range e.bySig {
@@ -295,6 +299,58 @@ func (ep *epoch) rootRecord(r *rec) bool {
 	return true
 }
 
+// checkpoint finds the checkpoint that counts in this epoch: of a root on
+// the path's own records of type checkpoint, within that root's cut and
+// with a whole chain down to seq 1 or to one of its own anchors, the
+// newest (a later root on the path, then a higher seq).
+func (ep *epoch) checkpoint() {
+	ep.anchors = map[Hash]bool{}
+	for signer := range ep.onPath {
+		byID := map[Hash]*rec{}
+		for _, r := range ep.e.bySig[signer] {
+			byID[r.ID] = r
+		}
+		for _, r := range ep.e.bySig[signer] {
+			if r.AdminCA != nil || r.Body.Type != TypeCheckpoint {
+				continue
+			}
+			if cut, ok := ep.cuts[signer]; ok && r.Body.Seq > cut {
+				continue
+			}
+			if !wholeTo(r, byID, anchorsOf(&r.Body)) || ep.cp != nil && !ep.newer(r, ep.cp) {
+				continue
+			}
+			ep.cp = r
+		}
+	}
+	ep.heads = map[Hash]Head{}
+	if ep.cp != nil {
+		ep.anchors = anchorsOf(&ep.cp.Body)
+		for _, h := range ep.cp.Body.Heads {
+			ep.heads[h.Key] = h
+		}
+	}
+}
+
+// anchorsOf returns the IDs a checkpoint names: its heads and keep.
+func anchorsOf(b *Body) map[Hash]bool {
+	a := map[Hash]bool{}
+	for _, h := range b.Heads {
+		a[h.ID] = true
+	}
+	for _, id := range b.Keep {
+		a[id] = true
+	}
+	return a
+}
+
+// dropped reports whether the checkpoint that counts leaves r out: a
+// record at or below its signer's head that is neither the head nor kept.
+func (ep *epoch) dropped(r *rec) bool {
+	h, ok := ep.heads[r.Body.Signer]
+	return ok && r.Body.Seq <= h.Seq && !ep.anchors[r.ID]
+}
+
 // voids returns the records the current root's resolve records name. A
 // resolve counts here when its own chain is whole, whatever forks it has,
 // so the root can end two histories of its own.
@@ -305,7 +361,7 @@ func (ep *epoch) voids() map[Hash]bool {
 		byID[r.ID] = r
 	}
 	for _, r := range ep.e.bySig[ep.cur] {
-		if r.AdminCA != nil || r.Body.Type != TypeResolve || !whole(r, byID) {
+		if r.AdminCA != nil || r.Body.Type != TypeResolve || ep.dropped(r) || !wholeTo(r, byID, ep.anchors) {
 			continue
 		}
 		for _, id := range r.Body.Records {
@@ -315,10 +371,10 @@ func (ep *epoch) voids() map[Hash]bool {
 	return v
 }
 
-// whole reports whether r's prev chain down to seq 1 is held, each step
-// one seq lower.
-func whole(r *rec, byID map[Hash]*rec) bool {
-	for steps := 0; r.Body.Seq > 1; steps++ {
+// wholeTo reports whether r's prev chain down to seq 1, or to a record
+// whose ID is one of anchors, is held, each step one seq lower.
+func wholeTo(r *rec, byID map[Hash]*rec, anchors map[Hash]bool) bool {
+	for steps := 0; r.Body.Seq > 1 && !anchors[r.ID]; steps++ {
 		p := byID[*r.Body.Prev]
 		if p == nil || p.Body.Seq != r.Body.Seq-1 || steps > MaxSeq {
 			return false
@@ -330,19 +386,27 @@ func whole(r *rec, byID map[Hash]*rec) bool {
 
 // chain finds which of one signer's records count: whole chains, not on a
 // branch that a resolve voided, below the lowest seq with two records.
-func (ep *epoch) chain(signer Hash, rs []*rec) {
+func (ep *epoch) chain(signer Hash, all []*rec) {
+	// What the checkpoint leaves out is as if it were not in the set.
+	var rs []*rec
+	for _, r := range all {
+		if !ep.dropped(r) {
+			rs = append(rs, r)
+		}
+	}
 	byID, bySeq := map[Hash]*rec{}, map[int64][]*rec{}
 	for _, r := range rs {
 		byID[r.ID] = r
 		bySeq[r.Body.Seq] = append(bySeq[r.Body.Seq], r)
 	}
-	// A voided record with a sibling ends its branch.
+	// A voided record with a sibling ends its branch; the walk is only
+	// over whole chains, which end at seq 1 or at an anchor.
 	dead := func(r *rec) bool {
 		for {
 			if ep.voided[r.ID] && len(bySeq[r.Body.Seq]) > 1 {
 				return true
 			}
-			if r.Body.Seq == 1 {
+			if r.Body.Seq == 1 || ep.anchors[r.ID] {
 				return false
 			}
 			r = byID[*r.Body.Prev]
@@ -350,7 +414,7 @@ func (ep *epoch) chain(signer Hash, rs []*rec) {
 	}
 	live := map[int64][]*rec{}
 	for _, r := range rs {
-		if whole(r, byID) && !dead(r) {
+		if wholeTo(r, byID, ep.anchors) && !dead(r) {
 			live[r.Body.Seq] = append(live[r.Body.Seq], r)
 		}
 	}
@@ -692,7 +756,7 @@ func (ep *epoch) collect() {
 	for signer := range ep.forked {
 		c := Conflict{Kind: "two_histories", Signers: []Hash{signer}}
 		for _, r := range ep.e.bySig[signer] {
-			if r.Body.Seq == ep.forked[signer] {
+			if r.Body.Seq == ep.forked[signer] && !ep.dropped(r) {
 				c.Records = append(c.Records, r.ID)
 			}
 		}
@@ -730,7 +794,7 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 	var live []*rec
 	for _, rs := range ep.e.bySig {
 		for _, c := range rs {
-			if c.Body.Type != TypeClaim || c.AdminCA == nil || c.issuer != ep.cur || !ep.counted[c.ID] && !ep.voided[c.ID] {
+			if c.Body.Type != TypeClaim || c.AdminCA == nil || c.issuer != ep.cur || ep.dropped(c) || !ep.counted[c.ID] && !ep.voided[c.ID] {
 				continue
 			}
 			root, _ := x509.ParseCertificate(c.Body.Root)
@@ -1077,6 +1141,10 @@ func (ep *epoch) ignored(newer []Hash) []Ignored {
 func (ep *epoch) whyNot(r *rec) string {
 	switch {
 	case ep.counts(r):
+		return ""
+	case ep.dropped(r):
+		// Left out as if the member had already dropped it, so that the
+		// state is the same with it and without it.
 		return ""
 	case !ep.counted[r.ID]:
 		return WhyHistory
