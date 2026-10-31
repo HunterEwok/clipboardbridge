@@ -26,7 +26,7 @@ class Authenticator {
 
     /** Whether the keys still sign without asking. */
     val isFresh: Boolean
-        get() = passedAt != 0L && android.os.SystemClock.elapsedRealtime() - passedAt < (Keys.AUTH_SECONDS - 30) * 1000L
+        get() = passedAt != 0L && android.os.SystemClock.elapsedRealtime() - passedAt < (Keys.AUTH_SECONDS - 5) * 1000L
 
     /**
      * Asks unless the last authentication is fresh. A device without a

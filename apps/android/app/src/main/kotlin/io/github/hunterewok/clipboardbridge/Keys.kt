@@ -46,8 +46,14 @@ object Keys {
     const val ROOT = "clipboardbridge.ca"
     const val ADMIN = "clipboardbridge.admin"
 
-    /** How long one authentication lets the root and admin keys sign: one action's signatures, and the renewals right after. */
-    const val AUTH_SECONDS = 300
+    /**
+     * How long one authentication lets the root and admin keys sign: one
+     * action's signatures, and the renewals right after, and little more, so
+     * that a phone left unlocked does not sign for long without asking. The
+     * Keystore keeps the window a key was made with: keys made by earlier
+     * versions keep theirs, and the app still asks within this one.
+     */
+    const val AUTH_SECONDS = 30
 
     private const val PROVIDER = "AndroidKeyStore"
 

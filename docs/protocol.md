@@ -3132,7 +3132,7 @@ frames (section 4, "Content"); `records`, `admin`, `phone_ca` (section 10); `tun
 | iPhone `direction` | `to_iphone`, `from_iphone`, `none`, `unpaired`, `error` | 7 |
 | Evidence `format` | `android-key`, `tpm`, `tpm-credential`, `tpm-activated` | 17 |
 | Release file `type` | `keys`, `release`, `channel`, `attest-status` | 16 |
-| Release key `use` | `release`, `status` | 16 |
+| Release key `use` | `release`, `status`, `channel` | 16 |
 | Server credential `type` | `period`, `server`, `hubs`, `members` | 18 |
 
 ### Addresses and URIs
