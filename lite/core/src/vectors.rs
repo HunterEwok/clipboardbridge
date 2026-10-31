@@ -394,6 +394,31 @@ fn go_removed_admins() {
     }
 }
 
+/// The root's own device when the root signed two own device records at
+/// the same time, the one with the greater record ID, and whether it is a
+/// phone or a computer, in every rotation of the records
+/// (go-root-member.json, as Go's TestGoRootMemberVectors writes it).
+#[test]
+fn go_root_member() {
+    let v = vectors("go-root-member.json");
+    let cases = v["cases"].as_array().unwrap();
+    assert!(cases.len() >= 4, "{} cases", cases.len());
+    for c in cases {
+        let case = c["name"].as_str().unwrap();
+        let rs = records(&c["records"]);
+        for order in rotations(rs.len()) {
+            let recs: Vec<_> = order.iter().map(|&i| rs[i].clone()).collect();
+            let mut s = Records::new(&cert(&v["group_ca"]));
+            let (_, errs) = s.add_all(&recs);
+            assert!(errs.is_empty(), "{case}: {errs:?}");
+            let root = s.root_member().map(|(d, _)| d).unwrap_or_default();
+            let role = s.devices().into_iter().find(|d| d.id == root).map(|d| d.role).unwrap_or_default();
+            assert_eq!(root, c["root_device"].as_str().unwrap(), "{case}, {order:?}");
+            assert_eq!(role, c["root_role"].as_str().unwrap(), "{case}, {order:?}");
+        }
+    }
+}
+
 /// A device is an admin, with the role and store of that record, only by a
 /// record a root's own key signed, and a removed admin's records no longer
 /// decide a device's entry (go-authority.json, as Go's

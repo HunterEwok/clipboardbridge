@@ -977,15 +977,13 @@ public struct RecordSet: Codable, Equatable, Sendable {
         records.contains { Records.Body.decode($0.body).map { $0.type == "device" && $0.device == device } ?? false }
     }
 
-    /// The phone that holds the root: the one whose own record the current
-    /// root's key signed (a phone records itself when it makes the group,
-    /// and again when it takes the group over).
+    /// The phone that holds the root: the root's own device (rootMember),
+    /// when its own record says it is a phone (a phone records itself when
+    /// it makes the group, and again when it takes the group over); nil when
+    /// the root is a computer.
     public var rootDevice: String? {
-        let ev = Eval(self)
-        guard let cur = ev.path.last.flatMap({ try? Records.keyHash(cert: $0) }) else { return nil }
-        return ev.entries.filter {
-            $0.signer == cur && $0.body.type == "device" && $0.body.role == "phone" && $0.body.device != nil && $0.body.device == $0.body.by
-        }.max { $0.body.time_ms < $1.body.time_ms }?.body.device
+        guard let own = newestOwnRecord(), Records.role(own.body.role) == "phone" else { return nil }
+        return own.body.device
     }
 
     /// Whether device may be the group's hub for sync away from home: the
@@ -1028,16 +1026,22 @@ public struct RecordSet: Codable, Equatable, Sendable {
     }
 
     /// The root's own device and its key: the newest full or phone device
-    /// record the current root signed for itself.
+    /// record the current root signed for itself, of two at the same time
+    /// the one with the greater record ID, as Go's Records.RootMember.
     func rootMember() -> (device: String, key: Data)? {
+        guard let own = newestOwnRecord(), let id = own.body.device, let key = own.body.key else { return nil }
+        return (device: id, key: key)
+    }
+
+    /// The newest full or phone device record the current root signed for
+    /// itself, by time and then by record ID, as Go's newer.
+    private func newestOwnRecord() -> Entry? {
         let ev = Eval(self)
         guard let cur = ev.path.last.flatMap({ try? Records.keyHash(cert: $0) }) else { return nil }
-        let own = ev.entries.filter {
+        return ev.entries.filter {
             $0.signer == cur && $0.body.type == "device" && ["phone", "full"].contains(Records.role($0.body.role)) &&
                 $0.body.device != nil && $0.body.device == $0.body.by
-        }.max { $0.body.time_ms < $1.body.time_ms }
-        guard let own, let id = own.body.device, let key = own.body.key else { return nil }
-        return (device: id, key: key)
+        }.max { a, b in a.body.time_ms != b.body.time_ms ? a.body.time_ms < b.body.time_ms : Self.byEnvelope(a, b) }
     }
 
     /// SHA-256 over each record's ID and signer's key hash, sorted by ID and

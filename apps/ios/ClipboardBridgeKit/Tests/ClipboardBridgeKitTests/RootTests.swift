@@ -350,6 +350,46 @@ final class RootTests: XCTestCase {
         }
     }
 
+    /// Reads testdata/interop/go-root-member.json, from Go's
+    /// TestGoRootMemberVectors: the root's own device when the root signed
+    /// two own device records at the same time, the one with the greater
+    /// record ID, and whether it is a phone or a computer, in every rotation
+    /// of the records.
+    func testGoRootMember() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Case: Decodable {
+                var name: String
+                var records: [Member.Record]
+                var root_device: String
+                var root_role: String
+            }
+            var group_ca: Data
+            var cases: [Case]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-root-member.json")))
+        XCTAssertGreaterThanOrEqual(v.cases.count, 4)
+        for c in v.cases {
+            let n = c.records.count
+            var orders: [(String, [Member.Record])] = []
+            for start in 0..<n {
+                let forward = (0..<n).map { c.records[(start + $0) % n] }
+                orders.append(("from \(start)", forward))
+                orders.append(("from \(start), reversed", Array(forward.reversed())))
+            }
+            for (name, recs) in orders {
+                var set = RecordSet()
+                XCTAssertEqual(set.addAll(recs, groupCA: v.group_ca).count, n, "\(c.name), \(name)")
+                let root = set.rootMember()?.device
+                XCTAssertEqual(root, c.root_device, "\(c.name), \(name)")
+                let role = set.devices.first { $0.id == root }?.role
+                XCTAssertEqual(role, c.root_role, "\(c.name), \(name)")
+                XCTAssertEqual(set.rootDevice, role == "phone" ? root : nil, "\(c.name), \(name): the root phone")
+            }
+        }
+    }
+
     /// Reads testdata/interop/go-authority.json, from Go's
     /// TestGoAuthorityVectors: a device is an admin, with the role and store
     /// of that record, only by a record a root's own key signed, and a

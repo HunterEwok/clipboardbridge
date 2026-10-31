@@ -1008,17 +1008,16 @@ class RecordSet {
     fun knows(device: String): Boolean = list.any { Records.Body.decode(it.body)?.let { b -> b.type == "device" && b.device == device } == true }
 
     /**
-     * The phone that holds the root: the one whose own record the current
-     * root's key signed (a phone records itself when it makes the group,
-     * and again when it takes the group over).
+     * The phone that holds the root: the root's own device ([rootMember]),
+     * when its own record says it is a phone (a phone records itself when it
+     * makes the group, and again when it takes the group over); null when
+     * the root is a computer.
      */
     val rootDevice: String?
         get() {
             val ev = Eval(this)
             val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return null
-            return ev.entries.filter {
-                it.signer == cur && it.body.type == "device" && it.body.role == "phone" && it.body.device != null && it.body.device == it.body.by
-            }.maxByOrNull { it.body.timeMS }?.body?.device
+            return ownRecords(ev, cur).maxWithOrNull(NEWEST)?.takeIf { Records.role(it.body.role) == "phone" }?.body?.device
         }
 
     /**
@@ -1060,15 +1059,21 @@ class RecordSet {
                 .map { it.id }
         }
 
-    /** The root's own device and its key: the newest full or phone device record the current root signed for itself. */
+    /**
+     * The root's own device and its key: the newest full or phone device record the current root signed for itself, of
+     * two at the same time the one with the greater record ID, as Go's Records.RootMember.
+     */
     internal fun rootMember(): Pair<String, Key>? {
         val ev = Eval(this)
         val cur = ev.path.lastOrNull()?.let { runCatching { Key(Records.keyHashOfCert(it)) }.getOrNull() } ?: return null
-        val own = ev.entries.filter {
-            it.signer == cur && it.body.type == "device" && Records.role(it.body.role) in setOf("phone", "full") &&
-                it.body.device != null && it.body.device == it.body.by
-        }.maxByOrNull { it.body.timeMS } ?: return null
+        val own = ownRecords(ev, cur).maxWithOrNull(NEWEST) ?: return null
         return (own.body.device ?: return null) to Key(own.body.key ?: return null)
+    }
+
+    /** The full or phone device records that the current root, cur, signed for itself. */
+    private fun ownRecords(ev: Eval, cur: Key): List<Entry> = ev.entries.filter {
+        it.signer == cur && it.body.type == "device" && Records.role(it.body.role) in setOf("phone", "full") &&
+            it.body.device != null && it.body.device == it.body.by
     }
 
     /**
@@ -1102,6 +1107,9 @@ class RecordSet {
 
         /** Entries by ID and then signer, as Go sorts records; lower-case hex sorts as the bytes do. */
         private val BY_ENVELOPE = compareBy<Entry>({ it.id.hex }, { it.signer.hex })
+
+        /** By time, then by record ID and signer: the newest is the greatest, as Go's newer. */
+        private val NEWEST = compareBy<Entry> { it.body.timeMS }.then(BY_ENVELOPE)
 
         private const val NAMED_PHONE = 1
         private const val NAMED_OTHER = 2

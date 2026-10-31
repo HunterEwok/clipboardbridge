@@ -690,6 +690,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   means. `cbb new` warns that the root key is a file.
 - `get.ps1` no longer stops in Windows PowerShell 5.1 when `gh` is installed but not signed
   in.
+- When the root signed two own device records at the same time, the phones take the one
+  with the greater record ID as its own device, as the computers and the lite member do, so
+  every member agrees which device holds the root and whether it is a phone or a computer.
 
 ### Fixed
 
