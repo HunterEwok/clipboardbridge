@@ -33,7 +33,8 @@ type Record struct {
 	Chain [][]byte `json:"chain,omitempty"`
 }
 
-// A vector is a body of strict-generated.json or strict-files.json.
+// A vector is a body of strict-generated.json, strict-files.json or
+// strict-mutants-*.json.
 type vector struct {
 	Body  []byte `json:"body"`
 	Pad   int    `json:"pad"`
@@ -93,6 +94,17 @@ func seeds(dir string) ([]Case, error) {
 	}
 	if err := read("strict-files.json", map[string]string{"credentials": "credential", "releases": ""}); err != nil {
 		return nil, err
+	}
+	// More record bodies in the same form, as many files as there are.
+	mutants, err := filepath.Glob(filepath.Join(dir, "strict-mutants-*.json"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(mutants)
+	for _, f := range mutants {
+		if err := read(filepath.Base(f), map[string]string{"records": "record"}); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

@@ -45,6 +45,39 @@ func TestGenerateSeeded(t *testing.T) {
 	}
 }
 
+// TestSeedsMutants checks that the bodies of strict-mutants-*.json are
+// record seeds too, after those of the other files.
+func TestSeedsMutants(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"strict-generated.json", "strict-files.json"} {
+		data, err := os.ReadFile(filepath.Join(vectors, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base, err := seeds(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutant := `{"records":[{"name":"m","rule":"mutant","valid":false,"body":"e30=","pad":2,"pad_at":1}]}`
+	if err := os.WriteFile(filepath.Join(dir, "strict-mutants-1.json"), []byte(mutant), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := seeds(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(base)+1 {
+		t.Fatalf("%d seeds, want %d", len(got), len(base)+1)
+	}
+	if last := got[len(got)-1]; last.Kind != "record" || string(last.Body) != "{aa}" {
+		t.Fatalf("seed %s %q", last.Kind, last.Body)
+	}
+}
+
 // TestMembers checks that an object splits into its members as written.
 func TestMembers(t *testing.T) {
 	o, ok := members([]byte(` { "a" : 1, "b":{"c":[1, 2]} ,"a":"x"}`))

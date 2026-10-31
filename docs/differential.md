@@ -14,8 +14,8 @@ the same record set of the same signed records in any order and subset.
 ## The parts
 
 - `tools/difffuzz gen` writes a **corpus**, one case to a line, from a seed: the same seed
-  gives the same corpus. It starts from every body of `testdata/interop/strict-generated.json`
-  and `strict-files.json` (records, commands, manifests, server credentials, `keys.json`,
+  gives the same corpus. It starts from every body of `testdata/interop/strict-generated.json`,
+  `strict-mutants-*.json` (more record bodies) and `strict-files.json` (records, commands, manifests, server credentials, `keys.json`,
   `release.json`, channel files and `attest-status.json`) and changes them: bits and bytes,
   bytes that JSON treats specially, members twice, missing, in another place or with their
   names in another case or escaped, values of another JSON type, integers at the edges of
