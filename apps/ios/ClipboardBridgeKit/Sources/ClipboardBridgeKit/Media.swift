@@ -41,7 +41,9 @@ public enum Media {
             if !files && parts.count > Media.maxTypes { return false }
             var total: Int64 = 0
             var paths = 0
-            var seen = Set<String>()
+            // Paths compare byte for byte, as the spec says, not as Swift
+            // compares strings: two names in NFC and NFD are two paths.
+            var seen = Set<[UInt8]>()
             for p in parts {
                 let key: String
                 if files {
@@ -52,7 +54,7 @@ public enum Media {
                     guard let type = p.type, !p.dir, Media.types.contains(type) else { return false }
                     key = type
                 }
-                guard seen.insert(key).inserted else { return false }
+                guard seen.insert(Array(key.utf8)).inserted else { return false }
                 if p.dir {
                     if p.size != 0 || p.sha256 != nil { return false }
                     continue
@@ -62,14 +64,12 @@ public enum Media {
             }
             guard paths <= Media.maxPaths, total == size, total <= Media.maxMedia else { return false }
             if files {
-                var dirs: [String: Bool] = [:]
-                for p in parts { dirs[p.path!] = p.dir }
+                var dirs: [[UInt8]: Bool] = [:]
+                for p in parts { dirs[Array(p.path!.utf8)] = p.dir }
                 for p in parts {
-                    let path = p.path!
-                    var i = path.startIndex
-                    while let slash = path[i...].firstIndex(of: "/") {
-                        if dirs[String(path[..<slash])] == false { return false }
-                        i = path.index(after: slash)
+                    let path = Array(p.path!.utf8)
+                    for (i, b) in path.enumerated() where b == 0x2F {
+                        if dirs[Array(path[..<i])] == false { return false }
                     }
                 }
             }
@@ -115,7 +115,10 @@ public enum Media {
     /// Whether path is names joined by "/", each one checkName takes, at
     /// most maxPath bytes.
     public static func checkPath(_ path: String) -> Bool {
-        !path.isEmpty && path.utf8.count <= maxPath && path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { checkName(String($0)) }
+        // Split on the byte "/": a "/" that a combining mark follows is one
+        // Character for Swift but still a separator.
+        !path.isEmpty && path.utf8.count <= maxPath
+            && path.utf8.split(separator: 0x2F, omittingEmptySubsequences: false).allSatisfy { checkName(String(decoding: $0, as: UTF8.self)) }
     }
 
     /// Whether a name of a path is one every system can hold, as Go's

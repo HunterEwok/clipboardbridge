@@ -348,8 +348,14 @@ object Member {
          */
         val nextKey: ByteArray? = null,
     ) {
-        /** Whether the keys are 32 bytes, as a tunnel needs. */
-        val isValid: Boolean get() = hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8 && (nextKey == null || nextKey.size == 32)
+        /**
+         * Whether it is an offer a tunnel can take, as Go checks one: keys of 32
+         * bytes that are not all zeros, at most 8 endpoints, each with a port
+         * that is not 0.
+         */
+        val isValid: Boolean get() =
+            hubKey.size == 32 && psk.size == 32 && endpoints.size <= 8 && (nextKey == null || nextKey.size == 32) &&
+                hubKey.any { it != 0.toByte() } && psk.any { it != 0.toByte() } && endpoints.all(::hasPort)
 
         /** The same offer with another preshared key and hub, and moved set. */
         fun with(psk: ByteArray, hub: String?, moved: Boolean = false): TunnelOffer =
@@ -429,12 +435,39 @@ object Member {
 
         override fun hashCode(): Int = body.contentHashCode()
 
-        fun toJson(): JsonObject = Wire.obj("body" to Wire.bytes(body), "sig" to Wire.bytes(sig), "chain" to Wire.list(chain))
-
         companion object {
+            /**
+             * The records of one message at most, well below the frame limit: a
+             * set is sent in messages of about 1 MiB (section 10, "Exchange in the
+             * member protocol"), as Go's chunkRecords does.
+             */
+            const val CHUNK = 1 shl 20
+
+            /** rs in the messages that carry them, in order, each of about CHUNK bytes at most unless one record alone is larger. */
+            fun chunks(rs: List<Record>): List<List<Record>> {
+                val out = mutableListOf<List<Record>>()
+                var cur = mutableListOf<Record>()
+                var size = 0
+                for (r in rs) {
+                    // base64 and the JSON around it
+                    val n = (r.body.size + r.sig.size + (r.chain?.sumOf { it.size } ?: 0)) * 4 / 3 + 64
+                    if (cur.isNotEmpty() && size + n > CHUNK) {
+                        out += cur
+                        cur = mutableListOf()
+                        size = 0
+                    }
+                    cur += r
+                    size += n
+                }
+                if (cur.isNotEmpty()) out += cur
+                return out
+            }
+
             fun fromJson(o: JsonObject): Record =
                 Record(o.optBytes("body") ?: ByteArray(0), o.optBytes("sig") ?: ByteArray(0), o.optBytesList("chain"))
         }
+
+        fun toJson(): JsonObject = Wire.obj("body" to Wire.bytes(body), "sig" to Wire.bytes(sig), "chain" to Wire.list(chain))
     }
 
     /** The answer to a command (section 15): its ID, "done", "refused" or "failed", and why for the last two. */
@@ -759,3 +792,12 @@ object Member {
 
 internal fun ByteArray?.contentEqualsOrNull(other: ByteArray?): Boolean =
     if (this == null) other == null else other != null && contentEquals(other)
+
+/** Whether endpoint ends in a port from 1 to 65535, as in "192.0.2.1:8764" or "[2001:db8::1]:8764". */
+internal fun hasPort(endpoint: String): Boolean {
+    val colon = endpoint.lastIndexOf(':')
+    if (colon <= 0) return false
+    val digits = endpoint.substring(colon + 1)
+    if (digits.isEmpty() || digits.length > 5 || !digits.all { it in '0'..'9' }) return false
+    return digits.toInt() in 1..65535
+}

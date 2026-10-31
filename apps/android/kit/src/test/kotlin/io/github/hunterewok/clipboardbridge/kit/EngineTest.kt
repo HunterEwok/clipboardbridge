@@ -10,12 +10,24 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class EngineTest {
+    @Test
+    fun offerChecksAsGo() {
+        val (k, p) = ByteArray(32) { 2 } to ByteArray(32) { 3 }
+        assertTrue(Member.TunnelOffer(k, p, listOf("192.0.2.1:8764", "[2001:db8::1]:65535")).isValid)
+        assertFalse(Member.TunnelOffer(ByteArray(32), p).isValid, "a hub key of zeros")
+        assertFalse(Member.TunnelOffer(k, ByteArray(32)).isValid, "a preshared key of zeros")
+        for (e in listOf("192.0.2.1:0", "192.0.2.1", "192.0.2.1:65536", "192.0.2.1:+1", ":8764x", "[2001:db8::1]")) {
+            assertFalse(Member.TunnelOffer(k, p, listOf(e)).isValid, e)
+        }
+    }
+
     @Test
     fun clock() {
         var wall = 1000L

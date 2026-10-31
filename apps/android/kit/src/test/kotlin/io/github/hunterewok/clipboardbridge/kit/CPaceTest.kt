@@ -86,6 +86,41 @@ class CPaceTest {
         assertFailsWith<CPace.Failure> { b.finish(ByteArray(32), ByteArray(0)) }
     }
 
+    /**
+     * The scalar_mult_vfy vectors of draft-irtf-cfrg-cpace-21, Appendix
+     * B.1.10, as Go's TestLowOrder and the lite member run them: u0 to u5 and
+     * u7 encode low order points, non-canonical ones included, and a party
+     * that receives one aborts; it takes the others.
+     */
+    @Test
+    fun lowOrderVectors() {
+        val s = unhex("af46e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449aff")
+        val vectors = listOf(
+            "0000000000000000000000000000000000000000000000000000000000000000" to "",
+            "0100000000000000000000000000000000000000000000000000000000000000" to "",
+            "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f" to "",
+            "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800" to "",
+            "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157" to "",
+            "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f" to "",
+            "daffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" to "d8e2c776bbacd510d09fd9278b7edcd25fc5ae9adfba3b6e040e8d3b71b21806",
+            "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f" to "",
+            "dbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" to "c85c655ebe8be44ba9c0ffde69f2fe10194458d137f09bbff725ce58803cdb38",
+            "d9ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" to "db64dafa9b8fdd136914e61461935fe92aa372cb056314e1231bc4ec12417456",
+            "cdeb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b880" to "e062dcd5376d58297be2618c7498f55baa07d7e03184e8aada20bca28888bf7a",
+            "4c9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f11d7" to "993c6ad11c4c29da9a56f7691fd0ff8d732e49de6250b6c2e80003ff4629a175",
+        )
+        for ((i, v) in vectors.withIndex()) {
+            val (u, q) = v
+            val a = CPace(CPace.Role.INITIATOR, prs, ci, sid, ByteArray(0))
+            if (q.isEmpty()) {
+                assertFailsWith<CPace.Failure>("u$i") { a.finish(unhex(u), ByteArray(0)) }
+            } else {
+                assertEquals(q, x25519(s, unhex(u)).hex(), "u$i")
+                a.finish(unhex(u), ByteArray(0))
+            }
+        }
+    }
+
     @Test
     fun prependLen() {
         assertContentEquals(byteArrayOf(0), CPace.prependLen(ByteArray(0)))
