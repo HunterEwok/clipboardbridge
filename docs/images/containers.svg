@@ -1,0 +1,89 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only. Drawn by tools/diagrams/diagrams.py; edit it there. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="470" viewBox="0 0 900 470" role="img" aria-label="The containers: the programs of a computer, a phone, a lite member and the hub, and how they talk">
+<title>The containers: the programs of a computer, a phone, a lite member and the hub, and how they talk</title>
+<style>
+  .bg { fill: none; }
+  .zone { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1; }
+  .zone-t { fill: #57606a; font: 600 13px system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: .02em; }
+  .card { fill: #ffffff; stroke: #d0d7de; stroke-width: 1.2; }
+  .card.key { stroke: #8250df; stroke-width: 2; }
+  .card.srv { fill: #fff8c5; stroke: #d4a72c; }
+  .t { fill: #1f2328; font: 600 14px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .s { fill: #57606a; font: 12px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .ic { fill: none; stroke: #1f2328; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .key .ic, .ic.key { stroke: #8250df; }
+  .badge { fill: #8250df; }
+  .badge-t { fill: #ffffff; font: 600 10px system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: .04em; }
+  .e-tunnel { fill: none; stroke: #0969da; stroke-width: 3; }
+  .e-home { fill: none; stroke: #57606a; stroke-width: 1.6; stroke-dasharray: 5 4; }
+  .e-pair { fill: none; stroke: #8250df; stroke-width: 1.8; }
+  .e-e2e { fill: none; stroke: #1a7f37; stroke-width: 1.8; stroke-dasharray: 2 4; stroke-linecap: round; }
+  .a-tunnel { fill: #0969da; } .a-home { fill: #57606a; } .a-pair { fill: #8250df; } .a-e2e { fill: #1a7f37; }
+  .lbl-bg { fill: #ffffff; stroke: #d0d7de; stroke-width: 1; }
+  .lbl { fill: #1f2328; font: 12px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .lbl.tunnel { fill: #0969da; } .lbl.pair { fill: #8250df; } .lbl.e2e { fill: #1a7f37; }
+  .note { fill: #57606a; font: italic 12px system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    .zone { fill: #161b22; stroke: #30363d; }
+    .zone-t, .s, .note { fill: #8b949e; }
+    .card { fill: #0d1117; stroke: #3d444d; }
+    .card.key { stroke: #a371f7; }
+    .card.srv { fill: #272115; stroke: #9e6a03; }
+    .t, .lbl { fill: #e6edf3; }
+    .ic { stroke: #e6edf3; }
+    .key .ic, .ic.key { stroke: #a371f7; }
+    .badge { fill: #a371f7; }
+    .badge-t { fill: #0d1117; }
+    .e-tunnel { stroke: #4493f8; } .a-tunnel { fill: #4493f8; } .lbl.tunnel { fill: #4493f8; }
+    .e-home { stroke: #8b949e; } .a-home { fill: #8b949e; }
+    .e-pair { stroke: #a371f7; } .a-pair { fill: #a371f7; } .lbl.pair { fill: #a371f7; }
+    .e-e2e { stroke: #3fb950; } .a-e2e { fill: #3fb950; } .lbl.e2e { fill: #3fb950; }
+    .lbl-bg { fill: #0d1117; stroke: #3d444d; }
+  }
+</style>
+<rect class="zone" x="10" y="10" width="500" height="290" rx="14"/>
+<text class="zone-t" x="26" y="34">Computer: Linux, macOS, Windows, FreeBSD, routers</text>
+<g class="key"><rect class="card key" x="90.0" y="58.0" width="340" height="64" rx="10"/><g transform="translate(102.0,76)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="140.0" y="86">cbb service (Go)</text><text class="s" x="140.0" y="104">member protocol, sync, keys, tunnel</text></g>
+<g class=""><rect class="card " x="18.0" y="194.0" width="156" height="82" rx="10"/><text class="t" x="96" y="216.0" text-anchor="middle">Clipboard connector</text><text class="s" x="96" y="236.0" text-anchor="middle">desktop connector,</text><text class="s" x="96" y="252.0" text-anchor="middle">pasteboard or</text><text class="s" x="96" y="268.0" text-anchor="middle">clipboard agent</text></g>
+<g class=""><rect class="card " x="182.0" y="194.0" width="156" height="82" rx="10"/><text class="t" x="260" y="216.0" text-anchor="middle">Control clients</text><text class="s" x="260" y="236.0" text-anchor="middle">cbb CLI,</text><text class="s" x="260" y="252.0" text-anchor="middle">tray app,</text><text class="s" x="260" y="268.0" text-anchor="middle">Mac app</text></g>
+<g class=""><rect class="card " x="346.0" y="194.0" width="156" height="82" rx="10"/><text class="t" x="424" y="216.0" text-anchor="middle">Paste helpers</text><text class="s" x="424" y="236.0" text-anchor="middle">cbb paste-helper:</text><text class="s" x="424" y="252.0" text-anchor="middle">tmux, console,</text><text class="s" x="424" y="268.0" text-anchor="middle">uinput</text></g>
+<path class="e-home" d="M260.0,122.0 L260,160"/>
+<path class="e-home" d="M96,160 L424,160"/>
+<path class="e-home" d="M96,160 L96.0,194.0"/>
+<path class="a-home" d="M96.0,194.0 L100.4,186.0 L91.6,186.0z"/>
+<path class="e-home" d="M260,160 L260.0,194.0"/>
+<path class="a-home" d="M260.0,194.0 L264.4,186.0 L255.6,186.0z"/>
+<path class="e-home" d="M424,160 L424.0,194.0"/>
+<path class="a-home" d="M424.0,194.0 L428.4,186.0 L419.6,186.0z"/>
+<rect class="zone" x="580" y="10" width="310" height="170" rx="14"/>
+<text class="zone-t" x="596" y="34">Phone: iPhone, iPad, Android</text>
+<g class=""><rect class="card " x="600.0" y="59.0" width="270" height="82" rx="10"/><text class="t" x="735" y="81.0" text-anchor="middle">The app</text><text class="s" x="735" y="101.0" text-anchor="middle">SwiftUI or Compose</text><text class="s" x="735" y="117.0" text-anchor="middle">the kit: member protocol,</text><text class="s" x="735" y="133.0" text-anchor="middle">pairing, records, tunnel</text></g>
+<path class="e-pair" d="M430.0,90.0 L595,90"/>
+<path class="a-pair" d="M595,90 L587.0,85.6 L587.0,94.4z"/>
+<path class="a-pair" d="M430.0,90.0 L438.0,94.4 L438.0,85.6z"/>
+<g class=""><rect class="card " x="620.0" y="255.0" width="230" height="50" rx="10"/><text class="t" x="735" y="277.0" text-anchor="middle">The watch app</text><text class="s" x="735" y="297.0" text-anchor="middle">Apple Watch, Wear OS</text></g>
+<path class="e-home" d="M735.0,255.0 L735.0,141.0"/>
+<path class="a-home" d="M735.0,141.0 L730.6,149.0 L739.4,149.0z"/>
+<path class="a-home" d="M735.0,255.0 L739.4,247.0 L730.6,247.0z"/>
+<g class=""><rect class="card " x="25.0" y="378.0" width="250" height="64" rx="10"/><g transform="translate(37.0,396)" class="ic"><rect x="4" y="7" width="20" height="14" rx="1.5"/><rect x="9" y="11" width="6" height="6"/><line x1="7" y1="4" x2="7" y2="7"/><line x1="11" y1="4" x2="11" y2="7"/><line x1="15" y1="4" x2="15" y2="7"/><line x1="19" y1="4" x2="19" y2="7"/></g><text class="t" x="75.0" y="406">Lite member (Rust)</text><text class="s" x="75.0" y="424">Linux, OpenWrt, ESP32</text></g>
+<path class="e-pair" d="M150,300 L150.0,378.0"/>
+<path class="a-pair" d="M150.0,378.0 L154.4,370.0 L145.6,370.0z"/>
+<path class="a-pair" d="M150,300 L145.6,308.0 L154.4,308.0z"/>
+<g class="srv"><rect class="card srv" x="490.0" y="371.0" width="300" height="82" rx="10"/><text class="t" x="640" y="393.0" text-anchor="middle">The hub (a member) and, on the way,</text><text class="s" x="640" y="413.0" text-anchor="middle">a forwarder (cbb forward) or a relay</text><text class="s" x="640" y="429.0" text-anchor="middle">(cbb relay): blind, they pass</text><text class="s" x="640" y="445.0" text-anchor="middle">packets only</text></g>
+<path class="e-tunnel" d="M400,300 L400,340 L640,340 L640.0,371.0"/>
+<path class="a-tunnel" d="M640.0,371.0 L645.5,361.0 L634.5,361.0z"/>
+<path class="a-tunnel" d="M400,300 L394.5,310.0 L405.5,310.0z"/>
+<rect class="lbl-bg" x="306.9" y="125.0" width="186.1" height="22" rx="11.0"/>
+<text class="lbl home" x="400" y="140.0" text-anchor="middle">control socket (JSON lines)</text>
+<rect class="lbl-bg" x="450.4" y="39.0" width="123.1" height="38" rx="11"/>
+<text class="lbl pair" x="512" y="54.0" text-anchor="middle">member protocol,</text>
+<text class="lbl pair" x="512" y="70.0" text-anchor="middle">TLS 1.3, TCP 8764</text>
+<rect class="lbl-bg" x="667.1" y="186.0" width="135.7" height="38" rx="11"/>
+<text class="lbl home" x="735" y="201.0" text-anchor="middle">WatchConnectivity,</text>
+<text class="lbl home" x="735" y="217.0" text-anchor="middle">Wearable Data Layer</text>
+<rect class="lbl-bg" x="94.8" y="325.0" width="110.5" height="22" rx="11.0"/>
+<text class="lbl pair" x="150" y="340.0" text-anchor="middle">member protocol</text>
+<rect class="lbl-bg" x="430.1" y="321.0" width="179.8" height="38" rx="11"/>
+<text class="lbl tunnel" x="520" y="336.0" text-anchor="middle">WireGuard (UDP 8764),</text>
+<text class="lbl tunnel" x="520" y="352.0" text-anchor="middle">maybe over VLESS (TCP 443)</text>
+</svg>

@@ -8,6 +8,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The two text diagrams of `docs/design.md` (the system context and the containers) are
+  pictures now, drawn by `tools/diagrams` like the others, with a light and a dark theme.
 - On the website the pictures of the documentation are drawn in chalk on a board in a walnut
   frame, like every other picture of the site, in every language, and are drawn in once as
   they come into view. The files in `docs/images` are unchanged, so GitHub shows them as before.
@@ -481,6 +483,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- On the website the rectangles of the documentation's pictures keep their top corners (the
+  site's cut-corner pane style had been applied to them), and the cards of the at-home picture
+  no longer overlap in Russian and Swahili: the picture widens to hold them.
 - On the website the columns of a documentation table are sized by what is in them, and a
   heading wraps only where it must, not at its middle.
 

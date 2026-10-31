@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only. Drawn by tools/diagrams/diagrams.py; edit it there. -->
-<svg xmlns="http://www.w3.org/2000/svg" lang="ar" width="720" height="250" viewBox="0 0 720 250" role="img" aria-label="في المنزل يتحدث كل جهاز مباشرةً مع كل جهاز آخر">
+<svg xmlns="http://www.w3.org/2000/svg" lang="ar" width="753" height="250" viewBox="0 0 753 250" role="img" aria-label="في المنزل يتحدث كل جهاز مباشرةً مع كل جهاز آخر">
 <title>في المنزل يتحدث كل جهاز مباشرةً مع كل جهاز آخر</title>
 <style>
   .bg { fill: none; }
@@ -41,18 +41,18 @@
     .lbl-bg { fill: #0d1117; stroke: #3d444d; }
   }
 </style>
-<rect class="zone" x="10" y="10" width="700" height="200" rx="14"/>
+<rect class="zone" x="10" y="10" width="733" height="200" rx="14"/>
 <text class="zone-t" x="26" y="34" direction="rtl" text-anchor="end">الشبكة المنزلية</text>
-<g class="key"><rect class="card key" x="35.0" y="50.0" width="150" height="64" rx="10"/><g transform="translate(47.0,68)" class="ic"><rect x="8" y="2" width="12" height="24" rx="2.5"/><line x1="12.5" y1="22.5" x2="15.5" y2="22.5"/></g><text class="t" x="85.0" y="78" direction="rtl" text-anchor="end">هاتف</text><text class="s" x="85.0" y="96" direction="rtl" text-anchor="end">مع التطبيق</text><rect class="badge" x="137.0" y="41.0" width="40.0" height="18" rx="9"/><text class="badge-t" x="157.0" y="54.0" text-anchor="middle" direction="rtl">الجذر</text></g>
-<path class="e-home" d="M110.0,114.0 L110,150"/>
-<g class=""><rect class="card " x="201.3125" y="56.0" width="157.375" height="52" rx="10"/><g transform="translate(213.3125,68)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="251.3125" y="87" direction="rtl" text-anchor="end">حاسوب محمول</text></g>
-<path class="e-home" d="M280.0,108.0 L280,150"/>
-<g class=""><rect class="card " x="371.3125" y="56.0" width="157.375" height="52" rx="10"/><g transform="translate(383.3125,68)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="421.3125" y="87" direction="rtl" text-anchor="end">حاسوب مكتبي</text></g>
-<path class="e-home" d="M450.0,108.0 L450,150"/>
-<g class=""><rect class="card " x="531.75" y="50.0" width="156.5" height="64" rx="10"/><g transform="translate(543.75,68)" class="ic"><rect x="4" y="7" width="20" height="14" rx="1.5"/><rect x="9" y="11" width="6" height="6"/><line x1="7" y1="4" x2="7" y2="7"/><line x1="11" y1="4" x2="11" y2="7"/><line x1="15" y1="4" x2="15" y2="7"/><line x1="19" y1="4" x2="19" y2="7"/></g><text class="t" x="581.75" y="78" direction="rtl" text-anchor="end">Raspberry Pi</text><text class="s" x="581.75" y="96" direction="rtl" text-anchor="end">عضو خفيف</text></g>
-<path class="e-home" d="M610.0,114.0 L610,150"/>
-<path class="e-home" d="M110,150 L610,150"/>
-<text class="note" x="360" y="236" text-anchor="middle" direction="rtl">لا خادم في الوسط: يمكن إيقاف أي جهاز وتستمر الأجهزة الأخرى في التزامن.</text>
-<rect class="lbl-bg" x="232.3" y="161.0" width="255.4" height="22" rx="11.0"/>
-<text class="lbl home" x="360" y="176.0" text-anchor="middle" direction="rtl">اتصالات مباشرة مشفّرة، تكتشفها mDNS</text>
+<g class="key"><rect class="card key" x="29.875" y="50.0" width="150" height="64" rx="10"/><g transform="translate(41.875,68)" class="ic"><rect x="8" y="2" width="12" height="24" rx="2.5"/><line x1="12.5" y1="22.5" x2="15.5" y2="22.5"/></g><text class="t" x="79.875" y="78" direction="rtl" text-anchor="end">هاتف</text><text class="s" x="79.875" y="96" direction="rtl" text-anchor="end">مع التطبيق</text><rect class="badge" x="131.875" y="41.0" width="40.0" height="18" rx="9"/><text class="badge-t" x="151.875" y="54.0" text-anchor="middle" direction="rtl">الجذر</text></g>
+<path class="e-home" d="M104.875,114.0 L104.875,150"/>
+<g class=""><rect class="card " x="203.875" y="56.0" width="157.375" height="52" rx="10"/><g transform="translate(215.875,68)" class="ic"><rect x="5" y="6" width="18" height="12" rx="1.5"/><path d="M2 22h24l-2 -3H4z"/></g><text class="t" x="253.875" y="87" direction="rtl" text-anchor="end">حاسوب محمول</text></g>
+<path class="e-home" d="M282.5625,108.0 L282.5625,150"/>
+<g class=""><rect class="card " x="385.25" y="56.0" width="157.375" height="52" rx="10"/><g transform="translate(397.25,68)" class="ic"><rect x="3" y="4" width="22" height="15" rx="1.5"/><line x1="14" y1="19" x2="14" y2="24"/><line x1="9" y1="24" x2="19" y2="24"/></g><text class="t" x="435.25" y="87" direction="rtl" text-anchor="end">حاسوب مكتبي</text></g>
+<path class="e-home" d="M463.9375,108.0 L463.9375,150"/>
+<g class=""><rect class="card " x="566.625" y="50.0" width="156.5" height="64" rx="10"/><g transform="translate(578.625,68)" class="ic"><rect x="4" y="7" width="20" height="14" rx="1.5"/><rect x="9" y="11" width="6" height="6"/><line x1="7" y1="4" x2="7" y2="7"/><line x1="11" y1="4" x2="11" y2="7"/><line x1="15" y1="4" x2="15" y2="7"/><line x1="19" y1="4" x2="19" y2="7"/></g><text class="t" x="616.625" y="78" direction="rtl" text-anchor="end">Raspberry Pi</text><text class="s" x="616.625" y="96" direction="rtl" text-anchor="end">عضو خفيف</text></g>
+<path class="e-home" d="M644.875,114.0 L644.875,150"/>
+<path class="e-home" d="M104.875,150 L644.875,150"/>
+<text class="note" x="376.5" y="236" text-anchor="middle" direction="rtl">لا خادم في الوسط: يمكن إيقاف أي جهاز وتستمر الأجهزة الأخرى في التزامن.</text>
+<rect class="lbl-bg" x="248.8" y="161.0" width="255.4" height="22" rx="11.0"/>
+<text class="lbl home" x="376.5" y="176.0" text-anchor="middle" direction="rtl">اتصالات مباشرة مشفّرة، تكتشفها mDNS</text>
 </svg>
