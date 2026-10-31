@@ -92,7 +92,9 @@ func TestMemoryMergesByID(t *testing.T) {
 }
 
 // TestMemoryKeepIsLinear checks that taking in many records of one group,
-// again and again, does not take time in proportion to their square.
+// again and again, does not take time in proportion to their square: eight
+// times the records a group holds take about eight times as long to take in
+// again, not sixty-four.
 func TestMemoryKeepIsLinear(t *testing.T) {
 	m := newMemory(nil)
 	rs := fakeRecords(15, 8<<10)
@@ -103,6 +105,31 @@ func TestMemoryKeepIsLinear(t *testing.T) {
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("2000 registrations with known records took %v", d)
 	}
+	// The fastest of several runs, which noise only slows.
+	again := func(n int) time.Duration {
+		m := newMemory(func(string) bool { return true })
+		rs := fakeRecords(n, 8)
+		m.keep("g", noSource, rs)
+		if got := len(m.records("g")); got != n {
+			t.Fatalf("kept %d records of %d", got, n)
+		}
+		best := time.Duration(1 << 62)
+		for range 15 {
+			start := time.Now()
+			m.keep("g", noSource, rs)
+			best = min(best, time.Since(start))
+		}
+		return best
+	}
+	const n, k = 400, 8
+	if !fits(fakeRecords(k*n, 8)) {
+		t.Fatal("the larger group must fit")
+	}
+	small, large := again(n), again(k*n)
+	if large > 3*k*small {
+		t.Errorf("taking in %d known records again took %v, %d of them %v", k*n, large, n, small)
+	}
+	t.Logf("%d known records again: %v; %d: %v", n, small, k*n, large)
 }
 
 // TestRegistrationKeepsBoundedRecords checks that a group whose authority
