@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -133,7 +134,8 @@ type Relay struct {
 // member is a registered device.
 type member struct {
 	tag, device string
-	leaf        group.KeyHash // the key of its member certificate
+	leaf        group.KeyHash       // the key of its member certificate
+	chain       []*x509.Certificate // that certificate and the ones it came with
 	key, psk    tunnel.Key
 	addr        netip.Addr
 	conn        *tls.Conn // the registration, open while it is registered

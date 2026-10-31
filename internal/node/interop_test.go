@@ -30,6 +30,13 @@ type memberVectors struct {
 	Timestamps []timestampVector `json:"timestamps"`
 	Events     []eventVector     `json:"events"`
 	Order      []orderVector     `json:"order"`
+	// Bodies are frames as text, each a message or not.
+	Bodies []bodyVector `json:"bodies"`
+}
+
+type bodyVector struct {
+	Text string `json:"text"`
+	OK   bool   `json:"ok"`
 }
 
 type timestampVector struct {
@@ -180,6 +187,27 @@ func TestMemberInteropVectors(t *testing.T) {
 		a, _ := encode(p[0])
 		b, _ := encode(p[1])
 		v.Order = append(v.Order, orderVector{A: a, B: b, Later: later(p[0], p[1])})
+	}
+
+	// Numbers: only integers as in signed bodies, anywhere in a frame.
+	for _, s := range []string{
+		`{"t":"hello","role":"full","hello":{"wall_ms":0}}`,
+		`{"t":"hello","role":"full","hello":{"wall_ms":-0}}`,
+		`{"t":"hello","role":"full","hello":{"wall_ms":1761024000500.0}}`,
+		`{"t":"event","event":{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":-0,"kind":"text","text":"x"}}`,
+		`{"t":"event","event":{"id":"fedcba9876543210fedcba9876543210","origin":"0123456789abcdef0123456789abcdef","time":"1.0","age_ms":0,"kind":"text","text":"x","extra":-0}}`,
+		`{"t":"ping","extra":-1}`,
+		`{"t":"ping","extra":-0}`,
+		`{"t":"ping","extra":[1,2.5]}`,
+		`{"t":"ping","extra":1e3}`,
+		`{"t":"ping","extra":9223372036854775807}`,
+		`{"t":"ping","extra":9223372036854775808}`,
+		`{"t":"ping","extra":"-0 1.5 1e3"}`,
+		`{"t":"ping","extra":"\"-0"}`,
+		`{"t":"ping","extra":{"-0":0}}`,
+	} {
+		_, err := decodeMessage([]byte(s))
+		v.Bodies = append(v.Bodies, bodyVector{Text: s, OK: err == nil})
 	}
 
 	checkVectors(t, "member.json", v)

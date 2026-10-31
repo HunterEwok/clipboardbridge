@@ -87,6 +87,12 @@ fn member_frames() {
         let b: Event = serde_json::from_value(o["b"].clone()).unwrap();
         assert_eq!(a.later(&b), o["later"].as_bool().unwrap(), "order {o}");
     }
+    let bodies = v["bodies"].as_array().unwrap();
+    assert!(bodies.len() >= 14);
+    for b in bodies {
+        let text = b["text"].as_str().unwrap();
+        assert_eq!(wire::decode(text.as_bytes()).is_ok(), b["ok"].as_bool().unwrap(), "body {text}");
+    }
 }
 
 /// Which member certificates a peer accepts at which time
@@ -303,6 +309,24 @@ fn go_envelopes() {
     }
 }
 
+/// Where a device's keys live, as Go's StoreOf reads a record's store.
+#[test]
+fn stores() {
+    use crate::records::store_of;
+    for (store, role, want) in [
+        ("file", "full", "file"),
+        ("hardware", "full", "hardware"),
+        ("proven", "phone", "proven"),
+        ("rootless", "full", "rootless"),
+        ("", "phone", "hardware"),
+        ("", "watch", "hardware"),
+        ("", "full", "file"),
+        ("disk", "lite", "file"),
+    ] {
+        assert_eq!(store_of(store, role), want, "{store:?} {role:?}");
+    }
+}
+
 /// An admin phone that the root removed signs a root record afterwards, for
 /// a root of its own that revokes the group's root and admins: that root is
 /// not known, so none of it counts, in any order (go-removed-admin.json, as
@@ -445,7 +469,7 @@ fn go_commands() {
     let me = v["self"].as_str().unwrap();
     let now = v["now_ms"].as_i64().unwrap();
     let cs = v["commands"].as_array().unwrap();
-    assert_eq!(cs.len(), 15);
+    assert_eq!(cs.len(), 17);
     for c in cs {
         let r: Record = serde_json::from_value(c["command"].clone()).unwrap();
         let got = s.verify_command(&r, me, now);
@@ -453,6 +477,9 @@ fn go_commands() {
         assert_eq!(got.is_ok(), c["ok"].as_bool().unwrap(), "{name}: {got:?}");
         if let Ok(b) = got {
             assert_eq!(b.mode, c["mode"].as_str().unwrap_or(""), "{name}");
+            let (sender, verified) = s.command_sender(&r, &b.by);
+            assert_eq!(verified, c["verified"].as_bool().unwrap_or(false), "{name}");
+            assert!(if verified { sender == b.by } else { sender.starts_with("key ") }, "{name}: {sender}");
             if b.kind == "paste" {
                 assert!(b.enter && b.paste_kind == "text" && b.text.ends_with("\"done\"\n"), "{name}");
             }

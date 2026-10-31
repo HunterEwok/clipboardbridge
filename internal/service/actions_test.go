@@ -96,7 +96,7 @@ func TestQuickActions(t *testing.T) {
 	if err != nil || len(log) != 7 {
 		t.Fatalf("the log: %+v, %v", log, err)
 	}
-	if e := log[2]; e.Action != actions.Lock || e.Result != "done" || e.Name != "pi" {
+	if e := log[2]; e.Action != actions.Lock || e.Result != "done" || e.Name != "pi" || e.Unverified {
 		t.Errorf("the lock's entry: %+v", e)
 	}
 

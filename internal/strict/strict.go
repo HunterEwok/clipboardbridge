@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/HunterEwok/clipboardbridge/internal/jsonnum"
 )
 
 // maxStrictDepth bounds how deeply a signed body nests arrays and objects.
@@ -260,30 +262,13 @@ func (p *strictParser) literal(s string) error {
 	return nil
 }
 
-// integer reads -?[1-9][0-9]*|0 and checks that it fits in an int64. "-0"
-// is refused: some JSON readers take it for a float, others for 0.
+// integer reads an integer as jsonnum.Integer does.
 func (p *strictParser) integer() error {
-	start := p.i
-	if p.b[p.i] == '-' {
-		p.i++
+	end, err := jsonnum.Integer(p.b, p.i)
+	if err != nil {
+		return err
 	}
-	digits := p.i
-	for p.i < len(p.b) && p.b[p.i] >= '0' && p.b[p.i] <= '9' {
-		p.i++
-	}
-	switch {
-	case p.i == digits:
-		return errors.New("a number has no digits")
-	case p.b[digits] == '0' && p.i > digits+1:
-		return errors.New("a number has a leading zero")
-	case p.b[digits] == '0' && digits > start:
-		return errors.New("a number is a negative zero")
-	case p.i < len(p.b) && (p.b[p.i] == '.' || p.b[p.i] == 'e' || p.b[p.i] == 'E'):
-		return errors.New("a number is not an integer")
-	}
-	if _, err := strconv.ParseInt(string(p.b[start:p.i]), 10, 64); err != nil {
-		return errors.New("a number is out of range")
-	}
+	p.i = end
 	return nil
 }
 

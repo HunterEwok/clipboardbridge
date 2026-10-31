@@ -68,8 +68,23 @@ pub fn at_screen(uid: u32, target: &str) -> Verdict {
         return Verdict::Unchecked;
     };
     for id in list.lines().filter_map(|l| l.split_whitespace().next()) {
-        let props = loginctl(&["show-session", id, "-p", "User", "-p", "State", "-p", "Class", "-p", "Type"])
-            .unwrap_or_default();
+        let props = loginctl(&[
+            "show-session",
+            id,
+            "-p",
+            "User",
+            "-p",
+            "State",
+            "-p",
+            "Class",
+            "-p",
+            "Type",
+            "-p",
+            "Remote",
+            "-p",
+            "Seat",
+        ])
+        .unwrap_or_default();
         if at_screen_in(&props, uid, target) {
             return Verdict::Allowed;
         }
@@ -81,7 +96,8 @@ pub fn at_screen(uid: u32, target: &str) -> Verdict {
 /// the screen for target, as Go's atScreenIn: a session of the user's own
 /// (not its service manager or a greeter); for tmux any that is active or
 /// online, as over SSH; for the desktop an active graphical one, X11 or
-/// Wayland, so that a user signed in over SSH alone takes none.
+/// Wayland, on a seat or not remote, so that a user signed in over SSH alone
+/// takes none, even where SSH lets the session name its type.
 fn at_screen_in(props: &str, uid: u32, target: &str) -> bool {
     let get = |k: &str| props.lines().find_map(|l| l.trim().strip_prefix(k)?.strip_prefix('=')).unwrap_or("");
     if get("User") != uid.to_string() || !get("Class").starts_with("user") {
@@ -91,7 +107,7 @@ fn at_screen_in(props: &str, uid: u32, target: &str) -> bool {
     if target == crate::service::TMUX {
         return state == "active" || state == "online";
     }
-    state == "active" && matches!(get("Type"), "x11" | "wayland")
+    state == "active" && matches!(get("Type"), "x11" | "wayland") && (!get("Seat").is_empty() || get("Remote") == "no")
 }
 
 fn loginctl(args: &[&str]) -> Option<String> {
@@ -127,13 +143,25 @@ mod tests {
 
     #[test]
     fn ssh_alone_is_not_at_the_screen() {
-        let session =
-            |state: &str, class: &str, typ: &str| format!("User=1003\nState={state}\nClass={class}\nType={typ}\n");
+        let session = |state: &str, class: &str, typ: &str| {
+            format!("User=1003\nState={state}\nClass={class}\nType={typ}\nRemote=no\nSeat=seat0\n")
+        };
+        let remote = |typ: &str, seat: &str| {
+            format!("User=1003\nState=active\nClass=user\nType={typ}\nRemote=yes\nSeat={seat}\n")
+        };
         for (name, props, desktop, tmux) in [
             ("a desktop on X11", session("active", "user", "x11"), true, true),
             ("a desktop on Wayland", session("active", "user", "wayland"), true, true),
             ("a desktop in the background", session("online", "user", "wayland"), false, true),
-            ("SSH", session("active", "user", "tty"), false, true),
+            ("SSH", remote("tty", ""), false, true),
+            ("SSH that names a Wayland session", remote("wayland", ""), false, true),
+            ("a remote desktop on a seat", remote("x11", "seat0"), true, true),
+            (
+                "a local desktop with no seat",
+                "User=1003\nState=active\nClass=user\nType=wayland\nRemote=no\nSeat=\n".into(),
+                true,
+                true,
+            ),
             ("the service manager", session("active", "manager", "unspecified"), false, false),
             ("the login screen", session("active", "greeter", "wayland"), false, false),
             ("another user", "User=1000\nState=active\nClass=user\nType=x11\n".to_string(), false, false),

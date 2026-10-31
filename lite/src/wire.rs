@@ -6,8 +6,6 @@
 
 use std::io::Read;
 
-use serde::Deserialize;
-
 pub use cbb_core::wire::*;
 
 use crate::error::{Context, Error, Result};
@@ -24,9 +22,4 @@ pub fn read_frame(r: &mut (impl Read + ?Sized), max: usize) -> Result<Vec<u8>> {
         return Err(Error::msg("the connection broke in the middle of a frame"));
     }
     Ok(data)
-}
-
-/// Reads one frame of at most max bytes and decodes it.
-pub fn read_json<T: for<'de> Deserialize<'de>>(r: &mut impl Read, max: usize) -> Result<T> {
-    serde_json::from_slice(&read_frame(r, max)?).context("a frame is not a message")
 }
