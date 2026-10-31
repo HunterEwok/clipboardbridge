@@ -854,8 +854,17 @@ jobs:
           $rel = $env:CBB_RELEASE_DIR
           $zip = Join-Path $rel 'clipboardbridge-windows-amd64.zip'
           "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower())  clipboardbridge-windows-amd64.zip" | Set-Content (Join-Path $rel 'SHA256SUMS')
+          # A junction where the data folder goes is moved aside, never followed.
+          $data = Join-Path $env:ProgramData 'clipboardbridge'
+          $elsewhere = Join-Path $env:RUNNER_TEMP 'elsewhere'
+          New-Item -ItemType Directory -Force (Join-Path $elsewhere 'run\kept') | Out-Null
+          Set-Content (Join-Path $elsewhere 'kept.txt') 'x'
+          New-Item -ItemType Junction -Path $data -Target $elsewhere | Out-Null
           Get-Content packaging/windows/get.ps1 -Raw | Invoke-Expression
           if ((Get-Service clipboardbridge).Status -ne 'Running') { throw 'the service does not run' }
+          if (-not (Test-Path (Join-Path $elsewhere 'kept.txt')) -or -not (Test-Path (Join-Path $elsewhere 'run\kept'))) { throw 'install.ps1 went into the junction' }
+          if ((Get-Item -LiteralPath $data -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'the data folder is still the junction' }
+          if (-not (Get-ChildItem $env:ProgramData -Filter 'clipboardbridge.untrusted-*' -Force)) { throw 'install.ps1 did not move the junction aside' }
           $cbb = "$env:ProgramFiles\clipboardbridge\cbb.exe"
           $status = & $cbb status | Out-String
           if ($status -notmatch 'Not in a group') { throw "cbb status: $status" }

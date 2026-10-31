@@ -98,3 +98,21 @@ func TestOwnDirMovesLinksAside(t *testing.T) {
 		t.Errorf("the service's own directory was moved: %v", aside)
 	}
 }
+
+// TestControlMovesNamesAside checks that a folder in the place of the
+// control socket does not keep the service from listening.
+func TestControlMovesNamesAside(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "control.sock")
+	if err := os.MkdirAll(filepath.Join(path, "inside"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := listenControl(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.Close()
+	if aside, _ := filepath.Glob(path + ".untrusted-*"); len(aside) != 1 {
+		t.Errorf("moved aside: %v, want the folder", aside)
+	}
+}

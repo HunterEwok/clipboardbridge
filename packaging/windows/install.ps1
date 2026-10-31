@@ -285,14 +285,29 @@ if ($environment.Count -eq 0) {
 }
 
 # ProgramData lets every user create folders, so a folder that was there
-# before could belong to anyone: it gets administrators as owner and a
+# before could belong to anyone: one that is a link, or that neither the
+# administrators, the system nor this administrator owns, is moved aside
+# without being entered, and the folder gets administrators as owner and a
 # fresh, protected access list. The service makes run\ itself, with the
 # list that lets the group reach the control socket.
 $step = "narrowing $dataDir"
+if (Test-Path -LiteralPath $dataDir) {
+	$item = Get-Item -LiteralPath $dataDir -Force
+	$owner = $null
+	if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+		$owner = (Get-Acl -LiteralPath $dataDir).GetOwner([Security.Principal.SecurityIdentifier]).Value
+	}
+	$me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+	if ($owner -notin @('S-1-5-32-544', 'S-1-5-18', $me)) {
+		$aside = "$name.untrusted-$([guid]::NewGuid().ToString('N'))"
+		Rename-Item -LiteralPath $dataDir -NewName $aside
+		Write-Warning "$dataDir was not the administrators' own; it is now $aside"
+	}
+}
 New-Item -ItemType Directory -Force -Path $dataDir, (Join-Path $dataDir 'state'), (Join-Path $dataDir 'logs') | Out-Null
 Remove-Item -Recurse -Force (Join-Path $dataDir 'run') -ErrorAction SilentlyContinue
-exe icacls.exe @($dataDir, '/setowner', '*S-1-5-32-544', '/T', '/C', '/Q') | Out-Null
-exe icacls.exe @($dataDir, '/reset', '/T', '/C', '/Q') | Out-Null
+exe icacls.exe @($dataDir, '/setowner', '*S-1-5-32-544', '/T', '/C', '/L', '/Q') | Out-Null
+exe icacls.exe @($dataDir, '/reset', '/T', '/C', '/L', '/Q') | Out-Null
 exe icacls.exe @($dataDir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', "NT SERVICE\$name`:(OI)(CI)F", '/Q') | Out-Null
 
 $step = 'allowing clipboardbridge in Windows Firewall'

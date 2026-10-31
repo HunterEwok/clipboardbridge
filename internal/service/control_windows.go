@@ -67,8 +67,14 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 	} else if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, narrow, nil, nil, dacl, nil); err != nil {
 		return nil, fmt.Errorf("narrowing %s: %w", dir, err)
 	}
-	// A socket left by a service that did not stop cleanly blocks the name.
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	// A socket left by a service that did not stop cleanly blocks the name;
+	// anything else there, which a member of the group may have made in the
+	// control socket's directory, is moved aside rather than entered.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSocket == 0 {
+		if err := moveAside(path); err != nil {
+			return nil, err
+		}
+	} else if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	ln, err := net.Listen("unix", path)
@@ -106,11 +112,7 @@ func ownDir(dir string, sd *windows.SECURITY_DESCRIPTOR) (windows.Handle, error)
 		case ok:
 			return h, nil
 		}
-		var b [8]byte
-		if _, err := rand.Read(b[:]); err != nil {
-			return 0, err
-		}
-		if err := os.Rename(dir, fmt.Sprintf("%s.untrusted-%x", dir, b)); err != nil {
+		if err := moveAside(dir); err != nil {
 			return 0, err
 		}
 		if err := windows.CreateDirectory(p, sa); err != nil {
@@ -122,6 +124,16 @@ func ownDir(dir string, sd *windows.SECURITY_DESCRIPTOR) (windows.Handle, error)
 		return h, nil
 	}
 	return 0, fmt.Errorf("%s belongs to another user", dir)
+}
+
+// moveAside renames what is at path, without following or entering it,
+// to a name beside it that nothing else uses.
+func moveAside(path string) error {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return err
+	}
+	return os.Rename(path, fmt.Sprintf("%s.untrusted-%x", path, b))
 }
 
 // openOwnDir opens what is at path without following a link and reports

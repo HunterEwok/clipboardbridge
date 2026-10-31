@@ -701,7 +701,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - On Windows the service moves aside whatever another user put in the place of the admin
   socket's directory, a junction or a file included, instead of removing it, makes the
   directory with its narrow access list from the start, and checks and narrows it through one
-  handle.
+  handle. A folder or file in the place of the control socket is moved aside too, so it no
+  longer keeps the service from starting.
+- The Windows installer moves aside a data folder in ProgramData that is a link or that
+  neither the administrators nor the system owns, instead of resetting what is inside it.
 - Every frame of the member protocol holds only integers written as in signed bodies, members
   a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
   computers, the lite member and both phones alike, where some took `-0` for 0 before.
