@@ -141,6 +141,31 @@
       "valid": false
     },
     {
+      "name": "a high surrogate before an escape past the low ones",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwXHVkODAwXHVlMDAwIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": false
+    },
+    {
+      "name": "a high surrogate before an escape below the low ones",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwXHVkODAwXHVkYmZmIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": false
+    },
+    {
+      "name": "a high surrogate before another escape",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwXHVkODAwXG4iLCJyb2xlIjoiZnVsbCIsIm9zIjoibGludXgiLCJrZXkiOiJCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjPSJ9",
+      "valid": false
+    },
+    {
+      "name": "a high surrogate at the end of a string",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwXHVkODAwIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": false
+    },
+    {
+      "name": "the last surrogate pair escaped",
+      "body": "eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwXHVkYmZmXHVkZmZmIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
+      "valid": true
+    },
+    {
       "name": "a byte order mark",
       "body": "77u/eyJ2IjoxLCJ0eXBlIjoiZGV2aWNlIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwidGltZV9tcyI6MTcwMDAwMDAwMDAwMCwiZGV2aWNlIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJuYW1lIjoiTGFwdG9wIiwicm9sZSI6ImZ1bGwiLCJvcyI6ImxpbnV4Iiwia2V5IjoiQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Yz0ifQ==",
       "valid": false
