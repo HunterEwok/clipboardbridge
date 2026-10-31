@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -130,7 +131,7 @@ func (s *Service) addTV(ctx context.Context, st *tvremote.State, m *control.Mess
 		if !m.Consent {
 			return errors.New("a Roku takes keys over plain HTTP: the text crosses the home network unencrypted, and anyone on it can type on the Roku too; add it with -consent if that is all right")
 		}
-		name, err := roku.New(host, tvremote.Dialer().DialContext).Name(ctx)
+		name, err := roku.New(host, tvDial).Name(ctx)
 		if err != nil {
 			return tvError(tvremote.TV{Name: host, Kind: kind}, "reaching", err)
 		}
@@ -234,6 +235,12 @@ func (s *Service) tvStatus() []control.TV {
 	return out
 }
 
+// tvDial connects to a TV: only on the home network (tvremote.Dialer). A
+// variable for the tests.
+var tvDial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return tvremote.Dialer().DialContext(ctx, network, addr)
+}
+
 // tvPastes is whether remote pastes go to a TV.
 func (s *Service) tvPastes() bool {
 	st, err := tvremote.Load(s.cfg.StateDir)
@@ -271,7 +278,7 @@ func (s *Service) tvPaste(body group.CommandBody, text string, enter bool, still
 	defer cancel()
 	switch t.Kind {
 	case tvremote.Roku:
-		c := roku.New(t.Host, tvremote.Dialer().DialContext)
+		c := roku.New(t.Host, tvDial)
 		if _, err := c.Name(ctx); err != nil {
 			return s.tvRefused(res, t, err), true
 		}

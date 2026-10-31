@@ -5,9 +5,17 @@ package service
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/node"
+	"github.com/HunterEwok/clipboardbridge/internal/tvremote"
 )
 
 // TestTypeLater checks that a paste typed after its answer goes one at a
@@ -48,5 +56,48 @@ func TestTypeLater(t *testing.T) {
 			t.Fatal("the keyboard stays busy after typing stopped")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A paste typed on a Roku after its answer stops once the paste may no
+// longer go on: tvPaste hands still to typeLater.
+func TestTVPasteStopsWhenNotAllowed(t *testing.T) {
+	defer func(d time.Duration) { typingCheck = d }(typingCheck)
+	typingCheck = 10 * time.Millisecond
+	defer func(d func(context.Context, string, string) (net.Conn, error)) { tvDial = d }(tvDial)
+	tvDial = (&net.Dialer{}).DialContext
+	var keys atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/query/device-info":
+			w.Write([]byte(`<?xml version="1.0"?><device-info><user-device-name>Living room</user-device-name></device-info>`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/keypress/"):
+			keys.Add(1)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	if err := tvremote.Save(dir, tvremote.State{TVs: []tvremote.TV{{Name: "tv", Kind: tvremote.Roku, Host: srv.Listener.Addr().String(), Pastes: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{cfg: Config{StateDir: dir}, logf: t.Logf}
+	var allowed atomic.Bool
+	allowed.Store(true)
+	text := strings.Repeat("a", 400) // 8 s at a Roku's pace
+	res, ok := s.tvPaste(group.CommandBody{ID: "1"}, text, false, allowed.Load)
+	if !ok || res.Status != node.ResultDone {
+		t.Fatalf("tvPaste: %v %+v", ok, res)
+	}
+	for keys.Load() < 3 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	allowed.Store(false)
+	time.Sleep(200 * time.Millisecond)
+	stopped := keys.Load()
+	time.Sleep(300 * time.Millisecond)
+	if n := keys.Load(); n != stopped || n >= int32(len(text)) {
+		t.Fatalf("%d keys, then %d, after the paste was no longer allowed", stopped, n)
 	}
 }

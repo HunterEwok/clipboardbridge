@@ -681,6 +681,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The lite member no longer stops the download tool after it has finished, so a download
+  the tool ends a moment after its output stands.
 - A JPEG pasted on Windows stays within the image memory bound: the PNG that goes on the
   clipboard with it is made from the bitmap once the decoded pixels are dropped, in one
   buffer, and the bound counts it.

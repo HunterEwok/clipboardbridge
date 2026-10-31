@@ -76,3 +76,53 @@ func TestEKProfile(t *testing.T) {
 		}
 	}
 }
+
+// checkEKCert refuses a certificate of a maker's CA that is not an EK's.
+func TestCheckEKCertProfile(t *testing.T) {
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caTmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "maker"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dn, err := asn1.Marshal(pkix.Name{ExtraNames: []pkix.AttributeTypeAndValue{{Type: oidTPMManufacturer, Value: "id:54455354"}}}.ToRDNSequence())
+	if err != nil {
+		t.Fatal(err)
+	}
+	san, err := asn1.Marshal([]asn1.RawValue{{Class: asn1.ClassContextSpecific, Tag: 4, IsCompound: true, Bytes: dn}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue := func(usage x509.KeyUsage) []byte {
+		der, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{
+			SerialNumber: big.NewInt(2), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+			KeyUsage: usage, ExtraExtensions: []pkix.Extension{{Id: oidSubjectAltName, Critical: true, Value: san}},
+		}, ca, &key.PublicKey, caKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return der
+	}
+	roots := []*x509.Certificate{ca}
+	if _, err := checkEKCert(issue(x509.KeyUsageKeyAgreement), nil, roots); err != nil {
+		t.Fatalf("an EK: %v", err)
+	}
+	if _, err := checkEKCert(issue(x509.KeyUsageDigitalSignature), nil, roots); err == nil {
+		t.Fatal("a signing key of the maker's CA passed as an EK")
+	}
+}
