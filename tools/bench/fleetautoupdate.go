@@ -106,6 +106,11 @@ func groupUpdate(ctx context.Context, r *Report, f *Fleet, fd *feed, builds map[
 		if err := runsVersion(ctx, ds[0], "0.6.1"); err != nil {
 			return err
 		}
+		// The first member restarted on the new release: the second takes
+		// the archive only once they are connected again.
+		if err := syncs(ctx, g, ds[0], ds[1], "after the update", time.Minute); err != nil {
+			return err
+		}
 		// The second member's feed holds only the signed files: the
 		// archive can come only from the first member.
 		signed := filepath.Join(fd.dir, "feed-group-signed")

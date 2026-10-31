@@ -22,6 +22,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The bench's fleet runs install.sh's options against a bare nftables firewall (I2), uninstall
   with and without `--purge` checked against what was there before (I4), an upgrade in a group
   one member at a time (I6) and the previous release installed over the new state (I7).
+- The bench's fleet checks the content cache: a part readable only by the service, gone
+  10 minutes after its copy is replaced, and none after a restart (O9).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
   with `-cover` write which code the cases ran (docs/testbench.md, "Code coverage").
 - `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
