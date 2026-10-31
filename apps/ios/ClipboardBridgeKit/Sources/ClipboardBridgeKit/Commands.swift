@@ -259,7 +259,8 @@ public enum Commands {
         }
         guard hex32(b.to) else { throw refuse("the command names no valid device") }
         guard hex32(b.by) else { throw refuse("a command's by is not a device ID") }
-        guard b.expires_ms > b.time_ms, b.expires_ms - b.time_ms <= lifetimeMS else { throw refuse("the command's lifetime is not valid") }
+        // A time before 1970 is no signing time; from it the difference cannot overflow.
+        guard b.time_ms >= 0, b.expires_ms > b.time_ms, b.expires_ms - b.time_ms <= lifetimeMS else { throw refuse("the command's lifetime is not valid") }
         return b
     }
 

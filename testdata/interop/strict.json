@@ -436,6 +436,21 @@
       "name": "a negative zero in an unknown nested object",
       "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6MTAwMCwiZXhwaXJlc19tcyI6MjAwMDAsImxhdGVyIjp7ImEiOlt7ImIiOi0wfV19fQ==",
       "valid": false
+    },
+    {
+      "name": "a time before 1970",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6LTEsImV4cGlyZXNfbXMiOjIwMDAwfQ==",
+      "valid": false
+    },
+    {
+      "name": "the earliest time and the latest expiry",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6LTkyMjMzNzIwMzY4NTQ3NzU4MDgsImV4cGlyZXNfbXMiOjkyMjMzNzIwMzY4NTQ3NzU4MDd9",
+      "valid": false
+    },
+    {
+      "name": "the earliest time",
+      "body": "eyJ2IjoxLCJ0eXBlIjoicGFzdGUtb2ZmIiwiZ3JvdXAiOiIwMDExMjIzMzQ0NTU2Njc3IiwiYnkiOiJmZmVlZGRjY2JiYWE5OTg4Nzc2NjU1NDQzMzIyMTEwMCIsInRvIjoiMDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYiLCJpZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIiwidGltZV9tcyI6LTkyMjMzNzIwMzY4NTQ3NzU4MDgsImV4cGlyZXNfbXMiOjIwMDAwfQ==",
+      "valid": false
     }
   ],
   "manifests": [

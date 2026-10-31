@@ -371,7 +371,8 @@ object Commands {
         }
         if (b.to.length != 32 || b.to.any { it !in "0123456789abcdef" }) throw Refused("the command names no valid device")
         if (b.by.length != 32 || b.by.any { it !in "0123456789abcdef" }) throw Refused("a command's by is not a device ID")
-        if (b.expiresMS <= b.timeMS || b.expiresMS - b.timeMS > LIFETIME_MS) throw Refused("the command's lifetime is not valid")
+        // A time before 1970 is no signing time; from it the difference cannot overflow.
+        if (b.timeMS < 0 || b.expiresMS <= b.timeMS || b.expiresMS - b.timeMS > LIFETIME_MS) throw Refused("the command's lifetime is not valid")
         return b
     }
 

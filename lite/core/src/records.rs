@@ -167,7 +167,8 @@ impl Command {
         if !certs::is_id(&self.by) {
             return Err(Error::msg("a command's by is not a device ID"));
         }
-        if self.expires_ms <= self.time_ms || self.expires_ms - self.time_ms > COMMAND_LIFETIME_MS {
+        // A time before 1970 is no signing time; from it the difference cannot overflow.
+        if self.time_ms < 0 || self.expires_ms <= self.time_ms || self.expires_ms - self.time_ms > COMMAND_LIFETIME_MS {
             return Err(Error::msg("the command's lifetime is not valid"));
         }
         Ok(())

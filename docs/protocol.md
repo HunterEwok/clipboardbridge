@@ -343,7 +343,8 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 - Both sides MUST check the peer as in section 2 and against the records (section 10), and
   that the negotiated version is TLS 1.3 and the ALPN protocol is `clipboardbridge/1`. A
   connection to one's own device ID is closed.
-- The handshake must finish within 10 s; an implementation SHOULD close one that does not.
+- The handshake must finish within 10 s, counted from its start rather than from each read;
+  an implementation SHOULD close one that does not.
 - A lite member listens on the member port for the member protocol only: TLS with ALPN
   `clipboardbridge/1`, from home network addresses, at most 16 handshakes at once. It has
   no pairing window and no iPhone endpoints.
@@ -2362,7 +2363,7 @@ signed bodies (Conventions):
 | `by` | string | the signer's device ID: a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device |
 | `to` | string | the receiver's device ID |
 | `id` | string | 128 random bits as 32 lowercase hex characters; IDs compare as byte strings |
-| `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
+| `time_ms` | integer | when it was signed, milliseconds since the Unix epoch, not negative |
 | `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
 | `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send`; in a `paste` command: `paste` (the clipboard and the paste keys) or `type` (key by key) |
 | `enter` | bool | in a `paste` command: press Enter after the text |
