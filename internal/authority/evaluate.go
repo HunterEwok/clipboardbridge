@@ -670,17 +670,18 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64) (*Hash, int64
 	}
 	// An admin's removal or freeze of a claimant that the claimant had
 	// seen voids its claim; one the claimant had not seen disputes it,
-	// unless its author had seen a record of the claimed root, so wrote it
-	// after the handover: that one counts under the new root.
+	// whatever else its author had seen: a claimed root can sign before
+	// its claim takes effect, so nothing in seen tells a removal written
+	// after the handover. Such a removal is signed under an admin CA of
+	// the new root, which counts only in the new root's epoch.
 	disputes := map[*rec][]*rec{}
 	var kept []*rec
 	for _, c := range live {
 		void := false
 		for _, r := range ep.removals(c.Body.Signer) {
-			switch {
-			case seenOf(&c.Body, r.Body.Signer) >= r.Body.Seq:
+			if seenOf(&c.Body, r.Body.Signer) >= r.Body.Seq {
 				void = true
-			case seenOf(&r.Body, claimRoot(c)) == 0:
+			} else {
 				disputes[c] = append(disputes[c], r)
 			}
 		}
