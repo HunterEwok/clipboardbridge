@@ -181,10 +181,43 @@ pub fn check_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether name, before its first dot, is a device name of Windows that a
+/// manifest may not hold: CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to
+/// LPT9, in any case of ASCII letters, as Go's clip.reserved.
 fn reserved(name: &str) -> bool {
     let base = name.split('.').next().unwrap_or("").to_ascii_uppercase();
     match base.as_str() {
         "CON" | "PRN" | "AUX" | "NUL" => true,
         b => b.len() == 4 && (b.starts_with("COM") || b.starts_with("LPT")) && (b'1'..=b'9').contains(&b.as_bytes()[3]),
+    }
+}
+
+/// Whether name is a device name of Windows, as Go's clip.device: before
+/// its first dot, and without the spaces that end that part, one of CON,
+/// PRN, AUX, NUL, CONIN$, CONOUT$, or COM or LPT followed by one digit 0 to
+/// 9 or one of the superscripts ¹, ² and ³, in any case of ASCII letters.
+fn device(name: &str) -> bool {
+    let base = name.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_uppercase();
+    match base.as_str() {
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" => true,
+        b => match b.strip_prefix("COM").or_else(|| b.strip_prefix("LPT")) {
+            Some(n) => {
+                matches!(n, "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "\u{b9}" | "\u{b2}" | "\u{b3}")
+            }
+            None => false,
+        },
+    }
+}
+
+/// The name under which a receiver writes a name that check_name took, as
+/// Go's clip.SaveName: a device name of Windows gets "_" after its base,
+/// the part before its first dot, and any other name stays as it is.
+pub fn save_name(name: &str) -> String {
+    if !device(name) {
+        return String::from(name);
+    }
+    match name.split_once('.') {
+        Some((base, ext)) => format!("{base}_.{ext}"),
+        None => format!("{name}_"),
     }
 }

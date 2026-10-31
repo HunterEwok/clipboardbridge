@@ -3,6 +3,7 @@
 
 package io.github.hunterewok.clipboardbridge.kit
 
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -168,6 +169,24 @@ class ContentTest {
         assertEquals(listOf("a.txt", "A (2).txt", "a (3).txt", "CON_"), m.parts.map { it.path })
         assertTrue(m.isValid)
         assertEquals(6L, m.size)
+    }
+
+    /**
+     * testdata/interop/media-names.json, as Go's TestNameVectors writes it: the kit takes the names Go takes, writes the
+     * device names of Windows under Go's names and cleans names as Go does.
+     */
+    @Test
+    fun nameVectors() {
+        val cases = Interop.read("media-names.json").jsonArray
+        assertTrue(cases.isNotEmpty())
+        for (c in cases) {
+            val o = c.jsonObject
+            val name = o.str("name")
+            val valid = o.getValue("valid").jsonPrimitive.boolean
+            assertEquals(valid, Media.checkName(name), name)
+            if (valid) assertEquals(o.str("save"), Media.saveName(name), name)
+            assertEquals(o.str("clean"), Media.cleanName(name), name)
+        }
     }
 
     @Test

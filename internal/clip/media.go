@@ -204,19 +204,73 @@ func CheckName(name string) error {
 }
 
 // reserved reports whether name, before its first dot, is a device name of
-// Windows: CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to LPT9, in any case.
+// Windows that a manifest may not hold: CON, PRN, AUX, NUL, COM1 to COM9
+// and LPT1 to LPT9, in any case of ASCII letters. Windows reserves more
+// (device); those a receiver takes and renames, as members of earlier
+// versions send them.
 func reserved(name string) bool {
-	base, _, _ := strings.Cut(strings.ToUpper(name), ".")
-	switch base {
+	base, _, _ := strings.Cut(name, ".")
+	switch base = upperASCII(base); base {
 	case "CON", "PRN", "AUX", "NUL":
 		return true
 	}
 	return len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9'
 }
 
+// device reports whether name is a device name of Windows: before its
+// first dot, and without the spaces that end that part, one of CON, PRN,
+// AUX, NUL, CONIN$, CONOUT$, or COM or LPT followed by one digit 0 to 9 or
+// one of the superscripts ¹, ² and ³, in any case of ASCII letters.
+func device(name string) bool {
+	base, _, _ := strings.Cut(name, ".")
+	switch base = upperASCII(strings.TrimRight(base, " ")); base {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+		return true
+	}
+	if !strings.HasPrefix(base, "COM") && !strings.HasPrefix(base, "LPT") {
+		return false
+	}
+	switch base[3:] {
+	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u00b9", "\u00b2", "\u00b3":
+		return true
+	}
+	return false
+}
+
+// upperASCII returns s with its ASCII letters in upper case and every
+// other character as it is, as every implementation compares the names.
+func upperASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'a' && c <= 'z' {
+			b[i] = c - 'a' + 'A'
+		}
+	}
+	return string(b)
+}
+
+// SaveName is the name under which a receiver writes a name that
+// CheckName took: a device name of Windows (device) gets "_" after its
+// base, as CleanName gives it, and any other name stays as it is.
+func SaveName(name string) string {
+	if !device(name) {
+		return name
+	}
+	return withUnderscore(name)
+}
+
+// SavePath is SaveName for each name of a path.
+func SavePath(path string) string {
+	names := strings.Split(path, "/")
+	for i, n := range names {
+		names[i] = SaveName(n)
+	}
+	return strings.Join(names, "/")
+}
+
 // CleanName makes a name that CheckName takes out of one a system gave,
 // such as a file's: the characters it does not allow become "_", a
-// reserved name gets "_" after its base and one that ends in a dot or a
+// device name of Windows (device) gets "_" after its base and one that ends in a dot or a
 // space gets "_" after it.
 func CleanName(name string) string {
 	name = strings.ToValidUTF8(name, "_")
@@ -241,17 +295,11 @@ func CleanName(name string) string {
 	}
 }
 
-// fixName gives a reserved name "_" after its base and one that ends in a
-// dot or a space "_" after it.
+// fixName gives a device name of Windows "_" after its base and one that
+// ends in a dot or a space "_" after it.
 func fixName(name string) string {
-	if reserved(name) {
-		// CON.txt becomes CON_.txt: Windows reserves the base with any
-		// extension.
-		base, ext, dot := strings.Cut(name, ".")
-		name = base + "_"
-		if dot {
-			name += "." + ext
-		}
+	if device(name) {
+		name = withUnderscore(name)
 	}
 	if strings.HasSuffix(name, ".") || strings.HasSuffix(name, " ") {
 		name += "_"
@@ -272,4 +320,16 @@ func (m *Manifest) key() string {
 		b.Write(p.SHA256)
 	}
 	return b.String()
+}
+
+// withUnderscore puts "_" after a name's base, the part before its first
+// dot: CON.txt becomes CON_.txt, as Windows reserves the base with any
+// extension.
+func withUnderscore(name string) string {
+	base, ext, dot := strings.Cut(name, ".")
+	name = base + "_"
+	if dot {
+		name += "." + ext
+	}
+	return name
 }

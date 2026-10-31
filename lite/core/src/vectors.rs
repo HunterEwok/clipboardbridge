@@ -874,3 +874,21 @@ fn hlc_ahead() {
     let refused = Timestamp { wall: v["refused"].as_i64().unwrap(), logical: 0 };
     assert!(c.ahead(refused), "taken after a chain of timestamps ahead");
 }
+
+/// The names of media-names.json, as Go's TestNameVectors writes them:
+/// the lite core takes the names Go takes in a manifest, and writes the
+/// device names of Windows under the names Go gives them.
+#[test]
+fn media_names() {
+    let v = vectors("media-names.json");
+    let cases = v.as_array().unwrap();
+    assert!(!cases.is_empty());
+    for c in cases {
+        let name = c["name"].as_str().unwrap();
+        let valid = c["valid"].as_bool().unwrap();
+        assert_eq!(crate::media::check_name(name).is_ok(), valid, "{name:?}");
+        if valid {
+            assert_eq!(crate::media::save_name(name), c["save"].as_str().unwrap(), "{name:?}");
+        }
+    }
+}
