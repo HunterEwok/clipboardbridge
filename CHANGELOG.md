@@ -27,6 +27,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The bench's fleet runs the lite member (`-cbb-lite FILE`) joined to full members: `cbb watch`
   and `watch -0`, the ZX Next's frames (U9), and a copy of a file giving it only the text that
   goes with it (O6).
+- The bench's fleet checks the fetch limits of a part's holder with the forge: chunks padded to
+  16 KiB, a get over 1 MiB dropped, and too many gets at once closing the connection (O15).
 - The bench's time suite runs the hub's key renewed each credential period, with a client
   away from home taking the next key ahead and one off across the switch (W12).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
