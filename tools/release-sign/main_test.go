@@ -145,6 +145,22 @@ func TestDrill(t *testing.T) {
 	call(t, verify, "-roots", roots+"1,"+roots+"2", dist)
 }
 
+// Each fault of drill -fault gives files that verify refuses, as the
+// installers' tests expect of get.sh and get.ps1.
+func TestDrillFaults(t *testing.T) {
+	for _, fault := range drillFaults {
+		dist, roots := t.TempDir(), filepath.Join(t.TempDir(), "roots.pem")
+		archives(t, dist)
+		call(t, drill, "-version", "0.6.0", "-fault", fault, dist, roots)
+		data := must(os.ReadFile(roots))
+		r1, _ := pem.Decode(data)
+		write(t, roots+"1", pem.EncodeToMemory(r1))
+		if verify([]string{"-roots", roots + "1", dist}) == nil {
+			t.Errorf("%s: verify took it", fault)
+		}
+	}
+}
+
 func TestSignRefusesABadBody(t *testing.T) {
 	dir := t.TempDir()
 	k, _ := newKey(t, dir, "k")

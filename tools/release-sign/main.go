@@ -488,6 +488,50 @@ func seHelper() (string, error) {
 	return path, nil
 }
 
+// drillFaults are the faults drill -fault puts in keys.json, each a body
+// that every reader refuses (docs/protocol.md, section 16).
+var drillFaults = []string{"empty-use", "upper-case", "twice", "null", "no-time", "status-brace"}
+
+// faultyKeys signs body, a valid keys.json body, with fault put in.
+func faultyKeys(body []byte, fault string, key *ecdsa.PrivateKey) (release.File, error) {
+	s := string(body)
+	switch fault {
+	case "empty-use":
+		s = strings.Replace(s, `"name":"drill"`, `"name":"drill","use":""`, 1)
+	case "upper-case":
+		s = strings.Replace(s, `"expires_ms":`, `"Expires_ms":1,"expires_ms":`, 1)
+	case "twice":
+		s = strings.Replace(s, `"seq":1,`, `"seq":1,"seq":2,`, 1)
+	case "null":
+		s = strings.TrimSuffix(s, "}") + `,"later":null}`
+	case "no-time":
+		i := strings.Index(s, `"time_ms":`)
+		j := strings.Index(s[i:], ",")
+		s = s[:i] + s[i+j+1:]
+	default:
+		return release.File{}, fmt.Errorf("unknown fault %q", fault)
+	}
+	if s == string(body) {
+		return release.File{}, fmt.Errorf("the fault %q changed nothing", fault)
+	}
+	return signRaw([]byte(s), key)
+}
+
+// signRaw signs data as it is, without the checks of release.Sign.
+func signRaw(data []byte, key *ecdsa.PrivateKey) (release.File, error) {
+	spki, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		return release.File{}, err
+	}
+	sum := sha256.Sum256(data)
+	sig, err := ecdsa.SignASN1(randReader, key, sum[:])
+	if err != nil {
+		return release.File{}, err
+	}
+	kh := sha256.Sum256(spki)
+	return release.File{Body: data, Sig: sig, Key: kh[:]}, nil
+}
+
 // drill signs the files in dir as a release with new keys in files: two
 // roots, whose public keys go to rootsPath, and a release key.
 func drill(args []string) error {
@@ -495,6 +539,7 @@ func drill(args []string) error {
 	version := fs.String("version", "0.0.1", "the release's version")
 	channelKey := fs.Bool("channel-key", false, "sign stable.json with a channel key, as the server renews it")
 	relChannel := fs.String("release-channel", "stable", "the channel release.json names, which stable.json names it under anyway, for the installers' tests")
+	fault := fs.String("fault", "", "a keys.json no reader takes, for the installers' tests: "+strings.Join(drillFaults, ", "))
 	fs.Parse(args)
 	if fs.NArg() != 2 {
 		return errors.New("drill needs the directory and the file for the roots")
@@ -531,9 +576,24 @@ func drill(args []string) error {
 		k.Keys = append(k.Keys, release.Key{Key: chSpki, Name: "drill channel", Use: release.UseChannel})
 		chSigner = ks[3]
 	}
+	if *fault == "status-brace" {
+		// A status key whose name holds a brace signs the release.
+		stSpki, _ := x509.MarshalPKIXPublicKey(&ks[3].PublicKey)
+		k.Keys = append(k.Keys, release.Key{Key: stSpki, Name: "a}b", Use: release.UseStatus})
+		chSigner = ks[3]
+		data, _ := json.Marshal(r)
+		if rel, err = signRaw(data, ks[3]); err != nil {
+			return err
+		}
+	}
 	keysFile, err := release.Sign(k, ks[0])
 	if err != nil {
 		return err
+	}
+	if *fault != "" && *fault != "status-brace" {
+		if keysFile, err = faultyKeys(keysFile.Body, *fault, ks[0]); err != nil {
+			return err
+		}
 	}
 	h := rel.Hash()
 	ch, err := release.Sign(release.Channel{V: 1, Type: release.TypeChannel, Channel: "stable", Seq: 1, TimeMS: t,
