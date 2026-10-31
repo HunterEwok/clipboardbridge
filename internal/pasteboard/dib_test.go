@@ -12,6 +12,9 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
@@ -292,6 +295,8 @@ func pixBytes(t *testing.T, img image.Image) int64 {
 		return int64(len(m.Pix))
 	case *image.YCbCr:
 		return int64(len(m.Y) + len(m.Cb) + len(m.Cr))
+	case *image.CMYK:
+		return int64(len(m.Pix))
 	}
 	t.Fatalf("an image of type %T", img)
 	return 0
@@ -332,25 +337,111 @@ func TestImageBytesCoverDecoding(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkImageBytes(t, "gray JPEG", clip.TypeJPEG, b.Bytes())
+	// image/jpeg keeps every block's coefficients of a progressive JPEG, and
+	// converts the planes of an unusual layout or of four components.
+	files, err := filepath.Glob("testdata/*.jpg")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("the JPEG files: %v", err)
+	}
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkImageBytes(t, filepath.Base(f), clip.TypeJPEG, data)
+	}
 	// A PNG cut short before its image data counts as transparent.
 	if !pngTransparent(rawPNG(t, w, h, 8, 0, nil)[:20]) {
 		t.Error("a PNG cut short counts as opaque")
 	}
 }
 
+// checkImageBytes checks that what decoding the image allocates, measured,
+// and its DIB are not more than imageBytes counts. (Making the DIB of some
+// kinds of image boxes each pixel's color, garbage that is not held.)
 func checkImageBytes(t *testing.T, name, typ string, data []byte) {
 	t.Helper()
 	cfg, err := decodeConfig(typ, data)
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
+	counted, err := imageBytes(typ, data, cfg)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
 	img, err := decodeImage(typ, data)
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
-	if got, want := imageBytes(typ, data, cfg), pixBytes(t, img)+int64(len(imageDIBV5(img))-v5HeaderSize); got < want {
-		t.Errorf("%s (%T): counted %d bytes, it takes %d", name, img, got, want)
+	runtime.ReadMemStats(&after)
+	dib := imageDIBV5(img)
+	// What the readers take besides the pixels: buffers, tables, zlib.
+	const besides = 128 << 10
+	if took := int64(after.TotalAlloc-before.TotalAlloc) + int64(len(dib)); took > counted+besides {
+		t.Errorf("%s (%T): counted %d bytes, decoding took %d", name, img, counted, took)
 	}
+	if want := pixBytes(t, img) + int64(len(dib)-v5HeaderSize); counted < want {
+		t.Errorf("%s (%T): counted %d bytes, it takes %d", name, img, counted, want)
+	}
+}
+
+// TestDecodeProgressiveJPEGBudget: a progressive JPEG's frame and first
+// scan header, a few hundred bytes, make image/jpeg allocate its
+// coefficients before any data; one too large for the budget is refused
+// before it allocates them.
+func TestDecodeProgressiveJPEGBudget(t *testing.T) {
+	for _, f := range []string{"gray-progressive.jpg", "ycbcr420-progressive.jpg"} {
+		data, err := os.ReadFile(filepath.Join("testdata", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		head := progressiveHead(t, data, 7500, 7600)
+		cfg, err := decodeConfig(clip.TypeJPEG, head)
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if n, err := imageBytes(clip.TypeJPEG, head, cfg); err != nil || n <= maxImageBytes {
+			t.Errorf("%s at 7500 by 7600: counted %d bytes, %v", f, n, err)
+		}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		if _, err := decodeImage(clip.TypeJPEG, head); err == nil {
+			t.Errorf("%s at 7500 by 7600: decoded", f)
+		}
+		runtime.ReadMemStats(&after)
+		if took := after.TotalAlloc - before.TotalAlloc; took > 1<<20 {
+			t.Errorf("%s at 7500 by 7600: refusing it took %d bytes", f, took)
+		}
+	}
+	// One that cannot be read up to its frame is refused.
+	for _, data := range [][]byte{{0xFF, 0xD8}, {0xFF, 0xD8, 0xFF, 0xDA, 0, 2}, {0xFF, 0xD8, 0xFF, 0xC2, 0, 40}} {
+		if _, err := readJPEGLayout(data); err == nil {
+			t.Errorf("% x: read", data)
+		}
+	}
+}
+
+// progressiveHead is data up to the end of its first scan header, with the
+// frame's size set to w by h.
+func progressiveHead(t *testing.T, data []byte, w, h int) []byte {
+	t.Helper()
+	out := bytes.Clone(data)
+	for i := 2; i+4 <= len(out); {
+		m, n := out[i+1], int(binary.BigEndian.Uint16(out[i+2:]))
+		switch m {
+		case 0xC2:
+			binary.BigEndian.PutUint16(out[i+5:], uint16(h))
+			binary.BigEndian.PutUint16(out[i+7:], uint16(w))
+		case 0xDA:
+			return out[:i+2+n]
+		}
+		i += 2 + n
+	}
+	t.Fatal("no scan")
+	return nil
 }
 
 func TestImageDIBV5SubImage(t *testing.T) {

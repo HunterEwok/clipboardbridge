@@ -658,6 +658,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The memory a received JPEG takes on a Windows member is counted as image/jpeg uses it: a
+  progressive JPEG's coefficients for every block, the black plane of a four-component one
+  and the image an unusual layout or CMYK is converted to, from the frame header before any
+  pixel is read, so the 384 MiB bound holds for every JPEG.
 - The forwarder counts only the groups that are away against the 32 MiB it keeps of their
   authority records, and past it forgets from the wide network that holds the most of them
   (docs/relay-budget.md), so the records of a group that is away outlast the groups of other
