@@ -182,4 +182,20 @@ class ContentTest {
         assertEquals(null, store.open(two))
         assertEquals(20L, store.open(big)!!.size)
     }
+
+    /** While a part is served, a cancel of a part that is neither queued nor served is not kept, as in Go, so the peer's cancels hold at most one count for each part it asked for. */
+    @Test
+    fun cancelsOfOtherParts() {
+        val node = MemberNode(SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock()), "Pixel")
+        val c = MemberNode.Conn(Pipe.pair().first, null)
+        val part = ByteArray(32) { 7 }
+        synchronized(c.gets) {
+            c.serving = true
+            c.current = part.toHex()
+        }
+        for (i in 0 until 1000) node.get(c, Member.Get(ByteArray(32).also { it[0] = i.toByte(); it[1] = (i shr 8).toByte() }, 0, 0))
+        assertEquals(0, synchronized(c.gets) { c.cancels.size })
+        node.get(c, Member.Get(part, 0, 0))
+        assertEquals(mapOf(part.toHex() to 1), synchronized(c.gets) { c.cancels.toMap() })
+    }
 }
