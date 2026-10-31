@@ -1873,10 +1873,11 @@ input, and the sender is told so.
 - **Enter and root consoles are off by default** even when remote paste is on: the `enter`
   flag is refused, and so are the Linux text console helper and a tmux session of root,
   until the device's user turns each on there (`cbb paste-receive on -enter`,
-  `-console`). A line break would run what comes before it in tmux, on a console and
-  in typed text, so without the leave for Enter such a text is refused there, and a
-  pasted one goes only to a desktop session, whose terminals take it bracketed. So a
-  paste can at most put text in front of the user, not run it.
+  `-console`). A line break would run what comes before it in tmux, on a console, in
+  typed text and in a desktop's shell or console window that does not take a paste
+  bracketed (cmd.exe, sh), which no target can tell, so without the leave for Enter such
+  a text is refused on every target. So a paste can at most put text in front of the
+  user, not run it.
 - **Any admin turns it off on any member** with a signed command, like the sync mode
   (D-55), when an admin device is lost: it takes effect at once, needs no consent, and only
   the device's own user turns it on again.
