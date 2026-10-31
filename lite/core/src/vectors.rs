@@ -350,6 +350,32 @@ fn go_removed_admin() {
     }
 }
 
+/// An admin phone removed by the current root after a handover, or by
+/// another admin phone, signs a root record afterwards, for a root of its
+/// own that revokes the group's roots and admins: that root is not known
+/// either (go-removed-admins.json, as Go's TestRemovedAdminCases writes it).
+#[test]
+fn go_removed_admins() {
+    let cases = vectors("go-removed-admins.json");
+    let cases = cases.as_array().unwrap();
+    assert_eq!(cases.len(), 2);
+    for v in cases {
+        let case = v["name"].as_str().unwrap();
+        let rs = records(&v["records"]);
+        let mut reversed = rs.clone();
+        reversed.reverse();
+        for (name, recs) in [("as written", &rs), ("reversed", &reversed)] {
+            let mut s = Records::new(&cert(&v["group_ca"]));
+            let _ = s.add_all(recs);
+            assert_eq!(s.roots().len() as u64, v["roots"].as_u64().unwrap(), "{case}, {name}");
+            for k in v["keys"].as_array().unwrap() {
+                let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+                assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{case}, {name}: {}", k["name"]);
+            }
+        }
+    }
+}
+
 /// A device is an admin, with the role and store of that record, only by a
 /// record a root's own key signed, and a removed admin's records no longer
 /// decide a device's entry (go-authority.json, as Go's
@@ -733,10 +759,39 @@ fn strict() {
 #[test]
 fn strict_generated() {
     let v = vectors("strict-generated.json");
+    for kind in ["records", "commands", "manifests"] {
+        assert!(!v[kind].as_array().unwrap().is_empty(), "no {kind}");
+    }
+    let wrong = strict_wrong(&v);
+    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+}
+
+/// The mutant vectors (strict-mutants-*.json): valid bodies changed byte by
+/// byte, each with the verdict of the tables of docs/protocol.md.
+#[test]
+fn strict_mutants() {
+    let mut wrong = Vec::new();
+    let mut n = 0;
+    for i in 1.. {
+        let name = format!("strict-mutants-{i}.json");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop").join(&name);
+        if !path.exists() {
+            break;
+        }
+        let v = vectors(&name);
+        n += v["records"].as_array().unwrap().len();
+        wrong.extend(strict_wrong(&v));
+    }
+    assert!(n > 0, "no mutant vectors");
+    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+}
+
+/// strict_wrong returns the vectors of a file in the form of
+/// strict-generated.json that the lite member reads otherwise.
+fn strict_wrong(v: &Value) -> Vec<String> {
     let mut wrong = Vec::new();
     for kind in ["records", "commands", "manifests"] {
-        let cases = v[kind].as_array().unwrap();
-        assert!(!cases.is_empty(), "no {kind}");
+        let Some(cases) = v[kind].as_array() else { continue };
         for c in cases {
             let mut body = bytes(&c["body"]);
             if let Some(pad) = c["pad"].as_u64() {
@@ -760,7 +815,7 @@ fn strict_generated() {
             }
         }
     }
-    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+    wrong
 }
 
 /// The server credentials and release files of strict-files.json, which

@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -856,5 +858,42 @@ func TestStrictGenerated(t *testing.T) {
 		if (err == nil) != c.Valid {
 			t.Errorf("command %q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
 		}
+	}
+}
+
+// TestStrictMutants checks Go's verdict on the mutant vectors
+// (testdata/interop/strict-mutants-*.json): valid bodies changed byte by
+// byte, each with the verdict of the tables of docs/protocol.md.
+func TestStrictMutants(t *testing.T) {
+	n := 0
+	for i := 1; ; i++ {
+		data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "interop", fmt.Sprintf("strict-mutants-%d.json", i)))
+		if errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v genVectors
+		if err := json.Unmarshal(data, &v); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range v.Records {
+			_, err := parseRecordBody(c.Full())
+			if (err == nil) != c.Valid {
+				t.Errorf("record %q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
+			}
+			n++
+		}
+		for _, c := range v.Commands {
+			_, err := parseCommandBody(c.Full())
+			if (err == nil) != c.Valid {
+				t.Errorf("command %q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
+			}
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("no mutant vectors")
 	}
 }
