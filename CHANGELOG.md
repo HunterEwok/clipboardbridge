@@ -728,6 +728,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - install.sh no longer fails with ufw on a computer whose kernel has no IPv6
   (`ipv6.disable=1`) or whose ufw has `IPV6=no`: the firewall rules then name the IPv4
   home networks only.
+- A relay on Windows told to listen on any free port no longer gives up when
+  the ports the system hands out fall in a range Windows reserves for the other protocol; it
+  takes turns picking the UDP port first and the TCP port first.
 - The pairing window issues a joiner's certificate by the time-scaled build's clock, as the
   renewals do, so the bench can check a join near the end of the group CA (K5); a release
   build is unchanged.

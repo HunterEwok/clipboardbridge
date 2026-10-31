@@ -375,8 +375,11 @@ func TestTwoClaimsStop(t *testing.T) {
 
 // TestRemovedPhoneCannotTakeBack plays the scenarios of the second
 // verification of version 1 (X1 and X2): after B's claim took effect and
-// its new root removed A, A removes B with its admin key and claims the
-// group for its own root.
+// its new root removed A, A removes B with its old admin CA and claims the
+// group for its own root. A removal under the old root's admin CA disputes
+// the claim whatever its author had seen, so the group stops: A does not
+// get it (the residual of every rule without the root: a stolen admin key
+// can stop a group whose root is lost, never take it).
 func TestRemovedPhoneCannotTakeBack(t *testing.T) {
 	w := newWorld(t)
 	w.makeAdmin("A", "phone", phonePowers)
@@ -387,37 +390,48 @@ func TestRemovedPhoneCannotTakeBack(t *testing.T) {
 	// As the new root: B's own device, B an admin again, A removed.
 	w.device("R2", "B", "phone", nil, nil, true)
 	w.sign("R2 removes A", "R2", revoke(w.adminKey("A"), w.members["A"]), nil)
-	// A, removed, removes B and claims the group with its old admin CA.
-	w.sign("A removes B", "A", revoke(w.adminKey("B"), w.members["B"]), nil)
-	q := w.claim("A", "Q", nil)
-	first[q.ID()] = 0
-	w.now = authority.DefaultDelay * 3
 	s := w.evalAll(first)
-	if len(s.Roots) != 2 || s.Roots[1] != authority.KeyHashOf(w.roots["R2"].Cert) {
-		t.Fatalf("the group should stay with R2: %s", mustEncode(t, s))
+	if len(s.Roots) != 2 || s.Roots[1] != authority.KeyHashOf(w.roots["R2"].Cert) || s.Stop != "none" {
+		t.Fatalf("the group should be R2's: %s", mustEncode(t, s))
 	}
-	if !revoked(s, w.adminKey("A")) || revoked(s, w.adminKey("B")) || revoked(s, w.members["B"]) {
-		t.Fatalf("A should be removed and B not: %s", mustEncode(t, s))
+	if !revoked(s, w.adminKey("A")) || s.RootDevice != w.ids["B"] {
+		t.Fatalf("A should be removed and B hold the root: %s", mustEncode(t, s))
 	}
-	if s.RootDevice != w.ids["B"] || s.Stop != "none" {
-		t.Fatalf("B should hold the root: %s", mustEncode(t, s))
-	}
-	// If A pretends it wrote its removal before the handover, the removal
-	// disputes the claim and the group stops; A does not get it.
+	// A, removed, removes B and claims the group with its old admin CA.
 	w2 := w.fork()
-	w2.sign("A removes B, pretending", "A", revoke(w.adminKey("B")), w.without(authority.KeyHashOf(w.roots["R2"].Cert)))
-	if s := w2.evalAll(first); s.Stop != "full" || len(s.Roots) != 1 || claimState(s, c.ID()) != "disputed" {
-		t.Fatalf("A's pretended removal should stop the group: %s", mustEncode(t, s))
+	w2.sign("A removes B", "A", revoke(w.adminKey("B"), w.members["B"]), nil)
+	q := w2.claim("A", "Q", nil)
+	first[q.ID()] = 0
+	w2.now = authority.DefaultDelay * 3
+	s = w2.evalAll(first)
+	if s.Stop != "full" || len(s.Roots) != 1 || claimState(s, c.ID()) != "disputed" {
+		t.Fatalf("A's removal should stop the group: %s", mustEncode(t, s))
 	}
 	// A claim that pretends it never saw B's claim competes with it: the
-	// group stops, and A still does not get it (the residual of every
-	// rule without the root: a stolen admin key can stop a group whose
-	// root is lost, never take it).
+	// group stops, and A still does not get it.
 	w3 := w.fork()
 	p := w3.claim("A", "P", []authority.Seen{{Key: w.adminKey("A"), Seq: 1}})
 	first[p.ID()] = 0
 	if s := w3.evalAll(first); s.Stop != "full" || len(s.Roots) != 1 {
 		t.Fatalf("a pretended claim should stop the group: %s", mustEncode(t, s))
+	}
+}
+
+// TestClaimedRootSignsEarly is a thief whose claimed root signs while its
+// claim waits: an admin who holds that record and removes the claimant
+// still disputes the claim.
+func TestClaimedRootSignsEarly(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("T", "phone", phonePowers)
+	w.makeAdmin("H", "phone", phonePowers)
+	c := w.claim("H", "M", nil)
+	w.device("M", "H", "phone", nil, nil, true)
+	w.sign("T removes H", "T", revoke(w.adminKey("H"), w.members["H"]), nil)
+	first := map[authority.Hash]int64{c.ID(): 0}
+	w.now = authority.DefaultDelay * 2
+	s := w.evalAll(first)
+	if s.Stop != "full" || len(s.Roots) != 1 || claimState(s, c.ID()) != "disputed" {
+		t.Fatalf("the removal should dispute the claim: %s", mustEncode(t, s))
 	}
 }
 
