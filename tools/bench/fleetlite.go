@@ -218,4 +218,66 @@ func liteMember(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 		}
 		return nil
 	})
+	liteRelease(ctx, r, lite)
+}
+
+// liteRelease (S22): the lite member checks a signed release's envelope
+// itself: cbb update -check takes a release that the test roots sign and
+// refuses one whose channel or keys no known key signed.
+func liteRelease(ctx context.Context, r *Report, lite *Device) {
+	const p = "fleet/S22-lite-release/"
+	var fd *feed
+	var built string
+	if r.Do(p+"feed", func() error {
+		var err error
+		if fd, err = newFeed(ctx); err != nil {
+			return err
+		}
+		built, err = fd.build(ctx, "0.9.0", goarchOf(), goarchOf())
+		return err
+	}) != nil {
+		return
+	}
+	check := func(name string, o releaseOpts) (string, error) {
+		dir, err := fd.publish(ctx, built, name, "0.9.0", o)
+		if err != nil {
+			return "", err
+		}
+		at, err := fd.toDevice(ctx, lite, dir)
+		if err != nil {
+			return "", err
+		}
+		out, err := runOut(ctx, lite, feedEnv(at)+"cbb update -check", time.Minute)
+		fmt.Fprintf(r.out, "S22 %s: %s\n", name, strings.Join(strings.Fields(out), " "))
+		return out, err
+	}
+	r.Do(p+"signed", func() error {
+		out, err := check("signed", releaseOpts{})
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(out, "0.9.0") {
+			return fmt.Errorf("cbb update -check on the lite member printed %q", out)
+		}
+		return nil
+	})
+	for _, c := range []struct {
+		name string
+		o    releaseOpts
+		want string
+	}{
+		{"unknown-release-key", releaseOpts{relBy: "other"}, "stable.json"},
+		{"keys-by-no-root", releaseOpts{keysBy: "other"}, "keys.json"},
+	} {
+		r.Do(p+c.name, func() error {
+			out, err := check(c.name, c.o)
+			if err == nil {
+				return fmt.Errorf("the lite member took a release that is %s: %q", c.name, out)
+			}
+			if !strings.Contains(out, c.want) {
+				return fmt.Errorf("the lite member refused a release that is %s with %q, which does not name %s", c.name, out, c.want)
+			}
+			return nil
+		})
+	}
 }

@@ -26,7 +26,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
   10 minutes after its copy is replaced, and none after a restart (O9).
 - The bench's fleet runs the lite member (`-cbb-lite FILE`) joined to full members: `cbb watch`
   and `watch -0`, the ZX Next's frames (U9), and a copy of a file giving it only the text that
-  goes with it (O6).
+  goes with it (O6), and its `cbb update -check` against a feed signed with test keys (S22).
 - The bench's fleet checks the fetch limits of a part's holder with the forge: chunks padded to
   16 KiB, a get over 1 MiB dropped, and too many gets at once closing the connection (O15).
 - The bench's fleet plays the phone that scans a computer's QR code: the computer listens only
