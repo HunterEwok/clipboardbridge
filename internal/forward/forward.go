@@ -929,6 +929,16 @@ type Stats struct {
 	Groups, Sessions, Waiting int
 }
 
+// Ready waits until the forwarder's side of VLESS has learned how the site
+// it borrows ends its handshakes (vless.Server.Ready): a client that comes
+// before that waits in steps of 5 seconds. Without VLESS it returns at once.
+func (f *Forwarder) Ready(ctx context.Context) error {
+	if f.vless == nil {
+		return nil
+	}
+	return f.vless.Ready(ctx)
+}
+
 // registered reports whether a hub of the group is registered now. The
 // memory calls it with its own lock held, so nothing may call the memory
 // while holding f.mu.

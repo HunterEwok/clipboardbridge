@@ -441,6 +441,13 @@ func testAwayThroughForwarder(t *testing.T, obfuscate, overVLESS bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A client that comes before the forwarder has learned the site
+	// waits for it, and its handshakes with it.
+	rctx, rcancel := context.WithTimeout(context.Background(), time.Minute)
+	defer rcancel()
+	if err := f.Ready(rctx); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan struct{})
 	go func() {
