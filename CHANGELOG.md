@@ -699,8 +699,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
   computers, the lite member and both phones; files the project signs are unaffected.
 - On Windows the service moves aside whatever another user put in the place of the admin
-  socket's directory, a junction or a file included, instead of removing it, and checks and
-  narrows the directory through one handle.
+  socket's directory, a junction or a file included, instead of removing it, makes the
+  directory with its narrow access list from the start, and checks and narrows it through one
+  handle.
 - Every frame of the member protocol holds only integers written as in signed bodies, members
   a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
   computers, the lite member and both phones alike, where some took `-0` for 0 before.

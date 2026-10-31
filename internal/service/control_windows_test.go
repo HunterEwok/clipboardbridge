@@ -60,7 +60,11 @@ func TestOwnDirMovesLinksAside(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h, err := ownDir(file)
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := ownDir(file, sd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +73,23 @@ func TestOwnDirMovesLinksAside(t *testing.T) {
 		t.Errorf("%s is not a directory now: %v %v", file, fi, err)
 	}
 
+	// A directory it makes has its list from the start.
+	fresh := filepath.Join(run, "admin3")
+	h, err = ownDir(fresh, sd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	windows.CloseHandle(h)
+	got, err := windows.GetNamedSecurityInfo(fresh, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _, err := got.Control(); err != nil || c&windows.SE_DACL_PROTECTED == 0 {
+		t.Errorf("%s was made without its protected list: %s", fresh, got)
+	}
+
 	// The service's own directory stays as it is.
-	h, err = ownDir(dir)
+	h, err = ownDir(dir, sd)
 	if err != nil {
 		t.Fatal(err)
 	}

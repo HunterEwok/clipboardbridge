@@ -5,6 +5,7 @@ package service
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -27,7 +28,11 @@ import (
 // service's account.
 func listenControl(path string, admin bool) (net.Listener, error) {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	mk := dir
+	if admin {
+		mk = filepath.Dir(dir) // ownDir makes dir itself, with its list
+	}
+	if err := os.MkdirAll(mk, 0o700); err != nil {
 		return nil, err
 	}
 	sddl, err := controlSDDL(admin)
@@ -50,7 +55,7 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 		// service sets. It is made again unless the system, the
 		// administrators or the service owns it, and narrowed through the
 		// handle that was checked.
-		h, err := ownDir(dir)
+		h, err := ownDir(dir, sd)
 		if err != nil {
 			return nil, err
 		}
@@ -79,14 +84,26 @@ func listenControl(path string, admin bool) (net.Listener, error) {
 // belongs to the system, the administrators or the service's own account,
 // and returns it open. Anything else at dir is moved aside, never entered
 // or removed, so that nothing another user placed in it, such as a
-// junction, leads the service elsewhere, and dir is made again.
-func ownDir(dir string) (windows.Handle, error) {
+// junction, leads the service elsewhere. A directory it makes has the
+// access list of sd from the start, so nobody else can put anything in it
+// before it is narrowed.
+func ownDir(dir string, sd *windows.SECURITY_DESCRIPTOR) (windows.Handle, error) {
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return 0, err
+	}
+	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
 	for range 2 {
 		h, ok, err := openOwnDir(dir)
-		if err != nil {
+		switch {
+		case errors.Is(err, windows.ERROR_FILE_NOT_FOUND):
+			if err := windows.CreateDirectory(p, sa); err != nil {
+				return 0, fmt.Errorf("making %s: %w", dir, err)
+			}
+			continue
+		case err != nil:
 			return 0, fmt.Errorf("the owner of %s: %w", dir, err)
-		}
-		if ok {
+		case ok:
 			return h, nil
 		}
 		var b [8]byte
@@ -96,9 +113,13 @@ func ownDir(dir string) (windows.Handle, error) {
 		if err := os.Rename(dir, fmt.Sprintf("%s.untrusted-%x", dir, b)); err != nil {
 			return 0, err
 		}
-		if err := os.Mkdir(dir, 0o700); err != nil {
-			return 0, err
+		if err := windows.CreateDirectory(p, sa); err != nil {
+			return 0, fmt.Errorf("making %s: %w", dir, err)
 		}
+	}
+	h, ok, err := openOwnDir(dir)
+	if err == nil && ok {
+		return h, nil
 	}
 	return 0, fmt.Errorf("%s belongs to another user", dir)
 }
