@@ -21,8 +21,8 @@ it on from afar.
 | Lite member | `sudo cbb paste-receive on`; with `-console`, the text console too | the tmux pane in use |
 
 `-enter` (on a phone, "Let a paste press Enter") lets a paste press Enter after the text.
-Without it a text with a line break is refused where it would run as a command: in tmux, on
-the console and when typed.
+Without it a text with a line break is refused, because a line break may run what comes
+before it as a command wherever a terminal does not take the paste as one piece.
 
 On GNOME and KDE the first paste opens the system's dialog for remote control on the screen;
 allow it once and it is remembered. To skip the dialog, install the uinput helper:
