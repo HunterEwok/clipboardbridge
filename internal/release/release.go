@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/strict"
 )
 
 // The body types.
@@ -330,6 +332,11 @@ var (
 )
 
 func decode(data []byte, typ string, v any) error {
+	// The strict form of signed bodies first, so that every program reads a
+	// file alike (docs/protocol.md, section 16).
+	if err := strict.Check(data, "v", "type"); err != nil {
+		return fmt.Errorf("release: %w", err)
+	}
 	var b struct {
 		V    int    `json:"v"`
 		Type string `json:"type"`
@@ -375,6 +382,20 @@ func decodeKeys(data []byte) (Keys, error) {
 	}
 	if len(k.Keys) == 0 || len(k.Keys) > maxKeys {
 		return k, errors.New("release: keys.json must hold 1 to 8 keys")
+	}
+	// The keys are the only plain bytes of a body: in base64's one form.
+	var raw struct {
+		Keys []struct {
+			Key string `json:"key"`
+		} `json:"keys"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return k, fmt.Errorf("release: %w", err)
+	}
+	for _, key := range raw.Keys {
+		if _, err := strict.DecodeBase64(key.Key); err != nil {
+			return k, fmt.Errorf("release: a key: %w", err)
+		}
 	}
 	for _, key := range k.Keys {
 		if key.Name == "" || len(key.Name) > maxName {
