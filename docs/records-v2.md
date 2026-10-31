@@ -55,9 +55,9 @@ sizes) hold, with these changes:
 
 - `form/unknown`: a member the body's kind does not name refuses the body. A new field needs
   a new `v`.
-- `form/empty`: an optional field whose value is empty (`""`, `[]`, `{}`, `false`, or `0`
-  where its row says 0 is the default) MUST be left out. A body with such a field is
-  refused.
+- `form/empty`: an optional field whose value is empty (`""`, `[]`, `{}` or `false`) MUST be
+  left out, and a body with such a field is refused. An integer is never empty: where its
+  row allows 0, 0 is written.
 - `form/canonical`: the body is exactly the bytes a receiver gets when it encodes what it
   read again:
   - no whitespace anywhere, outside strings;
@@ -68,7 +68,8 @@ sizes) hold, with these changes:
     `\u00` and two lower-case hex digits, and nothing else escaped: no `\/`, `\n` or `\t`,
     no `\u` for any other character; every other character as its UTF-8;
   - arrays in the order the field's row gives (a row that says "sorted" means sorted
-    bytewise by the value's encoding, each value once);
+    bytewise by each value's string, for a key hash or record ID its base64, or by the
+    string field the row names, each value once);
   - bytes as standard base64 with padding in its one form, as before.
 
 A receiver checks, in this order: the size; the strict form; the canonical form (it encodes
