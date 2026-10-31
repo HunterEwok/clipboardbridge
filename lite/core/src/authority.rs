@@ -547,6 +547,10 @@ pub struct Input<'a> {
     /// claim missing from it was first held now.
     pub now_ms: i64,
     pub first_seen: &'a BTreeMap<Hash, i64>,
+    /// The member does not know how long it has held its claims: its clock
+    /// started again and it kept no time. No claim then takes effect by
+    /// waiting (docs/records-v2.md, "Handing the group over").
+    pub time_unknown: bool,
     /// Signatures already checked, when the caller keeps them.
     pub sigs: Option<&'a SigCache>,
 }
@@ -654,7 +658,7 @@ pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
     let mut earlier = Vec::new();
     loop {
         let mut ep = Epoch::new(&e, path.clone(), cuts.clone());
-        match ep.decide_claims(input.now_ms, input.first_seen) {
+        match ep.decide_claims(input.now_ms, input.first_seen, input.time_unknown) {
             Some((next, cut)) => {
                 earlier.append(&mut ep.claims);
                 cuts.insert(*path.last().unwrap_or(&Hash::default()), cut);
@@ -1239,7 +1243,7 @@ impl<'a> Epoch<'a> {
 
     /// Looks at the claims under the current root and returns the next
     /// root and the current root's cut when one takes effect.
-    fn decide_claims(&mut self, now: i64, first_seen: &BTreeMap<Hash, i64>) -> Option<(Hash, i64)> {
+    fn decide_claims(&mut self, now: i64, first_seen: &BTreeMap<Hash, i64>, unknown: bool) -> Option<(Hash, i64)> {
         let mut delay = DEFAULT_DELAY;
         let mut settings: Option<usize> = None;
         for &i in self.of(&self.cur) {
@@ -1357,8 +1361,9 @@ impl<'a> Epoch<'a> {
         let r = self.r(c);
         let mut cl = self.claim(c, "pending");
         let seen = first_seen.get(&r.s.id).copied().filter(|&s| s <= now).unwrap_or(now);
-        if self.label[c] != Label::In || self.root_frozen(&r.b().signer) || now - seen < delay {
-            cl.left_ms = (delay - (now - seen)).max(0);
+        let waits = unknown && delay > 0;
+        if self.label[c] != Label::In || self.root_frozen(&r.b().signer) || waits || now - seen < delay {
+            cl.left_ms = if unknown { 0 } else { (delay - (now - seen)).max(0) };
             self.claims.push(cl);
             self.pending = Some(r.b().signer);
             return None;
@@ -1517,6 +1522,7 @@ mod tests {
                     records: &rs,
                     now_ms: c["now_ms"].as_i64().unwrap(),
                     first_seen: &first_seen,
+                    time_unknown: c["time_unknown"].as_bool().unwrap_or(false),
                     sigs: if order % 2 == 0 { Some(&cache) } else { None },
                 };
                 let got = evaluate(&input).encode();

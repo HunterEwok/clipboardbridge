@@ -30,6 +30,11 @@ type Input struct {
 	// now.
 	NowMS     int64
 	FirstSeen map[Hash]int64
+	// TimeUnknown says the member does not know how long it has held its
+	// claims: its clock started again and it kept no time. No claim then
+	// takes effect by waiting (docs/records-v2.md, "Handing the group
+	// over").
+	TimeUnknown bool
 }
 
 // rec is a verified record with what the evaluation finds about it.
@@ -60,7 +65,7 @@ func Evaluate(input Input) (*State, error) {
 	var earlier []Claim // the claims of the roots before the current one
 	for {
 		ep = e.epoch(path, cuts)
-		next, cut := ep.decideClaims(input.NowMS, input.FirstSeen)
+		next, cut := ep.decideClaims(input.NowMS, input.FirstSeen, input.TimeUnknown)
 		if next == nil {
 			break
 		}
@@ -675,7 +680,7 @@ func (ep *epoch) collect() {
 
 // decideClaims looks at the claims under the current root and returns the
 // next root and the current root's cut when one takes effect.
-func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64) (*Hash, int64) {
+func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool) (*Hash, int64) {
 	delay := int64(DefaultDelay)
 	var settings *rec
 	for _, r := range ep.e.bySig[ep.cur] {
@@ -802,9 +807,10 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64) (*Hash, int64
 	if !ok || seen > now {
 		seen = now
 	}
-	if c.label != in || ep.rootFrozen(c.Body.Signer) || now-seen < delay {
+	waits := unknown && delay > 0
+	if c.label != in || ep.rootFrozen(c.Body.Signer) || waits || now-seen < delay {
 		cl.State = "pending"
-		if left := delay - (now - seen); left > 0 {
+		if left := delay - (now - seen); left > 0 && !unknown {
 			cl.LeftMS = left
 		}
 		ep.claims = append(ep.claims, cl)

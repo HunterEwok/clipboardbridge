@@ -38,7 +38,7 @@ bytes, also bytes that are not a request. A change an older caller would misread
 | `op` | `args` | `ok` |
 |---|---|---|
 | `version` | none | `{"abi", "core", "source"}`: the ABI, the core's version and, when the build passed it in `CBB_SOURCE`, the commit |
-| `evaluate` | `group_ca` (base64 DER), `group` (its tag), `now_ms` (the member's clock that counts sleep), `first_seen` (`[{record, ms}]`, optional), `records` (`[{body, sig, chain}]`, base64) | the group's state ([records-v2.md](records-v2.md), "The state"); records that do not verify are left out, never an error |
+| `evaluate` | `group_ca` (base64 DER), `group` (its tag), `now_ms` (the member's clock that counts sleep), `time_unknown` (optional, `true` when the member does not know how long it has held its claims), `first_seen` (`[{record, ms}]`, optional), `records` (`[{body, sig, chain}]`, base64) | the group's state ([records-v2.md](records-v2.md), "The state"); records that do not verify are left out, never an error |
 | `evaluate_saved` | the arguments of `evaluate`, `secret` (base64, at least 16 bytes) and `saved` (base64, optional) | `{"saved", "state"}`: the new saved state, base64, and the group's state; see "The saved state" |
 | `canonical_body` | a record body as an object, in any order, with `v` and `signer` set | `{"body"}`: the canonical bytes to sign, base64, after each field is checked against its row |
 | `check_body` | `{"body"}`, base64 | `{"body"}` as it came, once its size, canonical form and fields check |

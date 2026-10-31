@@ -31,13 +31,15 @@ type vectorFile struct {
 }
 
 type vectorCase struct {
-	Test      string             `json:"-"`
-	Name      string             `json:"name"`
-	GroupCA   []byte             `json:"group_ca"`
-	Group     string             `json:"group"`
-	NowMS     int64              `json:"now_ms"`
-	FirstSeen []firstSeen        `json:"first_seen,omitempty"`
-	Records   []authority.Record `json:"records"`
+	Test    string `json:"-"`
+	Name    string `json:"name"`
+	GroupCA []byte `json:"group_ca"`
+	Group   string `json:"group"`
+	NowMS   int64  `json:"now_ms"`
+	// TimeUnknown is the member not knowing the time (Input.TimeUnknown).
+	TimeUnknown bool               `json:"time_unknown,omitempty"`
+	FirstSeen   []firstSeen        `json:"first_seen,omitempty"`
+	Records     []authority.Record `json:"records"`
 	// State is the canonical state, as a string so that its bytes stay
 	// as they are.
 	State string `json:"state"`
@@ -63,7 +65,7 @@ func (w *world) collect(fs map[authority.Hash]int64, state []byte) {
 			n++
 		}
 	}
-	c := vectorCase{Test: w.t.Name(), Name: fmt.Sprintf("%s %d", strings.ReplaceAll(strings.TrimPrefix(w.t.Name(), "TestV2Vectors/"), "_", " "), n+1), GroupCA: w.roots["root"].Cert.Raw, Group: tag, NowMS: w.now,
+	c := vectorCase{Test: w.t.Name(), Name: fmt.Sprintf("%s %d", strings.ReplaceAll(strings.TrimPrefix(w.t.Name(), "TestV2Vectors/"), "_", " "), n+1), GroupCA: w.roots["root"].Cert.Raw, Group: tag, NowMS: w.now, TimeUnknown: w.unknown,
 		Records: append([]authority.Record(nil), w.recs...), State: string(state)}
 	for id, ms := range fs {
 		c.FirstSeen = append(c.FirstSeen, firstSeen{id, ms})
@@ -83,6 +85,7 @@ var scenarios = []struct {
 	{"admin removals in order", TestAdminRemovalsInOrder},
 	{"admin removals crossed", TestAdminRemovalsCross},
 	{"claim waits and takes effect", TestClaimWaitsAndTakesEffect},
+	{"time unknown", TestTimeUnknown},
 	{"settings delay", TestSettingsDelay},
 	{"two claims", TestTwoClaimsStop},
 	{"removed phone after a takeover", TestRemovedPhoneCannotTakeBack},
@@ -135,7 +138,7 @@ func TestV2Vectors(t *testing.T) {
 	}
 	rng := rand.New(rand.NewPCG(3, 5))
 	for _, c := range f.Cases {
-		in := authority.Input{Group: c.Group, NowMS: c.NowMS, FirstSeen: map[authority.Hash]int64{}}
+		in := authority.Input{Group: c.Group, NowMS: c.NowMS, TimeUnknown: c.TimeUnknown, FirstSeen: map[authority.Hash]int64{}}
 		ca, err := x509.ParseCertificate(c.GroupCA)
 		if err != nil {
 			t.Fatalf("%s: %v", c.Name, err)

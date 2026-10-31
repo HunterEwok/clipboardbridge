@@ -200,6 +200,8 @@ struct EvalArgs {
     group: String,
     now_ms: i64,
     #[serde(default)]
+    time_unknown: bool,
+    #[serde(default)]
     first_seen: Vec<FirstSeen>,
     records: Vec<Record>,
 }
@@ -229,6 +231,7 @@ fn run(a: &EvalArgs) -> Result<(State, BTreeMap<Hash, i64>), Refusal> {
         records: &a.records,
         now_ms: a.now_ms,
         first_seen: &first_seen,
+        time_unknown: a.time_unknown,
         sigs: Some(&SIGS),
     }))
 }

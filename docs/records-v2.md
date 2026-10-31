@@ -289,10 +289,12 @@ and `seen` with what it held, the current root's records among them. A claim:
 - is **pending** from the moment a member first holds it (by its own clock, which counts
   sleep and does not jump: protocol.md, Conventions, "Time"; never the signer's clock) until
   the root's `takeover_delay_ms` (the newest counting `settings` record of the current root;
-  72 hours without one) has passed on that member. Every device tells its user when a claim
-  arrives, and `cbb status` and the apps show it with the time left. Sync and the admins'
-  other powers go on; only the new root waits, and the claimant gets no secrets meanwhile
-  ("Stopping the exchange");
+  72 hours without one) has passed on that member. A member that does not know how long it
+  has held the claim (its clock started again and it kept no time) keeps it pending, without
+  a time left, until it knows; only a delay of 0 needs no time. Every device tells its user
+  when a claim arrives, and `cbb status` and the apps show it with the time left. Sync and
+  the admins' other powers go on; only the new root waits, and the claimant gets no secrets
+  meanwhile ("Stopping the exchange");
 - is **cancelled** for good when the current root's own key signs a `resolve` that names it,
   or a `revoke` of the claimant's admin key, at any time, before or after the delay: the
   root always wins. When that happens after the claim took effect, the new root and every
@@ -363,8 +365,8 @@ what ends it. A user who has lost the root sets the group up again.
 ## The state
 
 The function takes the group CA certificate, the record set, the current time on the
-member's clock and, for each claim's record ID, the time the member first held it, and
-returns the state as one canonical JSON object:
+member's clock or that the member does not know the time, and, for each claim's record ID,
+the time the member first held it, and returns the state as one canonical JSON object:
 
 | Field | Type | Meaning |
 |-------|------|---------|

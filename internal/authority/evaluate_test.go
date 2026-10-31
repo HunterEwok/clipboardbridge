@@ -36,6 +36,7 @@ type world struct {
 	recs    []authority.Record
 	byName  map[string]authority.Record
 	now     int64
+	unknown bool // the member does not know the time
 	seen    map[authority.Hash]int64
 }
 
@@ -145,7 +146,7 @@ func (w *world) adminKey(name string) authority.Hash { return hashOf(w.t, &w.key
 
 func (w *world) eval(recs []authority.Record, firstSeen map[authority.Hash]int64) *authority.State {
 	w.t.Helper()
-	s, err := authority.Evaluate(authority.Input{GroupCA: w.roots["root"].Cert, Group: tag, Records: recs, NowMS: w.now, FirstSeen: firstSeen})
+	s, err := authority.Evaluate(authority.Input{GroupCA: w.roots["root"].Cert, Group: tag, Records: recs, NowMS: w.now, FirstSeen: firstSeen, TimeUnknown: w.unknown})
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -346,6 +347,34 @@ func TestClaimWaitsAndTakesEffect(t *testing.T) {
 	s = w.evalAll(first)
 	if len(s.Roots) != 1 || s.Claims[0].State != "cancelled" {
 		t.Fatalf("the root's cancel should win after the delay: %s", mustEncode(t, s))
+	}
+}
+
+// TestTimeUnknown: a member that does not know how long it has held a
+// claim keeps it pending without a time left, however late its clock
+// says it is, unless the root set no delay.
+func TestTimeUnknown(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("B", "phone", phonePowers)
+	c := w.claim("B", "R2", nil)
+	first := map[authority.Hash]int64{c.ID(): 0}
+	w.now, w.unknown = 2*authority.DefaultDelay, true
+	s := w.evalAll(first)
+	if len(s.Roots) != 1 || len(s.Claims) != 1 || s.Claims[0].State != "pending" || s.Claims[0].LeftMS != 0 {
+		t.Fatalf("the claim should wait without a time left: %s", mustEncode(t, s))
+	}
+	w.unknown = false
+	if s = w.evalAll(first); len(s.Roots) != 2 || s.Claims[0].State != "effective" {
+		t.Fatalf("with the time known the claim should take effect: %s", mustEncode(t, s))
+	}
+
+	w = newWorld(t)
+	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(0))}, nil)
+	w.makeAdmin("B", "phone", phonePowers)
+	w.claim("B", "R2", nil)
+	w.unknown = true
+	if s = w.evalAll(nil); len(s.Roots) != 2 || s.Claims[0].State != "effective" {
+		t.Fatalf("without a delay the claim needs no time: %s", mustEncode(t, s))
 	}
 }
 
