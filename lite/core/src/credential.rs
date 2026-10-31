@@ -82,15 +82,11 @@ impl Credential {
     /// Checks the signature and returns the body. It checks neither who
     /// signed it nor the group.
     pub fn open(&self) -> Result<Body> {
-        if self.body.len() > MAX_BODY {
-            return Err(Error::msg("the credential is too large"));
-        }
+        let b = Body::parse(&self.body)?;
         let key = p256_key(&self.key)?;
         let sig =
             Signature::from_der(&self.sig).map_err(|_| Error::msg("the credential's signature does not verify"))?;
         key.verify(&self.body, &sig).map_err(|_| Error::msg("the credential's signature does not verify"))?;
-        let b: Body = serde_json::from_slice(&self.body).map_err(|_| Error::msg("the credential does not decode"))?;
-        b.check()?;
         Ok(b)
     }
 }
@@ -105,6 +101,18 @@ pub fn valid_tag(s: &str) -> bool {
 }
 
 impl Body {
+    /// Reads and checks a credential's body: its size, the strict form of
+    /// signed bodies, then its fields.
+    pub(crate) fn parse(data: &[u8]) -> Result<Body> {
+        if data.len() > MAX_BODY {
+            return Err(Error::msg("the credential is too large"));
+        }
+        crate::strict::check(data, &["v", "type", "group", "version", "expires_ms"])?;
+        let b: Body = serde_json::from_slice(data).map_err(|_| Error::msg("the credential does not decode"))?;
+        b.check()?;
+        Ok(b)
+    }
+
     fn check(&self) -> Result<()> {
         if self.v != 1 {
             return Err(Error::msg(format!("unknown credential version {}", self.v)));

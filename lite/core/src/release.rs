@@ -183,6 +183,9 @@ impl File {
 }
 
 fn decode<'a, T: Deserialize<'a>>(body: &'a [u8], kind: &str) -> Result<T> {
+    // The strict form of signed bodies first, so that every program reads
+    // a file alike (docs/protocol.md, section 16).
+    crate::strict::check(body, &["v", "type"])?;
     let h: Head = serde_json::from_slice(body).map_err(|e| Error::with("the file is not valid", e))?;
     if h.kind != kind {
         return Err(Error::msg(format!("the file is a {:?}, not a {kind:?}", h.kind)));
