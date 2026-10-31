@@ -661,6 +661,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The open relay and the forwarder count what one IPv6 provider (a /32) holds, as they count
+  a wide network: registrations (1024), credential versions (4096), records (16 MiB),
+  setups and requests being read, and the setups and record checks paid by the second; the
+  forwarder forgets the records of groups that are away from the provider that holds the
+  most (docs/relay-budget.md). An IPv4 /16 is its own provider.
 - The memory a received JPEG takes on a Windows member is counted as image/jpeg uses it: a
   progressive JPEG's coefficients for every block, the black plane of a four-component one
   and the image an unusual layout or CMYK is converted to, from the frame header before any

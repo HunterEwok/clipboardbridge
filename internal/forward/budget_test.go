@@ -454,6 +454,34 @@ func TestMemoryKeepsEveryEnvelope(t *testing.T) {
 	}
 }
 
+// The wide networks of one IPv6 provider, however many, add no more than
+// the provider's share of the credentials' versions, so a provider's
+// customers cannot fill the table between them.
+func TestVersionsProviderLeavesRoom(t *testing.T) {
+	v := testVersions(t, "")
+	now := time.Now()
+	v.now = func() time.Time { return now }
+	expires := now.Add(group.PeriodLifetime)
+	taken := 0
+	for w := 0; w < providerTags/wideTags+2; w++ {
+		for n := range wideTags / networkTags {
+			from := netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, byte(w >> 8), byte(w), 0, byte(n), 15: 1})
+			for i := range networkTags {
+				if v.keep(periodOf(fmt.Sprintf("flood %d %d %d", w, n, i), 1, expires), from) == nil {
+					taken++
+				}
+			}
+		}
+	}
+	if taken != providerTags {
+		t.Errorf("the wide networks of one provider added %d entries, want %d", taken, providerTags)
+	}
+	genuine := periodOf("genuine", 1, expires)
+	if err := v.check(genuine, netip.MustParseAddr("2001:db9:1234:5678::1")); err != nil {
+		t.Fatalf("a group's new period from another provider: %v", err)
+	}
+}
+
 // The records that the registrations from one network and one wide
 // network bring are bounded, registered groups or not, and a registration
 // past that is refused before anything is kept.

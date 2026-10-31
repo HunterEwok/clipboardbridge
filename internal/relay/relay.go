@@ -44,19 +44,21 @@ const (
 	maxSetupsAddress  = 16  // of them from one IP address
 	maxSetupsNetwork  = 64  // of them from one IPv4 /24 or IPv6 /64
 	maxSetupsWide     = 128 // of them from one IPv4 /16 or IPv6 /48
+	maxSetupsProvider = 128 // of them from one IPv6 /32
 	maxRequests       = 256 // requests in the tunnels being read at once
 	maxRequestsOne    = 16  // of them from one device
 	maxRequestsGroup  = 32  // of them from one group
 	maxRequestsSource = 32  // of them from devices registered from one IP address
 	maxRequestsNet    = 64  // of them from devices registered from one IPv4 /24 or IPv6 /64
 	maxRequestsWide   = 64  // of them from devices registered from one IPv4 /16 or IPv6 /48
+	maxRequestsProv   = 128 // of them from devices registered from one IPv6 /32
 )
 
 // The caps of the setups and of the requests being read, by who pays for
 // them (docs/relay-budget.md).
 var (
-	setupCaps   = budget.Caps{Address: maxSetupsAddress, Network: maxSetupsNetwork, Wide: maxSetupsWide, All: maxSetups}
-	requestCaps = budget.Caps{Address: maxRequestsSource, Network: maxRequestsNet, Wide: maxRequestsWide, All: maxRequests}
+	setupCaps   = budget.Caps{Address: maxSetupsAddress, Network: maxSetupsNetwork, Wide: maxSetupsWide, Provider: maxSetupsProvider, All: maxSetups}
+	requestCaps = budget.Caps{Address: maxRequestsSource, Network: maxRequestsNet, Wide: maxRequestsWide, Provider: maxRequestsProv, All: maxRequests}
 )
 
 // Timeouts: setupTimeout bounds a registration, requestTimeout the wait for
