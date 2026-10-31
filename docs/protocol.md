@@ -157,7 +157,10 @@ CA under the root and the iPhone CA key; every other member holds neither and ha
 `clipboardbridge.local` certificate. A **legacy group**, made before admin CAs, has a group CA
 with path length 0, and every Linux and Windows member of it holds both CA keys, a Mac
 neither; `cbb upgrade` turns it into a group with a root (design.md, "Full members, admins
-and the operating system"). Implementations other than Go MAY refuse legacy groups. The joiner's certificate carries the key that the member certifies in the welcome
+and the operating system"). Implementations other than Go MAY refuse legacy groups. A phone
+never takes part in one: only a phone admits a phone (section 6), and a phone's group always
+has a root, so the phone kits join only a group whose CA has path length 1 and refuse the
+`root` record of an upgrade (section 10, rule 7). The joiner's certificate carries the key that the member certifies in the welcome
 (section 6).
 
 Checking a member certificate (`checkPeer`, `DeviceOf`): the chain MUST verify to the group
@@ -1563,7 +1566,8 @@ set.
 7. **Roots.** The group CA is the group's first root and names the group for good: the
    group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
    only when it was signed under a root with path length 1, or, in a legacy group, by the
-   group CA's own key (empty `chain`; `cbb upgrade`), and its `root` is a self-signed CA
+   group CA's own key (empty `chain`; `cbb upgrade`; the phones, never in a legacy group,
+   take only the first), and its `root` is a self-signed CA
    with path length 1 and a P-256 key. Such an upgrade record also counts while the group
    CA's key is revoked, as long as every record that revokes that key was signed under the
    root it names: a leftover copy of the old key can then break the group, by revoking
