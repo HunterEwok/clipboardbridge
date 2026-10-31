@@ -362,7 +362,8 @@ beyond) and check the same bytes.
 
 ## Vectors and tests
 
-- `testdata/interop/v2-records.json`, written by Go: record sets with the expected state, at
+- `testdata/interop/v2-records.json`, written by Go (`go test ./internal/authority -run
+  TestV2Vectors -update`, from the evaluation tests' scenarios): record sets with the expected state, at
   least the cases of the audit findings of version 1 (each with every order): an admin that
   removes another after a claim took effect (X1 and X2 of the second verification), two admin
   phones that remove each other crossed and in order, a chain of three claims, a claim

@@ -154,6 +154,7 @@ func (w *world) evalAll(firstSeen map[authority.Hash]int64) *authority.State {
 	w.t.Helper()
 	want := w.eval(w.recs, firstSeen)
 	wb, _ := want.Encode()
+	w.collect(firstSeen, wb)
 	rng := rand.New(rand.NewPCG(1, 2))
 	for i := 0; i < 24; i++ {
 		rs := append([]authority.Record(nil), w.recs...)
@@ -483,6 +484,44 @@ func TestRemovedAdminClaimVoid(t *testing.T) {
 	s := w.evalAll(nil)
 	if len(s.Roots) != 1 || len(s.Claims) != 1 || s.Claims[0].State != "cancelled" {
 		t.Fatalf("a removed admin's claim should not count: %s", mustEncode(t, s))
+	}
+}
+
+// TestChainOfClaims hands the group over twice: the second claim is an
+// admin of the second root's, under it.
+func TestChainOfClaims(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("B", "phone", phonePowers)
+	c1 := w.claim("B", "R2", nil)
+	w.device("R2", "B", "phone", nil, nil, true)
+	w.admin("C", "R2")
+	w.device("R2", "C", "phone", phonePowers, authority.Commands, false)
+	c2 := w.claim("C", "R3", nil)
+	w.device("R3", "C", "phone", nil, nil, true)
+	first := map[authority.Hash]int64{c1.ID(): 0, c2.ID(): authority.DefaultDelay}
+	w.now = authority.DefaultDelay
+	s := w.evalAll(first)
+	if len(s.Roots) != 2 || claimState(s, c2.ID()) != "pending" || s.RootDevice != w.ids["B"] {
+		t.Fatalf("the second claim should wait under the second root: %s", mustEncode(t, s))
+	}
+	w.now = authority.DefaultDelay * 2
+	s = w.evalAll(first)
+	if len(s.Roots) != 3 || claimState(s, c1.ID()) != "effective" || claimState(s, c2.ID()) != "effective" || s.RootDevice != w.ids["C"] {
+		t.Fatalf("both claims should have taken effect: %s", mustEncode(t, s))
+	}
+}
+
+// TestRemovedAdminDevice is a removed admin admitting a device after its
+// removal: the device does not count, the ones it admitted before do.
+func TestRemovedAdminDevice(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("C", "full", computerPowers)
+	w.device("C", "before", "full", nil, nil, false)
+	w.sign("remove C", "root", revoke(w.adminKey("C")), nil)
+	w.device("C", "after", "full", nil, nil, false)
+	s := w.evalAll(nil)
+	if findDevice(s, w.ids["before"]) == nil || findDevice(s, w.ids["after"]) != nil || !revoked(s, w.adminKey("C")) {
+		t.Fatalf("wrong devices after the removal: %s", mustEncode(t, s))
 	}
 }
 
