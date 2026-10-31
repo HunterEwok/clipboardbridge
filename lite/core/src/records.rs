@@ -278,6 +278,15 @@ pub(crate) struct Body {
     /// Where the device's keys live: `file`, `hardware` or `proven`.
     #[serde(default)]
     store: String,
+    /// The kind of hardware its keys are in and the proof of it, read only
+    /// so that a body is valid where the other members find it valid: both
+    /// are strings.
+    #[serde(rename = "kind", default)]
+    #[allow(dead_code)]
+    hardware: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    proof: String,
     #[serde(with = "b64::opt_hash", default)]
     key: Option<KeyHash>,
     #[serde(with = "b64::opt_hash", default)]
@@ -336,6 +345,9 @@ const COMMAND_FIELDS: &[&str] = &["v", "type", "group", "by", "to", "id", "time_
 impl Body {
     /// Reads and checks a record's body, in the strict form of signed bodies.
     pub(crate) fn parse(data: &[u8]) -> Result<Body> {
+        if data.len() > MAX_BODY {
+            return Err(Error::msg("the record is too large"));
+        }
         crate::strict::check(data, RECORD_FIELDS)?;
         let body: Body = serde_json::from_slice(data).context("a record does not decode")?;
         body.check()?;
@@ -394,6 +406,9 @@ pub fn valid_name(s: &str) -> bool {
     !s.is_empty() && s.len() <= 64 && !s.chars().any(char::is_control)
 }
 
+/// A record body's ID and the key hash of one signer of it.
+type Envelope = ([u8; 32], KeyHash);
+
 /// A record whose signature was checked.
 #[derive(Clone)]
 struct Signed {
@@ -432,12 +447,16 @@ pub struct Records {
     group_ca: Cert,
     tag: String,
     ca_key: KeyHash,
-    by_id: BTreeMap<[u8; 32], Signed>,
+    /// Each body under every signer that signed it, by its ID and the
+    /// signer: which signer's copy a device saw first changes nothing.
+    by_id: BTreeMap<Envelope, Signed>,
     /// The roots records may be signed under: the group CA and the new root
     /// of every root record that may make it a known root (may_be_known);
     /// the other root records wait in pending, by record ID.
     roots: BTreeMap<KeyHash, Cert>,
-    pending: Vec<[u8; 32]>,
+    pending: Vec<Envelope>,
+    /// The exact records held, by body ID.
+    sigs: BTreeMap<[u8; 32], Vec<Record>>,
     /// For each root, the admin CAs that device records its own key signed
     /// name (NAMED_PHONE, NAMED_WATCH or NAMED_OTHER), and the roles of its
     /// own device records.
@@ -455,7 +474,7 @@ pub struct Records {
 struct Eval {
     revoked: BTreeSet<KeyHash>,
     /// The records that revoked each key, by record ID.
-    revokers: BTreeMap<KeyHash, Vec<[u8; 32]>>,
+    revokers: BTreeMap<KeyHash, Vec<Envelope>>,
     phone_admin: BTreeSet<KeyHash>,
     /// The watches' admin CAs (rule 8).
     watch: BTreeSet<KeyHash>,
@@ -464,7 +483,7 @@ struct Eval {
     roots: BTreeSet<KeyHash>,
     /// The freezes that count, for each frozen admin CA (rule 4), by
     /// record ID.
-    freezes: BTreeMap<KeyHash, Vec<[u8; 32]>>,
+    freezes: BTreeMap<KeyHash, Vec<Envelope>>,
     /// The device keys of the frozen admins.
     frozen_keys: BTreeSet<KeyHash>,
 }
@@ -502,6 +521,7 @@ impl Records {
             by_id: BTreeMap::new(),
             roots: BTreeMap::from([(ca_key, group_ca.clone())]),
             pending: Vec::new(),
+            sigs: BTreeMap::new(),
             named: BTreeMap::new(),
             own: BTreeMap::new(),
             per_signer: BTreeMap::new(),
@@ -509,8 +529,16 @@ impl Records {
         }
     }
 
+    /// The number of records, a body that several signers signed counting
+    /// once for each.
     pub fn len(&self) -> usize {
         self.by_id.len()
+    }
+
+    /// Whether the set holds exactly r: its body with the same signature
+    /// and chain.
+    pub fn has(&self, r: &Record) -> bool {
+        self.sigs.get(&r.id()).is_some_and(|rs| rs.iter().any(|o| o.sig == r.sig && o.chain == r.chain))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -521,11 +549,14 @@ impl Records {
     /// are checked after the signature, so that a record nobody signed never
     /// fills the set.
     pub fn add(&mut self, r: &Record) -> Result<bool> {
-        let id = r.id();
-        if self.by_id.contains_key(&id) {
+        if self.has(r) {
             return Ok(false);
         }
         let s = self.verify(r)?;
+        let id = (s.id, s.signer);
+        if self.by_id.contains_key(&id) {
+            return Ok(false);
+        }
         if self.per_signer.get(&s.signer).copied().unwrap_or(0) >= MAX_PER_ADMIN {
             return Err(Error::msg("too many records from one signer"));
         }
@@ -554,6 +585,7 @@ impl Records {
         if s.root.is_some() {
             self.pending.push(id);
         }
+        self.sigs.entry(s.id).or_default().push(r.clone());
         self.by_id.insert(id, s);
         *self.ev.get_mut() = None;
         self.promote();
@@ -657,9 +689,6 @@ impl Records {
     }
 
     fn verify(&self, r: &Record) -> Result<Signed> {
-        if r.body.len() > MAX_BODY {
-            return Err(Error::msg("the record is too large"));
-        }
         let body = Body::parse(&r.body)?;
         if body.group != self.tag {
             return Err(Error::msg("the record is for another group"));
@@ -934,7 +963,7 @@ impl Records {
         // each other both stay frozen until the root or an admin phone
         // decides.
         for (id, r) in &self.by_id {
-            if r.body.kind != "freeze" || thawed.contains(id) || !ev.roots.contains(&r.anchor) {
+            if r.body.kind != "freeze" || thawed.contains(&id.0) || !ev.roots.contains(&r.anchor) {
                 continue;
             }
             if r.signer != r.anchor && (disabled.contains(&r.signer) || !stands_for_roots(&r.anchor, &r.signer)) {
@@ -1121,7 +1150,7 @@ impl Records {
                 ks.push(key);
             }
             // A signer that stands sorts after one that is revoked.
-            let order = |r: &Signed| (!self.revoked(&r.signer), r.body.time_ms, r.record.id());
+            let order = |r: &Signed| (!self.revoked(&r.signer), r.body.time_ms, r.id, r.signer);
             if latest.get(r.body.device.as_str()).is_none_or(|cur| order(r) > order(cur)) {
                 latest.insert(&r.body.device, r);
             }
@@ -1129,7 +1158,7 @@ impl Records {
             if root_signed
                 && certified
                     .get(r.body.device.as_str())
-                    .is_none_or(|cur| (r.body.time_ms, r.record.id()) > (cur.body.time_ms, cur.record.id()))
+                    .is_none_or(|cur| (r.body.time_ms, r.id, r.signer) > (cur.body.time_ms, cur.id, cur.signer))
             {
                 certified.insert(&r.body.device, r);
             }
@@ -1177,7 +1206,7 @@ impl Records {
                     && r.body.device == r.body.by
                     && r.body.key.is_some()
             })
-            .max_by_key(|r| (r.body.time_ms, r.record.id()))
+            .max_by_key(|r| (r.body.time_ms, r.id, r.signer))
             .map(|r| (r.body.device.clone(), r.body.key.unwrap()))
     }
 
@@ -1301,18 +1330,19 @@ impl Records {
         hubs.into_iter().map(|(_, _, id)| id).collect()
     }
 
-    /// Every record, sorted by ID.
+    /// Every record, sorted by ID and, for a body several signers signed,
+    /// by signer.
     pub fn all(&self) -> Vec<Record> {
         self.by_id.values().map(|r| r.record.clone()).collect()
     }
 
-    /// SHA-256 over the sorted record IDs in base64, as the hello carries
-    /// it; "" for an empty set.
+    /// SHA-256 over each record's ID and signer's key hash, sorted as all
+    /// sorts them, in base64, as the hello carries it; "" for an empty set.
     pub fn digest(&self) -> String {
         if self.by_id.is_empty() {
             return String::new();
         }
-        let ids: Vec<u8> = self.by_id.keys().flatten().copied().collect();
+        let ids: Vec<u8> = self.by_id.keys().flat_map(|(id, signer)| id.iter().chain(signer.iter())).copied().collect();
         base64::engine::general_purpose::STANDARD.encode(sha256(&ids))
     }
 

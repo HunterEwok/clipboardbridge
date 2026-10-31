@@ -45,12 +45,14 @@ public enum Records {
 
         /// The members every record's body has.
         static let fields = ["v", "type", "group", "time_ms"]
+        /// A body is at most this long.
+        static let maxBody = 8 << 10
 
         /// The body in data, or nil when it does not decode or is not
         /// valid: in the strict form of signed bodies, checked as Go's
         /// RecordBody.check.
         public static func decode(_ data: Data) -> Body? {
-            guard Strict.ok(data, required: fields), let b = try? JSONDecoder().decode(Body.self, from: data),
+            guard data.count <= maxBody, Strict.ok(data, required: fields), let b = try? JSONDecoder().decode(Body.self, from: data),
                   let raw = try? JSONDecoder().decode(Raw.self, from: data), raw.canonical, b.valid else { return nil }
             return b
         }
@@ -239,6 +241,10 @@ public struct RecordSet: Codable, Equatable, Sendable {
     private var own: [Data: Int] = [:]
     /// The records each signer signed (maxPerAdmin).
     private var perSigner: [Data: Int] = [:]
+    /// The ID and the signer's key hash of each record: a body that several
+    /// signers signed is a record for each, so which signer's copy came
+    /// first changes nothing.
+    private var envelopes = Set<Data>()
 
     private struct Pending: Sendable {
         var root: Data
@@ -314,7 +320,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         if self.groupCA == nil { self.groupCA = groupCA }
         if rootList.isEmpty { rootList = [groupCA] }
         let id = Records.id(r)
-        guard self.groupCA == groupCA, !records.contains(where: { Records.id($0) == id }),
+        guard self.groupCA == groupCA, !holds(r),
               let body = Records.Body.decode(r.body),
               body.v == Records.version, body.group == GroupCertificates.tag(groupCA: groupCA),
               let anchor = Self.anchor(r, roots: rootList), let anchorKey = try? Records.keyHash(cert: anchor.root) else { return false }
@@ -323,11 +329,12 @@ public struct RecordSet: Codable, Equatable, Sendable {
                   (try? GroupCertificates.checkRoot(root)) != nil else { return false }
         }
         let signer = anchor.signer, n = perSigner[signer] ?? 0
-        guard n < Self.maxPerAdmin else { return false }
+        guard !envelopes.contains(id + signer), n < Self.maxPerAdmin else { return false }
         if records.count >= Self.max {
             guard records.count < Self.max + Self.maxPerAdmin, signer == anchorKey, Eval(self).onPath.contains(anchorKey) else { return false }
         }
         perSigner[signer] = n + 1
+        envelopes.insert(id + signer)
         records.append(r)
         if body.type == "device" && signer == anchorKey {
             let bit = switch Records.role(body.role) {
@@ -341,6 +348,12 @@ public struct RecordSet: Codable, Equatable, Sendable {
         if body.type == "root", let root = body.root { pending.append(Pending(root: root, anchor: anchorKey, signer: signer)) }
         promote()
         return true
+    }
+
+    /// Whether the set holds exactly r: its body with the same signature
+    /// and chain.
+    private func holds(_ r: Member.Record) -> Bool {
+        records.contains { $0.body == r.body && $0.sig == r.sig && ($0.chain ?? []) == (r.chain ?? []) }
     }
 
     /// Moves the root records of pending that may make their new root known
@@ -388,7 +401,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             for r in pending {
                 if add(r, groupCA: groupCA) {
                     fresh.append(r)
-                } else if !records.contains(where: { Records.id($0) == Records.id(r) }) {
+                } else if !holds(r) {
                     rest.append(r)
                 }
             }
@@ -420,6 +433,11 @@ public struct RecordSet: Codable, Equatable, Sendable {
             return (root, Records.keyHash(spki: spki))
         default: return nil
         }
+    }
+
+    /// Entries by ID and then signer, as Go sorts records.
+    private static func byEnvelope(_ a: Entry, _ b: Entry) -> Bool {
+        a.id == b.id ? a.signer.lexicographicallyPrecedes(b.signer) : a.id.lexicographicallyPrecedes(b.id)
     }
 
     private struct Entry {
@@ -768,7 +786,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
                 let b = e.body
                 return b.type == "device" && e.signer == st.anchor && e.anchor == st.anchor
                     && ((b.device != nil && b.device == b.by) || b.admin == st.signer)
-            }.sorted { $0.id.lexicographicallyPrecedes($1.id) }.map(\.record)
+            }.sorted(by: Self.byEnvelope).map(\.record)
         }
         return out
     }
@@ -785,7 +803,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         var seen = Set<Data>()
         var out: [Member.Record] = []
         func add(_ r: Member.Record) {
-            if seen.insert(Records.id(r)).inserted { out.append(r) }
+            if seen.insert(Records.id(r) + r.sig).inserted { out.append(r) }
         }
         pathRecords.forEach(add)
         let ev = Eval(self)
@@ -794,7 +812,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             guard b.type == "device", e.signer == e.anchor, b.admin != nil || (b.device != nil && b.device == b.by) else { return nil }
             return b.device
         })
-        for e in ev.entries.sorted(by: { $0.id.lexicographicallyPrecedes($1.id) }) {
+        for e in ev.entries.sorted(by: Self.byEnvelope) {
             if e.body.type != "device" || (e.signer == e.anchor && e.body.device.map(governs.contains) == true) { add(e.record) }
         }
         return out
@@ -817,11 +835,10 @@ public struct RecordSet: Codable, Equatable, Sendable {
         var certified: [String: Entry] = [:] // the latest a known root's own key signed
         var keys: [String: [Data]] = [:]
         func newer(_ e: Entry, _ cur: Entry) -> Bool {
-            e.body.time_ms != cur.body.time_ms ? e.body.time_ms > cur.body.time_ms
-                : Records.id(e.record).lexicographicallyPrecedes(Records.id(cur.record)) == false
+            e.body.time_ms != cur.body.time_ms ? e.body.time_ms > cur.body.time_ms : Self.byEnvelope(cur, e)
         }
         // By record ID, as Go, so the keys come in the same order.
-        for e in ev.entries.sorted(by: { $0.id.lexicographicallyPrecedes($1.id) }) where e.body.type == "device" {
+        for e in ev.entries.sorted(by: Self.byEnvelope) where e.body.type == "device" {
             guard ev.counts(e), let d = e.body.device, let k = e.body.key, !ev.revoked.contains(k) else { continue }
             if !(keys[d] ?? []).contains(k) { keys[d, default: []].append(k) }
             if ev.rootSigned(e), certified[d].map({ newer(e, $0) }) ?? true { certified[d] = e }
@@ -966,11 +983,11 @@ public struct RecordSet: Codable, Equatable, Sendable {
         return (device: id, key: key)
     }
 
-    /// SHA-256 over the sorted record IDs, base64, as the hello carries it;
-    /// nil for an empty set.
+    /// SHA-256 over each record's ID and signer's key hash, sorted by ID and
+    /// then signer, base64, as the hello carries it; nil for an empty set.
     public var digest: String? {
         guard !records.isEmpty else { return nil }
-        let ids = records.map(Records.id).sorted { $0.lexicographicallyPrecedes($1) }
+        let ids = Eval(self).entries.map { $0.id + $0.signer }.sorted { $0.lexicographicallyPrecedes($1) }
         var h = SHA256()
         for id in ids { h.update(data: id) }
         return Data(h.finalize()).base64EncodedString()

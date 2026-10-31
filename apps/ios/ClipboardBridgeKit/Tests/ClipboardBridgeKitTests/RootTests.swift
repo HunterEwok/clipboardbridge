@@ -258,6 +258,35 @@ final class RootTests: XCTestCase {
         for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
     }
 
+    /// Reads testdata/interop/go-envelopes.json, from Go's
+    /// TestEnvelopeVectors: one body signed by two signers is two records,
+    /// and the set says the same whichever came first; the root's removal of
+    /// an admin phone counts though a computer admin's copy came first.
+    func testGoEnvelopes() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
+            var group_ca: Data
+            var records: [Member.Record]
+            var keys: [Key]
+            var digest: String
+            var count: Int
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-envelopes.json")))
+        for (name, recs) in [("as written", v.records), ("reversed", v.records.reversed()), ("the computer admin's copy only", Array(v.records.prefix(3)))] {
+            var set = RecordSet()
+            for r in recs { XCTAssertTrue(set.add(r, groupCA: v.group_ca), name) }
+            for r in recs { XCTAssertFalse(set.add(r, groupCA: v.group_ca), "\(name): a record held already was new again") }
+            let full = recs.count == v.records.count
+            for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked && full, "\(name): \(k.name)") }
+            if full {
+                XCTAssertEqual(set.records.count, v.count, name)
+                XCTAssertEqual(set.digest, v.digest, name)
+            }
+        }
+    }
+
     /// Reads testdata/interop/go-authority.json, from Go's
     /// TestGoAuthorityVectors: a device is an admin, with the role and store
     /// of that record, only by a record a root's own key signed, and a

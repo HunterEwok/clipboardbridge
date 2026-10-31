@@ -148,6 +148,33 @@ class RecordsTest {
     }
 
     /**
+     * testdata/interop/go-envelopes.json, from Go's TestEnvelopeVectors: one
+     * body signed by two signers is two records, and the set says the same
+     * whichever came first; the root's removal of an admin phone counts
+     * though a computer admin's copy came first.
+     */
+    @Test
+    fun goEnvelopes() {
+        val v = Interop.read("go-envelopes.json").jsonObject
+        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+        val ca = b64(v.str("group_ca"))
+        for ((name, recs) in listOf("as written" to records, "reversed" to records.reversed(), "the computer admin's copy only" to records.take(3))) {
+            val set = RecordSet()
+            for (r in recs) assertTrue(set.add(r, ca), name)
+            for (r in recs) assertFalse(set.add(r, ca), "$name: a record held already was new again")
+            val full = recs.size == records.size
+            for (k in v.getValue("keys").jsonArray) {
+                val o = k.jsonObject
+                assertEquals(o.getValue("revoked").jsonPrimitive.boolean && full, set.isRevoked(b64(o.str("key"))), "$name: ${o.str("name")}")
+            }
+            if (full) {
+                assertEquals(v.getValue("count").jsonPrimitive.int, set.records.size, name)
+                assertEquals(v.str("digest"), set.digest, name)
+            }
+        }
+    }
+
+    /**
      * testdata/interop/go-authority.json, from Go's TestGoAuthorityVectors: a
      * device is an admin, with the role and store of that record, only by a
      * record a root's own key signed, and a removed admin's records no

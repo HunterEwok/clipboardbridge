@@ -1377,7 +1377,11 @@ bytes, or a type without its fields: a `device` record without a valid device ID
 record without `root`; a `freeze` record without `keys`; a `thaw` record without
 `records`.
 
-The record ID is SHA-256 over the envelope's `body`. A member keeps every valid record it
+The record ID is SHA-256 over the envelope's `body`. The same body may come signed by more
+than one signer: each signer's envelope is a record of its own, and a member keeps all of
+them, so a body counts when any of its envelopes counts, and the first envelope a member saw
+decides nothing. An envelope with the body and the signer of one it holds is a copy, and a
+member keeps the first. A member keeps every valid record it
 has seen, in a file next to its identity, at most 4096 records, plus up to 1024 more signed
 by the own key of a root on the path (rule 7), so a full set still takes the record in which
 the root removes an admin that filled it. A member checks a record's signature before these
@@ -1582,12 +1586,12 @@ after every member runs this version:
 
 The devices list is, for each device, the `device` record that counts, among those whose key
 is not revoked, whose signer's key is not revoked if any such record counts, with the largest
-`time_ms` (then the largest record ID). So a device whose records name more than one key stays
+`time_ms` (then the largest record ID, then the largest signer's key hash). So a device whose records name more than one key stays
 listed while any of them stands, and the records of a removed admin, which still count for the
 devices it admitted, no longer decide their names. Removing a device revokes every key that its
 counting records name and that is not revoked yet, and the key of its connection. Only a
 known root's own key gives a device powers: of the device's counting records that such a key
-signed, the one with the largest `time_ms` (then the largest record ID) decides. A device is
+signed, the one with the largest `time_ms` (then the largest record ID and signer's key hash) decides. A device is
 an admin when that record names an admin CA whose key is neither revoked nor frozen; an
 admin's `role`, `store`, `kind` and `proof`, which decide what its commands may do (section
 15) and where it serves as a hub (section 11), are that record's too. A later record from the
@@ -1603,8 +1607,13 @@ identity (mode 0600) and the path in the identity file's `roots`.
 ### Exchange in the member protocol
 
 - The hello object (section 4) carries `records`, the digest of the records the sender
-  holds: SHA-256 over their record IDs, each the raw 32 bytes, sorted bytewise and
-  concatenated; standard base64; absent when it holds none.
+  holds: SHA-256 over, for each record, its record ID and then the SHA-256 of its signer's
+  SubjectPublicKeyInfo (the root's or the admin CA's), each the raw 32 bytes, the 64-byte
+  pairs sorted bytewise and concatenated; standard base64; absent when it holds none. Two
+  members that hold the same bodies under different signers so send each other their
+  records. Members before 0.6 hashed the record IDs alone, so their digest differs from a
+  newer member's, and the two send each other their records at each connection; nothing
+  else changes.
 - A side that holds records and whose digest differs from the peer's sends, after the peer's
   hello, `{"t":"records","records":[envelope, ...]}` with every record it holds, split into
   messages of about 1 MiB each. A receiver adds the valid ones, saves them, and sends the

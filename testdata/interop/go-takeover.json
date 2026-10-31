@@ -57,7 +57,7 @@
 					"revoked": false
 				}
 			],
-			"digest": "cQ96PEttj4yGQ873TyFVwNEphWAIJ7b1hj0mJQwYYck="
+			"digest": "kWNkRDPB8R/H1+qQd4NM9aY1YgDG/k3epOi4xTgYmqw="
 		},
 		{
 			"name": "phone root",
@@ -114,7 +114,7 @@
 					"revoked": false
 				}
 			],
-			"digest": "wnZnwAGm0uTKIeJu6Lb8sugjLJr47OB2zoQR4poAnoM=",
+			"digest": "CeGBOSZ6CkLr2iMdwvqo5sKfN9UtFrzoywBRO0GcLEM=",
 			"dropped": 1
 		},
 		{
@@ -179,7 +179,7 @@
 					"revoked": false
 				}
 			],
-			"digest": "UDRq9IKWR4hWv7AUhEHGEE9KD8OBqOwlZclpte2QRkI="
+			"digest": "OTgBsYNJ1PzCt9iaMj8K6PBr47SVEQvOciGTDFns5dA="
 		},
 		{
 			"name": "old root removes the admin",
@@ -240,7 +240,7 @@
 					"revoked": false
 				}
 			],
-			"digest": "wU9DE6XlMOLOMrqj/MHjUxwaTCfb+QLKCM064e1GJbk="
+			"digest": "zyOZl8yKAE1FCSjZqXQxjTBu8969waHd08HUUlKgCNw="
 		}
 	]
 }

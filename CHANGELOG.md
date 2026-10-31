@@ -684,6 +684,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - A relay that refuses a registration is left as it was: it keeps nothing of the refused
   device's group, period or records, and keeps a period's key and versions while a group's
   devices change under a newer members' credential.
+- Every member reads a group's records alike in all implementations: a body signed by more
+  than one signer is kept under each signer, so what a device makes of the records no longer
+  depends on whose copy came first, and the records digest of the hello covers each record's
+  signer too (docs/protocol.md, section 10). Until every member of a group runs this
+  version, members of both kinds send each other their records at each connection. The lite
+  member refuses a body whose `kind` or `proof` is not a string, and the phone kits a body
+  over 8 KiB, as the Go member already did.
 - A channel or status file may raise its `seq` at most 65 536 on a fresh device or under a
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On

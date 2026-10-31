@@ -43,6 +43,13 @@ var (
 	vecHash2 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
 )
 
+// padded returns the device body dev(good), with an unknown member that
+// makes it n bytes long.
+func padded(dev func(string) []byte, good string, n int) []byte {
+	b := dev(good + `,"later":""`)
+	return dev(good + `,"later":"` + strings.Repeat("a", n-len(b)) + `"`)
+}
+
 // makeStrictVectors returns the vectors; each body is written out as it
 // is, so that it can break the rules of JSON.
 func makeStrictVectors() strictVectors {
@@ -64,8 +71,15 @@ func makeStrictVectors() strictVectors {
 		r("an earlier role", true, with(`"role":"full"`, `"role":"linux"`)),
 		r("a surrogate pair escaped", true, with(`"Laptop"`, `"Lap\ud83d\ude00"`)),
 		r("other escapes", true, with(`"Laptop"`, `"\u00e9\"\\\/"`)),
+		r("a kind and a proof", true, dev(good+`,"store":"proven","kind":"android-tee","proof":"x"`)),
+		r("a body of 8 KiB", true, padded(dev, good, 8<<10)),
 		r("negative time", true, []byte(`{"v":1,"type":"revoke","group":"`+vecGroup+`","time_ms":-1,"keys":["`+vecHash+`"]}`)),
 
+		r("a kind as a number", false, dev(good+`,"kind":1`)),
+		r("a kind as a list", false, dev(good+`,"kind":[1,2]`)),
+		r("a proof as an object", false, dev(good+`,"proof":{}`)),
+		r("a proof as a boolean", false, dev(good+`,"proof":true`)),
+		r("a body over 8 KiB", false, padded(dev, good, 8<<10+1)),
 		r("a member name in upper case", false, with(`"name"`, `"NAME"`)),
 		r("a member name in mixed case", false, []byte(`{"v":1,"Type":"device","group":"`+vecGroup+`","time_ms":1`+good+`}`)),
 		r("a member name escaped", false, with(`"name"`, `"n\u0061me"`)),
