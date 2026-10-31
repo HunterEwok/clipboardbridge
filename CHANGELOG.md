@@ -651,6 +651,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The forwarder counts only the groups that are away against the 32 MiB it keeps of their
+  authority records, and past it forgets from the wide network that holds the most of them
+  (docs/relay-budget.md), so the records of a group that is away outlast the groups of other
+  networks.
 - The lite member and both phone apps check a hub command's order as Go does: a forwarder with an
   address and a key or an address at least, at most 8 addresses and 256 clients, each client
   a device ID once with keys of 32 bytes.

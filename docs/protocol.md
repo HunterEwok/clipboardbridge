@@ -2143,9 +2143,10 @@ close the connection beyond that; a sender MUST stay below it.
      registers later, while the group's own hub is away, cannot leave its revocation out,
      until the forwarder restarts; it writes none of them to disk. It refuses a registration
      whose merged authority records come to more than 256 KiB, so it never keeps part of a
-     group's records. It keeps at most 32 MiB of records for all groups, and past that or
-     100,000 groups it forgets the one that registered least recently; the records of a
-     group that is registered now are never forgotten. The group CA for these records is the
+     group's records. The records of a group that is registered now are never forgotten.
+     Of the groups that are away it keeps at most 32 MiB of records and 100,000 groups; past
+     that it forgets from the wide network that holds the most of them (docs/relay-budget.md),
+     its group kept least recently first. The group CA for these records is the
      root the hub's member certificate verified to in step 2, whose tag names the group; a
      self-signed certificate the hub presents besides counts for nothing.
    - An obfuscated hub adds its group's `obfuscation` settings (section 11, "Obfuscation");

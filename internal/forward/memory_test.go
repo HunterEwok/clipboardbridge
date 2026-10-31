@@ -143,4 +143,11 @@ func TestRegistrationKeepsBoundedRecords(t *testing.T) {
 	if n := len(f.memory.records(tag)); n != 5 {
 		t.Errorf("the forwarder keeps %d records of the group, want 5", n)
 	}
+	// Its registration ended: the group is one of those that are away.
+	waitUntil(t, "the group to be away", func() bool {
+		f.memory.mu.Lock()
+		defer f.memory.mu.Unlock()
+		g := f.memory.groups[tag]
+		return g != nil && g.holder != nil && f.memory.awayBytes == g.bytes
+	})
 }
