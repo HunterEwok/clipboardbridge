@@ -667,20 +667,29 @@ func TestMac(t *testing.T) {
 	// A Mac joins through a Linux member, admits no devices until it is an
 	// admin, and syncs in both directions; until then it never holds
 	// clipboardbridge.local. Its rules must hold whichever device ID is
-	// lower, so the test runs until it saw both orders.
-	seen := map[bool]bool{}
-	for i := 0; i < 16 && len(seen) < 2; i++ {
+	// lower, so the test runs once with the Mac's ID below the pi's and
+	// once above it.
+	for _, macLower := range []bool{true, false} {
 		var h hub
 		pi := startService(t, &h, "pi")
-		mac := startRole(t, &h, "mac", group.OSMacOS)
-		pairWith(t, pi, mac)
-		macLower := mac.status(t).Device < pi.status(t).Device
-		if seen[macLower] {
-			pi.stop()
-			mac.stop()
-			continue
+		if _, err := pi.do(t, control.Header{Op: control.OpNew}, ""); err != nil {
+			t.Fatal(err)
 		}
-		seen[macLower] = true
+		piID := group.DeviceID(pi.status(t).Device)
+		macID := group.DeviceID(strings.Repeat("f", 32))
+		if macLower {
+			macID = group.DeviceID(strings.Repeat("0", 32))
+		}
+		if macID == piID {
+			t.Fatalf("the pi has the ID %s the test gives the Mac", piID)
+		}
+		mac := startWith(t, &h, "mac", group.OSMacOS, func(c *Config) {
+			c.joinID = func() group.DeviceID { return macID }
+		})
+		pairWith(t, pi, mac)
+		if got := group.DeviceID(mac.status(t).Device); got != macID {
+			t.Fatalf("the Mac joined as %s, want %s", got, macID)
+		}
 		t.Logf("the Mac's ID is lower: %v", macLower)
 		waitFor(t, "connected", func() bool { return len(mac.status(t).Peers) == 1 })
 		if _, err := mac.do(t, control.Header{Op: control.OpPair}, ""); err == nil || !strings.Contains(err.Error(), "root or an admin") {
@@ -699,9 +708,6 @@ func TestMac(t *testing.T) {
 		}
 		pi.stop()
 		mac.stop()
-	}
-	if len(seen) < 2 {
-		t.Errorf("saw only one order of device IDs: %v", seen)
 	}
 }
 

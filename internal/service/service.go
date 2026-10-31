@@ -70,6 +70,9 @@ type Config struct {
 	// browseFor is how long join looks for a pairing window; ten seconds
 	// if zero.
 	browseFor time.Duration
+	// joinID returns the device ID a join takes; a new random one if nil.
+	// Tests set it to choose which of two devices has the lower ID.
+	joinID func() group.DeviceID
 	// joinListen opens the port a listening join waits at, the member port or any
 	// free port on all addresses if nil; joinAddrs returns the addresses for its QR code,
 	// joinAddresses if nil.

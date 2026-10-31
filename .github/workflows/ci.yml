@@ -122,6 +122,13 @@ jobs:
         # bash: PowerShell splits -coverprofile=cover-go.out at the dot.
         shell: bash
         run: go test -race -coverprofile=cover-go.out ./...
+      # int is 32 bits there, as on the Raspberry Pi's armv7 and the routers'
+      # mips, and 386 runs on the runner without an emulator.
+      - name: go test of the member protocol on a 32-bit build
+        if: matrix.os == 'ubuntu-latest'
+        run: go test ./internal/node
+        env:
+          GOARCH: "386"
       # Each system's own files (Windows, macOS) for the coverage summary; the
       # coverage job measures across packages on Linux.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

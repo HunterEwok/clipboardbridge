@@ -383,7 +383,18 @@ impl Updater<'_> {
                     continue;
                 }
             };
-            let (r, seen) = release::check(&keys, &ch, &rel, &roots, CHANNEL, self.now_ms, &st.seen)?;
+            // A signature that fails or a rollback is an answer, not a
+            // server that is out of date: another server must not get a
+            // say. Any other refusal, such as a channel file that expired,
+            // leaves the next server to answer, as in Go's Updater.Check.
+            let (r, seen) = match release::check(&keys, &ch, &rel, &roots, CHANNEL, self.now_ms, &st.seen) {
+                Ok(v) => v,
+                Err(e) if e.is_answer() => return Err(e),
+                Err(e) => {
+                    errs.push(format!("{src}: {}", e.for_log()));
+                    continue;
+                }
+            };
             return Ok(Found {
                 newer: release::compare(&r.version, &self.installed).is_gt(),
                 failed: st.failed.contains(&r.version),
@@ -864,6 +875,71 @@ mod tests {
         let (res, installs, _) = run(&dir, "0.6.0", "", &mut State::default());
         assert!(res.unwrap_err().for_user().contains("not a version"));
         assert!(installs.is_empty());
+    }
+
+    /// Writes dir's channel file again, naming its release.json, with seq
+    /// and expiring at expires_ms.
+    fn rechannel(dir: &Path, seq: u64, expires_ms: i64) {
+        #[derive(Deserialize)]
+        struct In {
+            #[serde(with = "b64")]
+            body: Vec<u8>,
+        }
+        let rel: In = serde_json::from_slice(&fs::read(dir.join("release.json")).unwrap()).unwrap();
+        let at = NOW - 1000;
+        let ch = sign(
+            serde_json::json!({"v": 1, "type": "channel", "channel": CHANNEL, "seq": seq, "time_ms": at,
+                "expires_ms": expires_ms, "release": "0.6.1", "release_sha256": hex(&sha256(&rel.body))}),
+            &key(2),
+        );
+        write(dir, "stable.json", &ch);
+    }
+
+    /// Checks for an update from the sources dirs, in order.
+    fn check_from(dirs: &[&Path], st: &State) -> Result<Found> {
+        let healthy = |_: &str, _: Duration| Ok(());
+        let install = |_: &Path, _: &Path| Ok(());
+        let u = Updater {
+            work: dirs[0].join("work"),
+            roots: vec![spki(&key(1))],
+            sources: dirs.iter().map(|d| Source::Dir(d.to_path_buf())).collect(),
+            installed: "0.6.0".into(),
+            archive: ARCHIVE.into(),
+            program: PathBuf::from("/nonexistent"),
+            now_ms: NOW,
+            install: &install,
+            healthy: &healthy,
+            log: &|_| {},
+        };
+        u.check(st)
+    }
+
+    /// As in Go, a source whose files are refused for any other reason than
+    /// a signature or a rollback leaves the next source to answer; a
+    /// signature that fails or a rollback ends the check.
+    #[test]
+    fn next_source_unless_an_answer() {
+        let (first, second) = (tmp("first"), tmp("second"));
+        publish(&first, "0.6.1", 1, None);
+        publish(&second, "0.6.1", 2, None);
+        // An expired channel file on the first: the second answers.
+        rechannel(&first, 1, NOW - 1);
+        let f = check_from(&[&first, &second], &State::default());
+        let f = f.unwrap_or_else(|e| panic!("{}", e.for_user()));
+        assert_eq!((f.source, f.seen.channel_seq), (1, 2));
+        // A channel file older than one seen on the first: the check ends.
+        publish(&first, "0.6.1", 1, None);
+        let st = State { seen: Seen { keys_seq: 1, channel_seq: 2, ..Seen::default() }, ..State::default() };
+        publish(&second, "0.6.1", 3, None);
+        let err = check_from(&[&first, &second], &st).err().expect("a rollback was passed over");
+        assert!(err.is_answer() && err.for_log().contains("older"), "{}", err.for_log());
+        // A signature that fails on the first: the check ends.
+        let mut data: serde_json::Value =
+            serde_json::from_slice(&fs::read(first.join("release.json")).unwrap()).unwrap();
+        data["sig"] = serde_json::Value::String(base64(&[0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01]));
+        fs::write(first.join("release.json"), serde_json::to_vec(&data).unwrap()).unwrap();
+        let err = check_from(&[&first, &second], &State::default()).err().expect("a bad signature was passed over");
+        assert!(err.is_answer() && err.for_log().contains("signature"), "{}", err.for_log());
     }
 
     /// A download stops at its limit and leaves no more on the disk.

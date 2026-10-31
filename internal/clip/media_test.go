@@ -4,8 +4,10 @@
 package clip
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +87,7 @@ func TestNames(t *testing.T) {
 		if err := CheckName(clean); err != nil {
 			t.Errorf("CleanName(%q) = %q: %v", name, clean, err)
 		}
-		if CheckName(name) == nil && clean != name {
+		if CheckName(name) == nil && clean != name && !device(name) {
 			t.Errorf("CleanName(%q) = %q, changed a valid name", name, clean)
 		}
 	}
@@ -267,5 +269,79 @@ func TestStrictGeneratedManifests(t *testing.T) {
 		if (err == nil) != c.Valid {
 			t.Errorf("manifest %q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
 		}
+	}
+}
+
+var update = flag.Bool("update", false, "write testdata/interop/media-names.json")
+
+// A nameVector is a name a system or a sender may give, with whether
+// CheckName takes it in a manifest, the name a receiver writes it under
+// (SaveName, for a name CheckName takes) and the name CleanName makes of
+// it.
+type nameVector struct {
+	Name  string `json:"name"`
+	Valid bool   `json:"valid"`
+	Save  string `json:"save,omitempty"`
+	Clean string `json:"clean"`
+}
+
+// TestNameVectors checks testdata/interop/media-names.json, which the lite
+// core and both kits read too (go test -update writes it): the device names
+// of Windows that a manifest may hold are renamed when written and when a
+// sender cleans a name, never refused.
+func TestNameVectors(t *testing.T) {
+	var v []nameVector
+	for _, name := range []string{
+		"report.pdf", "CON", "con.txt", "nul.tar.gz", "Aux", "PRN.", "com1", "LPT9.log",
+		"COM0", "lpt0.txt", "COM\u00b9", "lpt\u00b2.doc", "COM\u00b3.x.y", "COM\u2074", "COM10", "COMx", "LPT",
+		"CONIN$", "conout$.log", "CONIN", "CONERR$",
+		"CON .txt", "nul  .x", "COM1 .txt", "com0 ", " CON.txt", "CON_.txt",
+		"con\u0131n$", "\u017fom1", "CON.\u0301", "CON\u0301.txt", "\uff23\uff2f\uff2e",
+		"console", "comX.txt",
+	} {
+		c := nameVector{Name: name, Valid: CheckName(name) == nil, Clean: CleanName(name)}
+		if c.Valid {
+			c.Save = SaveName(name)
+		}
+		v = append(v, c)
+	}
+	want, err := json.MarshalIndent(v, "", "\t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = append(want, '\n')
+	path := filepath.Join("..", "..", "testdata", "interop", "media-names.json")
+	if *update {
+		if err := os.WriteFile(path, want, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, want) {
+		t.Fatal("media-names.json is not what the rules give: run go test ./internal/clip -run TestNameVectors -update")
+	}
+	for _, c := range v {
+		if CheckName(c.Clean) != nil || device(c.Clean) {
+			t.Errorf("CleanName(%q) = %q, which a receiver refuses or renames", c.Name, c.Clean)
+		}
+		if c.Valid && (CheckName(c.Save) != nil || device(c.Save)) {
+			t.Errorf("SaveName(%q) = %q, which a receiver refuses or renames", c.Name, c.Save)
+		}
+	}
+	// Names Windows reserves beyond the first list are taken in a manifest
+	// and renamed, so that the copies of earlier members still arrive.
+	for _, name := range []string{"COM0", "CONIN$", "CON .txt", "lpt\u00b9"} {
+		if err := CheckName(name); err != nil {
+			t.Errorf("CheckName(%q): %v", name, err)
+		}
+		if SaveName(name) == name {
+			t.Errorf("SaveName(%q) kept a device name", name)
+		}
+	}
+	if got := SavePath("a/COM0/CON .txt"); got != "a/COM0_/CON _.txt" {
+		t.Errorf("SavePath = %q", got)
 	}
 }
