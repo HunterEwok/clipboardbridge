@@ -8,6 +8,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `docs/protocol.md` gives the exact rule for a signed body: each rule of the strict form has
+  a name, the order of the checks is written down, and section 10 has a table of every
+  record field with its JSON type, the types that need it and its values; section 15 says
+  the same for commands. `testdata/interop/strict-generated.json`, which Go's
+  `TestStrictGenerated` writes from these tables, holds some 2000 bodies of records, commands
+  and manifests with the verdict and the rule each one tests; Go, the lite member and both
+  phone kits read it, and the Go test fails when the file is not what the tables give.
 - The two text diagrams of `docs/design.md` (the system context and the containers) are
   pictures now, drawn by `tools/diagrams` like the others, with a light and a dark theme.
 - On the website the pictures of the documentation are drawn in chalk on a board in a walnut
@@ -644,6 +651,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The lite member and both phone apps check a hub command's order as Go does: a forwarder with an
+  address and a key or an address at least, at most 8 addresses and 256 clients, each client
+  a device ID once with keys of 32 bytes.
 - On Windows the service makes the admin socket's directory before the control socket's, and
   makes it again at each start unless the system, the administrators or the service owns it,
   so no other user can own the directory of the admin socket.
@@ -684,6 +694,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - A relay that refuses a registration is left as it was: it keeps nothing of the refused
   device's group, period or records, and keeps a period's key and versions while a group's
   devices change under a newer members' credential.
+- The open relay and the forwarder keep one budget (docs/relay-budget.md, `internal/budget`):
+  what each source starts and holds is charged to its address, its network (/24, /64) and its
+  wide network (/16, /48), each with a cap, and what is full refuses the new. Registrations
+  are bounded at 256 from one wide network, setups being set up at 128, requests read in a
+  relay's tunnels at 64; a forwarder keeps at most 1024 credential versions from one wide
+  network, and both servers at most 1 MiB of authority records from one network and 4 MiB
+  from one wide network. A client over VLESS reaches only its own group's hub, and a
+  client's next handshake from an address that has a session is checked against its group
+  first; neither spends the budget for handshakes to unknown groups. The forwarder keeps
+  every signer's copy of a record its hub sends, as a group's records do, and a refused
+  registration no longer drops the group's earlier one. Hubs and devices see the new
+  refusals as ordinary ones; nothing on the wire changes.
 - A root record that an admin phone signs counts only while no revocation from its root's own
   key names that admin phone, as for an admin computer, so a removed admin phone hands the
   group to nobody. The same on computers, the lite member and both phones.

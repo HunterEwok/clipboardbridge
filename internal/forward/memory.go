@@ -9,12 +9,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"io/fs"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
@@ -35,6 +37,13 @@ const (
 	// registered now; past it the group kept least recently is forgotten
 	// first.
 	rememberedBytes = 32 << 20
+	// networkRecordBytes and wideRecordBytes bound the records that the
+	// registrations from one network (an IPv4 /24 or an IPv6 /64) and from
+	// one wide network (an IPv4 /16 or an IPv6 /48) bring, registered or
+	// not: a registration whose new records would take its source past them
+	// is refused (docs/relay-budget.md).
+	networkRecordBytes = 4 * rememberedGroupBytes
+	wideRecordBytes    = 16 * rememberedGroupBytes
 )
 
 // memory keeps in memory, for each group that registered with records (a
@@ -47,26 +56,43 @@ const (
 // registers with a credential needs none of them (versions).
 //
 // The records of a group that is registered now are never forgotten; the
-// others are bounded in count and in bytes, per group and in all.
+// others are bounded in count and in bytes, per group and in all. The bytes
+// are charged to the network that brought them, by its first address,
+// which is all the memory keeps of where they came from.
 type memory struct {
 	mu     sync.Mutex
 	live   func(tag string) bool // whether the group is registered now; nil: none is
 	groups map[string]*kept
 	order  *list.List // of *kept, the group kept least recently first
 	bytes  int        // the size of every group's records
+	payers *budget.Count
 }
 
 // kept is one group's records.
 type kept struct {
 	tag   string
 	recs  []group.Record
-	ids   map[[sha256.Size]byte]struct{}
+	ids   map[[sha256.Size]byte]struct{} // by envelopeKey
 	bytes int
+	paid  map[netip.Addr]int // by the network that brought them
 	elem  *list.Element
 }
 
 func newMemory(live func(tag string) bool) *memory {
-	return &memory{live: live, groups: map[string]*kept{}, order: list.New()}
+	return &memory{live: live, groups: map[string]*kept{}, order: list.New(),
+		payers: budget.NewCount(budget.Caps{Network: networkRecordBytes, Wide: wideRecordBytes})}
+}
+
+// envelopeKey names a record as the memory keeps it: one body may come
+// under several signers, each an envelope of its own that the group's
+// records keep (docs/protocol.md, section 10), so the key is the record's
+// ID and its signature.
+func envelopeKey(r group.Record) [sha256.Size]byte {
+	id := r.ID()
+	h := sha256.New()
+	h.Write(id[:])
+	h.Write(r.Sig)
+	return [sha256.Size]byte(h.Sum(nil))
 }
 
 // recordBytes is what a record costs in memory, about.
@@ -97,22 +123,53 @@ func (m *memory) records(tag string) []group.Record {
 	return nil
 }
 
+// keys returns the envelope keys of records, each hashed once, outside the
+// memory's lock.
+func keys(records []group.Record) [][sha256.Size]byte {
+	ks := make([][sha256.Size]byte, len(records))
+	for i, r := range records {
+		ks[i] = envelopeKey(r)
+	}
+	return ks
+}
+
+// room reports whether the records that a registration from the address
+// from would add to what the memory keeps for the group fit within what
+// its network and wide network may bring. It changes nothing.
+func (m *memory) room(tag string, from netip.Addr, records []group.Record) error {
+	ks := keys(records)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	g := m.groups[tag]
+	n := 0
+	for i, r := range records {
+		if g != nil {
+			if _, ok := g.ids[ks[i]]; ok {
+				continue
+			}
+		}
+		n += recordBytes(r)
+	}
+	if _, full := m.payers.Full(network(from).Addr(), n); n > 0 && full {
+		return errors.New("the forwarder keeps as many records from this network as it can; try again later")
+	}
+	return nil
+}
+
 // keep remembers the group's authority records, checked ones only: what
-// authority returned, which fits. Records the group already has are not
+// authority returned, which fits, from a registration from the address
+// from, which room let through. Records the group already has are not
 // looked at again; a record that would take the group past its bound,
 // which only a registration of the group at the same time can bring, is
 // left out.
-func (m *memory) keep(tag string, records []group.Record) {
-	// Each new record is hashed once, outside the lock.
-	ids := make([][sha256.Size]byte, len(records))
-	for i, r := range records {
-		ids[i] = r.ID()
-	}
+func (m *memory) keep(tag string, from netip.Addr, records []group.Record) {
+	ks := keys(records)
+	payer := network(from).Addr()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	g := m.groups[tag]
 	if g == nil {
-		g = &kept{tag: tag, ids: map[[sha256.Size]byte]struct{}{}}
+		g = &kept{tag: tag, ids: map[[sha256.Size]byte]struct{}{}, paid: map[netip.Addr]int{}}
 		g.elem = m.order.PushBack(g)
 		m.groups[tag] = g
 	} else {
@@ -120,16 +177,18 @@ func (m *memory) keep(tag string, records []group.Record) {
 	}
 	for i, r := range records {
 		// Another registration of the group may have kept records meanwhile.
-		if _, ok := g.ids[ids[i]]; ok {
+		if _, ok := g.ids[ks[i]]; ok {
 			continue
 		}
 		n := recordBytes(r)
 		if g.bytes+n > rememberedGroupBytes {
 			continue
 		}
-		g.ids[ids[i]] = struct{}{}
+		g.ids[ks[i]] = struct{}{}
 		g.recs = append(g.recs, r)
 		g.bytes += n
+		g.paid[payer] += n
+		m.payers.Add(payer, n)
 		m.bytes += n
 	}
 	// Forget the groups kept least recently, but never one that is
@@ -140,6 +199,9 @@ func (m *memory) keep(tag string, records []group.Record) {
 			m.order.Remove(e)
 			delete(m.groups, o.tag)
 			m.bytes -= o.bytes
+			for a, n := range o.paid {
+				m.payers.Remove(a, n)
+			}
 		}
 		e = next
 	}

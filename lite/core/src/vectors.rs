@@ -727,6 +727,42 @@ fn strict() {
     }
 }
 
+/// The vectors the tables of docs/protocol.md give (strict-generated.json,
+/// as Go's TestStrictGenerated writes it): the lite member takes exactly
+/// the bodies the tables take, and says which row it reads otherwise.
+#[test]
+fn strict_generated() {
+    let v = vectors("strict-generated.json");
+    let mut wrong = Vec::new();
+    for kind in ["records", "commands", "manifests"] {
+        let cases = v[kind].as_array().unwrap();
+        assert!(!cases.is_empty(), "no {kind}");
+        for c in cases {
+            let mut body = bytes(&c["body"]);
+            if let Some(pad) = c["pad"].as_u64() {
+                let at = c["pad_at"].as_u64().unwrap() as usize;
+                body.splice(at..at, std::iter::repeat_n(b'a', pad as usize));
+            }
+            let got = match kind {
+                "records" => crate::records::Body::parse(&body).map(|_| ()).map_err(|e| e.to_string()),
+                "commands" => crate::records::Command::parse(&body).map(|_| ()).map_err(|e| e.to_string()),
+                _ => serde_json::from_slice::<crate::media::Manifest>(&body)
+                    .map_err(|e| e.to_string())
+                    .and_then(|m| m.validate().map_err(|e| e.to_string())),
+            };
+            if got.is_ok() != c["valid"].as_bool().unwrap() {
+                wrong.push(format!(
+                    "{kind} {:?} ({}): valid {}, got {got:?}",
+                    c["name"].as_str().unwrap(),
+                    c["rule"].as_str().unwrap(),
+                    c["valid"]
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+}
+
 /// The timestamps a clock took do not move how far ahead it takes the next
 /// one (hlc-ahead.json, as Go's TestAheadVectors writes it).
 #[test]

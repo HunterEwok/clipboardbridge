@@ -189,13 +189,10 @@ func (f *Forwarder) acceptRegistrations() {
 		if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 			from = ta.AddrPort().Addr().Unmap()
 		}
-		nw := network(from)
 		f.mu.Lock()
-		busy := f.setting >= f.limits.Connections || f.fromAddr[from] >= f.limits.PerAddress || f.fromNet[nw] >= f.limits.PerNetwork
+		busy := f.setting >= f.limits.Connections || !f.from.Take(from, 1)
 		if !busy {
 			f.setting++
-			f.fromAddr[from]++
-			f.fromNet[nw]++
 		}
 		f.mu.Unlock()
 		if busy {
@@ -207,12 +204,7 @@ func (f *Forwarder) acceptRegistrations() {
 			defer f.wg.Done()
 			defer func() {
 				f.mu.Lock()
-				if f.fromAddr[from]--; f.fromAddr[from] == 0 {
-					delete(f.fromAddr, from)
-				}
-				if f.fromNet[nw]--; f.fromNet[nw] == 0 {
-					delete(f.fromNet, nw)
-				}
+				f.from.Remove(from, 1)
 				f.mu.Unlock()
 			}()
 			f.serveRegistration(conn)
@@ -372,6 +364,17 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		if !fits(records) {
 			return refuse("the group's authority records are too large for this forwarder")
 		}
+		if err := f.memory.room(tag, remoteAddr(raw), records); err != nil {
+			return refuse(err.Error())
+		}
+	}
+	var vlessAns *vlessAnswer
+	if r.vlessID != "" {
+		pub, err := vless.PublicKey(f.vlessCfg.Key)
+		if err != nil {
+			return nil, err
+		}
+		vlessAns = &vlessAnswer{Port: f.vless.Port(), PublicKey: pub, ShortID: vless.ShortID(f.vlessCfg.Key), ServerName: f.vlessCfg.Site}
 	}
 	f.mu.Lock()
 	if o := f.regs[tag]; o != old {
@@ -394,23 +397,26 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 		f.mu.Unlock()
 		return refuse("another group registered that VLESS user ID")
 	}
-	if old != nil {
-		// The group's hub registers again, or another hub took over.
-		f.dropRegLocked(old)
-	}
-	a := answer{ID: r.id, Mask: f.mask[:]}
-	if r.vlessID != "" {
+	// The user ID is let in before the group's earlier registration goes,
+	// so a refusal leaves that one as it was; the same user ID passes from
+	// it to this one.
+	if r.vlessID != "" && (old == nil || old.vlessID != r.vlessID) {
 		if err := f.vless.AddUser(r.vlessID); err != nil {
 			f.mu.Unlock()
 			return refuse("the VLESS user ID is not usable")
 		}
-		f.byVLESS[r.vlessID] = r
-		pub, err := vless.PublicKey(f.vlessCfg.Key)
-		if err != nil {
-			f.mu.Unlock()
-			return nil, err
+	}
+	if old != nil {
+		// The group's hub registers again, or another hub took over.
+		if old.vlessID == r.vlessID {
+			old.vlessID = ""
 		}
-		a.VLESS = &vlessAnswer{Port: f.vless.Port(), PublicKey: pub, ShortID: vless.ShortID(f.vlessCfg.Key), ServerName: f.vlessCfg.Site}
+		f.dropRegLocked(old)
+	}
+	a := answer{ID: r.id, Mask: f.mask[:]}
+	if r.vlessID != "" {
+		f.byVLESS[r.vlessID] = r
+		a.VLESS = vlessAns
 	}
 	f.regs[tag], f.byID[r.id] = r, r
 	if r.obf != nil {
@@ -418,7 +424,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	}
 	f.mu.Unlock()
 	if p.member {
-		f.memory.keep(tag, records)
+		f.memory.keep(tag, remoteAddr(raw), records)
 	} else if err := f.versions.keep(cred, remoteAddr(raw)); errors.Is(err, errTableFull) {
 		// Another registration took the room meanwhile.
 		f.mu.Lock()

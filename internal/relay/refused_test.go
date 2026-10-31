@@ -14,6 +14,19 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 )
 
+// settled is the relay's state once the registrations it refused have
+// ended: a refusal reaches the client while its registration still holds
+// its group's turn to check records, which it gives back as it returns.
+func (r *Relay) settled(t *testing.T) string {
+	t.Helper()
+	waitFor(t, "the refused registrations to end", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return len(r.tagLocks) == 0
+	})
+	return r.state()
+}
+
 // state is what a relay holds of its groups and devices, as text that two
 // moments compare by: the charges a registration pays for its setup are
 // left out, since they are what a refused one costs.
@@ -35,12 +48,6 @@ func (r *Relay) state() string {
 	for tag, rs := range r.records {
 		lines = append(lines, fmt.Sprintf("records %s %d %d %s", tag, rs.set.Len(), rs.bytes, rs.set.Digest()))
 	}
-	for a, n := range r.fromIP {
-		lines = append(lines, fmt.Sprintf("from %s %d", a, n))
-	}
-	for nw, n := range r.fromNet {
-		lines = append(lines, fmt.Sprintf("from %s %d", nw, n))
-	}
 	for tag := range r.tagLocks {
 		lines = append(lines, "lock "+tag)
 	}
@@ -48,7 +55,7 @@ func (r *Relay) state() string {
 		lines = append(lines, "call "+t)
 	}
 	slices.Sort(lines)
-	return fmt.Sprintf("%s\nrecord bytes %d", strings.Join(lines, "\n"), r.recordBytes)
+	return fmt.Sprintf("%s\nheld:\n%s\nrecord bytes:\n%s", strings.Join(lines, "\n"), r.held, r.recordBytes)
 }
 
 // A registration the relay refuses leaves it as it was: whatever the
@@ -124,7 +131,7 @@ func TestRefusedRegistrationLeavesState(t *testing.T) {
 			t.Errorf("%s: %v, want a refusal for %q", tc.name, err, tc.why)
 			continue
 		}
-		if after := r.state(); after != before {
+		if after := r.settled(t); after != before {
 			t.Errorf("%s: a refused registration changed the relay\nbefore:\n%s\nafter:\n%s", tc.name, before, after)
 		}
 	}

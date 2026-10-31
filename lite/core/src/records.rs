@@ -40,6 +40,9 @@ const MAX_PASTE_BODY: usize = 2 << 20;
 /// The longest text of a paste command, and of one typed key by key.
 pub const MAX_PASTE_TEXT: usize = 1 << 20;
 pub const MAX_TYPE_TEXT: usize = 4 << 10;
+/// The most addresses and clients a hub command gives, as Go's.
+const MAX_HUB_ENDPOINTS: usize = 8;
+const MAX_HUB_CLIENTS: usize = 256;
 /// How long a command lives at most after it was signed.
 pub const COMMAND_LIFETIME_MS: i64 = 30_000;
 /// How far ahead of the receiver's clock a command's time may be.
@@ -174,10 +177,25 @@ impl Command {
         Ok(())
     }
 
-    /// Whether the hub order has the form Go reads: its members of the
-    /// right types, the clients' keys base64 in its standard form.
+    /// Whether the hub order is valid, as Go's HubOrder.check: its members
+    /// of the right types, the clients' keys base64 in its standard form, a
+    /// forwarder with an address and a key or an address at least, at most
+    /// 8 addresses and 256 clients, each client a device ID once with keys
+    /// of 32 bytes.
     fn hub_valid(&self) -> bool {
-        self.hub.as_ref().is_none_or(|h| serde_json::from_value::<HubOrder>(h.clone()).is_ok())
+        let Some(h) = self.hub.as_ref() else { return true };
+        let Ok(o) = serde_json::from_value::<HubOrder>(h.clone()) else { return false };
+        if o.forwarder.as_ref().is_some_and(|f| f.endpoint.is_empty() || f.key.is_empty())
+            || (o.forwarder.is_none() && o.endpoints.is_empty())
+            || o.endpoints.len() > MAX_HUB_ENDPOINTS
+            || o.clients.len() > MAX_HUB_CLIENTS
+        {
+            return false;
+        }
+        let mut seen = BTreeSet::new();
+        o.clients.iter().all(|c| {
+            certs::is_id(&c.device) && seen.insert(c.device.as_str()) && c.key.len() == 32 && c.psk.len() == 32
+        })
     }
 
     fn check_paste(&self, hub: bool) -> Result<()> {

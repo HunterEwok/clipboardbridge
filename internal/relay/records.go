@@ -14,11 +14,13 @@ import (
 )
 
 // A recordSet is a group's authority records as the relay keeps them: the
-// set that has verified them, and the bytes they take, which an open relay
-// bounds for each group and in all (Limits).
+// set that has verified them, the bytes they take, which an open relay
+// bounds for each group, and what each source that brought them paid, which
+// it bounds for each source and in all (Limits).
 type recordSet struct {
 	set   *group.Records
 	bytes int
+	paid  map[netip.Addr]int
 }
 
 // recordSize is what a record takes in memory, as far as the limits count.
@@ -76,7 +78,7 @@ func (r *Relay) checkRecords(tag string, root *x509.Certificate, from netip.Addr
 	}
 	created := rs == nil
 	if created {
-		rs = &recordSet{set: group.NewRecords(root)}
+		rs = &recordSet{set: group.NewRecords(root), paid: map[netip.Addr]int{}}
 	}
 	var missing []group.Record
 	size := 0
@@ -98,10 +100,12 @@ func (r *Relay) checkRecords(tag string, root *x509.Certificate, from netip.Addr
 	var err error
 	switch {
 	case len(missing) == 0:
-	case !r.allow.take(from, float64(len(missing)), r.now()):
+	case !r.allow.Take(from, float64(len(missing)), r.now()):
 		err = errors.New("too many records from this network; try again later")
-	case r.cfg.Open && !r.fitsLocked(rs, size):
+	case r.cfg.Open && rs.bytes+size > r.limits.GroupRecordBytes:
 		err = errors.New("the relay keeps as many records of this group as it can")
+	case r.cfg.Open && r.fullLocked(from, size):
+		err = errors.New("the relay keeps as many records from this network as it can; try again later")
 	}
 	if err != nil {
 		r.mu.Unlock()
@@ -111,7 +115,8 @@ func (r *Relay) checkRecords(tag string, root *x509.Certificate, from netip.Addr
 		r.records[tag] = rs
 	}
 	rs.bytes += size
-	r.recordBytes += size
+	rs.paid[from] += size
+	r.recordBytes.Add(from, size)
 	r.mu.Unlock()
 	// The signatures take time, so they are checked outside the lock, with
 	// the group's other registrations waiting.
@@ -124,16 +129,21 @@ func (r *Relay) checkRecords(tag string, root *x509.Certificate, from netip.Addr
 		}
 		r.mu.Lock()
 		rs.bytes -= size - kept
-		r.recordBytes -= size - kept
+		if rs.paid[from] -= size - kept; rs.paid[from] <= 0 {
+			delete(rs.paid, from)
+		}
+		r.recordBytes.Remove(from, size-kept)
 		r.mu.Unlock()
 	}
 	return rs, len(fresh) > 0, nil
 }
 
-// fitsLocked reports whether size more bytes of records fit within the
-// open relay's limits for the group of rs and in all.
-func (r *Relay) fitsLocked(rs *recordSet, size int) bool {
-	return rs.bytes+size <= r.limits.GroupRecordBytes && r.recordBytes+size <= r.limits.RecordBytes
+// fullLocked reports whether size more bytes of records from the address
+// from would take the source past its share, or all sources past the open
+// relay's limit.
+func (r *Relay) fullLocked(from netip.Addr, size int) bool {
+	_, full := r.recordBytes.Full(from, size)
+	return full
 }
 
 // forgetRecords ends a registration that failed: a group that the relay
@@ -150,7 +160,9 @@ func (r *Relay) forgetRecords(tag string) {
 // dropRecordsLocked forgets the records of the group tag.
 func (r *Relay) dropRecordsLocked(tag string) {
 	if rs := r.records[tag]; rs != nil {
-		r.recordBytes -= rs.bytes
+		for a, n := range rs.paid {
+			r.recordBytes.Remove(a, n)
+		}
 		delete(r.records, tag)
 	}
 }

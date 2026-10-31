@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
@@ -42,11 +43,20 @@ const (
 	maxSetups         = 256 // registrations being set up at once
 	maxSetupsAddress  = 16  // of them from one IP address
 	maxSetupsNetwork  = 64  // of them from one IPv4 /24 or IPv6 /64
+	maxSetupsWide     = 128 // of them from one IPv4 /16 or IPv6 /48
 	maxRequests       = 256 // requests in the tunnels being read at once
 	maxRequestsOne    = 16  // of them from one device
 	maxRequestsGroup  = 32  // of them from one group
 	maxRequestsSource = 32  // of them from devices registered from one IP address
 	maxRequestsNet    = 64  // of them from devices registered from one IPv4 /24 or IPv6 /64
+	maxRequestsWide   = 64  // of them from devices registered from one IPv4 /16 or IPv6 /48
+)
+
+// The caps of the setups and of the requests being read, by who pays for
+// them (docs/relay-budget.md).
+var (
+	setupCaps   = budget.Caps{Address: maxSetupsAddress, Network: maxSetupsNetwork, Wide: maxSetupsWide, All: maxSetups}
+	requestCaps = budget.Caps{Address: maxRequestsSource, Network: maxRequestsNet, Wide: maxRequestsWide, All: maxRequests}
 )
 
 // Timeouts: setupTimeout bounds a registration, requestTimeout the wait for
@@ -92,34 +102,29 @@ type Relay struct {
 
 	limits Limits // an open relay's; zero otherwise
 
-	mu      sync.Mutex
-	groups  map[string]map[string]*member // tag, then device ID
-	fromIP  map[netip.Addr]int            // an open relay's registrations by address
-	fromNet map[netip.Prefix]int          // and by network
-	byAddr  map[netip.Addr]*member
-	calls   map[string]*call // by ticket
-	// setting counts the registrations being set up, setupIP and setupNet
-	// them by address and network; requesting the requests being read.
-	setting    int
-	setupIP    map[netip.Addr]int
-	setupNet   map[netip.Prefix]int
-	requesting int
+	mu     sync.Mutex
+	groups map[string]map[string]*member // tag, then device ID
+	// held counts an open relay's registrations by the source they came
+	// from; setups the registrations being set up, and requests the
+	// requests being read, by the address the device registered from.
+	held     *budget.Count
+	setups   *budget.Count
+	requests *budget.Count
+	byAddr   map[netip.Addr]*member
+	calls    map[string]*call // by ticket
 	// requestWait is how long a connection in a tunnel may take to send
 	// its request line: requestTimeout, longer in tests.
 	requestWait time.Duration
-	// reqIP and reqNet count the requests being read by the address and the
-	// network the device registered from.
-	reqIP  map[netip.Addr]int
-	reqNet map[netip.Prefix]int
 	// records are each group's authority records, from all its members'
 	// registrations, verified once and kept in memory while the relay runs.
-	records     map[string]*recordSet
-	recordBytes int // what they take, all together
+	records map[string]*recordSet
+	// recordBytes counts what they take by the source that brought them.
+	recordBytes *budget.Count
 	// tagLocks serialise the registrations of one group while they check
 	// its records.
 	tagLocks map[string]*tagLock
-	// allow is what each source address and network may still start.
-	allow *allowance
+	// allow is what each source may still start.
+	allow *budget.Rates
 	now   func() time.Time
 	// periods are what it holds of the groups that registered with
 	// credentials, by their period's tag.
@@ -214,10 +219,12 @@ func Listen(cfg Config) (*Relay, error) {
 	r := &Relay{cfg: cfg, allowed: allowed, tcp: tcp, hub: hub, logf: logf, done: make(chan struct{}),
 		groups: map[string]map[string]*member{}, byAddr: map[netip.Addr]*member{}, calls: map[string]*call{},
 		records: map[string]*recordSet{}, tagLocks: map[string]*tagLock{}, allow: newAllowance(), now: time.Now,
-		reqIP: map[netip.Addr]int{}, reqNet: map[netip.Prefix]int{}, periods: map[string]*period{}, fromIP: map[netip.Addr]int{}, fromNet: map[netip.Prefix]int{},
-		setupIP: map[netip.Addr]int{}, setupNet: map[netip.Prefix]int{}, requestWait: requestTimeout}
+		periods: map[string]*period{}, setups: budget.NewCount(setupCaps), requests: budget.NewCount(requestCaps),
+		held: budget.NewCount(budget.Caps{}), recordBytes: budget.NewCount(budget.Caps{}), requestWait: requestTimeout}
 	if cfg.Open {
 		r.limits = cfg.Limits.withDefaults()
+		r.held = budget.NewCount(r.limits.registrationCaps())
+		r.recordBytes = budget.NewCount(r.limits.recordCaps())
 	}
 	r.tlsCfg = r.serverTLS()
 	return r, nil
@@ -283,28 +290,23 @@ func (r *Relay) Stats() (groups, members int) {
 // takeSlot counts a registration being set up from the address from;
 // false when there are too many, from there or in all.
 func (r *Relay) takeSlot(from netip.Addr) bool {
-	nw := networkOf(from)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.setting >= maxSetups || r.setupIP[from] >= maxSetupsAddress || r.setupNet[nw] >= maxSetupsNetwork {
+	if _, full := r.setups.Full(from, 1); full {
 		return false
 	}
 	// Setups are also paid for by the second, so a source that sets up and
 	// closes over and over does not cost the relay more than its share.
-	if !r.allow.take(from, setupCost, r.now()) {
+	if !r.allow.Take(from, setupCost, r.now()) {
 		return false
 	}
-	r.setting++
-	r.setupIP[from]++
-	r.setupNet[nw]++
+	r.setups.Add(from, 1)
 	return true
 }
 
 func (r *Relay) freeSlot(from netip.Addr) {
 	r.mu.Lock()
-	r.setting--
-	countDown(r.setupIP, from)
-	countDown(r.setupNet, networkOf(from))
+	r.setups.Remove(from, 1)
 	r.mu.Unlock()
 }
 
@@ -312,16 +314,13 @@ func (r *Relay) freeSlot(from netip.Addr) {
 // are too many, of m, of its group, of the address or network it registered
 // from, or in all.
 func (r *Relay) takeRequestLocked(m *member) bool {
-	nw := networkOf(m.from)
-	if m.dropped || r.requesting >= maxRequests || m.reading >= maxRequestsOne ||
-		r.reqIP[m.from] >= maxRequestsSource || r.reqNet[nw] >= maxRequestsNet ||
-		m.greads != nil && *m.greads >= maxRequestsGroup {
+	if m.dropped || m.reading >= maxRequestsOne || m.greads != nil && *m.greads >= maxRequestsGroup {
 		return false
 	}
-	r.requesting++
+	if !r.requests.Take(m.from, 1) {
+		return false
+	}
 	m.reading++
-	r.reqIP[m.from]++
-	r.reqNet[nw]++
 	if m.greads != nil {
 		*m.greads++
 	}
@@ -330,10 +329,8 @@ func (r *Relay) takeRequestLocked(m *member) bool {
 
 func (r *Relay) freeRequest(m *member) {
 	r.mu.Lock()
-	r.requesting--
+	r.requests.Remove(m.from, 1)
 	m.reading--
-	countDown(r.reqIP, m.from)
-	countDown(r.reqNet, networkOf(m.from))
 	if m.greads != nil {
 		*m.greads--
 	}
@@ -351,27 +348,32 @@ func (r *Relay) admitLocked(m *member, leaving func(*member) bool) error {
 		}
 	}
 	g := r.groups[m.tag]
-	n, ip, nw := len(g), r.fromIP[m.from], r.fromNet[networkOf(m.from)]
+	// The devices that m takes the place of free what they hold while the
+	// count is asked, and hold it again after.
+	var gone []*member
 	for dev, o := range g {
-		if dev != m.device && (leaving == nil || !leaving(o)) {
-			continue
-		}
-		n--
-		if o.from == m.from {
-			ip--
-		}
-		if networkOf(o.from) == networkOf(m.from) {
-			nw--
+		if dev == m.device || leaving != nil && leaving(o) {
+			gone = append(gone, o)
 		}
 	}
-	if n >= maxMembers {
+	full := false
+	if r.cfg.Open {
+		for _, o := range gone {
+			r.held.Remove(o.from, 1)
+		}
+		_, full = r.held.Full(m.from, 1)
+		for _, o := range gone {
+			r.held.Add(o.from, 1)
+		}
+	}
+	if len(g)-len(gone) >= maxMembers {
 		return errors.New("the relay holds as many devices of this group as it can")
 	}
 	if r.cfg.Open {
 		switch {
 		case g == nil && len(r.groups) >= r.limits.Groups:
 			return errors.New("the relay serves as many groups as it can; try again later, or run your own relay")
-		case ip >= r.limits.PerAddress, nw >= r.limits.PerNetwork:
+		case full:
 			return errors.New("too many devices registered from this network; try again later")
 		}
 	}
@@ -419,8 +421,7 @@ func (r *Relay) addLocked(m *member) error {
 		return err
 	}
 	if r.cfg.Open {
-		r.fromIP[m.from]++
-		r.fromNet[networkOf(m.from)]++
+		r.held.Add(m.from, 1)
 	}
 	return nil
 }
@@ -460,8 +461,7 @@ func (r *Relay) dropLocked(m *member) {
 	if r.byAddr[m.addr] == m {
 		delete(r.byAddr, m.addr)
 		if r.cfg.Open {
-			countDown(r.fromIP, m.from)
-			countDown(r.fromNet, networkOf(m.from))
+			r.held.Remove(m.from, 1)
 		}
 	}
 	if err := r.hub.SetPeers(r.peersLocked()); err != nil {
@@ -734,15 +734,6 @@ func (r *Relay) serveAnswer(m *member, c net.Conn, ticket string) {
 	r.mu.Unlock()
 	writeLine(c, note{Error: "no such call"}, noteTimeout)
 	r.closeStream(m, c)
-}
-
-// countDown lowers the count of k, and forgets it at zero.
-func countDown[K comparable](m map[K]int, k K) {
-	if m[k] <= 1 {
-		delete(m, k)
-	} else {
-		m[k]--
-	}
 }
 
 // splice copies between two connections until either ends, at the

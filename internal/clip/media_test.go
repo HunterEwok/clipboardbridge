@@ -238,3 +238,34 @@ func TestStrictManifests(t *testing.T) {
 		}
 	}
 }
+
+// TestStrictGeneratedManifests checks the manifests of
+// testdata/interop/strict-generated.json, which internal/group writes from
+// the tables of docs/protocol.md.
+func TestStrictGeneratedManifests(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "interop", "strict-generated.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Manifests []struct {
+			Name  string `json:"name"`
+			Rule  string `json:"rule"`
+			Body  []byte `json:"body"`
+			Valid bool   `json:"valid"`
+		} `json:"manifests"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil || len(v.Manifests) == 0 {
+		t.Fatalf("no manifests: %v", err)
+	}
+	for _, c := range v.Manifests {
+		var m Manifest
+		err := json.Unmarshal(c.Body, &m)
+		if err == nil {
+			err = m.Validate()
+		}
+		if (err == nil) != c.Valid {
+			t.Errorf("manifest %q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
+		}
+	}
+}

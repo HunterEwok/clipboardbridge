@@ -1,0 +1,130 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+# The servers' budget
+
+For engineers and security reviewers: what strangers can make the open relay and the
+forwarder hold and do, who pays for it, and what a genuine group keeps whatever they do.
+
+The open relay (`cbb relay -open`) and the forwarder (`cbb forward`) serve any group that
+registers, not only their operator's: that is one of the project's goals, and it stays. It
+also means that anyone on the internet can make groups of their own and register them. The
+servers stay safe for the groups already on them by a budget: every piece of state and work
+a stranger can start is charged to whoever started it, each payer has a cap, and what is full
+refuses the new. The code keeps the accounting in one place, `internal/budget`, which both
+servers use; the wire format and the numbers a client sees are in [protocol.md](protocol.md),
+sections 13 and 14, and the user-facing limits in [limits](reference/limits.md).
+
+## Payers
+
+A source address pays at three levels, and all sources together at a fourth:
+
+| Level | IPv4 | IPv6 | What it stands for |
+|---|---|---|---|
+| Address | /32 | /128 | one host |
+| Network | /24 | /64 | one home or one office: a host usually gets one address of an IPv4 /24 or a whole IPv6 /64 |
+| Wide network | /16 | /48 | one site or one provider's customer |
+| All | | | every source together |
+
+A charge goes to all the levels of its source at once, and is refused when any level would
+pass its cap; a refusal charges nothing. Besides the sources, some state is charged to the
+group (its devices, its records) or to a VLESS user ID (the handshakes of its clients).
+State that is held (registrations, entries, records) is counted by `budget.Count`; work that
+is done (setups, record checks) is paid for by the second, with a burst, by `budget.Rates`.
+
+## Rules
+
+1. **Refuse the new.** When a cap is full, the new registration, entry or record is refused.
+   Nothing a source or a group holds is taken from it to make room for another. The one
+   exception is memory nobody holds: the records the forwarder remembers of groups that are
+   not registered now, which are forgotten oldest first once 32 MiB are held.
+2. **A refusal leaves the server as it was.** A refused registration, for any reason, keeps
+   nothing of the refused group: no period, version, record or count; the devices and groups
+   registered before stay as they were.
+3. **Every cap has a payer that cannot be spread thin.** A stranger who wants more needs more
+   wide networks, not more addresses inside one.
+4. **What a stranger leaves behind ends.** Registrations end with their connections; a
+   group's records and period on the relay go with its last device; the forwarder's versions
+   go when their credential expires, at most 35 days after they were kept.
+
+## The relay
+
+| State | Cost | Lifetime | Charged to | Cap per payer | Cap in all | When full |
+|---|---|---|---|---|---|---|
+| Registration being set up | a goroutine and a TLS handshake, about 50 KiB; one ECDH | 15 s at most | address, network, wide network | 16, 64, 128 | 256 | the connection is closed |
+| Setup, paid by the second | 4 units | | address, network, wide network | 64, 256, 1024 units a second; bursts of 1536, 4096, 8192 | | the connection is closed |
+| Registered device (open relay) | a tunnel peer and its entry, about 2 KiB | while its connection lasts | address, network, wide network; group | 16, 64, 256; 64 devices of a group | 4096 groups | refused |
+| A group's authority records | their bytes; one ECDSA check each, once | until the group's last device leaves | the group; the network and wide network that brought them | 256 KiB a group; 1 MiB a network, 4 MiB a wide network | 128 MiB | refused, none of them kept |
+| Record check | about 45 µs | | address, network, wide network | 1 unit each, from the same allowance as setups | | refused |
+| Period (registration with credentials) | the period key, versions and members' list | until the group's last device leaves | the group | one per period tag | 4096 groups | refused |
+| Request being read in a tunnel | a goroutine | 5 s at most | device, group; address, network, wide network the device registered from | 16, 32; 32, 64, 64 | 256 | the connection is closed |
+| Call waiting for an answer | a ticket | 10 s at most | the called device | 16 | | refused |
+| Joined connections | two copies | while both last | the group | 256 | | refused |
+| Copying | bandwidth | | the group | 1 MiB a second, two seconds' burst | | slowed down |
+| Note to a device | a queued line | until sent | the watching device | 32 | | the watch is closed |
+| Allowance of a source | about 150 bytes for each of its three payers | until full again: under 30 s | itself | | forgotten past 4096 sources when full | |
+
+What the relay guarantees:
+
+- **A device registered before cannot be pushed out** by any number of strangers: nothing
+  they register removes another group's devices, records or period.
+- **A new group from elsewhere finds room** unless strangers hold 4096 groups, which takes at
+  least 16 wide networks (4096 / 256) holding their registrations open, or 128 MiB of
+  records, which takes at least 32 wide networks (128 MiB / 4 MiB).
+- **Requests**: strangers in fewer than 4 wide networks (256 / 64) cannot take every request
+  slot, and each slot is free again within 5 s.
+- After strangers register and leave, the relay keeps nothing of them but their sources'
+  allowances, which it forgets once full again (`TestOpenRelayForgetsStrangers`).
+
+A relay for the user's own groups (`-group`) has the limits of every relay (setups, requests,
+calls, members) and serves no stranger's group at all.
+
+## The forwarder
+
+| State | Cost | Lifetime | Charged to | Cap per payer | Cap in all | When full |
+|---|---|---|---|---|---|---|
+| Registration, being set up or held | a goroutine, a TLS connection | while its connection lasts | address, network, wide network | 16, 64, 256 | 256 being set up; 100,000 groups | the connection is closed; refused |
+| A group's clients | an entry per address, handshake and session | 10 s a handshake, 200 s a session | the group | 16 addresses, 64 handshakes waiting | | dropped |
+| A group's packets | forwarding | | the group | 1000 packets and 2 MiB a second | | dropped |
+| Credential version (a period's entry) | about 400 bytes in memory, 200 on disk | until the last credential it saw expires, 35 days at most | the network and wide network it came from | 256, 1024 | 100,000 | refused |
+| Remembered records (hubs from before the credentials) | their bytes | while the group is registered; after, until 32 MiB are held | the group; the network and wide network that brought them | 256 KiB a group; 1 MiB a network, 4 MiB a wide network | 32 MiB of groups not registered now | refused; the oldest unregistered group is forgotten |
+| VLESS user ID | a user of the VLESS server | with its registration | the registration | one per group | as registrations | refused |
+| Handshake to a group not known for its address | one keyed BLAKE2s per registered group | | the source address; its network; all | 10 handshakes a second; 1/16 of all; 500,000 checks a second | | dropped |
+| Handshake over VLESS | one check, against the group of its user ID | | the VLESS user ID | 10 handshakes a second | | dropped |
+| Handshake from an address with a session | a check per group the address has | | the source address | 10 handshakes a second | | dropped |
+| Sources' and networks' budgets | an entry each | until full again | | | 4 per group, the oldest dropped | the oldest is forgotten |
+
+What the forwarder guarantees:
+
+- **A group that registered before cannot be pushed out**: nothing strangers do removes a
+  registration, a credential's version or a registered group's records.
+- **A group that renews on time finds room** for its new period unless the table holds
+  100,000 versions, which takes at least 98 wide networks (100,000 / 1024) keeping them for
+  their whole lifetime; a network of its own holds fewer than its share. A stranger who adds
+  a version pays a whole registration for it.
+- **A client that is connected stays connected**: its next handshakes from the same address
+  are checked against its own group first and spend nothing of the scan budget, and a client
+  over VLESS reaches only its own group's hub and costs one check, so no flood of handshakes,
+  over VLESS or not, cuts it off.
+- **A new client of a group**, whose handshake must be checked against every group, competes
+  for the scan budget. A source can forge its address, so this is the one budget strangers
+  can spend from anywhere; a network gets a sixteenth of it, and the client's own retries
+  every 5 s get through once the flood pauses. This is the accepted bound.
+- The memory that strangers leave is bounded by the table's numbers: 100,000 versions of
+  about 400 bytes (`TestVersionsMemoryBounded`), 32 MiB of remembered records.
+
+## Tests
+
+The guarantees above are tested, in Go:
+
+- a refused registration, for each reason, leaves the server as it was:
+  `TestRefusedRegistrationLeavesState` (relay), `TestRefusedRegistrationLeavesForwarder`;
+- for each payer, sources at their cap leave room for a group from elsewhere and never push
+  out one that came before, with random sources, groups and orders under a fixed seed:
+  `TestCountProperty`, `TestOpenRelayBudgetProperty`, `TestVersionsBudgetProperty`;
+- what strangers leave behind is bounded and measured: `TestOpenRelayForgetsStrangers`,
+  `TestVersionsMemoryBounded`;
+- the payers of each kind: `TestVersionsWideNetworkLeavesRoom`, `TestMemoryChargesTheSource`,
+  `TestRecordBytesChargedToTheSource`, `TestRequestsBoundByWideNetwork`,
+  `TestVLESSUsersLeaveTheScanBudget`, `TestKnownClientKeepsItsGroup`.
+
+A new limit goes into this page and into `internal/budget` first: a cap added alone, in one
+file, is one a neighbouring state can go around.
