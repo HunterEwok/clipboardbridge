@@ -119,6 +119,16 @@ if [ -f /etc/tmux.conf ]; then
 	cat /etc/tmux.conf.clipboardbridge >/etc/tmux.conf
 	rm -f /etc/tmux.conf.clipboardbridge
 fi
+# What install.sh created (install.sh, made), once nothing else is in it:
+# /etc/tmux.conf with only blank lines left, and empty folders.
+if [ -f "$share/created" ]; then
+	while read -r p; do
+		case $p in
+		/etc/tmux.conf) [ ! -f "$p" ] || grep -q '[^[:space:]]' "$p" || rm -f "$p" ;;
+		/etc/*) rmdir "$p" 2>/dev/null || true ;;
+		esac
+	done <"$share/created"
+fi
 # cbb update's folder: the answer about automatic updates, what it has
 # seen and the previous programs.
 rm -rf "$share" /etc/clipboardbridge /var/lib/clipboardbridge-update /opt/clipboardbridge /opt/clipboardbridge-update
