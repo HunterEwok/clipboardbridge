@@ -116,6 +116,13 @@ jobs:
           echo CBB_TPM_REQUIRED=1 >>"$GITHUB_ENV"
       - name: go test
         run: go test -race ./...
+      # int is 32 bits there, as on the Raspberry Pi's armv7 and the routers'
+      # mips, and 386 runs on the runner without an emulator.
+      - name: go test of the member protocol on a 32-bit build
+        if: matrix.os == 'ubuntu-latest'
+        run: go test ./internal/node
+        env:
+          GOARCH: "386"
 
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('/v{0}', matrix.goarm) || '' }})

@@ -135,18 +135,59 @@ public enum Media {
         return !reserved(name)
     }
 
-    /// Whether name, before its first dot, is a device name of Windows:
-    /// CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to LPT9, in any case.
+    /// Whether name, before its first dot, is a device name of Windows
+    /// that a manifest may not hold: CON, PRN, AUX, NUL, COM1 to COM9 and
+    /// LPT1 to LPT9, in any case of ASCII letters, as Go's clip.reserved.
     static func reserved(_ name: String) -> Bool {
-        let base = String(name.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false).first ?? "").uppercased()
-        if ["CON", "PRN", "AUX", "NUL"].contains(base) { return true }
-        return base.utf8.count == 4 && (base.hasPrefix("COM") || base.hasPrefix("LPT")) && (0x31...0x39).contains(base.utf8.last ?? 0)
+        let base = upperASCII(baseBytes(name))
+        if [Array("CON".utf8), Array("PRN".utf8), Array("AUX".utf8), Array("NUL".utf8)].contains(base) { return true }
+        return base.count == 4 && (base.starts(with: "COM".utf8) || base.starts(with: "LPT".utf8)) && (0x31...0x39).contains(base[3])
+    }
+
+    /// Whether name is a device name of Windows, as Go's clip.device:
+    /// before its first dot, and without the spaces that end that part, one
+    /// of CON, PRN, AUX, NUL, CONIN$, CONOUT$, or COM or LPT followed by one
+    /// digit 0 to 9 or one of the superscripts ¹, ² and ³, in any case of
+    /// ASCII letters.
+    static func device(_ name: String) -> Bool {
+        var base = upperASCII(baseBytes(name))
+        while base.last == 0x20 { base.removeLast() }
+        if ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"].map({ Array($0.utf8) }).contains(base) { return true }
+        guard base.starts(with: "COM".utf8) || base.starts(with: "LPT".utf8) else { return false }
+        let n = Array(base.dropFirst(3))
+        return (n.count == 1 && (0x30...0x39).contains(n[0])) || ["\u{B9}", "\u{B2}", "\u{B3}"].map({ Array($0.utf8) }).contains(n)
+    }
+
+    /// The name under which a receiver writes a name that checkName took,
+    /// as Go's clip.SaveName: a device name of Windows gets "_" after its
+    /// base, the part before its first dot, and any other name stays as it
+    /// is.
+    public static func saveName(_ name: String) -> String {
+        device(name) ? withUnderscore(name) : name
+    }
+
+    /// The bytes of name before its first dot, the byte ".": a dot that a
+    /// combining mark follows is one Character for Swift but still a dot.
+    private static func baseBytes(_ name: String) -> [UInt8] {
+        Array(name.utf8.prefix { $0 != 0x2E })
+    }
+
+    private static func upperASCII(_ b: [UInt8]) -> [UInt8] {
+        b.map { (0x61...0x7A).contains($0) ? $0 - 0x20 : $0 }
+    }
+
+    /// Puts "_" after a name's base: CON.txt becomes CON_.txt, as Windows
+    /// reserves the base with any extension.
+    private static func withUnderscore(_ name: String) -> String {
+        let b = Array(name.utf8)
+        let base = baseBytes(name)
+        return String(decoding: base + Array("_".utf8) + b[base.count...], as: UTF8.self)
     }
 
     /// A name that checkName takes, made of one a system gave, as Go's
     /// clip.CleanName: the characters it does not allow become "_", a
-    /// reserved name gets "_" after its base and one that ends in a dot or
-    /// a space gets "_" after it.
+    /// device name of Windows gets "_" after its base and one that ends in
+    /// a dot or a space gets "_" after it.
     public static func cleanName(_ given: String) -> String {
         var scalars = String.UnicodeScalarView()
         for u in given.unicodeScalars {
@@ -164,19 +205,11 @@ public enum Media {
         }
     }
 
-    /// Gives a reserved name "_" after its base and one that ends in a dot
-    /// or a space "_" after it.
+    /// Gives a device name of Windows "_" after its base and one that ends
+    /// in a dot or a space "_" after it.
     private static func fixName(_ given: String) -> String {
         var name = given
-        if reserved(name) {
-            // CON.txt becomes CON_.txt: Windows reserves the base with any
-            // extension.
-            if let dot = name.firstIndex(of: ".") {
-                name = String(name[..<dot]) + "_" + String(name[dot...])
-            } else {
-                name += "_"
-            }
-        }
+        if device(name) { name = withUnderscore(name) }
         if name.hasSuffix(".") || name.hasSuffix(" ") { name += "_" }
         return name
     }

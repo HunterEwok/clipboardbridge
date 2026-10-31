@@ -557,8 +557,13 @@ A manifest holds either clipboard data (every part has `type`) or files (every p
 file's path does not go through another file. Each name in a path is valid UTF-8 of 1 to 255
 bytes, not `.` or `..`, without control characters (C0, DEL, C1) or `/ \ : * ? " < > |`, not
 ending in a dot or a space, and not a name Windows reserves (`CON`, `PRN`, `AUX`, `NUL`,
-`COM1` to `COM9`, `LPT1` to `LPT9`, in any case, before the first dot), so that every system
-can hold a received copy. Every number in a manifest is an integer written as in signed
+`COM1` to `COM9`, `LPT1` to `LPT9`, in any case of ASCII letters, before the first dot), so
+that every system can hold a received copy. Windows reserves a few more device names, which
+a manifest may hold since earlier members send them: `COM0`, `LPT0`, `COM` or `LPT` followed
+by `¹`, `²` or `³`, `CONIN$` and `CONOUT$`, and any of these names with spaces before the
+first dot (`CON .txt`). A receiver MUST take such a name and write it with `_` after the part
+before the first dot (`COM0_`, `CON _.txt`), and a sender SHOULD give its own names that form
+before it sends them; `testdata/interop/media-names.json` holds the cases. Every number in a manifest is an integer written as in signed
 bodies (Conventions, "Signed bodies"): no `-0`, fraction or exponent. A receiver MUST refuse a
 manifest that breaks any of these rules (the vectors of
 `strict-generated.json` cite them as `manifests/size` and `manifests/parts`; a manifest is no

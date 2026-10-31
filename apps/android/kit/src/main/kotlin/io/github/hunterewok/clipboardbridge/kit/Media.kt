@@ -125,8 +125,8 @@ object Media {
     /**
      * A name that checkName takes, made of one a system gave, as Go's
      * clip.CleanName: the characters it does not allow become "_", a
-     * reserved name gets "_" after its base and one that ends in a dot or a
-     * space gets "_" after it.
+     * device name of Windows gets "_" after its base and one that ends in a
+     * dot or a space gets "_" after it.
      */
     fun cleanName(given: String): String {
         val sb = StringBuilder()
@@ -149,13 +149,37 @@ object Media {
         }
     }
 
-    /** Gives a reserved name "_" after its base and one that ends in a dot or a space "_" after it. */
+    /** Gives a device name of Windows "_" after its base and one that ends in a dot or a space "_" after it. */
     private fun fixName(given: String): String {
         var name = given
-        // CON.txt becomes CON_.txt: Windows reserves the base with any extension.
-        if (reserved(name)) name = name.substringBefore('.') + "_" + if ('.' in name) "." + name.substringAfter('.') else ""
+        if (device(name)) name = withUnderscore(name)
         if (name.endsWith('.') || name.endsWith(' ')) name += "_"
         return name
+    }
+
+    /**
+     * The name under which a receiver writes a name that checkName took, as Go's clip.SaveName: a device name of
+     * Windows gets "_" after its base, the part before its first dot, and any other name stays as it is.
+     */
+    fun saveName(name: String): String = if (device(name)) withUnderscore(name) else name
+
+    /** Puts "_" after a name's base: CON.txt becomes CON_.txt, as Windows reserves the base with any extension. */
+    private fun withUnderscore(name: String): String =
+        name.substringBefore('.') + "_" + if ('.' in name) "." + name.substringAfter('.') else ""
+
+    /** name with its ASCII letters in upper case and every other character as it is, as every implementation compares names. */
+    private fun upperASCII(s: String): String = buildString { for (c in s) append(if (c in 'a'..'z') c - 32 else c) }
+
+    /**
+     * Whether name is a device name of Windows, as Go's clip.device: before its first dot, and without the spaces that
+     * end that part, one of CON, PRN, AUX, NUL, CONIN$, CONOUT$, or COM or LPT followed by one digit 0 to 9 or one of
+     * the superscripts ¹, ² and ³, in any case of ASCII letters.
+     */
+    private fun device(name: String): Boolean {
+        val base = upperASCII(name.substringBefore('.').trimEnd(' '))
+        if (base in setOf("CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$")) return true
+        if (!base.startsWith("COM") && !base.startsWith("LPT")) return false
+        return base.substring(3) in setOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u00b9", "\u00b2", "\u00b3")
     }
 
     /**
@@ -172,9 +196,12 @@ object Media {
         return !reserved(name)
     }
 
-    /** Whether name, before its first dot, is a device name of Windows: CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to LPT9, in any case. */
+    /**
+     * Whether name, before its first dot, is a device name of Windows that a manifest may not hold: CON, PRN, AUX, NUL,
+     * COM1 to COM9 and LPT1 to LPT9, in any case of ASCII letters, as Go's clip.reserved.
+     */
     private fun reserved(name: String): Boolean {
-        val base = name.substringBefore('.').uppercase()
+        val base = upperASCII(name.substringBefore('.'))
         if (base in setOf("CON", "PRN", "AUX", "NUL")) return true
         return base.length == 4 && (base.startsWith("COM") || base.startsWith("LPT")) && base[3] in '1'..'9'
     }

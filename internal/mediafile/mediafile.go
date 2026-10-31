@@ -227,11 +227,12 @@ func Save(c Receiver, dir string) ([]string, error) {
 }
 
 // SavedName is where a part goes in the folder: its path, checked again,
-// or a name for its type.
+// with the device names of Windows renamed (clip.SavePath), or a name for
+// its type.
 func SavedName(p control.Part) (string, error) {
 	switch p.Type {
 	case "":
-		return p.Path, clip.CheckPath(p.Path)
+		return clip.SavePath(p.Path), clip.CheckPath(p.Path)
 	case clip.TypePNG:
 		return "image.png", nil
 	case clip.TypeJPEG:
