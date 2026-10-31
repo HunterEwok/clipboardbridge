@@ -525,6 +525,21 @@ func TestRemovedAdminDevice(t *testing.T) {
 	}
 }
 
+// TestSameRecordTwoCAs is one admin body under two admin CAs of its key:
+// the order of the copies does not matter.
+func TestSameRecordTwoCAs(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("C", "full", computerPowers)
+	r := w.device("C", "laptop", "full", nil, nil, false)
+	w.admin("C", "root")
+	again := r
+	again.Chain = [][]byte{w.cas["C"].Raw}
+	w.recs = append(w.recs, again)
+	if s := w.evalAll(nil); findDevice(s, w.ids["laptop"]) == nil {
+		t.Fatalf("the laptop should count: %s", mustEncode(t, s))
+	}
+}
+
 func TestTwoHistories(t *testing.T) {
 	w := newWorld(t)
 	w.makeAdmin("C", "full", computerPowers)

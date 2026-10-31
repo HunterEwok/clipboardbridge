@@ -97,10 +97,12 @@ func newEvaluation(input Input) *evaluation {
 		}
 		return nil
 	}
-	seen := map[Hash]bool{}
+	// One body may come with more than one valid admin CA (an admin key
+	// certified again); the smallest DER is kept, whatever the order.
+	byID := map[Hash]*rec{}
 	for _, r := range input.Records {
 		s, err := Verify(r, rootKey)
-		if err != nil || s.Body.Group != input.Group || seen[s.ID] {
+		if err != nil || s.Body.Group != input.Group {
 			continue
 		}
 		x := &rec{Signed: s}
@@ -111,10 +113,14 @@ func newEvaluation(input Input) *evaluation {
 			}
 			x.issuer = issuer
 		}
-		seen[s.ID] = true
-		e.bySig[s.Body.Signer] = append(e.bySig[s.Body.Signer], x)
-		if s.Body.Type == TypeDevice {
-			e.devices[s.Body.Device] = append(e.devices[s.Body.Device], x)
+		if old := byID[s.ID]; old == nil || old.AdminCA != nil && bytes.Compare(s.AdminCA.Raw, old.AdminCA.Raw) < 0 {
+			byID[s.ID] = x
+		}
+	}
+	for _, x := range byID {
+		e.bySig[x.Body.Signer] = append(e.bySig[x.Body.Signer], x)
+		if x.Body.Type == TypeDevice {
+			e.devices[x.Body.Device] = append(e.devices[x.Body.Device], x)
 		}
 	}
 	return e
@@ -417,6 +423,11 @@ func cutsOff(a, b *rec) bool {
 // attacks of removals, freezes and thaws (docs/records-v2.md, "Which admin
 // records count").
 func (ep *epoch) label() {
+	for _, rs := range ep.e.bySig {
+		for _, r := range rs {
+			r.label = unlabelled
+		}
+	}
 	var adminRecs, rootActs []*rec
 	thawedByRoot := map[Hash]bool{}
 	for _, rs := range ep.e.bySig {
@@ -429,7 +440,6 @@ func (ep *epoch) label() {
 					}
 				}
 			case r.AdminCA != nil && ep.counted[r.ID]:
-				r.label = unlabelled
 				if !ep.permitted(r) {
 					r.label = out
 				}
