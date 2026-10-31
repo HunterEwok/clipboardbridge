@@ -135,4 +135,69 @@ func getScript(ctx context.Context, r *Report, f *Fleet, fd *feed, builds map[st
 			return runsVersion(ctx, d, "0.6.1")
 		})
 	}
+	getLite(ctx, r, f, fd, builds)
+}
+
+// getLite (I1): get.sh --lite on a computer with nothing installed takes
+// the lite member's archive from a release that holds both, checks its
+// signature and leaves the lite member running under systemd. It packs
+// the archive from -cbb-lite with lite/packaging/archive.sh, which needs
+// cargo and jq for the crates' notices.
+func getLite(ctx context.Context, r *Report, f *Fleet, fd *feed, builds map[string]string) {
+	const p = "fleet/I1-get-lite/"
+	if fleetLite == "" {
+		r.Skip(p[:len(p)-1], "give -cbb-lite FILE, the lite member's cbb for Linux, to install it with get.sh --lite")
+		return
+	}
+	var built string
+	var d *Device
+	if r.Do(p+"setup", func() error {
+		built = filepath.Join(fd.dir, "built-lite")
+		if err := os.MkdirAll(built, 0o755); err != nil {
+			return err
+		}
+		if out, err := exec.CommandContext(ctx, "sh", "-c", "cp \"$1\"/* \"$2\"/", "sh", builds["0.6.1"], built).CombinedOutput(); err != nil {
+			return fmt.Errorf("%v: %s", err, out)
+		}
+		target := map[string]string{"amd64": "x86_64-unknown-linux-gnu", "arm64": "aarch64-unknown-linux-gnu"}[goarchOf()]
+		if out, err := exec.CommandContext(ctx, "sh", "lite/packaging/archive.sh", fleetLite, target, goarchOf(), built).CombinedOutput(); err != nil {
+			return fmt.Errorf("lite/packaging/archive.sh: %v: %s", err, out)
+		}
+		var err error
+		if d, err = f.AddSystemd(ctx, f.net); err != nil {
+			return err
+		}
+		_, err = docker(ctx, "cp", "packaging/get.sh", d.Container+":/tmp/get.sh")
+		return err
+	}) != nil {
+		return
+	}
+	r.Do(p+"installs", func() error {
+		dir, err := fd.publish(ctx, built, "get-lite", "0.6.1", releaseOpts{})
+		if err != nil {
+			return err
+		}
+		at, err := fd.toDevice(ctx, d, dir)
+		if err != nil {
+			return err
+		}
+		out, err := runOut(ctx, d, feedEnv(at)+" sh /tmp/get.sh --lite --no-firewall", 3*time.Minute)
+		fmt.Fprintf(r.out, "I1 get.sh --lite: %s\n", strings.Join(strings.Fields(out), " "))
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(out, "The release's signature checks out (0.6.1).") {
+			return fmt.Errorf("get.sh --lite printed %q, without that the signature checks out", out)
+		}
+		if out, err := Run(ctx, d, "cbb version", ""); err != nil || !strings.Contains(out, "the lite member") {
+			return fmt.Errorf("cbb version after get.sh --lite: %q (%v)", out, err)
+		}
+		return eventually(ctx, 30*time.Second, func() error {
+			out, err := Run(ctx, d, "systemctl is-active clipboardbridge; cbb status 2>&1; true", "")
+			if err == nil && (!strings.HasPrefix(out, "active") || !strings.Contains(out, "in no group")) {
+				err = fmt.Errorf("the lite member after get.sh --lite: %q", out)
+			}
+			return err
+		})
+	})
 }
