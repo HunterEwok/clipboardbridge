@@ -471,11 +471,11 @@ func TestNewerVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.recs = append(w.recs, byRoot, byAdmin,
-		sign(body(root, "fedcba9876543210"), w.roots["root"].Key),        // another group
-		authority.Record{Body: body(root, tag), Sig: []byte{1}},          // no signature
-		sign(body(h, tag), stranger),                                     // not a key of the group
-		sign(body(w.adminKey("B"), tag), w.keys["B"], w.cas["B"].Raw),    // a removed admin
-		authority.Record{Body: []byte(`{"v":3, "group":"` + tag + `"}`)}, // not canonical
+		sign(body(root, "fedcba9876543210"), w.roots["root"].Key),                        // another group
+		authority.Record{Body: body(root, tag), Sig: []byte{1}},                          // no signature
+		sign(body(h, tag), stranger),                                                     // not a key of the group
+		sign(body(w.adminKey("B"), tag), w.keys["B"], w.cas["B"].Raw),                    // a removed admin
+		authority.Record{Body: []byte(`{"v":3, "group":"` + tag + `"}`), Sig: []byte{1}}, // not canonical
 	)
 	s := w.evalAll(nil)
 	want := []authority.Hash{byRoot.ID(), byAdmin.ID()}
