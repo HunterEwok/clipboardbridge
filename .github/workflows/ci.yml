@@ -119,9 +119,11 @@ jobs:
           sudo apt-get install -y -q swtpm
           echo CBB_TPM_REQUIRED=1 >>"$GITHUB_ENV"
       - name: go test
-        # bash: PowerShell splits -coverprofile=cover-go.out at the dot.
+        # bash: PowerShell splits -coverprofile=cover-go.out at the dot. Each
+        # system's file has a name of its own: the coverage job downloads
+        # them all into one folder.
         shell: bash
-        run: go test -race -coverprofile=cover-go.out ./...
+        run: go test -race -coverprofile="cover-go-${{ matrix.os }}.out" ./...
       # int is 32 bits there, as on the Raspberry Pi's armv7 and the routers'
       # mips, and 386 runs on the runner without an emulator.
       - name: go test of the member protocol on a 32-bit build
@@ -134,7 +136,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-go-${{ matrix.os }}
-          path: cover-go.out
+          path: cover-go-${{ matrix.os }}.out
           retention-days: 7
 
   # Go's test coverage across packages (a test of internal/service counts for
