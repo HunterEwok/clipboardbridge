@@ -113,11 +113,17 @@ func TestMemoryKeepIsLinear(t *testing.T) {
 		if got := len(m.records("g")); got != n {
 			t.Fatalf("kept %d records of %d", got, n)
 		}
+		// Each run repeats the call for at least 10 ms and takes the time
+		// of one, so a coarse clock (Windows) does not read it as zero.
 		best := time.Duration(1 << 62)
 		for range 15 {
+			calls := 0
 			start := time.Now()
-			m.keep("g", noSource, rs)
-			best = min(best, time.Since(start))
+			for calls == 0 || time.Since(start) < 10*time.Millisecond {
+				m.keep("g", noSource, rs)
+				calls++
+			}
+			best = min(best, time.Since(start)/time.Duration(calls))
 		}
 		return best
 	}
