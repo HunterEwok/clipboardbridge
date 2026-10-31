@@ -91,6 +91,7 @@ var scenarios = []struct {
 	{"removed admin's claim", TestRemovedAdminClaimVoid},
 	{"chain of claims", TestChainOfClaims},
 	{"removed admin's device", TestRemovedAdminDevice},
+	{"one record under two admin CAs", TestSameRecordTwoCAs},
 	{"two histories of an admin", TestTwoHistories},
 	{"two histories of the root", TestRootTwoHistories},
 	{"freeze and thaw", TestFreezeAndThaw},
