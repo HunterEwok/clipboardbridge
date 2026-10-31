@@ -750,22 +750,23 @@ impl Service {
             res.reason = "the text has nothing that may be pasted: only control characters".into();
             return res;
         }
-        // A line break runs what comes before it where keys go straight to a
-        // shell: in a typed text, and in tmux and on a console. There it
-        // needs the user's leave for Enter.
-        let lines = text.contains('\n') && !set.enter;
-        if lines && body.mode == "type" {
-            res.reason = "a typed text with a line break would run it, and this device takes pastes without Enter only; send it as a paste or as one line".into();
+        // A line break runs what comes before it wherever the focused
+        // program does not take a paste bracketed: a typed text, tmux, a
+        // console, and on a desktop a shell or console window that does not
+        // ask for it, which no target can tell. So a text with one needs the
+        // user's leave for Enter on every target.
+        if text.contains('\n') && !set.enter {
+            res.reason = format!(
+                "the text has a line break, which may run what comes before it, and this device takes pastes without Enter only; send it as one line, or its user allows Enter with {}cbb paste-receive on -enter",
+                crate::rootless::sudo()
+            );
             return res;
         }
-        let mut order = vec![DESKTOP];
-        if !lines {
-            order.push(TMUX);
-            if set.console {
-                order.push(CONSOLE);
-            }
+        let mut order = vec![DESKTOP, TMUX];
+        if set.console {
+            order.push(CONSOLE);
         }
-        let (targets, console, term) = {
+        let (targets, console) = {
             let ws = self.watchers.lock().unwrap();
             let targets: Vec<(String, Option<u32>, SyncSender<ToWatcher>)> = order
                 .iter()
@@ -773,12 +774,10 @@ impl Service {
                 .map(|w| (w.target.clone(), w.uid, w.tx.clone()))
                 .collect();
             let console = ws.iter().any(|w| w.target == CONSOLE);
-            (targets, console, console || ws.iter().any(|w| w.target == TMUX))
+            (targets, console)
         };
         if targets.is_empty() {
-            res.reason = if lines && term {
-                "only tmux or a text console is here, where a line break would run the text, and this device takes pastes without Enter only; send it as one line"
-            } else if console && !set.console {
+            res.reason = if console && !set.console {
                 "only a text console is here, and its user did not allow consoles (sudo cbb paste-receive on -console)"
             } else {
                 "nothing on this device can paste: no tmux or console helper of Clipboard Bridge runs here"

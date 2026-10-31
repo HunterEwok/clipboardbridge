@@ -493,6 +493,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- A remote paste with a line break needs the device user's leave for Enter on every target
+  of a computer and of the lite member, a desktop session too: a shell or console window
+  there may take the paste without bracketing it. Without that leave such a paste is
+  refused with a reason that says how to send it.
 - The documentation's pictures are laid out better: in the forwarder picture the home side
   moves right and the hub's line has room for its label; in the hub picture the hub's neighbours
   hang on one trunk; in the group and without-app pictures the branch stands close to the root.
