@@ -25,6 +25,12 @@ use crate::strict;
 
 /// The largest record body a member takes (8 KiB).
 pub const MAX_BODY: usize = 8 << 10;
+
+/// The one signature algorithm of version 2: ECDSA P-256 with SHA-256, DER.
+pub const ALG_ES256: &str = "es256";
+
+/// How many records of a later version a state lists.
+pub const MAX_NEWER: usize = 16;
 /// The largest seq a signer gives a record.
 pub const MAX_SEQ: i64 = (1 << 31) - 1;
 /// The longest takeover delay the root may set (7 days), in milliseconds.
@@ -130,6 +136,7 @@ fn is_false(b: &bool) -> bool {
 #[serde(deny_unknown_fields)]
 pub struct Body {
     pub v: i64,
+    pub alg: String,
     #[serde(rename = "type")]
     pub kind: String,
     pub group: String,
@@ -177,7 +184,7 @@ pub struct Body {
     pub takeover_delay_ms: Option<i64>,
 }
 
-const COMMON: [&str; 6] = ["v", "type", "group", "signer", "seq", "time_ms"];
+const COMMON: [&str; 7] = ["v", "alg", "type", "group", "signer", "seq", "time_ms"];
 
 /// The fields beyond those every record has that a type may carry.
 fn allowed(kind: &str) -> Option<&'static [&'static str]> {
@@ -271,6 +278,9 @@ impl Body {
     fn check(&self) -> Result<()> {
         if self.v != 2 {
             return Err(Error::msg(format!("a record of version {}", self.v)));
+        }
+        if self.alg != ALG_ES256 {
+            return Err(Error::msg(format!("a record signed with {:?}", self.alg)));
         }
         let allowed =
             allowed(&self.kind).ok_or_else(|| Error::msg(format!("an unknown record type {:?}", self.kind)))?;
@@ -478,6 +488,10 @@ pub struct State {
     pub no_secrets_to: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub nothing_to: Vec<String>,
+    /// Records of a later version: the member keeps them and tells its
+    /// user to update.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub newer: Vec<Hash>,
 }
 
 /// One device of the state.
@@ -556,10 +570,45 @@ pub fn evaluate(input: &Input) -> State {
             None => {
                 earlier.append(&mut ep.claims);
                 ep.claims = earlier;
-                return ep.state();
+                let mut state = ep.state();
+                state.newer = newer(input, &state, &e.roots);
+                return state;
             }
         }
     }
+}
+
+/// The IDs of the records of a later version for this group that a
+/// current root or admin of the state signed, sorted, at most MAX_NEWER
+/// (docs/records-v2.md, "Records of a later version").
+fn newer(input: &Input, state: &State, roots: &BTreeMap<Hash, Cert>) -> Vec<Hash> {
+    let admins: BTreeSet<Hash> = state.devices.iter().filter_map(|d| d.admin).collect();
+    let mut ids = BTreeSet::new();
+    for r in input.records {
+        if r.body.len() > MAX_BODY || crate::strict::check_canonical(&r.body, &["v", "group", "signer"]).is_err() {
+            continue;
+        }
+        let Ok(serde_json::Value::Object(m)) = serde_json::from_slice::<serde_json::Value>(&r.body) else {
+            continue;
+        };
+        let group = m.get("group").and_then(|g| g.as_str());
+        let v = m.get("v").and_then(|v| v.as_i64());
+        if group != Some(input.group) || !v.is_some_and(|v| v > 2 && v <= MAX_SEQ) {
+            continue;
+        }
+        let Some(Ok(signer)) = m.get("signer").map(|s| serde_json::from_value::<Hash>(s.clone())) else {
+            continue;
+        };
+        let key = match r.chain.as_slice() {
+            [] if state.roots.contains(&signer) => roots.get(&signer).cloned(),
+            [ca] if admins.contains(&signer) => Cert::parse(ca).ok().filter(|ca| key_hash_of(ca) == signer),
+            _ => None,
+        };
+        if key.is_some_and(|k| k.verifies(&r.body, &r.sig)) {
+            ids.insert(r.id());
+        }
+    }
+    ids.into_iter().take(MAX_NEWER).collect()
 }
 
 /// A verified record with the root that issued its admin CA.
@@ -1390,16 +1439,22 @@ mod tests {
         for c in v["cases"].as_array().unwrap() {
             let records: Vec<Record> = serde_json::from_value(c["records"].clone()).unwrap();
             for r in records {
-                let b = Body::parse(&r.body).unwrap();
+                // The bodies of a later version have no alg and do not read.
+                let Ok(b) = Body::parse(&r.body) else {
+                    assert!(!r.body.windows(5).any(|w| w == br#""alg""#), "{}", c["name"]);
+                    continue;
+                };
                 assert_eq!(b.encode().unwrap(), r.body);
                 n += 1;
             }
         }
         assert!(n > 0);
-        let good = r#"{"device":"0123456789abcdef0123456789abcdef","group":"g","key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","name":"Laptop","role":"full","seq":1,"signer":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","time_ms":1,"type":"device","v":2}"#;
+        let good = r#"{"alg":"es256","device":"0123456789abcdef0123456789abcdef","group":"g","key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","name":"Laptop","role":"full","seq":1,"signer":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","time_ms":1,"type":"device","v":2}"#;
         Body::parse(good.as_bytes()).unwrap();
         for bad in [
             good.replace(r#"{"#, r#"{"aaa":1,"#),
+            good.replace(r#""alg":"es256""#, r#""alg":"es384""#),
+            good.replace(r#""alg":"es256","#, ""),
             good.replace(r#""device""#, r#""commands":[],"device""#),
             good.replace(r#""key""#, r#""holds_root":false,"key""#),
             good.replace(r#""v":2"#, r#""v":1"#),

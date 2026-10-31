@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -30,6 +31,13 @@ const MaxBody = 8 << 10
 
 // MaxSeq is the largest seq a signer gives a record.
 const MaxSeq = 1<<31 - 1
+
+// AlgES256 is the one signature algorithm of version 2: ECDSA P-256 with
+// SHA-256, DER.
+const AlgES256 = "es256"
+
+// MaxNewer is how many records of a later version a state lists.
+const MaxNewer = 16
 
 // MaxDelay is the longest takeover delay the root may set (7 days), and
 // DefaultDelay the delay without a settings record (72 hours), both in
@@ -121,6 +129,7 @@ type Seen struct {
 // Body is a record's body (docs/records-v2.md, "The record").
 type Body struct {
 	V      int    `json:"v"`
+	Alg    string `json:"alg"`
 	Type   string `json:"type"`
 	Group  string `json:"group"`
 	Signer Hash   `json:"signer"`
@@ -163,7 +172,7 @@ var (
 		TypeResolve:  set("records"),
 		TypeSettings: set("takeover_delay_ms"),
 	}
-	common = []string{"v", "type", "group", "signer", "seq", "time_ms"}
+	common = []string{"v", "alg", "type", "group", "signer", "seq", "time_ms"}
 )
 
 func set(names ...string) map[string]bool {
@@ -251,6 +260,9 @@ func ParseBody(data []byte) (Body, error) {
 func (b *Body) check() error {
 	if b.V != 2 {
 		return fmt.Errorf("authority: a record of version %d", b.V)
+	}
+	if b.Alg != AlgES256 {
+		return fmt.Errorf("authority: a record signed with %q", b.Alg)
 	}
 	allowed, ok := fields[b.Type]
 	if !ok {
@@ -473,7 +485,10 @@ func Sign(b Body, key crypto.Signer, adminCA *x509.Certificate) (Record, error) 
 	if adminCA != nil && KeyHashOf(adminCA) != signer {
 		return Record{}, errors.New("authority: the admin CA does not certify the signing key")
 	}
-	b.V, b.Signer = 2, signer
+	if pub, ok := key.Public().(*ecdsa.PublicKey); !ok || pub.Curve != elliptic.P256() {
+		return Record{}, errors.New("authority: version 2 signs only with a P-256 key")
+	}
+	b.V, b.Alg, b.Signer = 2, AlgES256, signer
 	b.Sort()
 	body, err := b.Encode()
 	if err != nil {

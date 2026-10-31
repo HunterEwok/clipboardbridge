@@ -8,10 +8,12 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 
 	"github.com/HunterEwok/clipboardbridge/internal/strict"
 )
@@ -67,7 +69,64 @@ func Evaluate(input Input) (*State, error) {
 		path = append(path, *next)
 	}
 	ep.claims = append(earlier, ep.claims...)
-	return ep.state(), nil
+	s := ep.state()
+	s.Newer = newer(input, s, e.roots)
+	return s, nil
+}
+
+// newer returns the IDs of the records of a later version for this group
+// that a current root or admin of s signed, sorted, at most MaxNewer: a
+// member keeps them and passes them on, never applies them, and tells its
+// user to update (docs/records-v2.md, "Records of a later version").
+func newer(input Input, s *State, roots map[Hash]*x509.Certificate) []Hash {
+	admins := map[Hash]bool{}
+	for _, d := range s.Devices {
+		if d.Admin != nil {
+			admins[*d.Admin] = true
+		}
+	}
+	var ids []Hash
+	for _, r := range input.Records {
+		if len(r.Body) > MaxBody || strict.CheckCanonical(r.Body, "v", "group", "signer") != nil {
+			continue
+		}
+		var b struct {
+			V      json.Number `json:"v"`
+			Group  any         `json:"group"`
+			Signer Hash        `json:"signer"`
+		}
+		dec := json.NewDecoder(bytes.NewReader(r.Body))
+		dec.UseNumber()
+		if dec.Decode(&b) != nil || b.Group != input.Group {
+			continue
+		}
+		v, err := strconv.ParseInt(string(b.V), 10, 64)
+		if err != nil || v <= 2 || v > MaxSeq {
+			continue
+		}
+		var pub crypto.PublicKey
+		switch {
+		case len(r.Chain) == 0 && contains(s.Roots, b.Signer) && roots[b.Signer] != nil:
+			pub = roots[b.Signer].PublicKey
+		case len(r.Chain) == 1 && admins[b.Signer]:
+			if ca, err := x509.ParseCertificate(r.Chain[0]); err == nil && KeyHashOf(ca) == b.Signer {
+				pub = ca.PublicKey
+			}
+		}
+		ec, ok := pub.(*ecdsa.PublicKey)
+		digest := sha256.Sum256(r.Body)
+		if !ok || !ecdsa.VerifyASN1(ec, digest[:], r.Sig) {
+			continue
+		}
+		if id := r.ID(); !contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i].String() < ids[j].String() })
+	if len(ids) > MaxNewer {
+		ids = ids[:MaxNewer]
+	}
+	return ids
 }
 
 // evaluation holds the verified records of a set.
@@ -827,6 +886,9 @@ type State struct {
 	Stop        string     `json:"stop"`
 	NoSecretsTo []string   `json:"no_secrets_to,omitempty"`
 	NothingTo   []string   `json:"nothing_to,omitempty"`
+	// Newer lists records of a later version: the member keeps them and
+	// tells its user to update.
+	Newer []Hash `json:"newer,omitempty"`
 }
 
 // Device is one device of the state.

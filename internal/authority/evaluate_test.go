@@ -6,10 +6,14 @@ package authority_test
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	crand "crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
 	"maps"
 	"math/rand/v2"
+	"sort"
 	"testing"
 	"time"
 
@@ -432,6 +436,56 @@ func TestClaimedRootSignsEarly(t *testing.T) {
 	s := w.evalAll(first)
 	if s.Stop != "full" || len(s.Roots) != 1 || claimState(s, c.ID()) != "disputed" {
 		t.Fatalf("the removal should dispute the claim: %s", mustEncode(t, s))
+	}
+}
+
+// TestNewerVersion is a record of a later version: the state lists it for
+// the user to update when a current root or admin signed it, applies
+// nothing of it, and goes on.
+func TestNewerVersion(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	w.makeAdmin("B", "phone", phonePowers)
+	w.sign("remove B", "root", revoke(w.adminKey("B")), nil)
+	before := mustEncode(t, w.evalAll(nil))
+	body := func(signer authority.Hash, group string) []byte {
+		return []byte(`{"group":"` + group + `","signer":"` + signer.String() + `","type":"keys","v":3}`)
+	}
+	sign := func(b []byte, key crypto.Signer, chain ...[]byte) authority.Record {
+		d := sha256.Sum256(b)
+		sig, err := key.Sign(crand.Reader, d[:], crypto.SHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return authority.Record{Body: b, Sig: sig, Chain: chain}
+	}
+	root := w.signerHash("root")
+	byRoot := sign(body(root, tag), w.roots["root"].Key)
+	byAdmin := sign(body(w.adminKey("A"), tag), w.keys["A"], w.cas["A"].Raw)
+	stranger, err := ecdsa.GenerateKey(elliptic.P256(), crand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := authority.PublicKeyHash(&stranger.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.recs = append(w.recs, byRoot, byAdmin,
+		sign(body(root, "fedcba9876543210"), w.roots["root"].Key),        // another group
+		authority.Record{Body: body(root, tag), Sig: []byte{1}},          // no signature
+		sign(body(h, tag), stranger),                                     // not a key of the group
+		sign(body(w.adminKey("B"), tag), w.keys["B"], w.cas["B"].Raw),    // a removed admin
+		authority.Record{Body: []byte(`{"v":3, "group":"` + tag + `"}`)}, // not canonical
+	)
+	s := w.evalAll(nil)
+	want := []authority.Hash{byRoot.ID(), byAdmin.ID()}
+	sort.Slice(want, func(i, j int) bool { return want[i].String() < want[j].String() })
+	if len(s.Newer) != 2 || s.Newer[0] != want[0] || s.Newer[1] != want[1] || s.Stop != "none" {
+		t.Fatalf("the state should list the two signed records of version 3: %s", mustEncode(t, s))
+	}
+	s.Newer = nil
+	if got := mustEncode(t, s); got != before {
+		t.Fatalf("a record of a later version changed the state:\n got %s\nwant %s", got, before)
 	}
 }
 

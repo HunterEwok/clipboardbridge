@@ -90,7 +90,8 @@ SHA-256 over `body`.
 
 | Field | JSON type | Values |
 |-------|-----------|--------|
-| `v` | integer | exactly `2` |
+| `v` | integer | exactly `2`; a body of a later version is kept, never applied ("Records of a later version") |
+| `alg` | string | exactly `es256`: the envelope's `sig` is ECDSA P-256 with SHA-256, DER |
 | `type` | string | one of the types below |
 | `group` | string | the group tag (section 1) |
 | `signer` | string | SHA-256 of the signing key's SubjectPublicKeyInfo, base64: a root's key, or the admin key that the admin CA in `chain` certifies |
@@ -102,6 +103,26 @@ A receiver MUST refuse an envelope whose `signer` is not the hash of the key tha
 verifies with: the key of the admin CA in `chain`, or, with an empty `chain`, the key of a
 root the group may have (the group CA, or the new root of a claim). So one body has one
 signer, and the same body under another signer is not a valid record.
+
+`alg` names the signature algorithm inside the signed bytes, so a later algorithm (a
+post-quantum one, say) comes with a new `v` and can never be mistaken for, or downgraded
+to, this one. A key hash covers the key's SubjectPublicKeyInfo, which names its algorithm.
+A signer's own code refuses to sign with any key that is not P-256.
+
+### Records of a later version
+
+New record types and new fields come only with a new `v`, so a member that meets a body of a
+later version needs an update to read it. A record is **kept** when its body is at most the
+body's size and in the strict and canonical form, its `v` is an integer from 3 to 2^31-1,
+its `group` is the group's tag, and the envelope verifies as this version's does (`sig`
+ECDSA P-256 with SHA-256 over the body) with the key its `signer` names, which must be a root
+on the current path (`chain` empty) or an admin key of a device in the state (`chain` its
+admin CA). So only the group's current roots and admins can raise the signal, and nobody
+else can fill it with junk; a later version keeps signing with this algorithm whatever it
+adds. The member stores a kept record, passes it on in sync as it is and never applies it.
+The state lists the IDs of the kept records in `newer`, sorted, at most 16, and the member's
+status and the apps tell the user to update. Nothing else changes: the group goes on under
+the records the member can read. Any other body that does not read is left out, as before.
 
 A **key hash** is 32 bytes of SHA-256 in base64 (44 characters); a device ID 32 of `0`-`9`
 and `a`-`f`.
@@ -356,6 +377,7 @@ returns the state as one canonical JSON object:
 | `stop` | string | `none`, `secrets` or `full` |
 | `no_secrets_to` | array of strings | sorted device IDs that get no secrets |
 | `nothing_to` | array of strings | sorted device IDs that get nothing |
+| `newer` | array of strings | sorted IDs of the records of a later version the member keeps, at most 16 |
 
 Empty fields are left out, as in signed bodies, so two implementations agree when their
 states are the same bytes. The state does not depend on the order in which records arrived;

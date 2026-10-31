@@ -171,6 +171,8 @@ func TestParseBodyRefuses(t *testing.T) {
 		"holds_root false":           strings.Replace(good, `"key"`, `"holds_root":false,"key"`, 1),
 		"not canonical":              strings.Replace(good, `{`, `{ `, 1),
 		"version 1":                  strings.Replace(good, `"v":2`, `"v":1`, 1),
+		"another algorithm":          strings.Replace(good, `"alg":"es256"`, `"alg":"es384"`, 1),
+		"no algorithm":               strings.Replace(good, `"alg":"es256",`, ``, 1),
 		"seq 0":                      strings.Replace(good, `"seq":1`, `"seq":0`, 1),
 		"seq 2 without prev":         strings.Replace(good, `"seq":1`, `"seq":2`, 1),
 		"an unknown role":            strings.Replace(good, `"role":"full"`, `"role":"linux"`, 1),
