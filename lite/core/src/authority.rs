@@ -417,6 +417,85 @@ impl Record {
     }
 }
 
+/// The most signatures a SigCache holds; when it is full it starts again.
+pub const MAX_CACHE: usize = 8192;
+
+/// Signatures already checked: an entry is a hash over the signer's key
+/// hash, the body's hash and the signature, kept only for a signature that
+/// verified, so that evaluating the same records again checks each
+/// signature once. It is safe to share between threads and evaluations.
+pub struct SigCache {
+    seen: spin::Mutex<BTreeSet<[u8; 32]>>,
+}
+
+impl Default for SigCache {
+    fn default() -> SigCache {
+        SigCache::new()
+    }
+}
+
+impl SigCache {
+    pub const fn new() -> SigCache {
+        SigCache { seen: spin::Mutex::new(BTreeSet::new()) }
+    }
+
+    fn entry(key: &Cert, data: &[u8], sig: &[u8]) -> [u8; 32] {
+        let mut m = Vec::with_capacity(16 + 32 + 32 + sig.len());
+        m.extend_from_slice(b"cbb sig cache v1");
+        m.extend_from_slice(&key_hash_of(key).0);
+        m.extend_from_slice(&sha256(data));
+        m.extend_from_slice(sig);
+        sha256(&m)
+    }
+
+    /// Reports whether sig over data verifies with key, from the cache when
+    /// it was checked before.
+    pub fn verifies(&self, key: &Cert, data: &[u8], sig: &[u8]) -> bool {
+        let e = SigCache::entry(key, data, sig);
+        if self.seen.lock().contains(&e) {
+            return true;
+        }
+        let ok = key.verifies(data, sig);
+        if ok {
+            self.add([e]);
+        }
+        ok
+    }
+
+    /// The entries, sorted, to save with the member's state.
+    pub fn entries(&self) -> Vec<[u8; 32]> {
+        self.seen.lock().iter().copied().collect()
+    }
+
+    /// Adds saved entries. Only entries from the member's own saved state,
+    /// checked with its secret, may come here: an entry stands for a
+    /// signature that verified.
+    pub fn add(&self, entries: impl IntoIterator<Item = [u8; 32]>) {
+        let mut seen = self.seen.lock();
+        for e in entries {
+            if seen.len() >= MAX_CACHE {
+                seen.clear();
+            }
+            seen.insert(e);
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.seen.lock().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+fn verifies(sigs: Option<&SigCache>, key: &Cert, data: &[u8], sig: &[u8]) -> bool {
+    match sigs {
+        Some(c) => c.verifies(key, data, sig),
+        None => key.verifies(data, sig),
+    }
+}
+
 /// A record whose body was read and whose signature verifies with the key
 /// its body names.
 #[derive(Clone, Debug)]
@@ -430,8 +509,9 @@ pub struct Signed {
 
 /// Reads r's body and checks its signature: with an admin CA in the chain,
 /// the signer is that CA's key; with none, a root the group may have, which
-/// root_key finds by the signer.
-pub fn verify<'a>(r: &Record, root_key: impl Fn(&Hash) -> Option<&'a Cert>) -> Result<Signed> {
+/// root_key finds by the signer. sigs, when given, holds signatures
+/// already checked.
+pub fn verify<'a>(r: &Record, root_key: impl Fn(&Hash) -> Option<&'a Cert>, sigs: Option<&SigCache>) -> Result<Signed> {
     let body = Body::parse(&r.body)?;
     let (key, admin_ca) = match r.chain.as_slice() {
         [] => (
@@ -450,7 +530,7 @@ pub fn verify<'a>(r: &Record, root_key: impl Fn(&Hash) -> Option<&'a Cert>) -> R
     if key_hash_of(&key) != body.signer {
         return Err(Error::msg("a record's signer is not the key it is checked with"));
     }
-    if !key.verifies(&r.body, &r.sig) {
+    if !verifies(sigs, &key, &r.body, &r.sig) {
         return Err(Error::msg("a record's signature does not verify"));
     }
     Ok(Signed { record: r.clone(), body, id: r.id(), admin_ca })
@@ -467,6 +547,8 @@ pub struct Input<'a> {
     /// claim missing from it was first held now.
     pub now_ms: i64,
     pub first_seen: &'a BTreeMap<Hash, i64>,
+    /// Signatures already checked, when the caller keeps them.
+    pub sigs: Option<&'a SigCache>,
 }
 
 /// The group's state (docs/records-v2.md, "The state").
@@ -555,7 +637,18 @@ impl State {
 /// Turns a record set into the group's state. Records that do not verify
 /// are dropped; the result depends only on the set, never on its order.
 pub fn evaluate(input: &Input) -> State {
+    evaluate_seqs(input).0
+}
+
+/// evaluate, and the highest seq of each signer among the records that
+/// verify, which a member saves to notice a record set rolled back.
+pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
     let e = Evaluation::new(input);
+    let mut seqs = BTreeMap::new();
+    for r in &e.recs {
+        let s = seqs.entry(r.b().signer).or_insert(0);
+        *s = r.b().seq.max(*s);
+    }
     let mut path = vec![key_hash_of(input.group_ca)];
     let mut cuts = BTreeMap::new();
     let mut earlier = Vec::new();
@@ -572,7 +665,7 @@ pub fn evaluate(input: &Input) -> State {
                 ep.claims = earlier;
                 let mut state = ep.state();
                 state.newer = newer(input, &state, &e.roots);
-                return state;
+                return (state, seqs);
             }
         }
     }
@@ -604,7 +697,7 @@ fn newer(input: &Input, state: &State, roots: &BTreeMap<Hash, Cert>) -> Vec<Hash
             [ca] if admins.contains(&signer) => Cert::parse(ca).ok().filter(|ca| key_hash_of(ca) == signer),
             _ => None,
         };
-        if key.is_some_and(|k| k.verifies(&r.body, &r.sig)) {
+        if key.is_some_and(|k| verifies(input.sigs, &k, &r.body, &r.sig)) {
             ids.insert(r.id());
         }
     }
@@ -658,7 +751,7 @@ impl Evaluation {
         // certified again); the smallest DER is kept, whatever the order.
         let mut by_id: BTreeMap<Hash, Rec> = BTreeMap::new();
         for r in input.records {
-            let Ok(s) = verify(r, |h| e.roots.get(h)) else { continue };
+            let Ok(s) = verify(r, |h| e.roots.get(h), input.sigs) else { continue };
             if s.body.group != input.group {
                 continue;
             }
@@ -1410,6 +1503,7 @@ mod tests {
             }
             let want = c["state"].as_str().unwrap();
             let mut rs = records.clone();
+            let cache = SigCache::new();
             for order in 0..4 {
                 if order == 1 {
                     rs.reverse();
@@ -1423,6 +1517,7 @@ mod tests {
                     records: &rs,
                     now_ms: c["now_ms"].as_i64().unwrap(),
                     first_seen: &first_seen,
+                    sigs: if order % 2 == 0 { Some(&cache) } else { None },
                 };
                 let got = evaluate(&input).encode();
                 assert_eq!(core::str::from_utf8(&got).unwrap(), want, "{name}, order {order}");

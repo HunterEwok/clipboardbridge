@@ -39,6 +39,7 @@ bytes, also bytes that are not a request. A change an older caller would misread
 |---|---|---|
 | `version` | none | `{"abi", "core", "source"}`: the ABI, the core's version and, when the build passed it in `CBB_SOURCE`, the commit |
 | `evaluate` | `group_ca` (base64 DER), `group` (its tag), `now_ms` (the member's clock that counts sleep), `first_seen` (`[{record, ms}]`, optional), `records` (`[{body, sig, chain}]`, base64) | the group's state ([records-v2.md](records-v2.md), "The state"); records that do not verify are left out, never an error |
+| `evaluate_saved` | the arguments of `evaluate`, `secret` (base64, at least 16 bytes) and `saved` (base64, optional) | `{"saved", "state"}`: the new saved state, base64, and the group's state; see "The saved state" |
 | `canonical_body` | a record body as an object, in any order, with `v` and `signer` set | `{"body"}`: the canonical bytes to sign, base64, after each field is checked against its row |
 | `check_body` | `{"body"}`, base64 | `{"body"}` as it came, once its size, canonical form and fields check |
 | `canonicalize` | `{"body"}`, base64 | `{"body"}`: the strict canonical form of a signed body of version 2 |
@@ -58,3 +59,38 @@ The numbers and names never change meaning; new codes are added at the end of th
 | 10 | `body` | a record body is refused: its size, form or a field |
 | 11 | `cert` | a certificate is refused |
 | 12 | `strict` | a signed body is not in the strict canonical form |
+| 13 | `rollback` | the record set is older than the saved one: a signer's highest seq is lower than saved |
+| 14 | `saved` | the saved state cannot be read, is of another version or group, or its check with the secret does not match |
+
+## Signatures already checked
+
+The core keeps the signatures it has checked in memory, for every call of the process: an
+entry is SHA-256 over `cbb sig cache v1`, the signer's key hash, the body's SHA-256 and the
+signature, and only a signature that verified gets one. Evaluating the same records again
+checks each signature once. It holds at most 8192 entries and starts again when full.
+
+## The saved state
+
+A member keeps a saved state between evaluations, so that a record set rolled back (an older
+copy of the records put back on its disk or sent to it) is noticed, and so that the
+signatures it checked are not checked again after a restart. The member makes a random
+secret of 32 bytes once and keeps it next to its identity (in the keychain or Keystore on a
+phone); it calls `evaluate_saved` with the secret and the saved state of its last call, and
+saves the `saved` of the answer.
+
+The saved state is canonical JSON:
+
+| Field | Meaning |
+|---|---|
+| `v` | 1, the format's version |
+| `group` | the group's tag |
+| `seqs` | `[{key, seq}]`: the highest seq of each signer among the records that verified |
+| `sigs` | the entries of the signatures already checked, base64 |
+| `mac` | HMAC-SHA256 with the secret over `cbb saved state v1` and a newline, then the canonical JSON of the other fields |
+
+The core refuses the call (`saved`) when the check does not match, when `v` is another
+version or `group` another group, and (`rollback`) when a signer of `seqs` has no record at
+that seq or above in the set. Its entries of `sigs` are added to the signatures already
+checked only after the check matched. The member shows the refusal with its details and does
+not use the records; the state of the group is not saved, since it comes from the records
+each time.
