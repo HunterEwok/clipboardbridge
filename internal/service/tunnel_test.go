@@ -871,6 +871,11 @@ func TestSeveralHubs(t *testing.T) {
 	if a := pi.status(t).Away; a == nil || a.Standby {
 		t.Errorf("the pi, the first hub, does not serve: %+v", a)
 	}
+	// The pi shares the clients it admits with the Mac, so the deck may
+	// fail over to the Mac even if the two never met.
+	waitUpTo(t, 30*time.Second, "the Mac knows the deck", func() bool {
+		return slices.ContainsFunc(tunnelState(t, mac).Members, func(m tunnel.Member) bool { return m.Device == deckID })
+	})
 
 	deck.stop()
 	h.hide(deckID)

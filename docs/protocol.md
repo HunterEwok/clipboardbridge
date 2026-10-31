@@ -1846,7 +1846,8 @@ later (D-65 in [design.md](design.md)).
   takes the clients a hub command hands over ("Moving the hub"): a client it met keeps its
   own keys. Every receiver keeps the sender's offer with its own preshared key, as that
   hub's. A hub sends the message again to the connected hubs when it starts or stops
-  serving.
+  serving, and when it admits a client it did not have, so that the other hubs know every
+  client before this hub is off.
 - A computer's hub serves only while no hub above it answers, and is otherwise a client of
   the first that does. Starting, it tries the hubs above it once, then serves. It stops
   serving when a hub above it says it serves, or offers its tunnel: first it passes that
