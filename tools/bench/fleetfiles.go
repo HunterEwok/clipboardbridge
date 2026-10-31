@@ -94,7 +94,7 @@ func files(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		if _, err := RunFor(ctx, a, "cbb copy /tmp/n/names", "", time.Minute); err != nil {
 			return err
 		}
-		want := []string{"CON_", "a_b", "notes._", "q_", long[:254]}
+		want := []string{"CON_", "a_b", "notes._", "q_", long}
 		return eventually(ctx, wait, func() error {
 			if err := pasteInto(ctx, b, "/tmp/o", time.Minute); err != nil {
 				return err
@@ -577,7 +577,7 @@ func controlSocket(ctx context.Context, r *Report, f *Fleet) {
 	for _, c := range []struct{ name, want string }{
 		{"junk", "closed"}, {"long", "closed"}, {"big", "closed"}, {"negative", "closed"},
 		{"unknown", "answered: "}, {"admin", "answered: \"revoke\" changes the group"}, {"short", "closed"},
-		{"idle-100", "100 open, status answered"}, {"status", "answered"},
+		{"idle-100", "100 open, 36 closed, status refused while open, answered after"}, {"status", "answered"},
 	} {
 		r.Do(p+c.name, func() error {
 			for _, l := range strings.Split(out, "\n") {

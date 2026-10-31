@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/invite"
@@ -150,7 +151,7 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 			return ctx.Err()
 		}
 	}
-	w, err := pair.Open(id, "", pair.Options{Records: s.pathRecords, Taken: s.idTaken, Secret: in.Secret, Lifetime: lifetime, NoCAKeys: true, Confirm: confirm, ConfirmWait: confirmWait})
+	w, err := pair.Open(id, "", pair.Options{Now: benchtime.Now, Records: s.pathRecords, Taken: s.idTaken, Secret: in.Secret, Lifetime: lifetime, NoCAKeys: true, Confirm: confirm, ConfirmWait: confirmWait})
 	if err != nil {
 		fail(c, err)
 		return
