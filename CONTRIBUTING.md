@@ -162,8 +162,9 @@ The Android app's build runs `bind.sh` itself (the `bindTunnel` task), so buildi
 needs Go besides the Android SDK and its NDK.
 
 The group rules of records `v:2` (docs/records-v2.md) reach the phones from the Rust core:
-`lite/ffi` wraps `cbb_core::authority` for UniFFI, and its `bind.sh` builds the libraries and
-writes the Swift and Kotlin bindings; the `phone core` jobs run it:
+`lite/ffi` binds the core's one entry point (`cbb_core::api`, docs/core-api.md) for UniFFI, and
+its `bind.sh` builds the libraries and writes the Swift and Kotlin bindings; the `phone core`
+jobs run it:
 
 ```sh
 cd lite && cargo test -p clipboardbridge-ffi

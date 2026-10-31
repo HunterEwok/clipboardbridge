@@ -416,7 +416,6 @@ name = "clipboardbridge-ffi"
 version = "0.1.0"
 dependencies = [
  "clipboardbridge-core",
- "serde",
  "serde_json",
  "uniffi",
 ]

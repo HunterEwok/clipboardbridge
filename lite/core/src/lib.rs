@@ -20,6 +20,7 @@
 
 extern crate alloc;
 
+pub mod api;
 pub mod authority;
 pub mod certs;
 pub mod clip;
