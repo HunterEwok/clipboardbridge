@@ -504,13 +504,15 @@ class MemberNode(
     }
 
     /** Serves a peer's get: it queues the range for the connection's server, or cancels the queued ranges of the part. */
-    private fun get(c: Conn, g: Member.Get) {
+    internal fun get(c: Conn, g: Member.Get) {
         if (!g.isValid) return // dropped, as Go does
         val key = g.sha256.toHex()
         if (g.length == 0L) {
             synchronized(c.gets) {
-                c.gets.removeAll { it.first.sha256.contentEquals(g.sha256) }
-                if (c.serving) c.cancels[key] = (c.cancels[key] ?: 0) + 1
+                val queued = c.gets.removeAll { it.first.sha256.contentEquals(g.sha256) }
+                // Only a part queued or being served is counted, as Go does, so
+                // that cancels of other parts cannot fill the map.
+                if (c.serving && (queued || c.current == key)) c.cancels[key] = (c.cancels[key] ?: 0) + 1
             }
             return
         }
@@ -536,10 +538,11 @@ class MemberNode(
                 val (g, cancels) = synchronized(c.gets) {
                     if (c.gets.isEmpty()) {
                         c.serving = false
+                        c.current = null
                         c.cancels.clear()
                         return
                     }
-                    c.gets.removeFirst()
+                    c.gets.removeFirst().also { c.current = it.first.sha256.toHex() }
                 }
                 val src = content?.open(g.sha256)
                 if (src == null) {
@@ -573,7 +576,7 @@ class MemberNode(
     }
 
     /** A fetch in progress on a connection: the chunks of its part, and whether the peer said it has none. */
-    private class Fetching {
+    internal class Fetching {
         val chunks = LinkedBlockingQueue<Any>(CHUNK_QUEUE)
         @Volatile var missing = false
     }
@@ -629,7 +632,7 @@ class MemberNode(
      * while no message waits, and the times of the last read and write for
      * the ping and the timeout.
      */
-    private class Conn(val transport: FrameTransport, val peer: String?) {
+    internal class Conn(val transport: FrameTransport, val peer: String?) {
         private val queue = Object()
         private val messages = ArrayDeque<Any>()
         private val chunks = ArrayDeque<Member.Message.Chunk>()
@@ -641,6 +644,9 @@ class MemberNode(
         /** The peer's gets waiting to be served, each with its part's cancels when it came, and whether a server runs; guarded by gets. */
         val gets = ArrayDeque<Pair<Member.Get, Int>>()
         var serving = false
+
+        /** The hex SHA-256 of the part the server serves now; guarded by gets. */
+        var current: String? = null
 
         /**
          * The peer's cancels of each part, by hex SHA-256, so that a range

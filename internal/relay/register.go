@@ -163,18 +163,37 @@ type period struct {
 }
 
 // checkPeriodLocked checks the credentials p against what the relay holds
-// for their period, and takes them when newer; the devices a newer
-// members' credential no longer lists go.
+// for their period: they are of the key that registered it first, and no
+// older than the ones it saw. It changes nothing; takePeriodLocked does.
 func (r *Relay) checkPeriodLocked(tag string, p *group.Presented) error {
 	cur := r.periods[tag]
 	switch {
 	case cur == nil:
-		cur = &period{signer: p.Signer}
-		r.periods[tag] = cur
 	case cur.signer != p.Signer:
 		return errors.New("another key registered this group's period first")
 	case p.Hubs.Version < cur.hubs || p.Members.Version < cur.membersVer:
 		return errors.New("the group's credentials are older than ones this relay saw")
+	}
+	return nil
+}
+
+// leavingLocked tells the devices of the period tag that the credentials p
+// would leave out when taken.
+func (r *Relay) leavingLocked(tag string, p *group.Presented) func(*member) bool {
+	if cur := r.periods[tag]; cur != nil && cur.members != nil && p.Members.Version <= cur.membersVer {
+		return nil
+	}
+	return func(o *member) bool { return !slices.Contains(p.Members.Members, o.leaf) }
+}
+
+// takePeriodLocked takes the credentials p, which checkPeriodLocked let
+// through, for their period; the devices a newer members' credential no
+// longer lists go.
+func (r *Relay) takePeriodLocked(tag string, p *group.Presented) {
+	cur := r.periods[tag]
+	if cur == nil {
+		cur = &period{signer: p.Signer}
+		r.periods[tag] = cur
 	}
 	cur.hubs = p.Hubs.Version
 	if p.Members.Version > cur.membersVer || cur.members == nil {
@@ -185,7 +204,6 @@ func (r *Relay) checkPeriodLocked(tag string, p *group.Presented) error {
 			}
 		}
 	}
-	return nil
 }
 
 // acceptRegistrations takes the members' TLS connections.
@@ -293,12 +311,27 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 	// one has added its device.
 	unlockTag := func() {}
 	defer func() { unlockTag() }()
+	psk, err := tunnel.NewPresharedKey()
+	if err != nil {
+		return nil, err
+	}
+	m := &member{leaf: leaf, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}, from: addrOf(raw)}
+	copy(m.key[:], c.Key)
 	if cred {
 		if pr, err = r.credentialed(cs.PeerCertificates[0], c, time.Now()); err != nil {
 			return refuse(err.Error())
 		}
-		tag, device = credentialTag(pr.Tag), group.Pseudonym(leaf)
+		m.tag, m.device = credentialTag(pr.Tag), group.Pseudonym(leaf)
 	} else {
+		m.tag, m.device = tag, device
+		// A registration the relay would refuse anyway sends it no records
+		// to keep.
+		r.mu.Lock()
+		err := r.admitLocked(m, nil)
+		r.mu.Unlock()
+		if err != nil {
+			return refuse(err.Error())
+		}
 		// The relay keeps the group's records once verified, and checks only
 		// the ones a claim brings that it does not have; the group's other
 		// registrations wait meanwhile.
@@ -307,17 +340,23 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 			r.forgetRecords(tag)
 			return refuse(err.Error())
 		}
+		r.mu.Lock()
+		if recs != nil && fresh {
+			// The devices the new records remove go now, whatever becomes
+			// of this registration: the records stay with the group's
+			// devices.
+			for _, o := range r.groups[tag] {
+				if recs.set.Revoked(o.leaf) {
+					r.dropLocked(o)
+				}
+			}
+		}
+		r.mu.Unlock()
 		if recs != nil && recs.set.Revoked(leaf) {
 			r.forgetRecords(tag)
 			return refuse("the device was removed from its group")
 		}
 	}
-	psk, err := tunnel.NewPresharedKey()
-	if err != nil {
-		return nil, err
-	}
-	m := &member{tag: tag, device: device, leaf: leaf, psk: psk, conn: tc, raw: raw, streams: map[net.Conn]bool{}, from: addrOf(raw)}
-	copy(m.key[:], c.Key)
 	r.mu.Lock()
 	select {
 	case <-r.done:
@@ -325,25 +364,31 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 		return refuse("the relay is stopping")
 	default:
 	}
+	// What was checked before the records may have changed meanwhile.
+	var refusal error
+	var leaving func(*member) bool
 	if pr != nil {
-		if err := r.checkPeriodLocked(tag, pr); err != nil {
-			r.mu.Unlock()
-			return refuse(err.Error())
+		refusal, leaving = r.checkPeriodLocked(m.tag, pr), r.leavingLocked(m.tag, pr)
+	}
+	if refusal == nil {
+		refusal = r.admitLocked(m, leaving)
+	}
+	if refusal != nil {
+		r.mu.Unlock()
+		if recs != nil {
+			r.forgetRecords(m.tag)
 		}
-	} else if recs != nil && fresh {
-		// The devices the new records remove go now.
-		for _, o := range r.groups[tag] {
-			if recs.set.Revoked(o.leaf) {
-				r.dropLocked(o)
-			}
-		}
+		return refuse(refusal.Error())
 	}
 	if err := r.addLocked(m); err != nil {
 		r.mu.Unlock()
 		if recs != nil {
-			r.forgetRecords(tag)
+			r.forgetRecords(m.tag)
 		}
-		return refuse(err.Error())
+		return nil, err
+	}
+	if pr != nil {
+		r.takePeriodLocked(m.tag, pr)
 	}
 	r.mu.Unlock()
 	unlockTag()

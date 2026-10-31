@@ -198,6 +198,26 @@ final class ContentTests: XCTestCase {
         }
         XCTFail("timed out")
     }
+
+    /// While a part is served, a cancel of a part that is neither queued
+    /// nor served is not kept, as in Go, so the peer's cancels hold at most
+    /// one count for each part it asked for.
+    func testCancelsOfOtherParts() {
+        let c = MemberNode.Conn(transport: Pipe.pair().0, peer: nil)
+        let part = Data(repeating: 7, count: 32)
+        XCTAssertEqual(c.queueGet(Member.Get(sha256: part, offset: 0, length: 1 << 20)), .start)
+        XCTAssertNotNil(c.nextGet())
+        for i in 0..<1000 {
+            var other = Data(repeating: 0, count: 32)
+            other[0] = UInt8(i & 0xff)
+            other[1] = UInt8(i >> 8)
+            c.cancelGets(other)
+        }
+        XCTAssertEqual(c.cancelledParts, 0)
+        c.cancelGets(part)
+        XCTAssertEqual(c.cancelledParts, 1)
+        XCTAssertTrue(c.cancelled(part, since: 0))
+    }
 }
 
 final class Events: @unchecked Sendable {

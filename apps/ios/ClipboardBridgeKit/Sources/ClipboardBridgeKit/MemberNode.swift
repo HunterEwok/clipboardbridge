@@ -737,6 +737,8 @@ public actor MemberNode {
         /// cancels when it came, and whether a server runs.
         private var gets: [(Member.Get, Int)] = []
         private var serving = false
+        /// The SHA-256 of the part the server serves now.
+        private var current: Data?
         /// The peer's cancels of each part, so that a range queued before a
         /// cancel ends with its next chunk, while one asked for after it
         /// goes on.
@@ -853,22 +855,31 @@ public actor MemberNode {
             lock.withLock {
                 if gets.isEmpty || done {
                     serving = false
+                    current = nil
                     cancels = [:]
                     return nil
                 }
-                return gets.removeFirst()
+                let g = gets.removeFirst()
+                current = g.0.sha256
+                return g
             }
         }
 
         /// Drops the queued gets of a part, and ends the one being served.
         func cancelGets(_ sum: Data) {
             lock.withLock {
+                let before = gets.count
                 gets.removeAll { $0.0.sha256 == sum }
-                if serving { cancels[sum, default: 0] += 1 }
+                // Only a part queued or being served is counted, as Go does,
+                // so that cancels of other parts cannot fill the map.
+                if serving, gets.count < before || current == sum { cancels[sum, default: 0] += 1 }
             }
         }
 
         func cancelled(_ sum: Data, since n: Int) -> Bool { lock.withLock { (cancels[sum] ?? 0) != n } }
+
+        /// How many parts the peer's cancels are kept for.
+        var cancelledParts: Int { lock.withLock { cancels.count } }
 
         func fetching(_ sum: Data) -> Fetching? { lock.withLock { fetches[sum] } }
 

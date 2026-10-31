@@ -235,7 +235,8 @@ func (b *CommandBody) check() error {
 	if _, err := ParseDeviceID(string(b.By)); err != nil {
 		return errors.New("group: a command's by is not a device ID")
 	}
-	if b.ExpiresMS <= b.TimeMS || b.ExpiresMS-b.TimeMS > CommandLifetime.Milliseconds() {
+	// A time before 1970 is no signing time; from it the difference cannot overflow.
+	if b.TimeMS < 0 || b.ExpiresMS <= b.TimeMS || b.ExpiresMS-b.TimeMS > CommandLifetime.Milliseconds() {
 		return errors.New("group: a command's lifetime is not valid")
 	}
 	return nil

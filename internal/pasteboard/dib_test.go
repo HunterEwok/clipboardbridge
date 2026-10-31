@@ -5,9 +5,12 @@ package pasteboard
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"testing"
 
@@ -223,9 +226,130 @@ func TestDecodeImageBudget(t *testing.T) {
 	if _, err := decodeImage(clip.TypePNG, big(4096, 2160)); err != nil {
 		t.Errorf("a 4K screenshot: %v", err)
 	}
-	// 16 bits a channel doubles what a pixel costs.
-	if int64(maxPixels)*decodedPixel(color.NRGBA64Model) <= maxDecodedBytes {
-		t.Error("a 16-bit image of the largest size is within the byte budget")
+	// A photo of 48 megapixels fits.
+	var photo bytes.Buffer
+	if err := jpeg.Encode(&photo, image.NewYCbCr(image.Rect(0, 0, 8000, 6000), image.YCbCrSubsampleRatio444), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeImage(clip.TypeJPEG, photo.Bytes()); err != nil {
+		t.Errorf("a 48-megapixel photo: %v", err)
+	}
+}
+
+// rawPNG is a PNG of w by h zero pixels of the given bit depth and color
+// type, with a tRNS chunk when trns is not nil.
+func rawPNG(t *testing.T, w, h int, depth, colorType byte, trns []byte) []byte {
+	chunk := func(b *bytes.Buffer, typ string, d []byte) {
+		binary.Write(b, binary.BigEndian, uint32(len(d)))
+		b.WriteString(typ)
+		b.Write(d)
+		binary.Write(b, binary.BigEndian, crc32.ChecksumIEEE(append([]byte(typ), d...)))
+	}
+	var out bytes.Buffer
+	out.WriteString("\x89PNG\r\n\x1a\n")
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr, uint32(w))
+	binary.BigEndian.PutUint32(ihdr[4:], uint32(h))
+	ihdr[8], ihdr[9] = depth, colorType
+	chunk(&out, "IHDR", ihdr)
+	if colorType == 3 {
+		chunk(&out, "PLTE", []byte{0, 0, 0})
+	}
+	if trns != nil {
+		chunk(&out, "tRNS", trns)
+	}
+	channels := map[byte]int{0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[colorType]
+	var z bytes.Buffer
+	zw := zlib.NewWriter(&z)
+	row := make([]byte, 1+w*channels*int(depth)/8)
+	for range h {
+		zw.Write(row)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	chunk(&out, "IDAT", z.Bytes())
+	chunk(&out, "IEND", nil)
+	return out.Bytes()
+}
+
+// pixBytes is what a decoded image's pixels take.
+func pixBytes(t *testing.T, img image.Image) int64 {
+	switch m := img.(type) {
+	case *image.Gray:
+		return int64(len(m.Pix))
+	case *image.Gray16:
+		return int64(len(m.Pix))
+	case *image.NRGBA:
+		return int64(len(m.Pix))
+	case *image.NRGBA64:
+		return int64(len(m.Pix))
+	case *image.RGBA:
+		return int64(len(m.Pix))
+	case *image.RGBA64:
+		return int64(len(m.Pix))
+	case *image.Paletted:
+		return int64(len(m.Pix))
+	case *image.YCbCr:
+		return int64(len(m.Y) + len(m.Cb) + len(m.Cr))
+	}
+	t.Fatalf("an image of type %T", img)
+	return 0
+}
+
+// What an image is counted as before it is decoded is at least what it
+// takes decoded and as the DIB, for every kind of PNG and JPEG, a PNG's
+// transparency included: a gray PNG with it decodes to 4 times its gray.
+func TestImageBytesCoverDecoding(t *testing.T) {
+	const w, h = 64, 48
+	pngs := map[string][]byte{
+		"gray":                      rawPNG(t, w, h, 8, 0, nil),
+		"gray with transparency":    rawPNG(t, w, h, 8, 0, []byte{0, 1}),
+		"gray16":                    rawPNG(t, w, h, 16, 0, nil),
+		"gray16 with transparency":  rawPNG(t, w, h, 16, 0, []byte{0, 1}),
+		"gray and alpha":            rawPNG(t, w, h, 8, 4, nil),
+		"gray16 and alpha":          rawPNG(t, w, h, 16, 4, nil),
+		"RGB":                       rawPNG(t, w, h, 8, 2, nil),
+		"RGB with transparency":     rawPNG(t, w, h, 8, 2, []byte{0, 1, 0, 1, 0, 1}),
+		"RGB16":                     rawPNG(t, w, h, 16, 2, nil),
+		"RGB16 with transparency":   rawPNG(t, w, h, 16, 2, []byte{0, 1, 0, 1, 0, 1}),
+		"RGBA16":                    rawPNG(t, w, h, 16, 6, nil),
+		"palette":                   rawPNG(t, w, h, 8, 3, nil),
+		"palette with transparency": rawPNG(t, w, h, 8, 3, []byte{0}),
+	}
+	for name, data := range pngs {
+		checkImageBytes(t, name, clip.TypePNG, data)
+	}
+	for _, r := range []image.YCbCrSubsampleRatio{image.YCbCrSubsampleRatio444, image.YCbCrSubsampleRatio420} {
+		var b bytes.Buffer
+		if err := jpeg.Encode(&b, image.NewYCbCr(image.Rect(0, 0, w, h), r), nil); err != nil {
+			t.Fatal(err)
+		}
+		checkImageBytes(t, "JPEG "+r.String(), clip.TypeJPEG, b.Bytes())
+	}
+	var b bytes.Buffer
+	if err := jpeg.Encode(&b, image.NewGray(image.Rect(0, 0, w, h)), nil); err != nil {
+		t.Fatal(err)
+	}
+	checkImageBytes(t, "gray JPEG", clip.TypeJPEG, b.Bytes())
+	// A PNG cut short before its image data counts as transparent.
+	if !pngTransparent(rawPNG(t, w, h, 8, 0, nil)[:20]) {
+		t.Error("a PNG cut short counts as opaque")
+	}
+}
+
+func checkImageBytes(t *testing.T, name, typ string, data []byte) {
+	t.Helper()
+	cfg, err := decodeConfig(typ, data)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	img, err := decodeImage(typ, data)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	if got, want := imageBytes(typ, data, cfg), pixBytes(t, img)+int64(len(imageDIBV5(img))-v5HeaderSize); got < want {
+		t.Errorf("%s (%T): counted %d bytes, it takes %d", name, img, got, want)
 	}
 }
 
@@ -240,6 +364,30 @@ func TestImageDIBV5SubImage(t *testing.T) {
 	for y := range 2 {
 		for x := range 2 {
 			want.SetNRGBA(x, y, img.NRGBAAt(1+x, y))
+		}
+	}
+	samePixels(t, got, want)
+}
+
+// The row copy of an NRGBA64 keeps the high byte of each channel, from the
+// image's own origin.
+func TestImageDIBV5NRGBA64(t *testing.T) {
+	full := image.NewNRGBA64(image.Rect(0, 0, 4, 3))
+	for y := range 3 {
+		for x := range 4 {
+			full.SetNRGBA64(x, y, color.NRGBA64{R: uint16(x*20000 + 5), G: uint16(y*30000 + 7), B: uint16(x*y*5000 + 9), A: uint16(65535 - x*10000)})
+		}
+	}
+	img := full.SubImage(image.Rect(1, 1, 4, 3)).(*image.NRGBA64)
+	got, err := decodeDIB(imageDIBV5(img))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := image.NewNRGBA(image.Rect(0, 0, 3, 2))
+	for y := range 2 {
+		for x := range 3 {
+			c := img.NRGBA64At(1+x, 1+y)
+			want.SetNRGBA(x, y, color.NRGBA{R: uint8(c.R >> 8), G: uint8(c.G >> 8), B: uint8(c.B >> 8), A: uint8(c.A >> 8)})
 		}
 	}
 	samePixels(t, got, want)

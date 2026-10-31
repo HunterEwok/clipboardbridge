@@ -152,6 +152,10 @@ func makeStrictVectors() strictVectors {
 		r("an expiry of negative zero with a fraction", false, bytes.Replace(cmd(""), []byte(`"expires_ms":20000`), []byte(`"expires_ms":-0.0`), 1)),
 		r("a time of negative zero", false, bytes.Replace(cmd(""), []byte(`"time_ms":1000`), []byte(`"time_ms":-0`), 1)),
 		r("a negative zero in an unknown nested object", false, cmd(`,"later":{"a":[{"b":-0}]}`)),
+		r("a time before 1970", false, bytes.Replace(cmd(""), []byte(`"time_ms":1000`), []byte(`"time_ms":-1`), 1)),
+		r("the earliest time and the latest expiry", false, bytes.Replace(cmd(""), []byte(`"time_ms":1000,"expires_ms":20000`),
+			[]byte(`"time_ms":-9223372036854775808,"expires_ms":9223372036854775807`), 1)),
+		r("the earliest time", false, bytes.Replace(cmd(""), []byte(`"time_ms":1000`), []byte(`"time_ms":-9223372036854775808`), 1)),
 	}
 	part := func(p string) []byte {
 		return []byte(`{"size":3,"parts":[{"path":"d","dir":true` + p + `},{"path":"d/f","size":3,"sha256":"` + vecHash + `"}]}`)

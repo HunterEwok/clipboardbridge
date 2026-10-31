@@ -343,7 +343,8 @@ Source: `internal/node`, `internal/clip`, `internal/group/tls.go`,
 - Both sides MUST check the peer as in section 2 and against the records (section 10), and
   that the negotiated version is TLS 1.3 and the ALPN protocol is `clipboardbridge/1`. A
   connection to one's own device ID is closed.
-- The handshake must finish within 10 s; an implementation SHOULD close one that does not.
+- The handshake must finish within 10 s, counted from its start rather than from each read;
+  an implementation SHOULD close one that does not.
 - A lite member listens on the member port for the member protocol only: TLS with ALPN
   `clipboardbridge/1`, from home network addresses, at most 16 handshakes at once. It has
   no pairing window and no iPhone endpoints.
@@ -2325,7 +2326,11 @@ ID, and a device's pseudonym changes with each period.
    registrations that send the same records cost no checks; each new record is charged to
    what the address and network that sent it may start by the second. A registration over
    a limit gets `{"error": string}`. It forgets a group's records, or its period's key,
-   versions and members' list, once the group's last device leaves.
+   versions and members' list, once the group's last device leaves. A registration it
+   refuses leaves it as it was: the devices registered before stay, and it keeps nothing of
+   the refused device's group, its period or records, except the records of a group it
+   holds devices of that verified, which take effect for those devices. A newer members'
+   credential counts the devices it leaves out as gone when the relay checks its limits.
 
 ### What it keeps
 
@@ -2360,7 +2365,7 @@ signed bodies (Conventions):
 | `by` | string | the signer's device ID: a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device |
 | `to` | string | the receiver's device ID |
 | `id` | string | 128 random bits as 32 lowercase hex characters; IDs compare as byte strings |
-| `time_ms` | integer | when it was signed, milliseconds since the Unix epoch |
+| `time_ms` | integer | when it was signed, milliseconds since the Unix epoch, not negative |
 | `expires_ms` | integer | after `time_ms`, at most 30 000 ms later |
 | `mode` | string | in a `mode` command: `own`, `shared`, `receive` or `send`; in a `paste` command: `paste` (the clipboard and the paste keys) or `type` (key by key) |
 | `enter` | bool | in a `paste` command: press Enter after the text |
