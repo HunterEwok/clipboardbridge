@@ -28,7 +28,7 @@ var lockers = []string{"swaylock", "hyprlock", "waylock", "gtklock", "i3lock", "
 // now, or "" if it does: logind marks it locked, as GNOME, KDE and most
 // lock screens tell it, or a locker runs as this user.
 func Reason() string {
-	if Locked(os.Getenv("XDG_SESSION_ID")) {
+	if Locked(sessionID()) {
 		return "the session is locked"
 	}
 	if name := Locker(false); name != "" {
@@ -40,6 +40,17 @@ func Reason() string {
 		return "without logind GNOME does not tell whether the screen is locked"
 	}
 	return ""
+}
+
+// sessionID is the logind session to check for this process: its own,
+// or, for a process started outside one (a user service, whose
+// environment has no XDG_SESSION_ID), the one logind picks for its user,
+// "auto", the user's graphical session when there is one.
+func sessionID() string {
+	if id := os.Getenv("XDG_SESSION_ID"); id != "" {
+		return id
+	}
+	return "auto"
 }
 
 // Locked reports whether logind marks the session id locked; false

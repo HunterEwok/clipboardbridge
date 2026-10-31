@@ -1183,7 +1183,8 @@ A desktop connector or the Mac's pasteboard agent keeps a `watch` connection ope
   when that user may take it: root and the service's own user (on Windows the system and
   the service's account) take every target, and `console` only they; `desktop` and `act` go
   to the user of an active session (on Linux and FreeBSD an active graphical logind session
-  of the user's own, X11 or Wayland, so that a user signed in over SSH alone takes none; the
+  of the user's own, X11 or Wayland, on a seat or not remote, so that a user signed in over
+  SSH alone takes none, even with a session type set by hand; the
   owner of `/dev/console` on a Mac; an active Windows session), and `tmux` to a user with a
   session (logind's, active or online, which counts one over SSH; never the user's service
   manager or a greeter). A watcher whose user the system does not name gets

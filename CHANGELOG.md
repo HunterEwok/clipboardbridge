@@ -698,6 +698,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
   computers, the lite member and both phones; files the project signs are unaffected.
+- A session counts as at the screen for remote paste and quick actions only on a seat or when
+  logind says it is not remote, on computers and the lite member.
+- The lock check names logind's own session (`auto`) when `XDG_SESSION_ID` is not set.
+- The tray app on Windows doubles every kind of single quote in what it hands PowerShell.
+- The lite member takes the key store `rootless` in device records, as the others do.
 - A relay goes by a device's whole certificate chain against the group's records, as members
   do: it refuses and drops a device whose admin was removed, unless the removal keeps it.
 - A command whose signer's device the receiver's records do not show may not name in `by` a

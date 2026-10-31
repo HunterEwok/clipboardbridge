@@ -323,7 +323,7 @@ fn role(r: &str) -> &str {
 /// phone's keys were in hardware and every other device's in a file.
 pub fn store_of<'a>(store: &'a str, role: &str) -> &'a str {
     match store {
-        "file" | "hardware" | "proven" => store,
+        "file" | "hardware" | "proven" | "rootless" => store,
         _ if role == "phone" || role == "watch" => "hardware",
         _ => "file",
     }
