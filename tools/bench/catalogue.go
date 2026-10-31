@@ -45,7 +45,7 @@ var automated = map[string][]string{
 	"T1": {"fleet"}, "T2": {"fleet"}, "T6": {"fleet"}, "T7": {"fleet"}, "T9": {"fleet"},
 	"T10": {"fleet"}, "T13": {"fleet"}, "T14": {"fleet"}, "G25": {"fleet"}, "G27": {"fleet"},
 	"G33": {"fleet"}, "S24": {"fleet"}, "M4": {"fleet"}, "G4": {"fleet"}, "G7": {"fleet"},
-	"D2": {"fleet"}, "D6": {"fleet"}, "D7": {"fleet"}, "D8": {"fleet"}, "D12": {"fleet"},
+	"D2": {"fleet"}, "D4": {"fleet"}, "D5": {"fleet"}, "D6": {"fleet"}, "D7": {"fleet"}, "D8": {"fleet"}, "D12": {"fleet"},
 	"I19": {"fleet"}, "U8": {"fleet"}, "U13": {"fleet"}, "Q1": {"fleet"}, "Q4": {"fleet"},
 	"Q6": {"fleet"}, "Q7": {"fleet"}, "X2": {"fleet"}, "X3": {"fleet"}, "K12": {"fleet"},
 	"Q2": {"fleet"}, "Q5": {"fleet"}, "X1": {"fleet"}, "U2": {"fleet"},

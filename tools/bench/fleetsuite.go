@@ -91,6 +91,9 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"G16-killed-joiner", func() { killedJoiner(ctx, r, f, timeout) }},
 		{"G40-random-walk", func() { randomWalk(ctx, r, f, timeout) }},
 		{"K3-renewals", func() { renewalChecks(ctx, r, f, timeout) }},
+		{"D4-holder", func() { holder(ctx, r, f, timeout) }},
+		{"D11-dial-back", func() { dialBack(ctx, r, f, timeout) }},
+		{"S21-stranger", func() { stranger(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
