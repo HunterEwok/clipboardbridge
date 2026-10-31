@@ -272,6 +272,10 @@ func (p *strictParser) integer() error {
 	return nil
 }
 
+// EncodeBase64 encodes b as standard base64 with padding, the one form
+// DecodeBase64 takes.
+func EncodeBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
 // DecodeBase64 decodes s, standard base64 with padding, only when s is
 // the one encoding of its bytes.
 func DecodeBase64(s string) ([]byte, error) {
