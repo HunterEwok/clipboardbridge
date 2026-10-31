@@ -83,6 +83,7 @@ var scenarios = []struct {
 }{
 	{"basic", TestEvaluateBasic},
 	{"record of a later version", TestNewerVersion},
+	{"ignored records", TestIgnoredReasons},
 	{"root removal cuts an admin", TestRootRemovalCutsAdmin},
 	{"admin removals in order", TestAdminRemovalsInOrder},
 	{"admin removals crossed", TestAdminRemovalsCross},

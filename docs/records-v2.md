@@ -380,6 +380,25 @@ the time the member first held it, and returns the state as one canonical JSON o
 | `no_secrets_to` | array of strings | sorted device IDs that get no secrets |
 | `nothing_to` | array of strings | sorted device IDs that get nothing |
 | `newer` | array of strings | sorted IDs of the records of a later version the member keeps, at most 16 |
+| `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not |
+
+The reasons in `ignored`, in the order they are decided:
+
+| `why` | The record |
+|-------|------------|
+| `unreadable` | its body is not a record of version 2 |
+| `signature` | its signature or chain does not check |
+| `group` | is of another group |
+| `issuer` | its admin CA is from no root of the group |
+| `history` | its prev chain is broken, on a branch a `resolve` voided, or at or after a second history |
+| `not_root` | a root's own record whose signer is no root on the path |
+| `cut` | a root's record past its root's cut, or an admin record a root's removal, freeze or thaw cut off |
+| `undecided` | an admin record in a conflict between admins |
+| `power` | an admin record its signer had no admin power for, or with an admin CA of a root off the path |
+| `removed` | an admin record a counting admin removal or freeze cut off |
+
+Of two copies of one body left out before the evaluation (the first four reasons) for
+different reasons, the reason first in byte order is kept.
 
 Empty fields are left out, as in signed bodies, so two implementations agree when their
 states are the same bytes. The state does not depend on the order in which records arrived;

@@ -42,6 +42,7 @@ type rec struct {
 	*Signed
 	issuer Hash // the root that issued the admin CA; zero for a root's own record
 	label  label
+	why    string // why the labelling put it out
 }
 
 type label int
@@ -76,6 +77,7 @@ func Evaluate(input Input) (*State, error) {
 	ep.claims = append(earlier, ep.claims...)
 	s := ep.state()
 	s.Newer = newer(input, s, e.roots)
+	s.Ignored = ep.ignored(s.Newer)
 	return s, nil
 }
 
@@ -136,13 +138,14 @@ func newer(input Input, s *State, roots map[Hash]*x509.Certificate) []Hash {
 
 // evaluation holds the verified records of a set.
 type evaluation struct {
+	failed  map[Hash]string            // why records left out before the epochs were, by ID
 	roots   map[Hash]*x509.Certificate // every root the group may have
 	bySig   map[Hash][]*rec            // records by signer
 	devices map[string][]*rec          // device records by device ID
 }
 
 func newEvaluation(input Input) *evaluation {
-	e := &evaluation{roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, devices: map[string][]*rec{}}
+	e := &evaluation{failed: map[Hash]string{}, roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, devices: map[string][]*rec{}}
 	// The new roots of claims are the only other roots a record may be
 	// signed under; a claim itself is signed by an admin CA.
 	for _, r := range input.Records {
@@ -166,13 +169,23 @@ func newEvaluation(input Input) *evaluation {
 	byID := map[Hash]*rec{}
 	for _, r := range input.Records {
 		s, err := Verify(r, rootKey)
-		if err != nil || s.Body.Group != input.Group {
+		switch {
+		case err != nil:
+			if _, perr := ParseBody(r.Body); perr != nil {
+				e.fail(r.ID(), WhyUnreadable)
+			} else {
+				e.fail(r.ID(), WhySignature)
+			}
+			continue
+		case s.Body.Group != input.Group:
+			e.fail(s.ID, WhyGroup)
 			continue
 		}
 		x := &rec{Signed: s}
 		if s.AdminCA != nil {
 			issuer, ok := e.issuerOf(s.AdminCA)
 			if !ok {
+				e.fail(s.ID, WhyIssuer)
 				continue
 			}
 			x.issuer = issuer
@@ -188,6 +201,15 @@ func newEvaluation(input Input) *evaluation {
 		}
 	}
 	return e
+}
+
+// fail notes why a record was left out; of two copies of one body left out
+// for different reasons, the reason first in byte order is kept, whatever
+// the order of the set.
+func (e *evaluation) fail(id Hash, why string) {
+	if old, ok := e.failed[id]; !ok || why < old {
+		e.failed[id] = why
+	}
 }
 
 // issuerOf finds the root that issued an admin CA.
@@ -489,7 +511,7 @@ func cutsOff(a, b *rec) bool {
 func (ep *epoch) label() {
 	for _, rs := range ep.e.bySig {
 		for _, r := range rs {
-			r.label = unlabelled
+			r.label, r.why = unlabelled, ""
 		}
 	}
 	var adminRecs, rootActs []*rec
@@ -505,7 +527,7 @@ func (ep *epoch) label() {
 				}
 			case r.AdminCA != nil && ep.counted[r.ID]:
 				if !ep.permitted(r) {
-					r.label = out
+					r.label, r.why = out, WhyPower
 				}
 				adminRecs = append(adminRecs, r)
 			}
@@ -521,12 +543,15 @@ func (ep *epoch) label() {
 	// A root's removal or freeze puts what it cuts off out for good, and
 	// a root's thaw puts out the admin freezes it names.
 	for _, b := range adminRecs {
+		if b.label == out {
+			continue
+		}
 		if b.Body.Type == TypeFreeze && thawedByRoot[b.ID] {
-			b.label = out
+			b.label, b.why = out, WhyCut
 		}
 		for _, a := range rootActs {
 			if cutsOff(a, b) {
-				b.label = out
+				b.label, b.why = out, WhyCut
 			}
 		}
 	}
@@ -552,7 +577,7 @@ func (ep *epoch) label() {
 			all := true
 			for _, a := range attackers[b] {
 				if a.label == in {
-					b.label, changed = out, true
+					b.label, b.why, changed = out, WhyRemoved, true
 					break
 				}
 				if a.label != out {
@@ -895,6 +920,9 @@ type State struct {
 	// Newer lists records of a later version: the member keeps them and
 	// tells its user to update.
 	Newer []Hash `json:"newer,omitempty"`
+	// Ignored lists the records that do not count and why, so that the
+	// apps and the log can say what happened to a record.
+	Ignored []Ignored `json:"ignored,omitempty"`
 }
 
 // Device is one device of the state.
@@ -920,6 +948,12 @@ type Claim struct {
 	Root     Hash   `json:"root"`
 	State    string `json:"state"`
 	LeftMS   int64  `json:"left_ms,omitempty"`
+}
+
+// Ignored is a record of the set that does not count, with why.
+type Ignored struct {
+	Record Hash   `json:"record"`
+	Why    string `json:"why"`
 }
 
 // Conflict is a conflict of the state.
@@ -989,6 +1023,74 @@ func (ep *epoch) state() *State {
 		s.Stop = "secrets"
 	}
 	return s
+}
+
+// The reasons a record does not count (docs/records-v2.md, "The state").
+const (
+	WhyUnreadable = "unreadable" // its body is not a record of version 2
+	WhySignature  = "signature"  // its signature or chain does not check
+	WhyGroup      = "group"      // it is of another group
+	WhyIssuer     = "issuer"     // its admin CA is from no root of the group
+	WhyNotRoot    = "not_root"   // its signer is no root on the path
+	WhyHistory    = "history"    // its prev chain is broken, on a voided branch or at a second history
+	WhyCut        = "cut"        // a root's removal, freeze or thaw cut it off, or it is past its root's cut
+	WhyPower      = "power"      // its signer was no admin with the power it needs
+	WhyRemoved    = "removed"    // an admin's removal or freeze that counts cut it off
+	WhyUndecided  = "undecided"  // it is in a conflict between admins
+)
+
+// MaxIgnored is how many records a state lists in ignored.
+const MaxIgnored = 64
+
+// ignored lists the records of the set that do not count, with why,
+// sorted by ID, at most MaxIgnored; the records of a later version are
+// in newer instead.
+func (ep *epoch) ignored(newer []Hash) []Ignored {
+	why := map[Hash]string{}
+	for id, w := range ep.e.failed {
+		why[id] = w
+	}
+	for _, rs := range ep.e.bySig {
+		for _, r := range rs {
+			delete(why, r.ID)
+			if w := ep.whyNot(r); w != "" {
+				why[r.ID] = w
+			}
+		}
+	}
+	for _, id := range newer {
+		delete(why, id)
+	}
+	var out []Ignored
+	for id, w := range why {
+		out = append(out, Ignored{Record: id, Why: w})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Record.String() < out[j].Record.String() })
+	if len(out) > MaxIgnored {
+		out = out[:MaxIgnored]
+	}
+	return out
+}
+
+// whyNot says why a verified record does not count in this epoch, "" when
+// it counts.
+func (ep *epoch) whyNot(r *rec) string {
+	switch {
+	case ep.counts(r):
+		return ""
+	case !ep.counted[r.ID]:
+		return WhyHistory
+	case r.AdminCA == nil:
+		if _, ok := ep.onPath[r.Body.Signer]; !ok {
+			return WhyNotRoot
+		}
+		return WhyCut
+	case r.label == undecided:
+		return WhyUndecided
+	case r.why != "":
+		return r.why
+	}
+	return WhyPower
 }
 
 func sortHashes(hs []Hash) {

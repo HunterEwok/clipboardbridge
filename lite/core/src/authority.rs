@@ -578,7 +578,42 @@ pub struct State {
     /// user to update.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub newer: Vec<Hash>,
+    /// The records that do not count and why.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ignored: Vec<Ignored>,
 }
+
+/// A record of the set that does not count, with why: one of the WHY_
+/// constants.
+#[derive(Clone, Serialize, PartialEq, Debug)]
+pub struct Ignored {
+    pub record: Hash,
+    pub why: &'static str,
+}
+
+/// How many records a state lists in ignored.
+pub const MAX_IGNORED: usize = 64;
+
+/// Its body is not a record of version 2.
+pub const WHY_UNREADABLE: &str = "unreadable";
+/// Its signature or chain does not check.
+pub const WHY_SIGNATURE: &str = "signature";
+/// It is of another group.
+pub const WHY_GROUP: &str = "group";
+/// Its admin CA is from no root of the group.
+pub const WHY_ISSUER: &str = "issuer";
+/// Its signer is no root on the path.
+pub const WHY_NOT_ROOT: &str = "not_root";
+/// Its prev chain is broken, on a voided branch or at a second history.
+pub const WHY_HISTORY: &str = "history";
+/// A root's removal, freeze or thaw cut it off, or it is past its root's cut.
+pub const WHY_CUT: &str = "cut";
+/// Its signer was no admin with the power it needs.
+pub const WHY_POWER: &str = "power";
+/// An admin's removal or freeze that counts cut it off.
+pub const WHY_REMOVED: &str = "removed";
+/// It is in a conflict between admins.
+pub const WHY_UNDECIDED: &str = "undecided";
 
 /// One device of the state.
 #[derive(Clone, Serialize, PartialEq, Debug, Default)]
@@ -669,6 +704,7 @@ pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
                 ep.claims = earlier;
                 let mut state = ep.state();
                 state.newer = newer(input, &state, &e.roots);
+                state.ignored = ep.ignored(&state.newer);
                 return (state, seqs);
             }
         }
@@ -724,6 +760,8 @@ impl Rec {
 }
 
 struct Evaluation {
+    /// Why records were left out before the epochs, by ID.
+    failed: BTreeMap<Hash, &'static str>,
     roots: BTreeMap<Hash, Cert>,
     recs: Vec<Rec>,
     by_sig: BTreeMap<Hash, Vec<usize>>,
@@ -750,19 +788,36 @@ impl Evaluation {
                 }
             }
         }
-        let mut e = Evaluation { roots, recs: Vec::new(), by_sig: BTreeMap::new(), devices: BTreeMap::new() };
+        let mut e = Evaluation {
+            failed: BTreeMap::new(),
+            roots,
+            recs: Vec::new(),
+            by_sig: BTreeMap::new(),
+            devices: BTreeMap::new(),
+        };
         // One body may come with more than one valid admin CA (an admin key
         // certified again); the smallest DER is kept, whatever the order.
         let mut by_id: BTreeMap<Hash, Rec> = BTreeMap::new();
         for r in input.records {
-            let Ok(s) = verify(r, |h| e.roots.get(h), input.sigs) else { continue };
+            let s = match verify(r, |h| e.roots.get(h), input.sigs) {
+                Ok(s) => s,
+                Err(_) => {
+                    let why = if Body::parse(&r.body).is_err() { WHY_UNREADABLE } else { WHY_SIGNATURE };
+                    e.fail(r.id(), why);
+                    continue;
+                }
+            };
             if s.body.group != input.group {
+                e.fail(s.id, WHY_GROUP);
                 continue;
             }
             let issuer = match &s.admin_ca {
                 Some(ca) => match e.issuer_of(ca) {
                     Some(h) => Some(h),
-                    None => continue,
+                    None => {
+                        e.fail(s.id, WHY_ISSUER);
+                        continue;
+                    }
                 },
                 None => None,
             };
@@ -784,6 +839,16 @@ impl Evaluation {
             e.recs.push(x);
         }
         e
+    }
+
+    /// Notes why a record was left out; of two copies of one body left out
+    /// for different reasons, the reason first in byte order is kept,
+    /// whatever the order of the set.
+    fn fail(&mut self, id: Hash, why: &'static str) {
+        let old = self.failed.entry(id).or_insert(why);
+        if why < *old {
+            *old = why;
+        }
     }
 
     /// Finds the root that issued an admin CA.
@@ -815,6 +880,8 @@ struct Epoch<'a> {
     forked: BTreeMap<Hash, i64>,
     admins: BTreeMap<Hash, usize>,
     label: Vec<Label>,
+    /// Why the labelling put a record out.
+    why: Vec<&'static str>,
     revoked: BTreeSet<Hash>,
     frozen: BTreeSet<Hash>,
     conflicts: Vec<Conflict>,
@@ -839,6 +906,7 @@ impl<'a> Epoch<'a> {
             forked: BTreeMap::new(),
             admins: BTreeMap::new(),
             label: vec![Label::Unlabelled; n],
+            why: vec![""; n],
             revoked: BTreeSet::new(),
             frozen: BTreeSet::new(),
             conflicts: Vec::new(),
@@ -1075,6 +1143,7 @@ impl<'a> Epoch<'a> {
             } else if r.admin() && self.counted[i] {
                 if !self.permitted(i) {
                     self.label[i] = Label::Out;
+                    self.why[i] = WHY_POWER;
                 }
                 admin_recs.push(i);
             }
@@ -1082,11 +1151,14 @@ impl<'a> Epoch<'a> {
         // A root's removal or freeze puts what it cuts off out for good,
         // and a root's thaw puts out the admin freezes it names.
         for &b in &admin_recs {
-            if self.r(b).b().kind == TYPE_FREEZE && thawed.contains(&self.r(b).s.id) {
-                self.label[b] = Label::Out;
+            if self.label[b] == Label::Out {
+                continue;
             }
-            if root_acts.iter().any(|&a| self.cuts_off(a, b)) {
+            if self.r(b).b().kind == TYPE_FREEZE && thawed.contains(&self.r(b).s.id)
+                || root_acts.iter().any(|&a| self.cuts_off(a, b))
+            {
                 self.label[b] = Label::Out;
+                self.why[b] = WHY_CUT;
             }
         }
         let mut attackers: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -1116,6 +1188,7 @@ impl<'a> Epoch<'a> {
                 for &a in attackers.get(&b).map_or(&[][..], |v| v.as_slice()) {
                     if self.label[a] == Label::In {
                         self.label[b] = Label::Out;
+                        self.why[b] = WHY_REMOVED;
                         changed = true;
                         break;
                     }
@@ -1173,6 +1246,44 @@ impl<'a> Epoch<'a> {
             self.conflicts.push(c);
             self.stop_full = true;
         }
+    }
+
+    /// Lists the records of the set that do not count, with why, sorted by
+    /// ID, at most MAX_IGNORED; the records of a later version are in newer
+    /// instead.
+    fn ignored(&self, newer: &[Hash]) -> Vec<Ignored> {
+        let mut why = self.e.failed.clone();
+        for i in self.all() {
+            let id = self.r(i).s.id;
+            why.remove(&id);
+            if let Some(w) = self.why_not(i) {
+                why.insert(id, w);
+            }
+        }
+        for id in newer {
+            why.remove(id);
+        }
+        let mut out: Vec<Ignored> = why.into_iter().map(|(record, why)| Ignored { record, why }).collect();
+        out.truncate(MAX_IGNORED);
+        out
+    }
+
+    /// Why record i does not count in this epoch; None when it counts.
+    fn why_not(&self, i: usize) -> Option<&'static str> {
+        let r = self.r(i);
+        Some(if self.counts(i) {
+            return None;
+        } else if !self.counted[i] {
+            WHY_HISTORY
+        } else if !r.admin() {
+            if self.on_path.contains_key(&r.b().signer) { WHY_CUT } else { WHY_NOT_ROOT }
+        } else if self.label[i] == Label::Undecided {
+            WHY_UNDECIDED
+        } else if !self.why[i].is_empty() {
+            self.why[i]
+        } else {
+            WHY_POWER
+        })
     }
 
     /// Reports whether record i counts: a root's record in this epoch, or

@@ -468,6 +468,49 @@ func TestClaimedRootSignsEarly(t *testing.T) {
 	}
 }
 
+// TestIgnoredReasons: the state says why each record of the set that
+// does not count is left out.
+func TestIgnoredReasons(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	good := w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(1000))}, nil)
+	// Another signature on the same kind of body.
+	bad := w.sign("settings 2", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(2000))}, nil)
+	w.recs = w.recs[:len(w.recs)-1]
+	forged := authority.Record{Body: bad.Body, Sig: good.Sig}
+	// A record of another group, signed by the root.
+	other := authority.Body{Type: authority.TypeSettings, Group: "fedcba9876543210", Seq: 1, TimeMS: 1, TakeoverDelayMS: ptr(int64(1))}
+	otherRec, err := authority.Sign(other, w.roots["root"].Key, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An admin CA from a root that is not the group's.
+	stranger, err := group.NewRootCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	k := newKey(t)
+	ca, err := stranger.IssueAdmin(group.NewDeviceID(), &k.PublicKey, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	strangerRec, err := authority.Sign(authority.Body{Type: authority.TypeRevoke, Group: tag, Seq: 1, TimeMS: 1, Keys: []authority.Hash{w.adminKey("A")}, Seen: []authority.Seen{{Key: w.signerHash("root"), Seq: 1}}}, k, ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.recs = append(w.recs, forged, otherRec, strangerRec)
+	s := w.evalAll(nil)
+	want := map[authority.Hash]string{forged.ID(): authority.WhySignature, otherRec.ID(): authority.WhyGroup, strangerRec.ID(): authority.WhyIssuer}
+	if len(s.Ignored) != len(want) {
+		t.Fatalf("the state should list the three records: %s", mustEncode(t, s))
+	}
+	for _, i := range s.Ignored {
+		if want[i.Record] != i.Why {
+			t.Errorf("%s is ignored as %q, want %q", i.Record, i.Why, want[i.Record])
+		}
+	}
+}
+
 // TestNewerVersion is a record of a later version: the state lists it for
 // the user to update when a current root or admin signed it, applies
 // nothing of it, and goes on.
@@ -512,7 +555,18 @@ func TestNewerVersion(t *testing.T) {
 	if len(s.Newer) != 2 || s.Newer[0] != want[0] || s.Newer[1] != want[1] || s.Stop != "none" {
 		t.Fatalf("the state should list the two signed records of version 3: %s", mustEncode(t, s))
 	}
-	s.Newer = nil
+	// The others are left out as unreadable (the one without a signature
+	// has the ID of the root's, which newer lists), and nothing else
+	// changes.
+	if len(s.Ignored) != 4 {
+		t.Fatalf("the four other records should be listed as ignored: %s", mustEncode(t, s))
+	}
+	for _, i := range s.Ignored {
+		if i.Why != authority.WhyUnreadable {
+			t.Errorf("%s is ignored as %q, not unreadable", i.Record, i.Why)
+		}
+	}
+	s.Newer, s.Ignored = nil, nil
 	if got := mustEncode(t, s); got != before {
 		t.Fatalf("a record of a later version changed the state:\n got %s\nwant %s", got, before)
 	}
