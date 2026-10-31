@@ -714,6 +714,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A relay or forwarder on Windows told to listen on any free port no longer gives up when
+  the ports the system hands out fall in a range Windows reserves for the other protocol; it
+  takes turns picking the UDP port first and the TCP port first.
 - The lite member no longer stops the download tool after it has finished, so a download
   the tool ends a moment after its output stands.
 - A replaced image's or file's parts leave the cache 10 minutes after the copy that replaced
