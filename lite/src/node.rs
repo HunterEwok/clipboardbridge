@@ -37,6 +37,9 @@ use crate::wire::{self, Message};
 /// connection to it (docs/protocol.md, section 11).
 #[cfg_attr(not(feature = "tunnel"), allow(dead_code))] // used by sync away from home
 const NEAR_GRACE: Duration = Duration::from_secs(30);
+/// The devices found at home that are remembered, as many as a home group
+/// has and more.
+const MAX_HOME: usize = 64;
 
 const PING_EVERY: Duration = Duration::from_secs(5);
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -187,12 +190,7 @@ impl Node {
 
     /// Records whether discovery finds the device on the home network.
     pub fn found(&self, id: &DeviceId, here: bool) {
-        let mut home = self.home.lock().unwrap();
-        if here {
-            home.entry(id.clone()).or_insert_with(uptime::now);
-        } else {
-            home.remove(id);
-        }
+        remember_found(&mut self.home.lock().unwrap(), id, here, uptime::now);
     }
 
     /// Reports whether discovery found the device on the home network within
@@ -799,8 +797,41 @@ pub fn date(secs: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Records in home when discovery found a device or lost it. Anyone can
+/// announce the group's tag: past MAX_HOME devices a new name counts for
+/// nothing.
+fn remember_found(home: &mut HashMap<DeviceId, Duration>, id: &DeviceId, here: bool, now: impl FnOnce() -> Duration) {
+    if !here {
+        home.remove(id);
+    } else if home.len() < MAX_HOME || home.contains_key(id) {
+        home.entry(id.clone()).or_insert_with(now);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    use super::{MAX_HOME, remember_found};
+    use crate::certs::DeviceId;
+    #[test]
+    fn found_is_bounded() {
+        let mut home = HashMap::new();
+        let id = |i: usize| DeviceId::parse(&format!("{i:032x}")).unwrap();
+        for i in 0..MAX_HOME + 10 {
+            remember_found(&mut home, &id(i), true, || Duration::from_secs(i as u64));
+        }
+        assert_eq!(home.len(), MAX_HOME);
+        assert!(!home.contains_key(&id(MAX_HOME)));
+        // A known device is found again, and a lost one makes room.
+        remember_found(&mut home, &id(1), true, || Duration::ZERO);
+        assert_eq!(home[&id(1)], Duration::from_secs(1));
+        remember_found(&mut home, &id(0), false, || Duration::ZERO);
+        remember_found(&mut home, &id(MAX_HOME), true, || Duration::ZERO);
+        assert!(home.contains_key(&id(MAX_HOME)));
+    }
+
     #[test]
     fn dates() {
         assert_eq!(super::date(0), "1970-01-01");

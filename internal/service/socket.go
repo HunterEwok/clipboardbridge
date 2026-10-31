@@ -33,10 +33,55 @@ func (s *Service) serveControl(ctx context.Context, ln net.Listener, admin bool)
 	if admin {
 		what = "the admin socket"
 	}
+	var users controlUsers
 	acceptLoop(ctx, ln, s.logf, what, func(c net.Conn) {
+		user := connPeer(c).String()
+		if !users.add(user) {
+			s.logf("service: %s has %d connections to %s open; refused another", user, maxControlPerUser, what)
+			c.Close()
+			return
+		}
 		control.SetBuffers(c)
-		go s.handleControl(ctx, c, admin)
+		go func() {
+			defer users.done(user)
+			s.handleControl(ctx, c, admin)
+		}()
 	})
+}
+
+// maxControlPerUser bounds one user's open connections to a control
+// socket, so that one user of the group cannot use up the service's
+// descriptors; a user's watchers and commands need a few. firstRequestTime
+// bounds how long a connection may wait before its first request.
+const maxControlPerUser = 64
+
+var firstRequestTime = 30 * time.Second // a variable for the tests
+
+// controlUsers counts the open connections of each user.
+type controlUsers struct {
+	mu sync.Mutex
+	n  map[string]int
+}
+
+func (u *controlUsers) add(user string) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.n == nil {
+		u.n = map[string]int{}
+	}
+	if u.n[user] >= maxControlPerUser {
+		return false
+	}
+	u.n[user]++
+	return true
+}
+
+func (u *controlUsers) done(user string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.n[user]--; u.n[user] <= 0 {
+		delete(u.n, user)
+	}
 }
 
 func reply(c net.Conn, h control.Header, payload []byte) error {
@@ -64,10 +109,12 @@ func (s *Service) errNoGroup() error {
 func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 	defer c.Close()
 	r := control.NewReader(c)
+	c.SetReadDeadline(time.Now().Add(firstRequestTime))
 	m, err := r.Read()
 	if err != nil {
 		return
 	}
+	c.SetReadDeadline(time.Time{})
 	if control.IsAdmin(m.Op) && !admin {
 		fail(c, fmt.Errorf("%q changes the group, so the service takes it only on its admin socket, which only the administrator reaches", m.Op))
 		return

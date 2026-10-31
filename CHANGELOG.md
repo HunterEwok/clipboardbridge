@@ -698,6 +698,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
   computers, the lite member and both phones; files the project signs are unaffected.
+- The control sockets take at most 64 open connections from one user and close one that
+  sends no request within 30 seconds, and read a request's payload as it arrives, on computers
+  and the lite member.
+- The lite member dials at most 64 members found by browsing and remembers at most 64 found
+  at home; its tunnel's local port takes only its own user's connections, 32 at most, and it
+  refuses a hub offer with a key of zeros or a port 0, as Go does.
+- The lite member's tmux helper keeps its log private (0600) and bounded at 1 MiB, and names
+  its lock as the Go helper does, so that the two never run for one tmux server.
 - On Windows the service moves aside whatever another user put in the place of the admin
   socket's directory, a junction or a file included, instead of removing it, makes the
   directory with its narrow access list from the start, and checks and narrows it through one
