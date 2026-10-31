@@ -61,7 +61,19 @@ func goProduct(rel string) bool {
 	if strings.Contains(rel, "/third_party/") || strings.HasSuffix(rel, "_test.go") {
 		return false
 	}
-	return !strings.HasSuffix(path.Base(path.Dir(rel)), "test") // eitest, atvtest, bluetest
+	return !slices.Contains(testFakes, path.Dir(rel))
+}
+
+// testFakes are the packages that only tests use: servers, devices and
+// networks played for them.
+var testFakes = []string{
+	"internal/attest/attesttest",
+	"internal/blekeyboard/bluetest",
+	"internal/ei/eitest",
+	"internal/testnet",
+	"internal/tpmkey/tpmtest",
+	"internal/tvremote/androidtv/atvtest",
+	"internal/vless/vlesstest",
 }
 
 // llvmParts says which files of an llvm-cov export count for each part.

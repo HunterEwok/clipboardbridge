@@ -20,10 +20,13 @@ image=${E2E_IMAGE:-debian:stable-slim}
 run=cbe2e-$$
 net=$run-net
 members="a b c"
-cover=""
+# Every member gets a coverage directory; a cbb built without -cover ignores it.
 if [ -n "${CBB_E2E_COVERDIR:-}" ]; then
 	mkdir -p "$CBB_E2E_COVERDIR"
-	cover="-v $(cd "$CBB_E2E_COVERDIR" && pwd):/cover -e GOCOVERDIR=/cover"
+	cover=$(cd "$CBB_E2E_COVERDIR" && pwd)
+else
+	cover=$(mktemp -d)
+	emptycover=$cover
 fi
 
 say() { printf '== %s\n' "$*"; }
@@ -38,6 +41,7 @@ fail() {
 cleanup() {
 	for c in $members phone; do docker stop -t 2 "$run-$c" >/dev/null 2>&1 || true; done
 	docker network rm "$net" >/dev/null 2>&1 || true
+	[ -z "${emptycover:-}" ] || rmdir "$emptycover" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -63,7 +67,7 @@ say "starting three members"
 docker network create "$net" >/dev/null
 for m in $members; do
 	docker run -d --rm --name "$run-$m" --hostname "host-$m" --network "$net" \
-		-e CBB_SOCKET=/tmp/c.sock -v "$bin:/cb/cbb:ro" $cover "$image" \
+		-e CBB_SOCKET=/tmp/c.sock -v "$bin:/cb/cbb:ro" -v "$cover:/cover" -e GOCOVERDIR=/cover "$image" \
 		/cb/cbb service -state /tmp -socket /tmp/c.sock >/dev/null
 done
 for m in $members; do
@@ -139,7 +143,7 @@ eventually "clipboardbridge.local follows to $holder" resolves_to "$(ip_of "$hol
 
 say "a wrong code does not join"
 docker run -d --rm --name "$run-d" --network "$net" -e CBB_SOCKET=/tmp/c.sock \
-	-v "$bin:/cb/cbb:ro" $cover "$image" /cb/cbb service -state /tmp -socket /tmp/c.sock >/dev/null
+	-v "$bin:/cb/cbb:ro" -v "$cover:/cover" -e GOCOVERDIR=/cover "$image" /cb/cbb service -state /tmp -socket /tmp/c.sock >/dev/null
 members="$members d"
 eventually "d starts" cb d status
 admin=${members%% *}

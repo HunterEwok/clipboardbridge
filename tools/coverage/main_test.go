@@ -29,6 +29,8 @@ github.com/HunterEwok/clipboardbridge/internal/group/a.go:3.1,4.2 1 5
 github.com/HunterEwok/clipboardbridge/internal/desktop/x.go:1.1,2.2 4 0
 github.com/HunterEwok/clipboardbridge/internal/third_party/cpace/c.go:1.1,2.2 9 0
 github.com/HunterEwok/clipboardbridge/internal/ei/eitest/s.go:1.1,2.2 9 0
+github.com/HunterEwok/clipboardbridge/internal/attest/attesttest/s.go:1.1,2.2 9 0
+github.com/HunterEwok/clipboardbridge/internal/attest/a.go:1.1,2.2 2 0
 github.com/HunterEwok/clipboardbridge/tools/bench/b.go:1.1,2.2 9 0
 `)
 	b := write(t, "b.out", `mode: set
@@ -38,12 +40,12 @@ github.com/HunterEwok/clipboardbridge/internal/desktop/x.go:1.1,2.2 4 1
 	if err := run([]string{a, b}, nil, nil, "", 1, "", &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"| go | 5 | 8 | 62.5 |", "| go-core | 1 | 4 | 25.0 |", "| internal/desktop | 4 | 100.0 |"} {
+	for _, want := range []string{"| go | 5 | 10 | 50.0 |", "| internal/attest | 2 | 0.0 |", "| go-core | 1 | 4 | 25.0 |", "| internal/desktop | 4 | 100.0 |"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("no %q in\n%s", want, out.String())
 		}
 	}
-	if strings.Contains(out.String(), "third_party") || strings.Contains(out.String(), "eitest") || strings.Contains(out.String(), "tools/bench") {
+	if strings.Contains(out.String(), "third_party") || strings.Contains(out.String(), "eitest") || strings.Contains(out.String(), "attesttest") || strings.Contains(out.String(), "tools/bench") {
 		t.Errorf("copied code, a test fake or a tool counted:\n%s", out.String())
 	}
 }
