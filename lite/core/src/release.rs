@@ -12,9 +12,8 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use p256::ecdsa::Signature;
 use p256::ecdsa::signature::Verifier;
-use p256::ecdsa::{Signature, VerifyingKey};
-use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
 
 use crate::certs::{b64, hex, sha256};
@@ -174,7 +173,7 @@ impl File {
             if sha256(spki)[..] != self.key[..] {
                 continue;
             }
-            let key = VerifyingKey::from_public_key_der(spki).map_err(|_| Error::msg("a key is not P-256"))?;
+            let key = crate::certs::p256_spki(spki).ok_or_else(|| Error::msg("a key is not P-256"))?;
             let sig = Signature::from_der(&self.sig).map_err(|_| Error::msg("the signature is not valid"))?;
             return key.verify(&self.body, &sig).map_err(|_| Error::msg("the signature is not valid"));
         }
@@ -268,7 +267,21 @@ pub(crate) fn decode_keys(body: &[u8]) -> Result<Keys> {
         if key.name.is_empty() || key.name.len() > 64 {
             return Err(Error::msg("a key has no valid name"));
         }
-        VerifyingKey::from_public_key_der(&key.key).map_err(|_| Error::msg("a key is not P-256"))?;
+        crate::certs::p256_spki(&key.key).ok_or_else(|| Error::msg("a key is not P-256"))?;
+    }
+    // A key's use is left out for a release key, never written empty.
+    #[derive(Deserialize)]
+    struct RawKey {
+        #[serde(rename = "use")]
+        usage: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct RawKeys {
+        keys: Vec<RawKey>,
+    }
+    let raw: RawKeys = serde_json::from_slice(body).map_err(|e| Error::with("the file is not valid", e))?;
+    if raw.keys.iter().any(|k| k.usage.as_deref() == Some("")) {
+        return Err(Error::msg("a key's use is empty"));
     }
     Ok(k)
 }
