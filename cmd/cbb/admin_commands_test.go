@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -148,6 +149,11 @@ func TestQuietLine(t *testing.T) {
 }
 
 func TestActionCommands(t *testing.T) {
+	// A program is given by its full path, which differs on Windows.
+	prog := "/usr/bin/backup"
+	if runtime.GOOS == "windows" {
+		prog = `C:\Tools\backup.exe`
+	}
 	list := control.Header{Status: &control.Status{Role: "full", OS: "linux", Group: "g", Actions: []control.Action{
 		{Name: "lock", On: true},
 		{Name: "reboot", On: true, By: []string{"root", "phone"}},
@@ -170,17 +176,17 @@ func TestActionCommands(t *testing.T) {
 		{name: "enable with an argument", args: []string{"action", "enable", "lock", "extra"}, code: 2, stderr: "usage: cbb action"},
 		{name: "disable with -yes", args: []string{"action", "disable", "lock", "-yes"}, code: 2, stderr: "usage: cbb action"},
 		{name: "enable without a name", args: []string{"action", "enable"}, code: 2, stderr: "usage: cbb action"},
-		{name: "add declined", args: []string{"action", "add", "backup", "--", "/usr/bin/backup"}, stdin: "\n", code: 1,
-			stdout: "run /usr/bin/backup as the user signed in here"},
-		{name: "add", args: []string{"action", "add", "backup", "-by", "phone", "-yes", "--", "/usr/bin/backup", "--now"},
+		{name: "add declined", args: []string{"action", "add", "backup", "--", prog}, stdin: "\n", code: 1,
+			stdout: "run " + prog + " as the user signed in here"},
+		{name: "add", args: []string{"action", "add", "backup", "-by", "phone", "-yes", "--", prog, "--now"},
 			check: sent(control.OpActionSet, func(m *control.Message) bool {
 				return len(m.Actions) == 1 && m.Actions[0].Name == "backup" && m.Actions[0].On &&
-					strings.Join(m.Actions[0].Command, " ") == "/usr/bin/backup --now" && strings.Join(m.Actions[0].By, ",") == "phone"
+					strings.Join(m.Actions[0].Command, " ") == prog+" --now" && strings.Join(m.Actions[0].By, ",") == "phone"
 			}),
-			stdout: "backup: on, for phone: /usr/bin/backup --now."},
-		{name: "add with yes typed", args: []string{"action", "add", "backup", "--", "/usr/bin/backup"}, stdin: "YES\n",
+			stdout: "backup: on, for phone: " + prog + " --now."},
+		{name: "add with yes typed", args: []string{"action", "add", "backup", "--", prog}, stdin: "YES\n",
 			check: sent(control.OpActionSet, nil), stdout: "backup: on, for every admin"},
-		{name: "add refused", args: []string{"action", "add", "backup", "-yes", "--", "/usr/bin/backup"}, answer: control.Header{Error: "too many actions"},
+		{name: "add refused", args: []string{"action", "add", "backup", "-yes", "--", prog}, answer: control.Header{Error: "too many actions"},
 			check: sent(control.OpActionSet, nil), code: 1, stderr: "too many actions"},
 		{name: "add without a program", args: []string{"action", "add", "backup", "-yes"}, code: 1},
 		{name: "add without a name", args: []string{"action", "add"}, code: 2, stderr: "usage: cbb action"},

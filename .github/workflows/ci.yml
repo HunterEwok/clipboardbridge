@@ -119,6 +119,8 @@ jobs:
           sudo apt-get install -y -q swtpm
           echo CBB_TPM_REQUIRED=1 >>"$GITHUB_ENV"
       - name: go test
+        # bash: PowerShell splits -coverprofile=cover-go.out at the dot.
+        shell: bash
         run: go test -race -coverprofile=cover-go.out ./...
       # Each system's own files (Windows, macOS) for the coverage summary; the
       # coverage job measures across packages on Linux.
