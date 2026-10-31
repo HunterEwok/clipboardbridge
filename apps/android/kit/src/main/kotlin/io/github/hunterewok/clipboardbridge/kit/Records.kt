@@ -558,18 +558,46 @@ class RecordSet {
             // The known roots, until nothing is added.
             val k = mutableSetOf<Key>()
             rootKey(groupCA)?.let(k::add)
-            // The admin CAs each root's own key revoked: such an admin
-            // phone's root records under that root no longer count.
-            val removed = entries.filter { it.body.type == "revoke" && it.signer == it.anchor }
-                .flatMap { e -> e.body.keys.orEmpty().map { e.anchor to Key(it) } }.toSet()
+            // The admin CAs that are removed: named by a revoke from the own
+            // key of a known root, or from an admin phone's admin CA under a
+            // known root that no such revoke from a root names. Such an admin
+            // phone's root records no longer count. The roots are known in
+            // rounds, each phone's root records judged by the removals of the
+            // roots known before them, as Go's knownRoots.
+            val removed = mutableSetOf<Key>()
             while (true) {
+                // The roots the own keys and the computers' admin CAs hand on to.
+                do {
+                    var grew = false
+                    for (e in entries) {
+                        val root = e.body.root ?: continue
+                        if (e.body.type != "root" || e.anchor !in k) continue
+                        if (e.signer != e.anchor && !computerHandOver(e)) continue
+                        val rk = rootKey(root) ?: continue
+                        if (k.add(rk)) grew = true
+                    }
+                } while (grew)
                 val phones = entries.mapNotNull { phoneAdminOf(it, k) }.toSet()
+                val byRootKey = mutableSetOf<Key>()
+                for (e in entries) {
+                    if (e.body.type == "revoke" && e.signer == e.anchor && e.anchor in k) {
+                        for (key in e.body.keys.orEmpty()) {
+                            byRootKey.add(Key(key))
+                            removed.add(Key(key))
+                        }
+                    }
+                }
+                for (e in entries) {
+                    if (e.body.type == "revoke" && e.signer in phones && e.anchor in k && e.signer !in byRootKey) {
+                        for (key in e.body.keys.orEmpty()) removed.add(Key(key))
+                    }
+                }
+                // The roots that admin phones that are not removed hand on to.
                 var grew = false
                 for (e in entries) {
                     val root = e.body.root ?: continue
-                    if (e.body.type != "root" || e.anchor !in k) continue
-                    val phone = e.signer in phones && (e.anchor to e.signer) !in removed
-                    if (e.signer != e.anchor && !phone && !computerHandOver(e)) continue
+                    if (e.body.type != "root" || e.anchor !in k || e.signer == e.anchor) continue
+                    if (e.signer !in phones || e.signer in removed) continue
                     val rk = rootKey(root) ?: continue
                     if (k.add(rk)) grew = true
                 }

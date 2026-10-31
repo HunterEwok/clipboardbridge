@@ -350,6 +350,32 @@ fn go_removed_admin() {
     }
 }
 
+/// An admin phone removed by the current root after a handover, or by
+/// another admin phone, signs a root record afterwards, for a root of its
+/// own that revokes the group's roots and admins: that root is not known
+/// either (go-removed-admins.json, as Go's TestRemovedAdminCases writes it).
+#[test]
+fn go_removed_admins() {
+    let cases = vectors("go-removed-admins.json");
+    let cases = cases.as_array().unwrap();
+    assert_eq!(cases.len(), 2);
+    for v in cases {
+        let case = v["name"].as_str().unwrap();
+        let rs = records(&v["records"]);
+        let mut reversed = rs.clone();
+        reversed.reverse();
+        for (name, recs) in [("as written", &rs), ("reversed", &reversed)] {
+            let mut s = Records::new(&cert(&v["group_ca"]));
+            let _ = s.add_all(recs);
+            assert_eq!(s.roots().len() as u64, v["roots"].as_u64().unwrap(), "{case}, {name}");
+            for k in v["keys"].as_array().unwrap() {
+                let key: KeyHash = bytes(&k["key"]).try_into().unwrap();
+                assert_eq!(s.revoked(&key), k["revoked"].as_bool().unwrap(), "{case}, {name}: {}", k["name"]);
+            }
+        }
+    }
+}
+
 /// A device is an admin, with the role and store of that record, only by a
 /// record a root's own key signed, and a removed admin's records no longer
 /// decide a device's entry (go-authority.json, as Go's

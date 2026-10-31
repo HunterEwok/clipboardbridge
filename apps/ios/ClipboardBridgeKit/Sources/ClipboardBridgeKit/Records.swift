@@ -568,18 +568,39 @@ public struct RecordSet: Codable, Equatable, Sendable {
             let all = Set(roots.compactMap { try? Records.keyHash(cert: $0) })
             // The known roots, until nothing is added.
             var k: Set<Data> = Set([try? Records.keyHash(cert: groupCA)].compactMap { $0 })
-            // The admin CAs each root's own key revoked: such an admin
-            // phone's root records under that root no longer count.
+            // The admin CAs that are removed: named by a revoke from the own
+            // key of a known root, or from an admin phone's admin CA under a
+            // known root that no such revoke from a root names. Such an admin
+            // phone's root records no longer count. The roots are known in
+            // rounds, each phone's root records judged by the removals of the
+            // roots known before them, as Go's knownRoots.
             var removed: Set<Data> = []
-            for e in entries where e.body.type == "revoke" && e.signer == e.anchor {
-                for key in e.body.keys ?? [] { removed.insert(e.anchor + key) }
-            }
             while true {
+                // The roots the own keys and the computers' admin CAs hand on to.
+                var handed = true
+                while handed {
+                    handed = false
+                    for e in entries where e.body.type == "root" && k.contains(e.anchor)
+                        && (e.signer == e.anchor || Self.computerHandOver(e, entries)) {
+                        if let root = e.body.root, let rk = try? Records.keyHash(cert: root), k.insert(rk).inserted { handed = true }
+                    }
+                }
                 let phones = Set(entries.compactMap { Self.phoneAdmin(of: $0, roots: k) })
+                var byRootKey: Set<Data> = []
+                for e in entries where e.body.type == "revoke" && e.signer == e.anchor && k.contains(e.anchor) {
+                    for key in e.body.keys ?? [] {
+                        byRootKey.insert(key)
+                        removed.insert(key)
+                    }
+                }
+                for e in entries where e.body.type == "revoke" && phones.contains(e.signer) && k.contains(e.anchor)
+                    && !byRootKey.contains(e.signer) {
+                    removed.formUnion(e.body.keys ?? [])
+                }
+                // The roots that admin phones that are not removed hand on to.
                 var grew = false
-                for e in entries where e.body.type == "root" && k.contains(e.anchor)
-                    && (e.signer == e.anchor || (phones.contains(e.signer) && !removed.contains(e.anchor + e.signer))
-                        || Self.computerHandOver(e, entries)) {
+                for e in entries where e.body.type == "root" && k.contains(e.anchor) && e.signer != e.anchor
+                    && phones.contains(e.signer) && !removed.contains(e.signer) {
                     if let root = e.body.root, let rk = try? Records.keyHash(cert: root), k.insert(rk).inserted { grew = true }
                 }
                 if !grew { break }

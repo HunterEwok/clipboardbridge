@@ -311,6 +311,34 @@ final class RootTests: XCTestCase {
         }
     }
 
+    /// Reads testdata/interop/go-removed-admins.json, from Go's
+    /// TestRemovedAdminCases: an admin phone removed by the current root
+    /// after a handover, or by another admin phone, signs a root record
+    /// afterwards, for a root of its own that revokes the group's roots and
+    /// admins; that root is not known either, in any order.
+    func testGoRemovedAdmins() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable {
+            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
+            var name: String
+            var group_ca: Data
+            var records: [Member.Record]
+            var keys: [Key]
+            var roots: Int
+        }
+        let cases = try JSONDecoder().decode([V].self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-removed-admins.json")))
+        XCTAssertEqual(cases.count, 2)
+        for v in cases {
+            for (name, recs) in [("as written", v.records), ("reversed", Array(v.records.reversed()))] {
+                var set = RecordSet()
+                _ = set.addAll(recs, groupCA: v.group_ca)
+                XCTAssertEqual(set.roots.count, v.roots, "\(v.name), \(name)")
+                for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(v.name), \(name): \(k.name)") }
+            }
+        }
+    }
+
     /// Reads testdata/interop/go-authority.json, from Go's
     /// TestGoAuthorityVectors: a device is an admin, with the role and store
     /// of that record, only by a record a root's own key signed, and a
