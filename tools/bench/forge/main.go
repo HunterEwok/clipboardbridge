@@ -23,7 +23,8 @@
 // stand-in for a well-known site that VLESS borrows in site.go, the control
 // socket's in control.go, the TVs in tv.go, the mDNS records in mdns.go,
 // the renewals in cert.go, watching the writes in watch.go, the fetch
-// limits in fetch.go. It is never part of a release.
+// limits in fetch.go, the phone that scans a QR code in qr.go. It is never
+// part of a release.
 package main
 
 import (
@@ -72,6 +73,13 @@ func main() {
 	}
 	if flag.NArg() > 0 && fuzzCase(flag.Arg(0)) {
 		if err := runFuzz(*state, group.DeviceID(*to), *addr, *socket, flag.Arg(0)); err != nil {
+			fmt.Fprintln(os.Stderr, "forge:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 && qrCase(flag.Arg(0)) {
+		if err := runQR(*signer, flag.Arg(0)); err != nil {
 			fmt.Fprintln(os.Stderr, "forge:", err)
 			os.Exit(1)
 		}
