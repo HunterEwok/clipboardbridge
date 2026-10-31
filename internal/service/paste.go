@@ -161,7 +161,7 @@ func (s *Service) senderName(body group.CommandBody, from sender) string {
 
 // pasted carries out a paste command that VerifyCommand took, from the
 // sender from.
-func (s *Service) pasted(body group.CommandBody, from sender) node.Result {
+func (s *Service) pasted(body group.CommandBody, c group.Record, from sender) node.Result {
 	res := node.Result{ID: body.ID}
 	refuse := func(why string) node.Result {
 		res.Status, res.Reason = node.ResultRefused, why
@@ -178,7 +178,7 @@ func (s *Service) pasted(body group.CommandBody, from sender) node.Result {
 	case !s.pastes.Allow(from.key, s.cfg.now()):
 		res = refuse("too many pastes: at most one a second and 30 a minute from one device")
 	default:
-		res = s.inject(body, remotepaste.Clean(body.Text), set)
+		res = s.inject(body, remotepaste.Clean(body.Text), set, s.stillAllowed(c, body))
 	}
 	if res.Status == node.ResultDone {
 		s.logf("cbb: %s pasted %d bytes here", from.who(body), len(body.Text))
@@ -195,10 +195,85 @@ func (s *Service) pasted(body group.CommandBody, from sender) node.Result {
 	return res
 }
 
+// stillAllowed reports, for a paste that is typed after its answer,
+// whether it may go on: remote paste is still on here and the records
+// still take the command c from its signer, who may have been removed or
+// frozen meanwhile.
+func (s *Service) stillAllowed(c group.Record, body group.CommandBody) func() bool {
+	return func() bool {
+		if set, err := remotepaste.Load(s.cfg.StateDir); err != nil || !set.On {
+			return false
+		}
+		s.mu.Lock()
+		id := s.id
+		s.mu.Unlock()
+		if id == nil {
+			return false
+		}
+		s.recMu.Lock()
+		defer s.recMu.Unlock()
+		if s.records == nil {
+			return false
+		}
+		_, err := s.records.VerifyCommand(c, id.ID, time.UnixMilli(body.TimeMS))
+		return err == nil
+	}
+}
+
+// typingCheck is how often a paste typed after its answer checks that it
+// may go on.
+var typingCheck = 500 * time.Millisecond
+
+// typeLater types with typ after the answer, as a long text takes longer
+// than the sender waits: one text at a time on target, false when one is
+// typing there. Typing stops once still says the paste may no longer go on.
+func (s *Service) typeLater(target string, still func() bool, typ func(context.Context) error) bool {
+	s.mu.Lock()
+	if s.typing == nil {
+		s.typing = map[string]bool{}
+	}
+	if s.typing[target] {
+		s.mu.Unlock()
+		return false
+	}
+	s.typing[target] = true
+	s.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	t := time.NewTicker(typingCheck)
+	go func() {
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if !still() {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	go func() {
+		defer func() {
+			cancel()
+			s.mu.Lock()
+			delete(s.typing, target)
+			s.mu.Unlock()
+		}()
+		if err := typ(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			s.logf("cbb: typing a paste on %s: %v", target, err)
+		} else if errors.Is(err, context.Canceled) {
+			s.logf("cbb: stopped typing a paste on %s: it may no longer go on", target)
+		}
+	}()
+	return true
+}
+
 // inject hands the text to the watchers that can put it in, best target
 // first, until one did: a desktop session, then tmux, then a text console
 // when the user allowed consoles.
-func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Settings) node.Result {
+func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Settings, still func() bool) node.Result {
 	res := node.Result{ID: body.ID, Status: node.ResultRefused}
 	if text == "" {
 		res.Reason = "the text has nothing that may be pasted: only control characters"
@@ -208,10 +283,10 @@ func (s *Service) inject(body group.CommandBody, text string, set remotepaste.Se
 	// shell: in a typed text, and in tmux and on a console. There it needs
 	// the user's leave for Enter; a desktop's terminal takes a paste
 	// bracketed.
-	if r, ok := s.keyboardPaste(body, text, set.Enter); ok {
+	if r, ok := s.keyboardPaste(body, text, set.Enter, still); ok {
 		return r
 	}
-	if r, ok := s.tvPaste(body, text, set.Enter); ok {
+	if r, ok := s.tvPaste(body, text, set.Enter, still); ok {
 		return r
 	}
 	lines := strings.Contains(text, "\n") && !set.Enter

@@ -83,9 +83,15 @@ func encodePS(script string) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// cbbPath is where install.ps1 puts cbb.exe.
+// cbbPath is where install.ps1 puts cbb.exe. Program Files comes from the
+// system, not from the environment, which the user sets: the elevated run
+// must start the installed cbb.
 func cbbPath() string {
-	return filepath.Join(os.Getenv("ProgramFiles"), "clipboardbridge", "cbb.exe")
+	dir, err := windows.KnownFolderPath(windows.FOLDERID_ProgramFiles, 0)
+	if err != nil {
+		dir = `C:\Program Files`
+	}
+	return filepath.Join(dir, "clipboardbridge", "cbb.exe")
 }
 
 var (

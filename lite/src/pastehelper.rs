@@ -125,13 +125,9 @@ fn run_tmux(socket: &Path) -> Result<()> {
     let Some(_lock) = lock_helper(&sock) else {
         return Ok(()); // this server has its helper
     };
-    let log_file = state_dir()
-        .and_then(|d| std::fs::OpenOptions::new().create(true).append(true).open(d.join("paste-helper.log")).ok());
+    let log_file = state_dir().and_then(|d| LogFile::open(d.join("paste-helper.log")));
     let log = move |s: &str| match &log_file {
-        Some(f) => {
-            let mut f = f;
-            let _ = writeln!(f, "{s}");
-        }
+        Some(f) => f.line(s),
         None => eprintln!("{s}"),
     };
     // SAFETY: geteuid has no preconditions.
@@ -172,7 +168,9 @@ fn lock_helper(sock: &str) -> Option<Option<std::fs::File>> {
         Some(d) if !d.is_empty() => PathBuf::from(d),
         _ => Path::new(sock).parent().map(Path::to_path_buf).unwrap_or_default(),
     };
-    let path = dir.join(format!("clipboardbridge-tmux-{:016x}.lock", fnv(sock.as_bytes())));
+    // Named as the Go helper names it, so that the two see one lock.
+    let sum = cbb_core::certs::sha256(sock.as_bytes());
+    let path = dir.join(format!("clipboardbridge-tmux-{}.lock", hex8(&sum)));
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::io::AsRawFd;
     let Ok(f) = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).mode(0o600).open(path)
@@ -187,9 +185,49 @@ fn lock_helper(sock: &str) -> Option<Option<std::fs::File>> {
     Some(Some(f))
 }
 
-/// FNV-1a, enough to name a lock file after a socket's path.
-fn fnv(b: &[u8]) -> u64 {
-    b.iter().fold(0xcbf2_9ce4_8422_2325, |h, &c| (h ^ c as u64).wrapping_mul(0x0100_0000_01b3))
+/// The first 8 bytes of sum in hex.
+fn hex8(sum: &[u8; 32]) -> String {
+    sum[..8].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The largest the helper's log grows before it starts again, keeping the
+/// last one beside it, as the Go helper's.
+const MAX_LOG: u64 = 1 << 20;
+
+/// The helper's log: only the user's (0600), and bounded.
+struct LogFile {
+    path: PathBuf,
+    f: std::sync::Mutex<(std::fs::File, u64)>,
+}
+
+impl LogFile {
+    fn open(path: PathBuf) -> Option<LogFile> {
+        let f = Self::file(&path)?;
+        Some(LogFile { path, f: std::sync::Mutex::new(f) })
+    }
+
+    fn file(path: &Path) -> Option<(std::fs::File, u64)> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let f = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path).ok()?;
+        let size = f.metadata().ok()?.len();
+        Some((f, size))
+    }
+
+    fn line(&self, s: &str) {
+        let mut g = self.f.lock().unwrap();
+        if g.1 >= MAX_LOG {
+            let old = self.path.with_extension("log.1");
+            let _ = std::fs::rename(&self.path, old);
+            match Self::file(&self.path) {
+                Some(f) => *g = f,
+                None => return,
+            }
+        }
+        let line = format!("{s}\n");
+        if g.0.write_all(line.as_bytes()).is_ok() {
+            g.1 += line.len() as u64;
+        }
+    }
 }
 
 /// Pastes into a tmux server: into the active pane of the client the user
@@ -460,6 +498,26 @@ fn loginctl(args: &[&str]) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn helper_files_match_go() {
+        // The lock is named as cmd/cbb's lockHelper names it.
+        assert_eq!(hex8(&cbb_core::certs::sha256(b"/tmp/tmux-1000/default")), "7cbd633a2afc14ea");
+        // The log is the user's alone and starts again past MAX_LOG.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("cbb-helper-log-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("paste-helper.log");
+        let log = LogFile::open(path.clone()).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let line = "x".repeat(1000);
+        for _ in 0..(MAX_LOG / 1000 + 2) {
+            log.line(&line);
+        }
+        assert!(std::fs::metadata(&path).unwrap().len() < MAX_LOG);
+        assert!(std::fs::metadata(dir.join("paste-helper.log.1")).unwrap().len() >= MAX_LOG);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn types_into_tmux_literally() {

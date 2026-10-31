@@ -10,6 +10,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
 	"errors"
@@ -215,12 +216,72 @@ func checkEKCert(der []byte, chain [][]byte, roots []*x509.Certificate) (*x509.C
 	if _, err := v.Verify(x509.VerifyOptions{Roots: pool, Intermediates: inter, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
 		return nil, invalid("the EK certificate leads to no TPM maker: %v", err)
 	}
+	if err := ekProfile(c); err != nil {
+		return nil, invalid("the EK certificate: %v", err)
+	}
 	return c, nil
 }
 
+// ekProfile checks that c is an EK certificate as TCG's EK credential
+// profile makes one, not another certificate of a maker's CA: no CA, a key
+// for decrypting that signs no certificates, the EK purpose if it names
+// purposes, and the TPM's maker in the subject alternative name.
+func ekProfile(c *x509.Certificate) error {
+	if c.IsCA {
+		return errors.New("it is a CA's")
+	}
+	if c.KeyUsage&(x509.KeyUsageKeyEncipherment|x509.KeyUsageKeyAgreement) == 0 ||
+		c.KeyUsage&(x509.KeyUsageCertSign|x509.KeyUsageCRLSign) != 0 {
+		return errors.New("its key is not one for decrypting")
+	}
+	if len(c.ExtKeyUsage) > 0 || len(c.UnknownExtKeyUsage) > 0 {
+		ek := false
+		for _, u := range c.UnknownExtKeyUsage {
+			ek = ek || u.Equal(oidEKCertificate)
+		}
+		if !ek || len(c.ExtKeyUsage) > 0 {
+			return errors.New("it is for another purpose than an EK")
+		}
+	}
+	for _, e := range c.Extensions {
+		if e.Id.Equal(oidSubjectAltName) && namesTPMMaker(e.Value) {
+			return nil
+		}
+	}
+	return errors.New("it names no TPM maker")
+}
+
+// namesTPMMaker tells whether a subject alternative name holds a directory
+// name with the TPM's maker (tcg-at-tpmManufacturer).
+func namesTPMMaker(san []byte) bool {
+	var names []asn1.RawValue
+	if rest, err := asn1.Unmarshal(san, &names); err != nil || len(rest) > 0 {
+		return false
+	}
+	for _, n := range names {
+		if n.Class != asn1.ClassContextSpecific || n.Tag != 4 {
+			continue
+		}
+		var dn pkix.RDNSequence
+		if rest, err := asn1.Unmarshal(n.Bytes, &dn); err != nil || len(rest) > 0 {
+			continue
+		}
+		for _, rdn := range dn {
+			for _, a := range rdn {
+				if v, ok := a.Value.(string); ok && v != "" && a.Type.Equal(oidTPMManufacturer) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 var (
-	oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
-	oidRSAESOAEP      = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 7}
+	oidSubjectAltName  = asn1.ObjectIdentifier{2, 5, 29, 17}
+	oidEKCertificate   = asn1.ObjectIdentifier{2, 23, 133, 8, 1}
+	oidTPMManufacturer = asn1.ObjectIdentifier{2, 23, 133, 2, 1}
+	oidRSAESOAEP       = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 7}
 )
 
 // sameKey checks that the public area holds the certificate's key. Some

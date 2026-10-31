@@ -176,9 +176,17 @@ pub fn run(cfg: Config) -> Result<()> {
     for (ln, admin) in [(listen(&cfg.socket, false)?, false), (listen(&admin_socket, true)?, true)] {
         let svc = svc.clone();
         std::thread::spawn(move || {
+            let users = Arc::new(ControlUsers::default());
             for conn in ln.incoming().flatten() {
-                let svc = svc.clone();
-                std::thread::spawn(move || svc.serve(conn, admin));
+                let user = crate::peer::uid(&conn);
+                if !users.add(user) {
+                    continue; // drops conn
+                }
+                let (svc, users) = (svc.clone(), users.clone());
+                std::thread::spawn(move || {
+                    svc.serve(conn, admin);
+                    users.done(user);
+                });
             }
         });
     }
@@ -903,11 +911,17 @@ impl Service {
             Ok(c) => c,
             Err(_) => return,
         };
+        // A connection waits for its first request this long at most.
+        let _ = conn.set_read_timeout(Some(FIRST_REQUEST_TIME));
+        let idle = conn.try_clone();
         let mut r = control::Reader::new(conn);
         let m = match r.read() {
             Ok(Some(m)) => m,
             _ => return,
         };
+        if let Ok(c) = idle {
+            let _ = c.set_read_timeout(None);
+        }
         if control::is_admin(&m.header.op) && !admin {
             let e = Error::msg(format!(
                 "{:?} changes the group, so the service takes it only on its admin socket, which only the administrator reaches",
@@ -1236,4 +1250,54 @@ impl Sender {
 
 fn device_name(node: &Node, id: &str) -> String {
     node.devices().into_iter().find(|d| d.id == id).map(|d| d.name).unwrap_or_default()
+}
+/// One user's open connections to a control socket at most, so that one
+/// user of the group cannot use up the service's threads; a user's watchers
+/// and commands need a few.
+const MAX_CONTROL_PER_USER: usize = 64;
+
+/// How long a control connection may wait before its first request.
+const FIRST_REQUEST_TIME: Duration = Duration::from_secs(30);
+
+/// The open connections of each user of a control socket.
+#[derive(Default)]
+struct ControlUsers(Mutex<HashMap<Option<u32>, usize>>);
+
+impl ControlUsers {
+    fn add(&self, user: Option<u32>) -> bool {
+        let mut n = self.0.lock().unwrap();
+        let c = n.entry(user).or_default();
+        if *c >= MAX_CONTROL_PER_USER {
+            return false;
+        }
+        *c += 1;
+        true
+    }
+
+    fn done(&self, user: Option<u32>) {
+        let mut n = self.0.lock().unwrap();
+        if let Some(c) = n.get_mut(&user) {
+            *c -= 1;
+            if *c == 0 {
+                n.remove(&user);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ControlUsers, MAX_CONTROL_PER_USER};
+
+    #[test]
+    fn control_users_are_bounded() {
+        let u = ControlUsers::default();
+        for _ in 0..MAX_CONTROL_PER_USER {
+            assert!(u.add(Some(1000)));
+        }
+        assert!(!u.add(Some(1000)));
+        assert!(u.add(Some(1001)) && u.add(None));
+        u.done(Some(1000));
+        assert!(u.add(Some(1000)));
+    }
 }

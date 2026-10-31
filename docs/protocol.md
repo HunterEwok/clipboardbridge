@@ -1846,7 +1846,8 @@ later (D-65 in [design.md](design.md)).
   takes the clients a hub command hands over ("Moving the hub"): a client it met keeps its
   own keys. Every receiver keeps the sender's offer with its own preshared key, as that
   hub's. A hub sends the message again to the connected hubs when it starts or stops
-  serving.
+  serving, and when it admits a client it did not have, so that the other hubs know every
+  client before this hub is off.
 - A computer's hub serves only while no hub above it answers, and is otherwise a client of
   the first that does. Starting, it tries the hubs above it once, then serves. It stops
   serving when a hub above it says it serves, or offers its tunnel: first it passes that
@@ -2830,7 +2831,10 @@ A computer whose member key is in a TPM (above) proves it to the group's root in
    encrypts 32 random bytes to the EK for the AK's name (`TPM2_MakeCredential`'s format) and
    sends `credential`, the ID object, and `secret`, the encrypted seed.
 3. **`tpm-activated`**, the device to the root: `secret` holds what `TPM2_ActivateCredential`
-   recovered with the AK and the EK, which the TPM does only when both are its own.
+   recovered with the AK and the EK, which the TPM does only when both are its own. The device
+   opens a credential only from the group's root (the device and key of the root's own
+   device record, not revoked) and one at a time, since the TPM's work holds up the member
+   key's signatures.
 
 When it holds the 32 bytes, the root records the device's keys as `proven`, kind `tpm`, and
 `proof` the hex SHA-256 of the EK certificate. Anything that fails is logged and changes

@@ -71,7 +71,7 @@ func (s *Service) evidenceReceived(peer group.DeviceID, chain []*x509.Certificat
 	case node.EvidenceTPM:
 		return s.tpmEvidence(peer, chain, e)
 	case node.EvidenceTPMCredential:
-		return s.tpmCredential(peer, e)
+		return s.tpmCredential(peer, chain[0], e)
 	case node.EvidenceTPMActivated:
 		return s.tpmActivated(peer, chain, e)
 	}

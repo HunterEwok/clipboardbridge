@@ -720,6 +720,38 @@ All notable changes to clipboardbridge are documented in this file. The format f
   newer `keys.json` too, as it already could over a `seq` taken, and a signed release file
   with a negative `time_ms` is refused, so a file's lifetime is always measured right. On
   computers, the lite member and both phones; files the project signs are unaffected.
+- The control sockets take at most 64 open connections from one user and close one that
+  sends no request within 30 seconds, and read a request's payload as it arrives, on computers
+  and the lite member.
+- The lite member dials at most 64 members found by browsing and remembers at most 64 found
+  at home; its tunnel's local port takes only its own user's connections, 32 at most, and it
+  refuses a hub offer with a key of zeros or a port 0, as Go does.
+- The lite member's tmux helper keeps its log private (0600) and bounded at 1 MiB, and names
+  its lock as the Go helper does, so that the two never run for one tmux server.
+- On Windows the service moves aside whatever another user put in the place of the admin
+  socket's directory, a junction or a file included, instead of removing it, makes the
+  directory with its narrow access list from the start, and checks and narrows it through one
+  handle. A folder or file in the place of the control socket is moved aside too, so it no
+  longer keeps the service from starting.
+- The Windows installer moves aside a data folder in ProgramData that is a link or that
+  neither the administrators nor the system owns, instead of resetting what is inside it.
+- A paste typed on a Bluetooth keyboard or a Roku after its answer stops once remote paste is
+  turned off or the sender's command no longer holds, and each takes one text at a time.
+- A computer whose member key is in a TPM opens a credential only from the group's root and
+  one at a time, so other members cannot keep its TPM busy.
+- An EK certificate counts only in the form of TCG's EK profile: no CA, a key for decrypting,
+  the EK purpose when it names purposes and the TPM's maker in its alternative name.
+- The tray app on Linux runs only a `cbb` that root owns and no one else may change, never
+  one found on `PATH`, and on Windows finds Program Files from the system, not from the
+  environment.
+- `CBB_ROOTLESS` set to anything but `1` no longer hides a rootless install from the Go
+  commands, and a linked `~/.local` or `~/.local/bin` is resolved as the lite member does.
+- `cbb update` takes a release name from the channel file, and a version asked for, only when
+  it is a version, before it builds an address from it, on computers and the lite member. The
+  lite member's downloads stop after 30 minutes and write no more than their limit to the
+  disk with wget and uclient-fetch too, and curl takes the address as it is.
+- A hub tells the group's other hubs of a client it admits at once, not only when it starts
+  or stops serving, so a client that met only that hub reaches another one once it is off.
 - Every frame of the member protocol holds only integers written as in signed bodies, members
   a reader does not know included: a frame with `-0`, a fraction or an exponent is no message on
   computers, the lite member and both phones alike, where some took `-0` for 0 before.

@@ -176,6 +176,9 @@ func (u *Updater) Check(ctx context.Context, st State, version string) (Found, e
 	if len(u.Roots) == 0 {
 		return Found{}, ErrNoRoots
 	}
+	if version != "" && !release.IsVersion(version) {
+		return Found{}, fmt.Errorf("%q is not a version, as 0.6.0 or 0.6.0-rc.1", version)
+	}
 	var errs []error
 	for _, src := range u.Sources {
 		f, err := u.checkFrom(ctx, src, st, version)
@@ -233,6 +236,11 @@ func (u *Updater) checkFrom(ctx context.Context, src Source, st State, version s
 		var c release.Channel
 		if err := json.Unmarshal(ch.Body, &c); err != nil || c.Release == "" {
 			return Found{}, fmt.Errorf("%s.json names no release", Channel)
+		}
+		// The name goes into the release's address before the channel
+		// file is checked, so it must be a version and nothing else.
+		if !release.IsVersion(c.Release) {
+			return Found{}, fmt.Errorf("%s.json names a release that is not a version", Channel)
 		}
 		rel, err = get("release.json", c.Release)
 		if err != nil {
