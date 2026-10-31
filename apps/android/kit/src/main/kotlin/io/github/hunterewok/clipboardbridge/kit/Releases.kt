@@ -136,6 +136,12 @@ object Releases {
     private fun hex(b: ByteArray): String = b.joinToString("") { "%02x".format(it) }
 
     private fun decode(body: ByteArray, type: String): JsonObject {
+        // The strict form of signed bodies first, so that every program reads a file alike (docs/protocol.md, section 16).
+        try {
+            Strict.check(body, "v", "type")
+        } catch (e: Strict.Invalid) {
+            throw Refused("the file is not valid: ${e.message}")
+        }
         val o = Wire.parse(body) ?: throw Refused("the file is not valid")
         val t = o.optString("type")
         if (t != type) throw Refused("the file is a \"$t\", not a \"$type\"")
