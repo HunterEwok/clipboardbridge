@@ -62,7 +62,7 @@ func TestRunAdminWithoutRootsCbb(t *testing.T) {
 	}
 	err := runAdmin([]string{"revoke", "ab12"}, false, false)
 	var ae *adminError
-	if !errors.As(err, &ae) || !strings.Contains(ae.msg, "sudo cbb revoke ab12") || !strings.Contains(ae.detail, mine) {
+	if !errors.As(err, &ae) || !strings.Contains(ae.detail, "sudo cbb revoke ab12") || !strings.Contains(ae.detail, mine) {
 		t.Fatalf("runAdmin = %#v", err)
 	}
 	cbbPlaces = []string{"/nonexistent/cbb", "/bin/sh"}

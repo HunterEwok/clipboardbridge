@@ -140,6 +140,7 @@
   "Windows did not start cbb as the administrator.": "Windows не запустила cbb от имени администратора.",
   "admin": "админ",
   "at home": "дома",
+  "cbb is not installed where the installer puts it, owned by root: install it again, or run the command with sudo in a terminal.": "cbb не установлен там, куда его ставит установщик, с владельцем root: установите его заново или выполните команду через sudo в терминале.",
   "collection, %d of %d online": "коллекция, в сети %d из %d",
   "collection, %d of %d online, needs attention": "коллекция, в сети %d из %d, требует внимания",
   "frozen": "заморожен",

@@ -22,8 +22,8 @@ const deniedText = "No permission to use the service: add your user to the clipb
 func runAdmin(args []string, yes, details bool) error {
 	cbb := cbbPath()
 	if cbb == "" {
-		return &adminError{msg: "cbb is not installed where the installer puts it, owned by root: install it again, or run sudo cbb " + strings.Join(args, " ") + " in a terminal.",
-			detail: "none of " + strings.Join(cbbPlaces, ", ") + " is a file that root owns and only root may change"}
+		return &adminError{msg: "cbb is not installed where the installer puts it, owned by root: install it again, or run the command with sudo in a terminal.",
+			detail: "sudo cbb " + strings.Join(args, " ") + "; none of " + strings.Join(cbbPlaces, ", ") + " is a file that root owns and only root may change"}
 	}
 	pkexec, err := exec.LookPath("pkexec")
 	if err != nil {
