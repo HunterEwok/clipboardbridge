@@ -100,9 +100,8 @@ func groupUpdate(ctx context.Context, r *Report, f *Fleet, fd *feed, builds map[
 		if err != nil {
 			return err
 		}
-		out, err := runOut(ctx, ds[0], feedEnv(at)+"cbb update", 5*time.Minute)
-		if err != nil {
-			return err
+		if out, err := runOut(ctx, ds[0], feedEnv(at)+"cbb update", 5*time.Minute); err != nil {
+			return fmt.Errorf("%w: %s", err, out)
 		}
 		if err := runsVersion(ctx, ds[0], "0.6.1"); err != nil {
 			return err
@@ -126,7 +125,7 @@ func groupUpdate(ctx context.Context, r *Report, f *Fleet, fd *feed, builds map[
 		if err != nil {
 			return err
 		}
-		out, err = runOut(ctx, ds[1], feedEnv(at)+"cbb update", 15*time.Minute)
+		out, err := runOut(ctx, ds[1], feedEnv(at)+"cbb update", 15*time.Minute)
 		fmt.Fprintf(r.out, "I12 shared: %s\n", strings.Join(strings.Fields(out), " "))
 		if err != nil {
 			return fmt.Errorf("the second member did not take the archive from the first: %w", err)
