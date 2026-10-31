@@ -64,6 +64,7 @@ for security reviewers.
 | [Decisions](decisions.md) | every architecture decision, D-1 to D-78, with its status |
 | [Threat model](threat-model.md) | the assets, adversaries, trust boundaries, and each threat with its defence and code |
 | [Protocol](protocol.md) | the wire format, for anyone writing another implementation |
+| [Group records, version 2](records-v2.md) | the next format of the group's authority records and the one rule that evaluates them, built for 0.6 |
 | [Cryptography](cryptography.md) | every primitive, library, key, its size, lifetime and where it is kept |
 | [Testing](testing.md) | the test levels, the interop vectors, the cross tests and the bench |
 | [Differential fuzzing](differential.md) | the four implementations reading changed bodies and record sets alike, in CI and nightly |

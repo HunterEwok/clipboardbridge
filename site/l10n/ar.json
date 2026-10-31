@@ -192,6 +192,8 @@
   "The servers' budget": "ميزانية الخوادم",
   "Differential fuzzing": "الاختبار التفاضلي بالمدخلات العشوائية",
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "التطبيقات الأربعة تقرأ الأجسام ومجموعات السجلات المعدّلة بالطريقة نفسها، في CI وكل ليلة",
+  "Group records, version 2": "سجلات المجموعة، الإصدار 2",
+  "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "الصيغة التالية لسجلات صلاحيات المجموعة والقاعدة الواحدة التي تقيّمها، للإصدار 0.6",
   "Security policy": "سياسة الأمان",
   "Set up in three steps": "الإعداد في ثلاث خطوات",
   "Settings and environment variables": "الإعدادات ومتغيرات البيئة",

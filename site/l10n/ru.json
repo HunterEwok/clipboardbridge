@@ -191,6 +191,8 @@
   "The servers' budget": "Бюджет серверов",
   "Differential fuzzing": "Дифференциальный фаззинг",
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "четыре реализации одинаково читают изменённые тела и наборы записей, в CI и каждую ночь",
+  "Group records, version 2": "Записи группы, версия 2",
+  "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "следующий формат записей полномочий группы и одно правило, которое их вычисляет, для 0.6",
   "Security policy": "Политика безопасности",
   "Set up in three steps": "Настройка в три шага",
   "Settings and environment variables": "Настройки и переменные окружения",
