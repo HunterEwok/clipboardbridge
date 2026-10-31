@@ -681,6 +681,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A JPEG pasted on Windows stays within the image memory bound: the PNG that goes on the
+  clipboard with it is made from the bitmap once the decoded pixels are dropped, in one
+  buffer, and the bound counts it.
 - The roots a group knows are found from two sides until they settle (docs/protocol.md,
   section 10, rule 2), in every implementation. A root that an admin phone hands the group
   to counts only when no root that may count removes that phone, so a removal by a new root

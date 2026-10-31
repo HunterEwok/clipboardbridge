@@ -272,10 +272,17 @@ func decodeImage(typ string, data []byte) (image.Image, error) {
 // imageBytes is what the image of cfg, from data, takes in memory while
 // image/png or image/jpeg decodes it, and as the DIB of CF_DIBV5 (4 bytes a
 // pixel). A PNG's transparency turns gray into NRGBA or NRGBA64, and an
-// unknown model counts as the largest; a JPEG is counted by jpegBytes.
+// unknown model counts as the largest; a JPEG is counted by jpegBytes. A
+// JPEG also goes on the clipboard as a PNG, which dibPNG makes from the DIB
+// once the decoded pixels are dropped: the larger of the two counts.
 func imageBytes(typ string, data []byte, cfg image.Config) (int64, error) {
 	if typ == clip.TypeJPEG {
-		return jpegBytes(data, cfg)
+		n, err := jpegBytes(data, cfg)
+		if err != nil {
+			return 0, err
+		}
+		dib := 4 * int64(cfg.Width) * int64(cfg.Height)
+		return dib + max(n-dib, pngBound(cfg.Width, cfg.Height)), nil
 	}
 	var n int64 = 8
 	switch m := cfg.ColorModel; {
@@ -445,4 +452,50 @@ func decodeConfig(typ string, data []byte) (image.Config, error) {
 		return jpeg.DecodeConfig(bytes.NewReader(data))
 	}
 	return image.Config{}, fmt.Errorf("pasteboard: no image of type %s", typ)
+}
+
+// pngBound is the most dibPNG's PNG of a w by h image takes: 3 bytes a pixel
+// and a filter byte a row, which deflate leaves as they are at worst, its
+// blocks' and the chunks' headers, and the PNG's own.
+func pngBound(w, h int) int64 {
+	raw := int64(h) * (3*int64(w) + 1)
+	return raw + raw/1024 + 4096
+}
+
+// dibImage is the image a DIB of CF_DIBV5 holds: rows of blue, green, red
+// and alpha, from the bottom.
+type dibImage struct {
+	px   []byte
+	w, h int
+}
+
+func (d dibImage) ColorModel() color.Model { return color.NRGBAModel }
+func (d dibImage) Bounds() image.Rectangle { return image.Rect(0, 0, d.w, d.h) }
+func (d dibImage) At(x, y int) color.Color {
+	p := d.px[4*(d.w*(d.h-1-y)+x):]
+	return color.NRGBA{R: p[2], G: p[1], B: p[0], A: p[3]}
+}
+
+// Opaque tells image/png to write no alpha.
+func (d dibImage) Opaque() bool {
+	for i := 3; i < len(d.px); i += 4 {
+		if d.px[i] != 0xFF {
+			return false
+		}
+	}
+	return true
+}
+
+// dibPNG encodes the w by h image of an opaque DIB of CF_DIBV5 as a PNG, in
+// one buffer of pngBound bytes.
+func dibPNG(dib []byte, w, h int) ([]byte, error) {
+	d := dibImage{px: dib[v5HeaderSize:], w: w, h: h}
+	if !d.Opaque() {
+		return nil, errors.New("pasteboard: the image is not opaque")
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, pngBound(w, h)))
+	if err := png.Encode(buf, d); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

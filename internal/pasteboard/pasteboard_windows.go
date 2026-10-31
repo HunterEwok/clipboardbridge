@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"image/png"
 	"runtime"
 	"strings"
 	"sync"
@@ -409,14 +408,16 @@ func (b *Board) WriteImage(typ string, data []byte, text string) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
+	dib := imageDIBV5(img)
 	if typ != clip.TypePNG {
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, img); err != nil {
+		// The PNG is made from the DIB, so the decoded pixels can go first
+		// (imageBytes).
+		r := img.Bounds()
+		img = nil
+		if data, err = dibPNG(dib, r.Dx(), r.Dy()); err != nil {
 			return 0, err
 		}
-		data = buf.Bytes()
 	}
-	dib := imageDIBV5(img)
 	text = windowsText(text)
 	registerFormats()
 	err = onThread(func(hwnd uintptr) error {
