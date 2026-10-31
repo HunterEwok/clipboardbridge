@@ -50,19 +50,42 @@ public enum ServerCredentials {
         /// Checks the signature and returns the body; it checks neither who
         /// signed it nor the group.
         public func open() throws -> Body {
-            guard body.count <= maxBody else { throw Refused("the credential is too large") }
+            let b = try Body.parse(body)
             guard let pub = P256.Signing.PublicKey(spki: key) else { throw Refused("the credential's key is not a P-256 key") }
             guard let s = try? P256.Signing.ECDSASignature(derRepresentation: sig), pub.isValidSignature(s, for: body) else {
                 throw Refused("the credential's signature does not verify")
             }
-            guard let b = try? JSONDecoder().decode(Body.self, from: body) else { throw Refused("the credential does not decode") }
-            try b.check()
             return b
         }
     }
 
     /// What a credential says.
     public struct Body: Codable, Equatable, Sendable {
+        /// Reads and checks a credential's body: its size, the strict form
+        /// of signed bodies, then its fields.
+        static func parse(_ data: Data) throws -> Body {
+            guard data.count <= maxBody else { throw Refused("the credential is too large") }
+            do {
+                try Strict.check(data, required: ["v", "type", "group", "version", "expires_ms"])
+            } catch let e as Strict.Invalid {
+                throw Refused("the credential is not valid: \(e.reason)")
+            }
+            guard let b = try? JSONDecoder().decode(Body.self, from: data), let raw = try? JSONDecoder().decode(Raw.self, from: data),
+                  raw.canonical else { throw Refused("the credential does not decode") }
+            try b.check()
+            return b
+        }
+
+        /// The bytes of a body as their strings, to check their form.
+        private struct Raw: Decodable {
+            var key: String?
+            var hubs, admins, members: [String]?
+
+            var canonical: Bool {
+                ([key].compactMap { $0 } + (hubs ?? []) + (admins ?? []) + (members ?? [])).allSatisfy { Strict.base64($0) != nil }
+            }
+        }
+
         public var v: Int = 1
         public var type: String
         /// The group's own tag in a period or a server credential, the
@@ -203,6 +226,7 @@ public enum ServerCredentials {
     public static func sign(_ b: Body, key: CertificateSigner) throws -> Credential {
         try b.check()
         let data = try JSONEncoder().encode(b)
+        _ = try Body.parse(data)
         return Credential(body: data, sig: try key.signature(for: data), key: key.publicKeyDER)
     }
 

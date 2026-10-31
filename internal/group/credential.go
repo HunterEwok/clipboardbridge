@@ -285,8 +285,8 @@ func SignCredential(b CredentialBody, key crypto.Signer) (Credential, error) {
 	if err != nil {
 		return Credential{}, err
 	}
-	if len(data) > maxCredentialBody {
-		return Credential{}, errors.New("group: the credential is too large")
+	if _, err := parseCredentialBody(data); err != nil {
+		return Credential{}, err
 	}
 	spki, err := x509.MarshalPKIXPublicKey(key.Public())
 	if err != nil {
@@ -370,8 +370,9 @@ func p256Key(spki []byte) (*ecdsa.PublicKey, error) {
 // Open checks the credential's signature and returns its body. It checks
 // neither who signed it nor the group.
 func (c Credential) Open() (*CredentialBody, error) {
-	if len(c.Body) > maxCredentialBody {
-		return nil, errors.New("group: the credential is too large")
+	b, err := parseCredentialBody(c.Body)
+	if err != nil {
+		return nil, err
 	}
 	ec, err := p256Key(c.Key)
 	if err != nil {
@@ -381,9 +382,34 @@ func (c Credential) Open() (*CredentialBody, error) {
 	if !ecdsa.VerifyASN1(ec, sum[:], c.Sig) {
 		return nil, errors.New("group: the credential's signature does not verify")
 	}
+	return b, nil
+}
+
+// parseCredentialBody reads and checks a credential's body: its size, the
+// strict form of signed bodies, then its fields.
+func parseCredentialBody(data []byte) (*CredentialBody, error) {
+	if len(data) > maxCredentialBody {
+		return nil, errors.New("group: the credential is too large")
+	}
+	if err := checkStrict(data, "v", "type", "group", "version", "expires_ms"); err != nil {
+		return nil, err
+	}
 	var b CredentialBody
-	if err := json.Unmarshal(c.Body, &b); err != nil {
+	if err := json.Unmarshal(data, &b); err != nil {
 		return nil, errors.New("group: the credential does not decode")
+	}
+	// The key is the only plain bytes of a body; the key hashes check
+	// their own form.
+	var raw struct {
+		Key *string `json:"key"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, errors.New("group: the credential does not decode")
+	}
+	if raw.Key != nil {
+		if _, err := decodeStrictBase64(*raw.Key); err != nil {
+			return nil, fmt.Errorf("group: a credential's key: %w", err)
+		}
 	}
 	if err := b.check(); err != nil {
 		return nil, err

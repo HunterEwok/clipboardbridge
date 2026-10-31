@@ -80,4 +80,45 @@ final class StrictTests: XCTestCase {
         }
         XCTAssert(wrong.isEmpty, "\(wrong.count) vectors read otherwise:\n" + wrong.joined(separator: "\n"))
     }
+
+    /// strict-files.json: the server credentials and release files, as Go's
+    /// TestStrictGeneratedFiles writes them.
+    func testGeneratedFiles() throws {
+        struct Case: Decodable {
+            var name, rule, kind: String
+            var valid: Bool
+            var body: Data
+            var pad_at, pad: Int?
+
+            var full: Data {
+                guard let pad, let pad_at else { return body }
+                return body.prefix(pad_at) + Data(repeating: UInt8(ascii: "a"), count: pad) + body.dropFirst(pad_at)
+            }
+        }
+        struct Vectors: Decodable { var credentials, releases: [Case] }
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/strict-files.json")))
+        XCTAssertFalse(v.credentials.isEmpty)
+        XCTAssertFalse(v.releases.isEmpty)
+        var wrong: [String] = []
+        for c in v.credentials where ((try? ServerCredentials.Body.parse(c.full)) != nil) != c.valid {
+            wrong.append("credentials \(c.name) (\(c.rule)): valid \(c.valid)")
+        }
+        for c in v.releases {
+            let b = c.full
+            var taken = b.count <= Releases.maxBody
+            if taken {
+                switch c.kind {
+                case "keys": taken = (try? Releases.decodeKeys(b)) != nil
+                case "release": taken = (try? Releases.decodeRelease(b)) != nil
+                case "channel": taken = (try? Releases.decodeChannel(b)) != nil
+                case "attest-status": taken = (try? Releases.decodeStatus(b)) != nil
+                default: XCTFail("unknown kind \(c.kind)")
+                }
+            }
+            if taken != c.valid { wrong.append("releases \(c.name) (\(c.rule)): valid \(c.valid)") }
+        }
+        XCTAssert(wrong.isEmpty, "\(wrong.count) vectors read otherwise:\n" + wrong.joined(separator: "\n"))
+    }
 }

@@ -15,6 +15,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `TestStrictGenerated` writes from these tables, holds some 2000 bodies of records, commands
   and manifests with the verdict and the rule each one tests; Go, the lite member and both
   phone kits read it, and the Go test fails when the file is not what the tables give.
+- `testdata/interop/strict-files.json`, written by Go's `TestStrictGeneratedFiles` the same
+  way, holds some 1500 bodies of server credentials and release files; all four
+  implementations read it.
 - The two text diagrams of `docs/design.md` (the system context and the containers) are
   pictures now, drawn by `tools/diagrams` like the others, with a light and a dark theme.
 - On the website the pictures of the documentation are drawn in chalk on a board in a walnut
@@ -655,6 +658,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   authority records, and past it forgets from the wide network that holds the most of them
   (docs/relay-budget.md), so the records of a group that is away outlast the groups of other
   networks.
+- Server credentials and release files are read in the strict form of signed bodies, as
+  records and commands are, in Go, the lite member and both phone kits: a credential before
+  its signature is checked. A release file without `time_ms` or another field its table does
+  not call optional is refused everywhere; Go and the Android kit read a missing `time_ms` as
+  0, and the Android kit took a `time_ms` of any type in `release.json`.
 - The lite member and both phone apps check a hub command's order as Go does: a forwarder with an
   address and a key or an address at least, at most 8 addresses and 256 clients, each client
   a device ID once with keys of 32 bytes.
