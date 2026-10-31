@@ -80,7 +80,7 @@ func TestSignVerify(t *testing.T) {
 	bodies := []authority.Body{
 		deviceBody(t),
 		{Type: authority.TypeDevice, Group: tag, Seq: 2, Prev: &prev, TimeMS: 5, Device: strings.Repeat("a", 32), Name: "Phone", Role: "phone", Key: &k, Admin: &k,
-			Powers: []string{authority.PowerTakeover, authority.PowerAdmit}, Commands: []string{"paste", "mode"}},
+			Powers: []string{authority.PowerTakeover, authority.PowerAdmit}, Commands: []string{"paste", "mode"}, HoldsRoot: true},
 		{Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{3}, {2}}, Seen: []authority.Seen{{Key: authority.Hash{9}, Seq: 0}, {Key: authority.Hash{4}, Seq: 7}}},
 		{Type: authority.TypeFreeze, Group: tag, Seq: 1, Keys: []authority.Hash{{2}}, Seen: []authority.Seen{{Key: authority.Hash{2}, Seq: 3}}},
 		{Type: authority.TypeThaw, Group: tag, Seq: 1, Records: []authority.Hash{{5}}},
@@ -168,6 +168,7 @@ func TestParseBodyRefuses(t *testing.T) {
 		"a field of another type":    insert(`"keys":["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]`),
 		"an empty field":             strings.Replace(good, `"device"`, `"commands":[],"device"`, 1),
 		"an empty string":            insert(`"admin":""`),
+		"holds_root false":           strings.Replace(good, `"key"`, `"holds_root":false,"key"`, 1),
 		"not canonical":              strings.Replace(good, `{`, `{ `, 1),
 		"version 1":                  strings.Replace(good, `"v":2`, `"v":1`, 1),
 		"seq 0":                      strings.Replace(good, `"seq":1`, `"seq":0`, 1),

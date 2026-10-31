@@ -139,6 +139,9 @@ type Body struct {
 	Store    string   `json:"store,omitempty"`
 	Kind     string   `json:"kind,omitempty"`
 	Proof    string   `json:"proof,omitempty"`
+	// HoldsRoot marks the device that holds the signing root's key; only
+	// in a record a root's own key signed.
+	HoldsRoot bool `json:"holds_root,omitempty"`
 
 	Keys    []Hash `json:"keys,omitempty"`
 	Seen    []Seen `json:"seen,omitempty"`
@@ -152,7 +155,7 @@ type Body struct {
 // that it may carry; needed lists those it must.
 var (
 	fields = map[string]map[string]bool{
-		TypeDevice:   set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof"),
+		TypeDevice:   set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof", "holds_root"),
 		TypeRevoke:   set("keys", "seen"),
 		TypeFreeze:   set("keys", "seen"),
 		TypeThaw:     set("records"),
@@ -190,6 +193,7 @@ func (b *Body) present() []string {
 	add(b.Store != "", "store")
 	add(b.Kind != "", "kind")
 	add(b.Proof != "", "proof")
+	add(b.HoldsRoot, "holds_root")
 	add(len(b.Keys) > 0, "keys")
 	add(len(b.Seen) > 0, "seen")
 	add(len(b.Records) > 0, "records")
