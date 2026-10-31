@@ -110,7 +110,7 @@ and `a`-`f`.
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name`, `role`, `os`, `key`, `admin`, `powers`, `commands`, `store`, `kind`, `proof` | a device in the group, or a change of its name or powers |
+| `device` | `device`, `name`, `role`, `os`, `key`, `admin`, `powers`, `commands`, `store`, `kind`, `proof`, `holds_root` | a device in the group, or a change of its name or powers |
 | `revoke` | `keys`, `seen` | removes keys from the group |
 | `freeze` | `keys`, `seen` | stops admins until the root or an admin with `thaw` ends it |
 | `thaw` | `records` | ends the `freeze` records it names |
@@ -131,6 +131,7 @@ and `a`-`f`.
 | `powers` | array of strings | none | sorted; from `admit`, `renew`, `remove`, `remove-admins`, `freeze`, `thaw`, `takeover`, `hub`; only with `admin` |
 | `commands` | array of strings | none | sorted; the command types (section 15) the admin may sign; only with `admin` |
 | `store`, `kind`, `proof` | string | none | as in section 17 |
+| `holds_root` | bool | none | `true`: this device holds the signer's root key; only in a record a root's own key signed |
 | `keys` | array of strings | `revoke`, `freeze`, one at least | sorted key hashes |
 | `seen` | array of objects | `revoke`, `freeze`, `claim`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": the highest seq of that signer the author held, 0 or more}`; `seq` here is never left out, 0 included |
 | `records` | array of strings | `thaw`, `resolve`, one at least | sorted record IDs |
@@ -163,11 +164,12 @@ those of the newest such record (the highest `seq` of that root) that names it.
 | `revoke` of an admin key, or of the member key of a device whose newest root record names an admin key | a root's own key, or an admin with `remove-admins` |
 | `revoke` of a root key, or of the root's own device | nobody: a root is replaced only by a claim |
 | `freeze` | a root's own key, or an admin with `freeze`; each key it names is an admin key without `remove-admins` |
-| `thaw` | a root's own key, or an admin with `thaw` |
+| `thaw` | a root's own key, or an admin with `thaw` and `remove-admins` |
 | `claim` | an admin with `takeover`, under the current root |
 | `resolve`, `settings` | the current root's own key |
 
-A record whose signer may not sign it counts for nothing. The powers the apps and `cbb`
+A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
+names any key its signer may not remove or freeze. The powers the apps and `cbb`
 write, which give the table of version 1:
 
 | Admin | `powers` | `commands` |
@@ -196,6 +198,12 @@ devices whose counting `device` records that signer alone signed get nothing, an
 group stops sending secrets. A root that signed two histories stops the group fully, and only
 its own `resolve` ends it.
 
+**Voiding.** A record that a counting `resolve` names counts for nothing. When it has a
+sibling (another record of its signer with the same `seq`), the records whose `prev` chain
+passes through it count for nothing too, so `resolve` ends two histories by naming the first
+record of the branch that goes. Without a sibling only the named record goes, and the
+signer's chain goes on through it.
+
 ### Removals and freezes keep what the author saw
 
 A `revoke` record that a root's own key signed, or that counts, removes its `keys`. For each
@@ -208,35 +216,48 @@ A `freeze` that counts stops the admin keys it names in the same way while no co
 later ones do not, and they count again once the freeze ends. A member certificate of a
 device whose newest root record names a frozen admin key is refused, as in version 1.
 
-### Happened before
+### Which admin records count
 
-For two records r and s of different signers, r **happened before** s when s's `seen` names
-r's signer with a `seq` of r's `seq` or more: s's author held r when it signed. Two records
-**cross** when neither happened before the other.
+An admin's record may be cut by a removal or a freeze of that admin. Which records count is
+decided the same way on every member, in any order, as follows.
 
-A record of the current root's own key always wins against an admin's: a root's removal,
-freeze, thaw or `resolve` is never in conflict, whatever the admin signed.
+A record a **attacks** a record b when b's signer is an admin key, a is a `revoke` or a
+`freeze` whose `keys` name that admin key, a's signer may sign a (the table above), and a's
+`seen` entry for b's signer is below b's `seq`: a cuts b off. A `thaw` attacks each `freeze`
+it names. Records of a root's own key are never attacked; records of a root on the path
+count up to that root's cut, and the current root's all count.
 
-Between admins, take a record r by admin S that removes or freezes admin T, and a record q
-by T, or by an admin U, that removes or freezes S:
+Every admin record is then **in** (it counts), **out** (it counts for nothing) or
+**undecided**, the grounded labelling of these attacks:
 
-- q happened before r, and q counts: S was removed or frozen before it signed r, and r
-  counts for nothing;
-- r happened before q, and r counts: q counts for nothing, as above with the sides swapped;
-- each happened before the other (one of them lies): both count for nothing, and the group
-  stops (a **conflict**);
-- they cross, and neither counts for nothing for another reason: neither counts, and the
-  group stops (a conflict) until the current root voids one of them, or both, with
-  `resolve`, or removes S or T itself.
+1. a record whose attackers are all out is in, and so is one nobody attacks;
+2. a record attacked by a record that is in, or by a root's record, is out;
+3. repeat 1 and 2 until nothing changes; what is left is undecided.
 
-"Counts for nothing for another reason" is decided first for the records that happened
-before (a record is judged after every record it saw), so the evaluation has no circle; a
-set of records whose happened-before claims form a circle is a conflict as a whole.
+A record r **happened before** a record s of another signer when s's `seen` names r's signer
+with a `seq` of r's `seq` or more: s's author held r when it signed. So for two admins S and T
+whose records r (S removes T) and q (T removes S) attack each
+other only when neither author held the other's record:
+
+- q happened before r (S held q when it signed r): r does not attack q, q attacks r; q is in,
+  r is out. S was removed before it signed r.
+- r happened before q: the same with the sides swapped.
+- each held the other's (one of them lies): neither attacks; both are in, both are removed.
+- they **cross** (neither held the other's): each attacks the other; both are undecided, and
+  that is a **conflict**: the group stops (below) until the current root voids one of them, or
+  both, with `resolve`, or removes S or T itself. Longer circles (S removes T, T removes U, U
+  removes S) end the same way.
+
+An undecided record counts for nothing, and neither do the records it would cut. To keep
+the attacks free of circles that do not involve a thief, the powers are in two tiers: an admin
+with `remove-admins` is never frozen, and `thaw` counts only from an admin that also has
+`remove-admins` (or from a root's own key). So freezes and thaws never chase each other, and a
+conflict always means two admins acted against each other without seeing it.
 
 A thief with an admin key can always write a `seen` that pretends it did not see a removal,
 and so stop the group; it cannot make its record win. A removal of an admin by another admin
-is settled for good when the current root signs it again (a root's record is never in
-conflict), and the apps ask the root's user to confirm each such removal.
+is settled for good when the current root signs it again (a root's record is never
+attacked), and the apps ask the root's user to confirm each such removal.
 
 ### Handing the group over
 
@@ -281,10 +302,9 @@ record that is not revoked, its issuer is a root on the path or the admin CA of 
 whose newest root record gives `admit` or `renew` (also when that admin was removed later,
 for the devices whose records stay), and neither its key nor its issuer is frozen. An admin CA
 is taken when it is under a root on the path and its key is an admin key that is not
-revoked. The root's own device is the device whose newest `device` record the current root's
-own key signed with role `phone` or `full` and `admin` absent, among those the root signed
-for the device that holds the root (the apps and `cbb` sign it right after making the group
-or taking it over).
+revoked. The **root's own device** is the device of the newest `device` record with `holds_root` that
+the current root's own key signed (the apps and `cbb` sign it right after making the group
+or taking it over); a peer is the root only when its member key is that record's `key`.
 
 ## Stopping the exchange
 
