@@ -379,6 +379,7 @@ func TestGoCredentialVectors(t *testing.T) {
 				{"no hubs' credential", []Credential{members}},
 			}}
 	}
+	writeV2Vectors(t, "v2-credentials.json", v)
 	ca, err := x509.ParseCertificate(v.GroupCA)
 	if err != nil {
 		t.Fatal(err)

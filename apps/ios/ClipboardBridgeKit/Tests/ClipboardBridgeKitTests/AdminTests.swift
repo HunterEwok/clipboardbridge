@@ -56,47 +56,38 @@ final class AdminTests: XCTestCase {
         let pc = try g.member(), phone = try g.member(byAdmin: false)
         let adminKey = try Records.keyHash(cert: g.adminCA)
         var set = RecordSet()
-        let adminRecord = try Records.device(g.adminDevice, name: "Second", role: "phone", key: Records.keyHash(spki: g.admin.publicKeyDER),
-                                             admin: adminKey, group: g.tag, by: g.adminDevice, now: g.t0, signer: g.root)
-        let pcRecord = try Records.device(pc.device, name: "Desk", role: "linux", key: Records.keyHash(cert: pc.cert),
-                                          group: g.tag, by: g.adminDevice, now: g.t0, signer: g.admin, adminCA: g.adminCA)
-        let phoneRecord = try Records.device(phone.device, name: "Phone", role: "phone", key: Records.keyHash(cert: phone.cert),
-                                             group: g.tag, by: g.adminDevice, now: g.t0, signer: g.root)
-        XCTAssertTrue(set.add(adminRecord, groupCA: g.rootCA))
-        XCTAssertTrue(set.add(pcRecord, groupCA: g.rootCA))
-        XCTAssertTrue(set.add(phoneRecord, groupCA: g.rootCA))
+        try set.signed(.device(g.adminDevice, name: "Second", role: "phone", key: Records.keyHash(spki: g.admin.publicKeyDER),
+                               admin: adminKey, signer: g.root, now: g.t0), g.root, groupCA: g.rootCA)
+        try set.signed(.device(pc.device, name: "Desk", role: "full", key: Records.keyHash(cert: pc.cert), signer: g.admin, now: g.t0),
+                       g.admin, adminCA: g.adminCA, groupCA: g.rootCA)
+        try set.signed(.device(phone.device, name: "Phone", role: "phone", key: Records.keyHash(cert: phone.cert), signer: g.root, now: g.t0),
+                       g.root, groupCA: g.rootCA)
+        XCTAssertEqual(set.records.count, 3)
         XCTAssertEqual(set.devices.map(\.name), ["Desk", "Phone", "Second"])
         XCTAssertEqual(set.devices.first { $0.name == "Second" }?.admin, true)
         XCTAssertNil(set.refused(chain: [pc.cert, g.adminCA]))
 
         // Signed by the admin key without its chain, or with a chain that
         // is not an admin CA, a record is refused.
-        let noChain = try Records.device(pc.device, name: "X", role: "linux", key: Records.keyHash(cert: pc.cert),
-                                         group: g.tag, by: g.adminDevice, now: g.t0, signer: g.admin)
-        XCTAssertFalse(set.add(noChain, groupCA: g.rootCA))
-        let badChain = try Records.device(pc.device, name: "X", role: "linux", key: Records.keyHash(cert: pc.cert),
-                                          group: g.tag, by: g.adminDevice, now: g.t0, signer: pc.key, adminCA: pc.cert)
-        XCTAssertFalse(set.add(badChain, groupCA: g.rootCA))
+        let x = try Records.Body.device(pc.device, name: "X", role: "full", key: Records.keyHash(cert: pc.cert), signer: g.admin, now: g.t0)
+        XCTAssertFalse(set.add(try set.sign(x, with: g.admin), groupCA: g.rootCA))
+        let y = try Records.Body.device(pc.device, name: "X", role: "full", key: Records.keyHash(cert: pc.cert), signer: pc.key, now: g.t0)
+        XCTAssertFalse(set.add(try set.sign(y, with: pc.key, adminCA: pc.cert), groupCA: g.rootCA))
+        XCTAssertEqual(set.records.count, 3)
 
-        // The admin phone is lost: the root revokes its admin CA and its
-        // key, keeping the computer it admitted.
-        var keep = set
-        let lost = [adminKey, try Records.keyHash(spki: g.admin.publicKeyDER)]
-        XCTAssertTrue(keep.add(try Records.revoke(lost, keep: [Records.keyHash(cert: pc.cert)], group: g.tag, by: phone.device,
-                                                  now: g.t0, signer: g.root), groupCA: g.rootCA))
-        XCTAssertEqual(keep.devices.map(\.name), ["Desk", "Phone"])
-        XCTAssertNil(keep.refused(chain: [pc.cert, g.adminCA]))
-        // Without keeping it, the computer goes too.
-        var drop = set
-        XCTAssertTrue(drop.add(try Records.revoke(lost, group: g.tag, by: phone.device, now: g.t0, signer: g.root), groupCA: g.rootCA))
-        XCTAssertEqual(drop.devices.map(\.name), ["Phone"])
-        XCTAssertNotNil(drop.refused(chain: [pc.cert, g.adminCA]))
+        // The admin phone is lost: the root removes its admin key and its
+        // key. What it signed before stays (docs/records-v2.md, "Removals
+        // and freezes keep what the author saw").
+        // The admin's member key is its admin key here.
+        try set.signed(.revoke([adminKey, Records.keyHash(spki: g.admin.publicKeyDER)], signer: g.root, now: g.t0), g.root, groupCA: g.rootCA)
+        XCTAssertEqual(set.devices.map(\.name), ["Desk", "Phone"])
+        XCTAssertNil(set.refused(chain: [pc.cert, g.adminCA]))
         // Records the lost admin signs after that count for nothing.
         let late = try g.member()
-        XCTAssertTrue(drop.add(try Records.device(late.device, name: "Late", role: "linux", key: Records.keyHash(cert: late.cert),
-                                                  group: g.tag, by: g.adminDevice, now: g.t0, signer: g.admin, adminCA: g.adminCA),
-                               groupCA: g.rootCA))
-        XCTAssertEqual(drop.devices.map(\.name), ["Phone"])
+        try set.signed(.device(late.device, name: "Late", role: "full", key: Records.keyHash(cert: late.cert), signer: g.admin, now: g.t0),
+                       g.admin, adminCA: g.adminCA, groupCA: g.rootCA)
+        XCTAssertEqual(set.devices.map(\.name), ["Desk", "Phone"])
+        XCTAssertNotNil(set.refused(chain: [late.cert, g.adminCA]))
     }
 
     func testRenewalOfAdminIssued() throws {
@@ -125,14 +116,12 @@ final class AdminTests: XCTestCase {
         let g = try Group()
         let pc = try g.member()
         let adminKey = try Records.keyHash(cert: g.adminCA)
-        let records = [
-            try Records.device(g.adminDevice, name: "Second", role: "phone", key: Records.keyHash(spki: g.admin.publicKeyDER),
-                               admin: adminKey, group: g.tag, by: g.adminDevice, now: g.t0, signer: g.root),
-            try Records.device(pc.device, name: "Desk", role: "linux", key: Records.keyHash(cert: pc.cert),
-                               group: g.tag, by: g.adminDevice, now: g.t0, signer: g.admin, adminCA: g.adminCA),
-        ]
         var set = RecordSet()
-        for r in records { XCTAssertTrue(set.add(r, groupCA: g.rootCA)) }
+        try set.signed(.device(g.adminDevice, name: "Second", role: "phone", key: Records.keyHash(spki: g.admin.publicKeyDER),
+                               admin: adminKey, signer: g.root, now: g.t0), g.root, groupCA: g.rootCA)
+        try set.signed(.device(pc.device, name: "Desk", role: "full", key: Records.keyHash(cert: pc.cert), signer: g.admin, now: g.t0),
+                       g.admin, adminCA: g.adminCA, groupCA: g.rootCA)
+        let records = set.records
         struct Out: Encodable {
             var group_ca, admin_ca, cert, key: Data
             var device: String

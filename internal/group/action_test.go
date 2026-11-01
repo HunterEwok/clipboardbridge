@@ -165,6 +165,7 @@ func TestGoActionVectors(t *testing.T) {
 			{Name: "a key of another group", Command: sign(newRoot(t), nil, CommandAction, "reboot")},
 		}}
 	}
+	writeV2Vectors(t, "v2-actions.json", v)
 	ca, err := x509.ParseCertificate(v.GroupCA)
 	if err != nil {
 		t.Fatal(err)

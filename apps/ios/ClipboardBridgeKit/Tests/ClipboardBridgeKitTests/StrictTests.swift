@@ -5,7 +5,8 @@ import Foundation
 import XCTest
 
 /// testdata/interop/strict.json, from the Go tests: the kit takes exactly
-/// the record bodies, commands and manifests the Go member does.
+/// the commands and manifests the Go member does. Record bodies are the
+/// Rust core's to check (check_body).
 final class StrictTests: XCTestCase {
     struct Vectors: Decodable {
         struct Case: Decodable {
@@ -25,9 +26,42 @@ final class StrictTests: XCTestCase {
         return v
     }
 
+    struct BodyArgs: Encodable { var body: Data }
+    struct BodyAnswer: Decodable {}
+
+    /// Whether the core's check_body takes a record body.
+    func takes(_ body: Data) -> Bool {
+        (try? Core.run("check_body", BodyArgs(body: body), as: BodyAnswer.self)) != nil
+    }
+
+    /// Well-formed record bodies of version 2: the records of the cases of
+    /// testdata/interop/v2-records.json that hold only good records.
+    func goodBodies() throws -> [Data] {
+        struct V: Decodable {
+            struct Case: Decodable { var name: String, records: [Member.Record] }
+            var cases: [Case]
+        }
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/v2-records.json")))
+        let good = ["basic", "powers", "hubs table", "freeze and thaw", "claim waits and takes effect"]
+        let bodies = v.cases.filter { c in good.contains { c.name.hasPrefix($0) } }.flatMap(\.records).map(\.body)
+        XCTAssertFalse(bodies.isEmpty)
+        return bodies
+    }
+
+    /// Record bodies of version 2 go through the core's check_body: each
+    /// good body passes, and the same body with a field the rows do not
+    /// have, its keys out of order or a space in front does not.
     func testRecords() throws {
-        for c in try vectors().records {
-            XCTAssertEqual(Records.Body.decode(c.body) != nil, c.valid, "record \(c.name)")
+        for body in try goodBodies() {
+            XCTAssertTrue(takes(body), String(decoding: body, as: UTF8.self))
+            let text = String(decoding: body, as: UTF8.self)
+            let bad = ["{\"zz\":1," + text.dropFirst(), " " + text, "{\"a\":1," + text.dropFirst()]
+            for b in bad { XCTAssertFalse(takes(Data(b.utf8)), b) }
+            let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let reordered = try JSONSerialization.data(withJSONObject: obj, options: [])
+            if reordered != body { XCTAssertFalse(takes(reordered), String(decoding: reordered, as: UTF8.self)) }
         }
     }
 
@@ -66,7 +100,6 @@ final class StrictTests: XCTestCase {
         let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/strict-generated.json")))
         var wrong: [String] = []
         let kinds: [(String, [Case], (Data) -> Bool)] = [
-            ("records", v.records, { (b: Data) in Records.Body.decode(b) != nil }),
             ("commands", v.commands, { (b: Data) in (try? Commands.parse(b)) != nil }),
             ("manifests", v.manifests, { (b: Data) in
                 (Strict.integersOnly(b) ? try? JSONDecoder().decode(Media.Manifest.self, from: b) : nil)?.isValid ?? false
@@ -81,40 +114,36 @@ final class StrictTests: XCTestCase {
         XCTAssert(wrong.isEmpty, "\(wrong.count) vectors read otherwise:\n" + wrong.joined(separator: "\n"))
     }
 
-    /// testdata/interop/strict-mutants-*.json: valid bodies changed byte by
-    /// byte, each with the verdict of the tables of docs/protocol.md.
+    /// Mutants of good record bodies of version 2, each refused by the
+    /// core: a field every record has dropped, a version or an alg it does not know, a
+    /// number written as a float or with a sign, a duplicate key, a null.
     func testMutants() throws {
-        struct Case: Decodable {
-            var name, rule: String
-            var valid: Bool
-            var body: Data
-            var pad_at, pad: Int?
-
-            var full: Data {
-                guard let pad, let pad_at else { return body }
-                return body.prefix(pad_at) + Data(repeating: UInt8(ascii: "a"), count: pad) + body.dropFirst(pad_at)
-            }
-        }
-        struct Vectors: Decodable { var records, commands: [Case]? }
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        var wrong: [String] = []
         var n = 0
-        for i in 1... {
-            let file = url.appendingPathComponent("testdata/interop/strict-mutants-\(i).json")
-            guard FileManager.default.fileExists(atPath: file.path) else { break }
-            let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: file))
-            for c in v.records ?? [] {
-                n += 1
-                if (Records.Body.decode(c.full) != nil) != c.valid { wrong.append("records \(c.name) (\(c.rule)): valid \(c.valid)") }
+        var wrong: [String] = []
+        for body in try goodBodies() {
+            let text = String(decoding: body, as: UTF8.self)
+            let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            var mutants: [String] = []
+            for key in ["v", "alg", "type", "signer", "time_ms", "group", "seq"] where obj[key] != nil {
+                var o = obj
+                o[key] = nil
+                if let d = try? JSONSerialization.data(withJSONObject: o, options: [.sortedKeys, .withoutEscapingSlashes]) {
+                    mutants.append(String(decoding: d, as: UTF8.self))
+                }
             }
-            for c in v.commands ?? [] {
+            mutants.append(text.replacingOccurrences(of: "\"v\":2", with: "\"v\":3"))
+            mutants.append(text.replacingOccurrences(of: "\"alg\":\"es256\"", with: "\"alg\":\"rs256\""))
+            mutants.append(text.replacingOccurrences(of: "\"v\":2", with: "\"v\":2.0"))
+            mutants.append(text.replacingOccurrences(of: "\"v\":2", with: "\"v\":+2"))
+            mutants.append(text.replacingOccurrences(of: "\"v\":2", with: "\"v\":2,\"v\":2"))
+            mutants.append(text.replacingOccurrences(of: "\"v\":2", with: "\"v\":null"))
+            for m in mutants where m != text {
                 n += 1
-                if ((try? Commands.parse(c.full)) != nil) != c.valid { wrong.append("commands \(c.name) (\(c.rule)): valid \(c.valid)") }
+                if takes(Data(m.utf8)) { wrong.append(m) }
             }
         }
-        XCTAssert(n > 0, "no mutant vectors")
-        XCTAssert(wrong.isEmpty, "\(wrong.count) vectors read otherwise:\n" + wrong.joined(separator: "\n"))
+        XCTAssertGreaterThan(n, 0, "no mutants")
+        XCTAssert(wrong.isEmpty, "\(wrong.count) mutants taken:\n" + wrong.joined(separator: "\n"))
     }
 
     /// strict-files.json: the server credentials and release files, as Go's

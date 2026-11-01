@@ -25,6 +25,9 @@ object Pairing {
     /** Frames larger than this are refused. */
     const val MAX_FRAME = 64 shl 10
 
+    /** What a Welcome leaves for everything but its records, so that one with them fits in a frame. */
+    const val WELCOME_ROOM = 4 shl 10
+
     private val CHANNEL_PREFIX = "clipboardbridge pair v1\u0000".toByteArray()
 
     /** One frame of the exchange; each uses some of the fields. */
@@ -73,11 +76,13 @@ object Pairing {
         val adminCA: ByteArray? = null,
         /** The roots that took a phone group over from groupCA, in order; null when it was never handed over (section 10, "Roots"). */
         val roots: List<ByteArray>? = null,
-        /** The records that lead to roots (RecordSet.pathRecords), by which the joiner checks them; null with roots. */
+        /** The group's records (RecordSet.pathRecords), by which the joiner checks the roots and takes its peers at once. */
         val records: List<Member.Record>? = null,
         val groupCAKey: ByteArray? = null,
         val phoneCA: ByteArray? = null,
         val phoneCAKey: ByteArray? = null,
+        /** When the admitting member first held each claim, so the new member counts the claims' delays as it does. */
+        val claimTimes: List<RecordSet.ClaimTime>? = null,
     ) {
         fun toJson(): JsonObject = Wire.obj(
             "cert" to Wire.bytes(cert),
@@ -89,6 +94,7 @@ object Pairing {
             "phone_ca" to Wire.bytes(phoneCA),
             "phone_ca_key" to Wire.bytes(phoneCAKey),
             "admin_ca" to Wire.bytes(adminCA),
+            "claim_times" to claimTimes?.let { ts -> kotlinx.serialization.json.JsonArray(ts.map { it.toJson() }) },
         )
 
         companion object {
@@ -102,6 +108,7 @@ object Pairing {
                 groupCAKey = o.optBytes("group_ca_key"),
                 phoneCA = o.optBytes("phone_ca"),
                 phoneCAKey = o.optBytes("phone_ca_key"),
+                claimTimes = o.optArray("claim_times")?.let { RecordSet.ClaimTime.list(it) },
             )
         }
     }

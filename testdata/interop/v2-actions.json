@@ -1,0 +1,125 @@
+{
+  "group_ca": "MIIBpzCCAU2gAwIBAgIUbThaEj7hZCtvfBPY0nwBBnwxp6IwCgYIKoZIzj0EAwIwMDEuMCwGA1UEAxMlY2xpcGJvYXJkYnJpZGdlIGdyb3VwIHJvb3QgMjAyNi0xMC0yMTAeFw0yNjEwMjAxMjAwMDBaFw00NjEwMjExMjAwMDBaMDAxLjAsBgNVBAMTJWNsaXBib2FyZGJyaWRnZSBncm91cCByb290IDIwMjYtMTAtMjEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQp2lUnDJ5J5lejWDZrAJpIcb8JYt0cMhIB33L0TRPSvvPXRrElYxtY7CDhEoGWWIX3N5PJQ6eoP1XG5asHeDueo0UwQzAOBgNVHQ8BAf8EBAMCAQYwEgYDVR0TAQH/BAgwBgEB/wIBATAdBgNVHQ4EFgQUjqqsMdnp7x0BR7Id0hPtv9+hBYEwCgYIKoZIzj0EAwIDSAAwRQIhAKK9JpDFhgA0wWWFq5wDkmM8KUVzrkfrcSFVbOOFkd7nAiASWgpzq9uN5j6piWj2JRq1f6zn77qqbRclKBPar3VrbQ==",
+  "records": [
+    {
+      "body": "eyJhbGciOiJlczI1NiIsImRldmljZSI6IjM1MTEwNTJmMzM0MGFlYTNkOGUzOGFmYTIzN2UyNTIzIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0IiwiaG9sZHNfcm9vdCI6dHJ1ZSwia2V5IjoiOTdQeWZqNGxNOXMvRHRjWDJjTGdsREdxS0FsUUF0dTNHczV2MDhKcXhSbz0iLCJuYW1lIjoicm9vdCBwaG9uZSIsIm9zIjoiaW9zIiwicm9sZSI6InBob25lIiwic2VxIjoxLCJzaWduZXIiOiJ0dUNmUDBOQWltem44ZGxUSHRyM0FJNUM4YXB5U1RyZWpZc3h6akdzUjF3PSIsInRpbWVfbXMiOjEsInR5cGUiOiJkZXZpY2UiLCJ2IjoyfQ==",
+      "sig": "MEUCIQCsa5zYVzoUabvJTIkvgyqeeFEziC2OwHoCWnR1t2sLygIgBEWIdpk5srk0VUMOKBAyAVxxRbN9SovdEDe2NoFEToA=",
+      "chain": []
+    },
+    {
+      "body": "eyJhbGciOiJlczI1NiIsImRldmljZSI6ImNmNGFiNzFhNjg2NmU5OTdlOTM3YjUwMGJkYWM4YzUwIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0Iiwia2V5IjoiMmMyVWNRL0piVittd2lkRjlsNWY4Rlp6TWh2NUYrTVc0UWlaSW9KVERXND0iLCJuYW1lIjoicGkiLCJvcyI6ImxpbnV4IiwicHJldiI6IkxIM2F0ekgvejdQcWhkM25tTjdNZ3VMRWFvY0hZRWFVVURTWDhOQXNhbXc9Iiwicm9sZSI6ImxpdGUiLCJzZXEiOjIsInNpZ25lciI6InR1Q2ZQME5BaW16bjhkbFRIdHIzQUk1QzhhcHlTVHJlallzeHpqR3NSMXc9IiwidGltZV9tcyI6MiwidHlwZSI6ImRldmljZSIsInYiOjJ9",
+      "sig": "MEYCIQD02qF3JXo4wVnV3DPw+6HpjUgh1Wu6ScVenA9S2vd29AIhAJZPip7TtccwAgmVImsYemy1bcYeGzoUmSvA+XZQJnsh",
+      "chain": []
+    },
+    {
+      "body": "eyJhZG1pbiI6IktwdWcyMTNSa0xIc2hUVzRScjZxdjRERmxldUJDdzJabEFwOGRYaUZKbE09IiwiYWxnIjoiZXMyNTYiLCJjb21tYW5kcyI6WyJhY3Rpb24iLCJhY3Rpb25zLW9mZiIsImF3YXktb2ZmIiwiaHViIiwibW9kZSIsInBhc3RlIiwicGFzdGUtb2ZmIl0sImRldmljZSI6ImE5ZWUxMjYwNTJiYzUwNmFkNjQ5Y2ZkM2QxNDdlNThiIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0Iiwia2V5IjoiRzljeUZhQVIwN1ZESDZKVE5jVnFablBuTFpEWmVkaWpkbkxXc1FiQWxPYz0iLCJuYW1lIjoidHBtIHBjIiwib3MiOiJsaW51eCIsInBvd2VycyI6WyJhZG1pdCIsImZyZWV6ZSIsImh1YiIsInJlbW92ZSIsInJlbmV3Il0sInByZXYiOiJjKzJtRFVlSFlRSzJIM2dUMk9YaEEvbjVUVHVEdXc5ZEp5UmgrTjZuYWk0PSIsInJvbGUiOiJmdWxsIiwic2VxIjozLCJzaWduZXIiOiJ0dUNmUDBOQWltem44ZGxUSHRyM0FJNUM4YXB5U1RyZWpZc3h6akdzUjF3PSIsInN0b3JlIjoiaGFyZHdhcmUiLCJ0aW1lX21zIjozLCJ0eXBlIjoiZGV2aWNlIiwidiI6Mn0=",
+      "sig": "MEUCIBwM5VV0k/aLL4lkdMzjPVUxoBYNVOzV390sEEqRfSa5AiEAjKPeH6Lyyf5dbDdqPCf4AwH1UhAp2u3M5pXDWuSTgZs=",
+      "chain": []
+    },
+    {
+      "body": "eyJhZG1pbiI6IlM1UWU2WFR3YTlzZzBUazNVVnFUR2NLNk1jamJMakpUK2V0UHhnVWZJU1E9IiwiYWxnIjoiZXMyNTYiLCJjb21tYW5kcyI6WyJhY3Rpb24iLCJhY3Rpb25zLW9mZiIsImF3YXktb2ZmIiwiaHViIiwibW9kZSIsInBhc3RlIiwicGFzdGUtb2ZmIl0sImRldmljZSI6ImY0ZDc3MTI3YTg0YzhmNjM2M2E1YzFiODdjOTNjNDY5IiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0Iiwia2V5IjoibmVtaWJMZnp2RCtvSklIS01OZk9FMUxBdytUVkxnUnZ4bUZWNk5wMnlJdz0iLCJuYW1lIjoiYWRtaW4gcGhvbmUiLCJwb3dlcnMiOlsiYWRtaXQiLCJmcmVlemUiLCJodWIiLCJyZW1vdmUiLCJyZW1vdmUtYWRtaW5zIiwicmVuZXciLCJ0YWtlb3ZlciIsInRoYXciXSwicHJldiI6ImdTTStYbm5nQ3ZtaUIvTVZoNkNwQ3RBYS9OK2YrZ0FSQUxsRERWTGFRMTg9Iiwicm9sZSI6InBob25lIiwic2VxIjo0LCJzaWduZXIiOiJ0dUNmUDBOQWltem44ZGxUSHRyM0FJNUM4YXB5U1RyZWpZc3h6akdzUjF3PSIsInRpbWVfbXMiOjEsInR5cGUiOiJkZXZpY2UiLCJ2IjoyfQ==",
+      "sig": "MEUCIBAK8BUJ4zs3c3SMMajZXvyStnMpUIEFrX9M0x/lMde7AiEAwpgspr6EAVa1reO9h/1U6ZVlTUwhvbuZw04ISyc2xuk=",
+      "chain": []
+    },
+    {
+      "body": "eyJhZG1pbiI6IlNaV0pYTTVmMmViRUVVdEtIOEpJUlovbW1zSE9OM3Z3OVErVTd1bGR0YlE9IiwiYWxnIjoiZXMyNTYiLCJjb21tYW5kcyI6WyJhY3Rpb24iLCJhY3Rpb25zLW9mZiIsImF3YXktb2ZmIiwiaHViIiwibW9kZSIsInBhc3RlIiwicGFzdGUtb2ZmIl0sImRldmljZSI6IjQwNDdhZWRiNzA4NzMwNzRhNjhjMzcxYTdiYjI1MDllIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0Iiwia2V5IjoidWFxVG8zZy9pclVaWmRQT3FNZVlZbnpDMjhpMC9ZSVVIWXJ2dlpxamtVaz0iLCJuYW1lIjoiZmlsZSBwYyIsIm9zIjoibGludXgiLCJwb3dlcnMiOlsiYWRtaXQiLCJmcmVlemUiLCJodWIiLCJyZW1vdmUiLCJyZW5ldyJdLCJwcmV2IjoiYUJScmVyMWZpemNxVWpiRFFVS3NKaFU0WFltREtiNmxrdm42N1NYNzVMVT0iLCJyb2xlIjoiZnVsbCIsInNlcSI6NSwic2lnbmVyIjoidHVDZlAwTkFpbXpuOGRsVEh0cjNBSTVDOGFweVNUcmVqWXN4empHc1Ixdz0iLCJ0aW1lX21zIjoxNzkyNTg0MDAwMDAxLCJ0eXBlIjoiZGV2aWNlIiwidiI6Mn0=",
+      "sig": "MEQCIAZRVeJawAvloBrPzpwEyLlI7XYAIEPx1mhgoB8eNiKpAiBi9lan0O9jWqXGRtxKNMmbaZ+0PRHk4YottVqY05UJZQ==",
+      "chain": []
+    }
+  ],
+  "self": "cf4ab71a6866e997e937b500bdac8c50",
+  "now_ms": 1800000000000,
+  "commands": [
+    {
+      "name": "reboot by the root phone",
+      "command": {
+        "body": "eyJ2IjoxLCJ0eXBlIjoiYWN0aW9uIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0IiwiYnkiOiIzNTExMDUyZjMzNDBhZWEzZDhlMzhhZmEyMzdlMjUyMyIsInRvIjoiY2Y0YWI3MWE2ODY2ZTk5N2U5MzdiNTAwYmRhYzhjNTAiLCJpZCI6IjVhMDZlZWIwNzc3ZjM2NTM1NmEyODQwMmNlNzE1ZWYzIiwidGltZV9tcyI6MTgwMDAwMDAwMDAwMCwiZXhwaXJlc19tcyI6MTgwMDAwMDAzMDAwMCwiYWN0aW9uIjoicmVib290In0=",
+        "sig": "MEQCIH48Ab62D/KeQFHdOeT6J4y5pUJz3Hzc0xeyRW8ywqRaAiAwXVHIVD6rRw6HWpIc5Cqj9pOW7Sn+Z4VNtRtqvJj2rg=="
+      },
+      "ok": true,
+      "action": "reboot",
+      "signer": {
+        "root": true,
+        "role": "phone",
+        "store": "hardware",
+        "found": true
+      }
+    },
+    {
+      "name": "lock by the admin phone",
+      "command": {
+        "body": "eyJ2IjoxLCJ0eXBlIjoiYWN0aW9uIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0IiwiYnkiOiJmNGQ3NzEyN2E4NGM4ZjYzNjNhNWMxYjg3YzkzYzQ2OSIsInRvIjoiY2Y0YWI3MWE2ODY2ZTk5N2U5MzdiNTAwYmRhYzhjNTAiLCJpZCI6IjQ0NmFlMTQ4NmU3NTYxMTk5Nzc1NDA3Y2U1OGM3MzI1IiwidGltZV9tcyI6MTgwMDAwMDAwMDAwMCwiZXhwaXJlc19tcyI6MTgwMDAwMDAzMDAwMCwiYWN0aW9uIjoibG9jayJ9",
+        "sig": "MEQCIFh+nojM1zUPeBKdx9MboYvPMDZ9nuCNNZFLAfkzZo4gAiARO8eYTadYbqfrglMGSi7Qg+SJa5TJr5osY5jzONt29A==",
+        "chain": [
+          "MIIB2TCCAX+gAwIBAgIUNCby9fxHaLoK5RFzVzT499NYpuowCgYIKoZIzj0EAwIwMDEuMCwGA1UEAxMlY2xpcGJvYXJkYnJpZGdlIGdyb3VwIHJvb3QgMjAyNi0xMC0yMTAeFw0yNjEwMjAxMjAwMDBaFw00NjEwMjExMjAwMDBaMEExPzA9BgNVBAMTNmNsaXBib2FyZGJyaWRnZSBhZG1pbiA4OGY2NWQ4MjM0ZjhiNDQ4ZDY3Yjg5ZGQxMDU1YzQ4NTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABNMxaS3jxX7EcApXecpJqwSCzL8pXEB6HnWPYclSRUlO00kkpqjBUtB5HL6493+xsrH8nikLskOWA2/RcQZSjeOjZjBkMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBTppiZvEQNiF8d8Onlspl6F9sQOWzAfBgNVHSMEGDAWgBSOqqwx2envHQFHsh3SE+2/36EFgTAKBggqhkjOPQQDAgNIADBFAiBosMBPf3E9eWLcbBR3oxUXPbVxbVab6qffvmM5g+mSxgIhAPWOc6ZlwPrd5uBjoXDmb6LXu1YwxQ8IOdKSHLIzDtAq"
+        ]
+      },
+      "ok": true,
+      "action": "lock",
+      "signer": {
+        "role": "phone",
+        "store": "hardware",
+        "found": true
+      }
+    },
+    {
+      "name": "reboot by an admin computer with its keys in a file",
+      "command": {
+        "body": "eyJ2IjoxLCJ0eXBlIjoiYWN0aW9uIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0IiwiYnkiOiI0MDQ3YWVkYjcwODczMDc0YTY4YzM3MWE3YmIyNTA5ZSIsInRvIjoiY2Y0YWI3MWE2ODY2ZTk5N2U5MzdiNTAwYmRhYzhjNTAiLCJpZCI6ImZmMDJhYjVjMTA0Yzg3YWM3MjFkZmM4MjcwOTliMjY2IiwidGltZV9tcyI6MTgwMDAwMDAwMDAwMCwiZXhwaXJlc19tcyI6MTgwMDAwMDAzMDAwMCwiYWN0aW9uIjoicmVib290In0=",
+        "sig": "MEUCIBK6X0PVGBqobXtRwLQbqGqEXESdLxLBk+CwEsIyFSstAiEA2r92p3D9OYXnVFjRg+b59GY3ulJe5OWlXgNvJVzlT3U=",
+        "chain": [
+          "MIIB2TCCAX+gAwIBAgIURpXadEmEPZVudn40Oq7j88Dshh8wCgYIKoZIzj0EAwIwMDEuMCwGA1UEAxMlY2xpcGJvYXJkYnJpZGdlIGdyb3VwIHJvb3QgMjAyNi0xMC0yMTAeFw0yNjEwMjAxMjAwMDBaFw00NjEwMjExMjAwMDBaMEExPzA9BgNVBAMTNmNsaXBib2FyZGJyaWRnZSBhZG1pbiBkYjA3NzVhOTk1ZGI0OWEyODRjYjU5ZWM4ZjFiMWJkYjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABA0PLWgkgaYTEv5OUpwMEGdmamrh5xb9xT22cjTNh94JU5rkY8VE0dLRSOTFAHRCB7Tmz9tTgpk7BiF8/si2F3ajZjBkMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBSGwCySN3DlwENZx/1V1+a8YUboHjAfBgNVHSMEGDAWgBSOqqwx2envHQFHsh3SE+2/36EFgTAKBggqhkjOPQQDAgNIADBFAiBrVaqoLZUQdDXSwt0YFv7v/WmVbQHIjF4YVoWjOBZ12QIhAIH0PxwTwbxRpb7LWDhdYl0vcd+vK91z2Ai0Ld9TH1ur"
+        ]
+      },
+      "ok": true,
+      "action": "reboot",
+      "signer": {
+        "role": "full",
+        "store": "file",
+        "found": true
+      }
+    },
+    {
+      "name": "shutdown by an admin computer with its keys in a TPM",
+      "command": {
+        "body": "eyJ2IjoxLCJ0eXBlIjoiYWN0aW9uIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0IiwiYnkiOiJhOWVlMTI2MDUyYmM1MDZhZDY0OWNmZDNkMTQ3ZTU4YiIsInRvIjoiY2Y0YWI3MWE2ODY2ZTk5N2U5MzdiNTAwYmRhYzhjNTAiLCJpZCI6IjM1MDYzMjA0NjdkZmEwYzg5Yzk3M2I3MmUxYTBkNTc1IiwidGltZV9tcyI6MTgwMDAwMDAwMDAwMCwiZXhwaXJlc19tcyI6MTgwMDAwMDAzMDAwMCwiYWN0aW9uIjoic2h1dGRvd24ifQ==",
+        "sig": "MEUCIFxidk6mZ0uEmAH4tDCX32viuU8Hq0yHoy8eZmIzRSXvAiEAsIkDcL6BkhdmZiTpcjPJNQuasN9Z3ECf0DLHB6Eg8bM=",
+        "chain": [
+          "MIIB2TCCAX+gAwIBAgIUKmwZBmqAxbccq9xAGLRt3YJvCGYwCgYIKoZIzj0EAwIwMDEuMCwGA1UEAxMlY2xpcGJvYXJkYnJpZGdlIGdyb3VwIHJvb3QgMjAyNi0xMC0yMTAeFw0yNjEwMjAxMjAwMDBaFw00NjEwMjExMjAwMDBaMEExPzA9BgNVBAMTNmNsaXBib2FyZGJyaWRnZSBhZG1pbiA2ZDM4OTEwZjE5M2ZhMTU0Yjc3MWYxOTg4MjQ0NGY0ZjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABFf/WMjeqsO8QYQvNJmwVT0i0vym7zEHhb64RYkR9Eaqh3MN4JGQFwBcxEz1SnEJTnFPi70TVwzwAdgE+tHZkGqjZjBkMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBRgleh7C46vzTlZX1y29FLyWo0f+zAfBgNVHSMEGDAWgBSOqqwx2envHQFHsh3SE+2/36EFgTAKBggqhkjOPQQDAgNIADBFAiEA5vMzSe4UQtNjZqKD99hVZUHbqx0WfFC5EZgeAxDxHGACIDFio+KfLQ71zwN89MSJ/VGzCiGFeaLMeCfk8m7VLZ40"
+        ]
+      },
+      "ok": true,
+      "action": "shutdown",
+      "signer": {
+        "role": "full",
+        "store": "hardware",
+        "found": true
+      }
+    },
+    {
+      "name": "actions-off by an admin computer",
+      "command": {
+        "body": "eyJ2IjoxLCJ0eXBlIjoiYWN0aW9ucy1vZmYiLCJncm91cCI6ImNjMGIyZjk4MmVjMDZhNTQiLCJieSI6IjQwNDdhZWRiNzA4NzMwNzRhNjhjMzcxYTdiYjI1MDllIiwidG8iOiJjZjRhYjcxYTY4NjZlOTk3ZTkzN2I1MDBiZGFjOGM1MCIsImlkIjoiMzNlYjQ2ZTBkMGQ3YmFlYTlmZDE3MGJiNzI4YjM1NmEiLCJ0aW1lX21zIjoxODAwMDAwMDAwMDAwLCJleHBpcmVzX21zIjoxODAwMDAwMDMwMDAwfQ==",
+        "sig": "MEUCIBa8g+qxbMaxjC7CypgZhk7e+hP/GN9DvttNE7Y4bvdXAiEA3P0yFBILkEblYM0xhLL256pkueo1VxTsUQQ6EvRMx1o=",
+        "chain": [
+          "MIIB2TCCAX+gAwIBAgIURpXadEmEPZVudn40Oq7j88Dshh8wCgYIKoZIzj0EAwIwMDEuMCwGA1UEAxMlY2xpcGJvYXJkYnJpZGdlIGdyb3VwIHJvb3QgMjAyNi0xMC0yMTAeFw0yNjEwMjAxMjAwMDBaFw00NjEwMjExMjAwMDBaMEExPzA9BgNVBAMTNmNsaXBib2FyZGJyaWRnZSBhZG1pbiBkYjA3NzVhOTk1ZGI0OWEyODRjYjU5ZWM4ZjFiMWJkYjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABA0PLWgkgaYTEv5OUpwMEGdmamrh5xb9xT22cjTNh94JU5rkY8VE0dLRSOTFAHRCB7Tmz9tTgpk7BiF8/si2F3ajZjBkMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBSGwCySN3DlwENZx/1V1+a8YUboHjAfBgNVHSMEGDAWgBSOqqwx2envHQFHsh3SE+2/36EFgTAKBggqhkjOPQQDAgNIADBFAiBrVaqoLZUQdDXSwt0YFv7v/WmVbQHIjF4YVoWjOBZ12QIhAIH0PxwTwbxRpb7LWDhdYl0vcd+vK91z2Ai0Ld9TH1ur"
+        ]
+      },
+      "ok": true,
+      "signer": {
+        "role": "full",
+        "store": "file",
+        "found": true
+      }
+    },
+    {
+      "name": "a key of another group",
+      "command": {
+        "body": "eyJ2IjoxLCJ0eXBlIjoiYWN0aW9uIiwiZ3JvdXAiOiJjYzBiMmY5ODJlYzA2YTU0IiwiYnkiOiJjZjRhYjcxYTY4NjZlOTk3ZTkzN2I1MDBiZGFjOGM1MCIsInRvIjoiY2Y0YWI3MWE2ODY2ZTk5N2U5MzdiNTAwYmRhYzhjNTAiLCJpZCI6Ijk1NzgwYmNkOTM5OWY0MTY4MDIwZDQ4NTNjZTM3NmJhIiwidGltZV9tcyI6MTgwMDAwMDAwMDAwMCwiZXhwaXJlc19tcyI6MTgwMDAwMDAzMDAwMCwiYWN0aW9uIjoicmVib290In0=",
+        "sig": "MEYCIQCaLjIaJ2+hJnlDafeYO6Xh3nYBmTLDkFefW9N2H282bAIhAKPwsR7os8gt+LPEMJB9vZDi+j5fLIh8f3wG3LGAMONk"
+      },
+      "ok": false,
+      "signer": {}
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+package io.github.hunterewok.clipboardbridge.kit
+
+import com.sun.jna.IntegerType
+import com.sun.jna.Library
+import com.sun.jna.Memory
+import com.sun.jna.Native
+import com.sun.jna.Pointer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * The Rust core's one entry point (docs/core-api.md), the group's rules that
+ * every member shares: JSON bytes in, JSON bytes out, through the C functions
+ * of lite/ffi (lite/ffi/include/cbb_core.h), loaded by JNA from libcbb_ffi:
+ * from the app's native libraries on Android, from jna.library.path in the
+ * tests. The kit asks the core instead of writing the rules again in Kotlin.
+ */
+object Core {
+    /** The version of the request and answer shapes the kit speaks; [call] refuses a core of another. */
+    const val ABI = 1
+
+    /**
+     * An error answer of the core: a stable code and name, a short message for
+     * the user and the causes under it. The app shows [message], and [details]
+     * under it in debug mode; the log always gets both.
+     */
+    class Refusal(val code: Int, val name: String, override val message: String, val details: String?) :
+        Exception(message) {
+        override fun toString(): String =
+            if (details.isNullOrEmpty()) "core: $message ($name, code $code)" else "core: $message ($name, code $code): $details"
+    }
+
+    /** A linked core that speaks another ABI, or an answer the kit cannot read: a build that put the wrong library in. */
+    class Mismatch(reason: String, cause: Throwable? = null) : Exception("core: $reason", cause)
+
+    /** The core's answer to the operation `version`. */
+    data class Version(val abi: Int, val core: String, val source: String?) {
+        /** How `cbb version` names the core, for the apps' about screens and error reports. */
+        val line: String get() = "core $core, abi $abi, source ${source ?: "unknown"}"
+    }
+
+    @Suppress("FunctionName")
+    private interface Lib : Library {
+        fun cbb_abi(): Int
+
+        fun cbb_call(request: ByteArray?, len: SizeT, answerLen: Pointer): Pointer?
+
+        fun cbb_free(answer: Pointer?, len: SizeT)
+    }
+
+    /** C's size_t: 64 bits on arm64-v8a, x86_64 and the JVM tests, 32 on armeabi-v7a. */
+    class SizeT(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
+        override fun toByte(): Byte = toLong().toByte()
+
+        override fun toShort(): Short = toLong().toShort()
+    }
+
+    private val lib: Lib by lazy { Native.load("cbb_ffi", Lib::class.java) }
+
+    /**
+     * Sends one request and returns the core's answer, after checking that the
+     * core speaks [ABI]. A refusal of the request is an answer with an error,
+     * not an exception of [call].
+     */
+    fun call(request: ByteArray): ByteArray {
+        val got = lib.cbb_abi()
+        if (got != ABI) throw Mismatch("the linked core speaks ABI $got, not $ABI")
+        val count = Memory(Native.SIZE_T_SIZE.toLong())
+        count.clear()
+        val answer = lib.cbb_call(request.takeIf { it.isNotEmpty() }, SizeT(request.size.toLong()), count)
+            ?: throw Mismatch("the core gave no answer")
+        val n = if (Native.SIZE_T_SIZE == 8) count.getLong(0) else count.getInt(0).toLong() and 0xffffffffL
+        try {
+            if (n > Int.MAX_VALUE) throw Mismatch("the core's answer is $n bytes long")
+            return answer.getByteArray(0, n.toInt())
+        } finally {
+            lib.cbb_free(answer, SizeT(n))
+        }
+    }
+
+    /**
+     * Sends the operation [op] with [args] (null for none) and returns the
+     * answer's `ok`; a refusal comes back as a [Refusal].
+     */
+    fun run(op: String, args: JsonElement? = null): JsonElement {
+        val request = buildJsonObject {
+            put("abi", JsonPrimitive(ABI))
+            put("op", JsonPrimitive(op))
+            if (args != null) put("args", args)
+        }
+        val answer = try {
+            Json.parseToJsonElement(call(request.toString().toByteArray()).decodeToString()).jsonObject
+        } catch (e: IllegalArgumentException) {
+            throw Mismatch("the answer to $op does not read", e)
+        }
+        (answer["error"] as? JsonObject)?.let { e ->
+            try {
+                throw Refusal(
+                    e.getValue("code").jsonPrimitive.int,
+                    e.getValue("name").jsonPrimitive.content,
+                    e.getValue("message").jsonPrimitive.content,
+                    (e["details"] as? JsonPrimitive)?.content,
+                )
+            } catch (bad: NoSuchElementException) {
+                throw Mismatch("the error answer to $op does not read", bad)
+            }
+        }
+        return answer["ok"]?.takeIf { it != JsonNull } ?: throw Mismatch("the answer to $op has neither ok nor error")
+    }
+
+    /** The linked core's version, ABI and the commit it was built from. */
+    fun version(): Version {
+        val ok = run("version") as? JsonObject ?: throw Mismatch("the answer to version is not an object")
+        val abi = (ok["abi"] as? JsonPrimitive)?.intOrNull ?: throw Mismatch("the answer to version has no abi")
+        val core = (ok["core"] as? JsonPrimitive)?.content ?: throw Mismatch("the answer to version has no core")
+        return Version(abi, core, (ok["source"] as? JsonPrimitive)?.content)
+    }
+}

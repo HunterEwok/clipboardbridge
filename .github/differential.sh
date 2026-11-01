@@ -26,9 +26,10 @@ CBB_VERDICTS_OUT="$out/go-release.txt" go test ./internal/release -run '^TestVer
 (cd lite/core && CBB_VERDICTS_OUT="$out/rust.txt" cargo test --locked --release --lib records::verdicts)
 # --rerun: Gradle does not see the corpus change between runs.
 (cd apps/android && CBB_VERDICTS_OUT="$out/kotlin.txt" ./gradlew --no-daemon -q -p kit test --tests '*.VerdictTest' --rerun)
+sh lite/ffi/bind.sh host "$out/core"
 docker run --rm -v "$root:/src" -v "$out:/out" -w /src/apps/ios/ClipboardBridgeKit \
 	-e CBB_VERDICTS=/out/corpus.jsonl -e CBB_VERDICTS_OUT=/out/swift.txt swift:6.2-noble \
-	swift test --filter VerdictTests
+	swift test -Xlinker -L/out/core --filter VerdictTests
 
 # Manifests are read differently until 0.7 makes their form strict
 # (docs/roadmap.md): their differences are printed, not counted.

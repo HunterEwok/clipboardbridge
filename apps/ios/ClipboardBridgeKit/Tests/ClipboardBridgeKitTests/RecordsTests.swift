@@ -13,7 +13,7 @@ final class RecordsTests: XCTestCase {
         let pc = SyncEngine.newID()
         let cert = try GroupCertificates.member(device: pc, publicKey: SoftwareSigner().publicKeyDER, ca: g.groupCA, caSigner: ca, now: now)
         g.computers.append(.init(device: pc, name: "pi", os: "linux", cert: cert, admitted: now))
-        _ = try g.record(device: pc, name: "pi", role: "linux", key: Records.keyHash(cert: cert), caSigner: ca, now: now)
+        _ = try g.record(device: pc, name: "pi", role: "full", key: Records.keyHash(cert: cert), caSigner: ca, now: now)
         return (g, ca, pc)
     }
 
@@ -48,16 +48,19 @@ final class RecordsTests: XCTestCase {
     func testRefused() throws {
         let (g, _, _) = try makeGroup()
         var set = RecordSet()
-        let good = g.records.records[0]
+        let good = try XCTUnwrap(g.records.records.first { String(decoding: $0.body, as: UTF8.self).contains(#""role":"phone""#) })
         var forged = good
         forged.sig = Data(forged.sig.reversed())
         var tampered = good
-        tampered.body = Data(String(decoding: good.body, as: UTF8.self).replacingOccurrences(of: "phone", with: "linux").utf8)
+        tampered.body = Data(String(decoding: good.body, as: UTF8.self).replacingOccurrences(of: "phone", with: "full").utf8)
         var chained = good
         chained.chain = [Data([1])]
-        for r in [forged, tampered, chained] { XCTAssertFalse(set.add(r, groupCA: g.groupCA)) }
+        for (name, r) in [("forged", forged), ("tampered", tampered), ("chained", chained)] {
+            XCTAssertFalse(set.add(r, groupCA: g.groupCA), name)
+        }
         let other = try PhoneGroup.create(caSigner: SoftwareSigner(), memberKey: SoftwareSigner().publicKeyDER, now: Date())
-        XCTAssertFalse(set.add(good, groupCA: other.groupCA))
+        var otherSet = RecordSet()
+        XCTAssertFalse(otherSet.add(good, groupCA: other.groupCA), "a record of another group")
         XCTAssertTrue(set.add(good, groupCA: g.groupCA))
         XCTAssertFalse(set.add(good, groupCA: g.groupCA), "a known record is not new")
     }

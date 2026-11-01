@@ -19,6 +19,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The Rust core evaluates a record set at the limit with about a third of the memory it took
   (1.7 MB instead of 4.7 MB for 1033 records on a 64-bit computer), for the ESP32, and a test
   holds the peak to eight times the records' size.
+- The Rust core's entry point answers for a member's record set (`group_add`, `group_view`,
+  `group_command` and the other `group_` calls, docs/core-api.md, "The record set"), so the
+  phones keep the records file and ask the core instead of applying the group's rules
+  themselves.
 - The Rust core's entry point checks a peer's member certificates (`check_member`, docs/core-api.md),
   for the TLS verify callbacks of the computers and the phones, and gives the same answer as Go's
   crypto/tls on shared vectors (`testdata/interop/member-chains.json`). The lite member now takes
@@ -620,6 +624,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Both phone apps link the Rust core, the group's rules every member shares: the Swift and
+  Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
+  bindings, and building the Android app, F-Droid's build included, needs the Rust of
+  `cbb.rust` in `apps/android/gradle.properties` with cargo-ndk.
 - The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
   member: each record names its signer and follows that signer's previous one, the Rust
   core decides what a set says, and the old records are refused. A group of an earlier
@@ -628,6 +636,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   admitting member counted from the Welcome, and `cbb upgrade` is gone. A device whose
   record has not reached a member yet gets a connection that carries records only, until
   the records let it in.
+- The iPhone and Android apps keep their group's records of version 2 and ask the Rust core
+  what they say (`group_add`, `group_view`, `group_command`), instead of applying the group's
+  rules in Swift and Kotlin. Taking a group over is a claim that waits as long as the root
+  decided: the app finishes it by itself once the wait is over, with Face ID or the
+  fingerprint, and the root's phone may cancel it or change the wait. A new member takes the waits counted so far from the Welcome.
 - Remote paste on Linux and FreeBSD takes nothing where the device cannot tell whether its
   session is locked (no logind, `loginctl` failing or saying nothing): earlier it pasted
   there. The device's user may allow pastes without that check with

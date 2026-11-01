@@ -23,6 +23,9 @@ import java.time.Instant
  * turn things off and action ([WATCH_TYPES]).
  */
 object Commands {
+    /** The version of command bodies. */
+    const val VERSION = 1
+
     /** How long after signing a command expires; the receivers take at most 30 s. */
     const val LIFETIME_MS = 30_000L
 
@@ -47,7 +50,7 @@ object Commands {
         val ms = now.toEpochMilli()
         val body = Wire.encode(
             Wire.obj(
-                "v" to Wire.num(Records.VERSION.toLong()),
+                "v" to Wire.num(VERSION.toLong()),
                 "type" to Wire.str("mode"),
                 "group" to Wire.str(group),
                 "by" to Wire.str(by),
@@ -89,7 +92,7 @@ object Commands {
         )
         val body = Wire.encode(
             Wire.obj(
-                "v" to Wire.num(Records.VERSION.toLong()),
+                "v" to Wire.num(VERSION.toLong()),
                 "type" to Wire.str("hub"),
                 "group" to Wire.str(group),
                 "by" to Wire.str(by),
@@ -137,7 +140,7 @@ object Commands {
         val ms = now.toEpochMilli()
         val body = Wire.encode(
             Wire.obj(
-                "v" to Wire.num(Records.VERSION.toLong()),
+                "v" to Wire.num(VERSION.toLong()),
                 "type" to Wire.str("paste"),
                 "group" to Wire.str(group),
                 "by" to Wire.str(by),
@@ -167,7 +170,7 @@ object Commands {
         val ms = now.toEpochMilli()
         val body = Wire.encode(
             Wire.obj(
-                "v" to Wire.num(Records.VERSION.toLong()),
+                "v" to Wire.num(VERSION.toLong()),
                 "type" to Wire.str("paste-off"),
                 "group" to Wire.str(group),
                 "by" to Wire.str(by),
@@ -247,7 +250,7 @@ object Commands {
         val ms = now.toEpochMilli()
         val body = Wire.encode(
             Wire.obj(
-                "v" to Wire.num(Records.VERSION.toLong()),
+                "v" to Wire.num(VERSION.toLong()),
                 "type" to Wire.str(type),
                 "group" to Wire.str(group),
                 "by" to Wire.str(by),
@@ -291,26 +294,21 @@ object Commands {
     class Refused(message: String) : Exception(message)
 
     /**
-     * Checks command c for the member self at nowMS, as Go's
-     * Records.VerifyCommand: an admin of the group signed it now (records
-     * says), it is for self in this group, it has not expired and was not
-     * signed in the future. The caller keeps the replay cache; a mode
-     * command's mode is not checked against [Member.MODES] here.
+     * Checks command c for the member self at nowMS (docs/protocol.md,
+     * section 15) through the Rust core: an admin of the group that may sign
+     * its type signed it, its by is the signer's device, it is for self in
+     * this group and in its lifetime. The caller keeps the replay cache; a
+     * mode command's mode is not checked against [Member.MODES] here.
      */
     fun verify(c: Member.Record, records: RecordSet, self: String, nowMS: Long): Body {
         val b = parse(c.body)
-        val ca = records.groupCA ?: throw Refused("this device has no records of its group yet")
-        if (b.group != GroupCertificates.tag(ca)) throw Refused("the command is for another group")
-        if (b.to != self) throw Refused("the command is for another device")
-        if (!records.signedByAdmin(c)) throw Refused("the command's signer is not an admin of the group")
-        if (b.type !in WATCH_TYPES && records.signedByWatch(c)) throw Refused("a watch does not sign ${b.type} commands")
-        // by names the signer's device whenever the records show it, and
-        // otherwise no device they show.
-        val dev = records.signerDevice(c)
-        if (dev != null && dev != b.by) throw Refused("a command's by is not the device of its signer")
-        if (dev == null && records.devices.any { it.id == b.by }) throw Refused("a command's by names a device that does not hold its signer's key")
-        if (b.expiresMS <= nowMS) throw Refused("the command expired; check the clocks of both devices")
-        if (b.timeMS > nowMS + AHEAD_MS) throw Refused("the command was signed in the future; check the clocks of both devices")
+        val saved = records.nowMS
+        records.nowMS = nowMS
+        try {
+            records.check(c, self)
+        } finally {
+            records.nowMS = saved
+        }
         return b
     }
 
@@ -346,7 +344,7 @@ object Commands {
             text = o.optString("text"),
             action = o.optString("action"),
         )
-        if (o.optLong("v") != Records.VERSION.toLong()) throw Refused("unknown command version")
+        if (o.optLong("v") != VERSION.toLong()) throw Refused("unknown command version")
         if (b.id.length != 32 || b.id.any { it !in "0123456789abcdef" }) throw Refused("the command has no valid ID")
         // As in Go, an empty string is no paste and no action.
         if (type != "paste" && (b.enter || !b.kind.isNullOrEmpty() || !b.text.isNullOrEmpty())) throw Refused("a $type command carries a paste")

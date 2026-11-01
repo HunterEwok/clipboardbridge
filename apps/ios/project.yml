@@ -14,6 +14,10 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    # The Rust core the kit links (its CCbbCore module), one library for each SDK:
+    # sh ../../lite/ffi/bind.sh ios CbbCore (not committed).
+    "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": $(SRCROOT)/CbbCore/iphoneos
+    "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": $(SRCROOT)/CbbCore/iphonesimulator
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_EMIT_LOC_STRINGS: YES

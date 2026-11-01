@@ -183,6 +183,22 @@ func afterDelay() time.Time {
 	return time.Now().Add(time.Duration(authority.DefaultDelay+1000) * time.Millisecond)
 }
 
+// writeV2Vectors writes v as testdata/interop/name with -update: the
+// vectors in records v:2 that the phone kits read once they ask the core.
+func writeV2Vectors(t *testing.T, name string, v any) {
+	t.Helper()
+	if !*update {
+		return
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("..", "..", "testdata", "interop", name), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // checkV1Refused checks that a set refuses every record of version 1 in the
 // interop file name, which the phone kits read until they move to the core:
 // there is no migration, and a member that holds records of version 1
@@ -247,30 +263,4 @@ func checkV1Refused(t *testing.T, name string) {
 			t.Errorf("%s: the set took record %d of version 1", name, i)
 		}
 	}
-}
-
-// kitRecordsV1 reports whether recs, which a phone kit signed, are of
-// version 1, as until the kits move to the core; then it checks that s
-// refuses each of them, since there is no migration, and the test's
-// comparison of what Go and the kit make of them waits for the kits'
-// records of version 2.
-func kitRecordsV1(t *testing.T, s *Records, recs []Record) bool {
-	t.Helper()
-	if len(recs) == 0 {
-		return false
-	}
-	for _, r := range recs {
-		var b struct {
-			V int `json:"v"`
-		}
-		if json.Unmarshal(r.Body, &b) != nil || b.V != 1 {
-			return false
-		}
-	}
-	for i, r := range recs {
-		if ok, err := s.Add(r); ok || err == nil {
-			t.Errorf("record %d of version 1 from the kit taken", i)
-		}
-	}
-	return true
 }

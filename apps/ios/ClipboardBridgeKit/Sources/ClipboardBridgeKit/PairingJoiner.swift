@@ -94,6 +94,7 @@ public enum PairingJoiner {
         // would pass here for good, whatever the group's root removes.
         var path = RecordSet()
         path.addAll(w.records ?? [], groupCA: w.groupCA)
+        path.takeClaimTimes(w.claimTimes ?? [])
         guard path.roots == later else {
             throw Failure.badWelcome("the other phone's roots are not the ones the group's records lead to")
         }

@@ -31,11 +31,26 @@ dependencies {
     // the tests use the JVM build, which has the same API.
     compileOnly("org.conscrypt:conscrypt-openjdk-uber:2.8.0")
     testImplementation("org.conscrypt:conscrypt-openjdk-uber:2.8.0")
+    // The Rust core's C functions (Core.kt): the app bundles JNA's AAR with
+    // its native parts, the tests use the JVM's jar.
+    compileOnly("net.java.dev.jna:jna:5.19.1")
+    testImplementation("net.java.dev.jna:jna:5.19.1")
     testImplementation(kotlin("test"))
+}
+
+// The Rust core for the tests and InteropMain: the host's libcbb_ffi, built
+// in lite/ (needs cargo), which decides itself whether it is up to date.
+val lite = rootDir.resolve("../../../lite").canonicalFile
+val coreDir = lite.resolve("target/release").path
+val buildCore by tasks.registering(Exec::class) {
+    workingDir = lite
+    commandLine("cargo", "build", "--locked", "--release", "-p", "clipboardbridge-ffi")
 }
 
 tasks.test {
     useJUnitPlatform()
+    dependsOn(buildCore)
+    systemProperty("jna.library.path", coreDir)
     // The interop vectors live at the repository's root.
     systemProperty("interop.dir", rootDir.resolve("../../../testdata/interop").canonicalPath)
     testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
@@ -52,13 +67,13 @@ tasks.jacocoTestReport {
 val interopScript by tasks.registering {
     val classpath = sourceSets.test.get().runtimeClasspath
     val script = layout.buildDirectory.file("interop/clipboardbridge-interop")
-    dependsOn(tasks.testClasses)
+    dependsOn(tasks.testClasses, buildCore)
     inputs.files(classpath)
     outputs.file(script)
     doLast {
         val f = script.get().asFile
         val java = File(System.getProperty("java.home"), "bin/java").path
-        f.writeText("#!/bin/sh\nexec '$java' -cp '${classpath.asPath}' io.github.hunterewok.clipboardbridge.kit.InteropMainKt \"\$@\"\n")
+        f.writeText("#!/bin/sh\nexec '$java' -Djna.library.path='$coreDir' -cp '${classpath.asPath}' io.github.hunterewok.clipboardbridge.kit.InteropMainKt \"\$@\"\n")
         f.setExecutable(true)
     }
 }

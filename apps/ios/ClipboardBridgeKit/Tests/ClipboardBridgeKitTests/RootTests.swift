@@ -4,11 +4,13 @@
 import Foundation
 import XCTest
 
-/// Root records (docs/protocol.md, section 10, "Roots" and "Handing the
-/// group over"): the root phone is lost, and admin phone B takes the group
-/// over with a new root.
+/// Handing the group over (docs/records-v2.md, "Handing the group over"):
+/// the root phone is lost, and admin phone B claims the group for a new
+/// root, which takes effect after the delay.
 final class RootTests: XCTestCase {
-    let t0 = Date()
+    /// When the group was made: long enough ago that a claim made then
+    /// took effect by now.
+    let t0 = Date().addingTimeInterval(-100 * 3600)
 
     /// A computer: its device ID, key and member certificate.
     struct Computer {
@@ -39,13 +41,17 @@ final class RootTests: XCTestCase {
             var one = Computer(), two = Computer()
             one.cert = try GroupCertificates.member(device: one.device, publicKey: one.key.publicKeyDER, ca: root.groupCA,
                                                     caSigner: rootKey, now: now)
-            _ = try root.record(device: one.device, name: "one", role: "linux", key: one.keyHash, caSigner: rootKey, now: now)
+            _ = try root.record(device: one.device, name: "one", role: "full", key: one.keyHash, caSigner: rootKey, now: now)
             var b = PhoneGroup(device: bDevice, groupCA: root.groupCA, memberCert: bCert, computers: [])
+            // The members held every record since now.
+            root.records.clock = { now }
+            b.records.clock = { now }
             (b.isRoot, b.adminCA) = (false, adminCA)
             b.add(root.records.records)
             two.cert = try GroupCertificates.member(device: two.device, publicKey: two.key.publicKeyDER, ca: adminCA, caSigner: adminKey, now: now)
-            _ = try b.record(device: two.device, name: "two", role: "linux", key: two.keyHash, caSigner: adminKey, now: now)
+            _ = try b.record(device: two.device, name: "two", role: "full", key: two.keyHash, caSigner: adminKey, now: now)
             root.add(b.records.records)
+            root.records.clock = { Date() }
             (self.root, self.b, self.rootKey, self.adminKey, self.adminCA, self.one, self.two) = (root, b, rootKey, adminKey, adminCA, one, two)
         }
     }
@@ -53,22 +59,32 @@ final class RootTests: XCTestCase {
     /// What a phone hub shows its forwarder: the records of the root's own
     /// device and of the admins, and every record that is no device record,
     /// never the records that name the computers.
+    /// B's claim, made at t0, and B as the root once it took effect.
+    func takeOver(_ g: inout Group) throws -> (claim: Member.Record, records: [Member.Record]) {
+        let newRoot = try GroupCertificates.groupCA(signer: g.newRootKey, now: t0, pathLength: 1)
+        let claim = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, newRoot: newRoot, now: t0)
+        XCTAssertEqual(g.b.claimState, "pending")
+        XCTAssertFalse(g.b.isRoot)
+        XCTAssertTrue(try g.b.finishTakeOver(rootSigner: g.newRootKey, now: t0).isEmpty, "the claim waits")
+        g.b.records.clock = { Date() }
+        let rs = try g.b.finishTakeOver(rootSigner: g.newRootKey, now: Date())
+        return (claim, rs)
+    }
+
+    /// Every record the set holds goes to a forwarder, which sees the same
+    /// roots and the lost phone removed.
     func testAuthorityRecords() throws {
         var g = try Group(now: t0)
-        func names(_ rs: [Member.Record]) -> Set<String> {
-            Set(rs.compactMap { try? JSONDecoder().decode(Records.Body.self, from: $0.body) }.filter { $0.type == "device" }.compactMap(\.name))
-        }
-        XCTAssertEqual(names(g.root.records.authorityRecords), ["Lost", "B"])
-        let rs = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, rootSigner: g.newRootKey, now: t0)
+        let (claim, rs) = try takeOver(&g)
         let after = g.b.records.authorityRecords
-        XCTAssertEqual(names(after), ["Lost", "B"])
         let ids = Set(after.map(Records.id))
-        XCTAssertTrue(rs.allSatisfy { ids.contains(Records.id($0)) }, "the takeover's records")
-        XCTAssertTrue(g.b.records.pathRecords.allSatisfy { ids.contains(Records.id($0)) }, "the path")
+        XCTAssertTrue((rs + [claim]).allSatisfy { ids.contains(Records.id($0)) }, "the takeover's records")
         XCTAssertEqual(ids.count, after.count)
-        // A forwarder that knows only these sees the same roots and the lost phone removed.
         var forwarder = RecordSet()
+        forwarder.clock = { self.t0 }
         forwarder.addAll(after.shuffled(), groupCA: g.root.groupCA)
+        forwarder.clock = { Date() }
+        forwarder.refresh()
         XCTAssertEqual(forwarder.roots, g.b.roots)
         XCTAssertNotNil(forwarder.refused(chain: [g.root.memberCert]))
     }
@@ -77,48 +93,91 @@ final class RootTests: XCTestCase {
         var g = try Group(now: t0)
         let lost = g.root.device
         XCTAssertEqual(g.b.records.rootDevice, lost)
-        let rs = try g.b.takeOver(from: lost, adminSigner: g.adminKey, rootSigner: g.newRootKey, now: t0)
-        XCTAssertEqual(rs.count, 3)
+        let (_, rs) = try takeOver(&g)
+        XCTAssertEqual(rs.count, 2, "B's own device and the removal of the lost phone")
         XCTAssertTrue(g.b.isRoot)
         XCTAssertNil(g.b.adminCA)
+        XCTAssertNil(g.b.claim)
         XCTAssertEqual(g.b.roots.count, 1)
         XCTAssertEqual(g.b.records.roots, g.b.roots)
         XCTAssertEqual(g.b.tag, g.root.tag, "the group keeps its tag")
         XCTAssertEqual(g.b.records.rootDevice, g.b.device)
         XCTAssertEqual(g.b.devices.map(\.name), ["B", "one", "two"])
-        XCTAssertEqual(g.b.devices.first { $0.name == "B" }?.admin, true)
         let set = g.b.records
         XCTAssertNotNil(set.refused(chain: [g.root.memberCert]), "the lost phone")
         XCTAssertNil(set.refused(chain: [g.one.cert]), "the computer the old root admitted")
         XCTAssertNil(set.refused(chain: [g.two.cert, g.adminCA]), "the computer B admitted")
         XCTAssertNil(set.refused(chain: g.b.memberChain), "B itself")
 
-        // A computer that gets the records in any order sees the same.
-        var shuffled = g.b.records.records.shuffled()
-        shuffled.append(contentsOf: rs.shuffled())
+        // A computer that gets the records in any order, and the claim
+        // times with them, sees the same.
         var computer = RecordSet()
-        computer.addAll(shuffled, groupCA: g.root.groupCA)
+        computer.addAll(g.b.records.records.shuffled(), groupCA: g.root.groupCA)
+        computer.takeClaimTimes(g.b.records.claimTimes)
         XCTAssertEqual(computer.digest, g.b.records.digest)
         XCTAssertEqual(computer.roots, g.b.roots)
         XCTAssertEqual(computer.devices.map(\.name), ["B", "one", "two"])
+        // Without them, it waits the delay itself.
+        var late = RecordSet()
+        late.addAll(g.b.records.records, groupCA: g.root.groupCA)
+        XCTAssertEqual(late.roots, [])
+        XCTAssertEqual(late.claims.map(\.state), ["pending"])
 
         // The new root admits and renews.
         var three = Computer()
         three.cert = try GroupCertificates.member(device: three.device, publicKey: three.key.publicKeyDER, ca: g.b.currentRoot,
                                                   caSigner: g.newRootKey, now: t0)
         XCTAssertEqual(try GroupCertificates.verifyMember(chain: [three.cert], roots: g.b.trusted, now: t0), three.device)
-        XCTAssertNil(set.refused(chain: [three.cert]))
+        _ = try g.b.record(device: three.device, name: "three", role: "full", key: three.keyHash, caSigner: g.newRootKey, now: Date())
+        XCTAssertNil(g.b.records.refused(chain: [three.cert]))
         let later = t0.addingTimeInterval(500 * 24 * 3600)
         let renewed = try XCTUnwrap(g.b.renewal(chain: [g.one.cert], caSigner: g.newRootKey, now: later)).cert
         XCTAssertEqual(try GroupCertificates.verifyMember(renewed, groupCA: g.b.currentRoot, now: later), g.one.device)
     }
 
+    /// The root cancels a claim while it waits, and the claimant stays an admin.
+    func testClaimCancelled() throws {
+        var g = try Group(now: t0)
+        let newRoot = try GroupCertificates.groupCA(signer: g.newRootKey, now: t0, pathLength: 1)
+        let claim = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, newRoot: newRoot, now: t0)
+        XCTAssertThrowsError(try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, newRoot: newRoot, now: t0)) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .claimWaiting)
+        }
+        g.root.add([claim])
+        XCTAssertEqual(g.root.records.claims.map(\.state), ["pending"])
+        let cancel = try g.root.resolve([Records.id(claim)], rootSigner: g.rootKey, now: Date())
+        g.b.add([cancel])
+        g.b.records.clock = { Date() }
+        XCTAssertTrue(try g.b.finishTakeOver(rootSigner: g.newRootKey, now: Date()).isEmpty)
+        XCTAssertNil(g.b.claim, "a cancelled claim is dropped")
+        XCTAssertFalse(g.b.isRoot)
+        XCTAssertEqual(g.b.records.rootDevice, g.root.device)
+    }
+
+    /// The root sets how long a claim waits.
+    func testTakeoverDelay() throws {
+        var g = try Group(now: t0)
+        XCTAssertThrowsError(try g.root.setTakeoverDelay(ms: 8 * 24 * 3600 * 1000, rootSigner: g.rootKey, now: Date())) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .invalidDelay)
+        }
+        XCTAssertThrowsError(try g.b.setTakeoverDelay(ms: 0, rootSigner: g.adminKey, now: Date())) {
+            XCTAssertEqual($0 as? PhoneGroup.Failure, .notRoot)
+        }
+        let r = try g.root.setTakeoverDelay(ms: 0, rootSigner: g.rootKey, now: Date())
+        g.b.add([r])
+        g.b.records.clock = { Date() }
+        let newRoot = try GroupCertificates.groupCA(signer: g.newRootKey, now: t0, pathLength: 1)
+        _ = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, newRoot: newRoot, now: Date())
+        XCTAssertFalse(try g.b.finishTakeOver(rootSigner: g.newRootKey, now: Date()).isEmpty, "no delay")
+        XCTAssertTrue(g.b.isRoot)
+    }
+
     func testOldRootKeyAfterTakeOver() throws {
         var g = try Group(now: t0)
-        _ = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, rootSigner: g.newRootKey, now: t0)
+        _ = try takeOver(&g)
         var set = g.b.records
         // Whoever has the lost phone's root key signs a computer, an admin
-        // CA, a device record and a root record: none counts.
+        // CA, a device record and a claim: none counts.
         var stolen = Computer()
         stolen.cert = try GroupCertificates.member(device: stolen.device, publicKey: stolen.key.publicKeyDER, ca: g.root.groupCA,
                                                    caSigner: g.rootKey, now: t0)
@@ -130,45 +189,49 @@ final class RootTests: XCTestCase {
         XCTAssertNotNil(set.refused(chain: [stolen.cert]))
         XCTAssertNotNil(set.refused(chain: [viaThief, thiefCA]))
         let otherRoot = try GroupCertificates.groupCA(signer: SoftwareSigner(), now: t0, pathLength: 1)
-        let thirdRoot = try GroupCertificates.groupCA(signer: SoftwareSigner(), now: t0, pathLength: 1)
-        for r in [
-            try Records.device(stolen.device, name: "stolen", role: "linux", key: stolen.keyHash, group: g.b.tag, by: g.root.device,
-                               now: t0, signer: g.rootKey),
-            try Records.root(otherRoot, group: g.b.tag, by: g.root.device, now: t0, signer: g.rootKey),
-            try Records.root(thirdRoot, group: g.b.tag, by: g.root.device, now: t0, signer: thiefKey, adminCA: thiefCA),
-        ] { XCTAssertTrue(set.add(r, groupCA: g.root.groupCA)) }
+        var claim = Records.Body(type: "claim", signer: Records.keyHash(spki: thiefKey.publicKeyDER), timeMS: Records.ms(Date()))
+        claim.root = otherRoot
+        set.add(try set.sign(.device(stolen.device, name: "stolen", role: "full", key: stolen.keyHash, signer: g.rootKey, now: Date()),
+                             with: g.rootKey), groupCA: g.root.groupCA)
+        set.add(try set.sign(claim, with: thiefKey, adminCA: thiefCA), groupCA: g.root.groupCA)
         XCTAssertEqual(set.devices.map(\.name), ["B", "one", "two"])
         XCTAssertEqual(set.roots, g.b.roots)
+        XCTAssertNotNil(set.refused(chain: [stolen.cert]))
     }
 
     func testTakeOverRefused() throws {
         var g = try Group(now: t0)
-        XCTAssertThrowsError(try g.b.takeOver(from: g.one.device, adminSigner: g.adminKey, rootSigner: g.newRootKey, now: t0)) {
+        let newRoot = try GroupCertificates.groupCA(signer: g.newRootKey, now: t0, pathLength: 1)
+        XCTAssertThrowsError(try g.b.takeOver(from: g.one.device, adminSigner: g.adminKey, newRoot: newRoot, now: t0)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .notRoot)
         }
-        XCTAssertThrowsError(try g.root.takeOver(from: g.root.device, adminSigner: g.rootKey, rootSigner: g.newRootKey, now: t0)) {
+        XCTAssertThrowsError(try g.root.takeOver(from: g.root.device, adminSigner: g.rootKey, newRoot: newRoot, now: t0)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .notAdmin)
         }
-        // A root record in a computer's group, or naming no phone root, is
-        // not taken.
-        let pcCA = try GroupCertificates.groupCA(signer: g.rootKey, now: t0)
-        var set = RecordSet()
-        XCTAssertFalse(set.add(try Records.root(pcCA, group: g.root.tag, by: g.root.device, now: t0, signer: g.rootKey), groupCA: g.root.groupCA))
-        XCTAssertFalse(set.add(try Records.root(try XCTUnwrap(g.b.adminCA), group: g.root.tag, by: g.root.device, now: t0, signer: g.rootKey),
-                               groupCA: g.root.groupCA))
+        // A claim that hands the group to a computer's group CA, or to no
+        // root at all, never takes effect.
+        let pcCA = try GroupCertificates.groupCA(signer: SoftwareSigner(), now: t0)
+        for root in [pcCA, try XCTUnwrap(g.b.adminCA)] {
+            var set = g.b.records
+            var claim = Records.Body(type: "claim", signer: Records.keyHash(spki: g.adminKey.publicKeyDER), timeMS: Records.ms(t0))
+            claim.root = root
+            set.add(try set.sign(claim, with: g.adminKey, adminCA: g.b.adminCA), groupCA: g.root.groupCA)
+            set.clock = { Date() }
+            set.refresh()
+            XCTAssertEqual(set.roots, [])
+        }
     }
 
-    /// A welcome after the takeover names the new root, and a phone that
-    /// joins checks it.
+    /// A welcome after the takeover names the new root and carries the
+    /// claim times, and a phone that joins checks it.
     func testWelcomeAfterTakeOver() throws {
         var g = try Group(now: t0)
-        _ = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, rootSigner: g.newRootKey, now: t0)
+        _ = try takeOver(&g)
         let joiner = SyncEngine.newID(), key = SoftwareSigner()
         let selfSigned = try GroupCertificates.selfSigned(device: joiner, signer: key)
         var w = Pairing.Welcome(cert: try GroupCertificates.member(device: joiner, publicKey: key.publicKeyDER, ca: g.b.currentRoot,
                                                                    caSigner: g.newRootKey, now: t0), groupCA: g.b.groupCA)
-        (w.roots, w.records) = (g.b.roots, g.b.records.pathRecords)
-        XCTAssertLessThan(g.b.records.pathRecords.count, g.b.records.records.count, "the welcome carries more than the path needs")
+        (w.roots, w.records, w.claimTimes) = (g.b.roots, g.b.records.pathRecords, g.b.records.claimTimes)
         let j = PairingJoiner.Joined(device: joiner, welcome: w, member: .init(device: g.b.device, group: g.b.tag))
         let info = Pairing.Info(name: "C", os: "ios")
         XCTAssertNoThrow(try PairingJoiner.check(j, info: info, memberCert: g.b.memberCert, joinerCert: selfSigned, now: t0))
@@ -176,368 +239,118 @@ final class RootTests: XCTestCase {
         bad.welcome.roots = nil
         XCTAssertThrowsError(try PairingJoiner.check(bad, info: info, memberCert: g.b.memberCert, joinerCert: selfSigned, now: t0))
         // A root that no record leads to, as one an admin made up and named
-        // in the Welcome, is refused.
+        // in the Welcome, is refused; so is one whose claim still waits
+        // for the joiner, without the claim times.
         var made = j
         made.welcome.records = nil
         XCTAssertThrowsError(try PairingJoiner.check(made, info: info, memberCert: g.b.memberCert, joinerCert: selfSigned, now: t0))
+        var early = j
+        early.welcome.claimTimes = nil
+        XCTAssertThrowsError(try PairingJoiner.check(early, info: info, memberCert: g.b.memberCert, joinerCert: selfSigned, now: t0))
         XCTAssertEqual(PhoneGroup.joined(j).roots, g.b.roots)
     }
 
-    /// Reads testdata/interop/go-root.json, a handover that Go's
-    /// TestGoRootVectors wrote, and expects what Go makes of it.
-    func testGoHandover() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Device: Decodable { var id: String, name: String, admin: Bool }
-            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
-            var group_ca: Data
-            var records: [Member.Record]
-            var roots: [Data]
-            var devices: [Device]
-            var chains: [Chain]
-            var digest: String
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-root.json")))
-        var set = RecordSet()
-        XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
-        XCTAssertEqual(set.digest, v.digest)
-        XCTAssertEqual(set.roots, v.roots)
-        XCTAssertEqual(set.devices.map(\.id), v.devices.map(\.id))
-        XCTAssertEqual(set.devices.map(\.name), v.devices.map(\.name))
-        XCTAssertEqual(set.devices.map(\.admin), v.devices.map(\.admin))
-        for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
-    }
-
-    /// Reads testdata/interop/go-hubs.json, from Go's TestGoHubVectors: the
-    /// order of the group's hubs.
-    func testGoHubOrder() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            var group_ca: Data
-            var records: [Member.Record]
-            var hub_order: [String]
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-hubs.json")))
-        var set = RecordSet()
-        XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
-        XCTAssertEqual(set.hubOrder, v.hub_order)
-    }
-
-    /// Reads testdata/interop/go-admins.json, from Go's TestGoAdminVectors:
-    /// a computer's admin CA removes a device but neither the admin phone
-    /// nor the root, nor hands the group over, and nothing it signs after
-    /// the admin phone removed it counts.
-    func testGoAdminPowers() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Device: Decodable { var id: String, name: String, admin: Bool }
-            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
-            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
-            var group_ca: Data
-            var records: [Member.Record]
-            var devices: [Device]
-            var keys: [Key]
-            var chains: [Chain]
-            var digest: String
-            var dropped: Int?
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-admins.json")))
-        var set = RecordSet()
-        // The record signed under the root the computer admin named is
-        // dropped: that root is never known.
-        XCTAssertEqual(v.dropped, 1)
-        XCTAssertEqual(set.addAll(v.records.reversed(), groupCA: v.group_ca).count, v.records.count - (v.dropped ?? 0))
-        XCTAssertEqual(set.digest, v.digest)
-        XCTAssertTrue(set.roots.isEmpty, "a computer admin handed the group over")
-        XCTAssertEqual(set.devices.map(\.name), v.devices.map(\.name))
-        XCTAssertEqual(set.devices.map(\.admin), v.devices.map(\.admin))
-        for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, k.name) }
-        for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
-    }
-
-    /// Reads testdata/interop/go-envelopes.json, from Go's
-    /// TestEnvelopeVectors: one body signed by two signers is two records,
-    /// and the set says the same whichever came first; the root's removal of
-    /// an admin phone counts though a computer admin's copy came first.
-    func testGoEnvelopes() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
-            var group_ca: Data
-            var records: [Member.Record]
-            var keys: [Key]
-            var digest: String
-            var count: Int
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-envelopes.json")))
-        for (name, recs) in [("as written", v.records), ("reversed", v.records.reversed()), ("the computer admin's copy only", Array(v.records.prefix(3)))] {
-            var set = RecordSet()
-            for r in recs { XCTAssertTrue(set.add(r, groupCA: v.group_ca), name) }
-            for r in recs { XCTAssertFalse(set.add(r, groupCA: v.group_ca), "\(name): a record held already was new again") }
-            let full = recs.count == v.records.count
-            for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked && full, "\(name): \(k.name)") }
-            if full {
-                XCTAssertEqual(set.records.count, v.count, name)
-                XCTAssertEqual(set.digest, v.digest, name)
-            }
-        }
-    }
-
-    /// Reads testdata/interop/go-removed-admin.json, from Go's
-    /// TestRemovedAdminVectors: an admin phone that the root removed signs a
-    /// root record afterwards, for a root of its own that revokes the
-    /// group's root and admins; that root is not known, so none of it
-    /// counts, in any order.
-    func testGoRemovedAdmin() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
-            var group_ca: Data
-            var records: [Member.Record]
-            var keys: [Key]
-            var roots: Int
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-removed-admin.json")))
-        for (name, recs) in [("as written", v.records), ("reversed", v.records.reversed())] {
-            var set = RecordSet()
-            for r in recs { _ = set.add(r, groupCA: v.group_ca) }
-            XCTAssertEqual(set.roots.count, v.roots, name)
-            for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(name): \(k.name)") }
-        }
-    }
-
-    /// Reads testdata/interop/go-removed-admins.json, from Go's
-    /// TestRemovedAdminCases: an admin phone removed by the current root
-    /// after a handover, or by another admin phone, signs a root record
-    /// afterwards, for a root of its own that revokes the group's roots and
-    /// admins; that root is not known either. A root an admin phone hands
-    /// on counts only when no root that may count removes that phone; two
-    /// such roots that would remove each other's phones do not count, and
-    /// both phones are removed. Every case, with each record first and last
-    /// in turn (Go checks every order).
-    func testGoRemovedAdmins() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
-            var name: String
-            var group_ca: Data
-            var records: [Member.Record]
-            var keys: [Key]
-            var roots: Int
-        }
-        let cases = try JSONDecoder().decode([V].self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-removed-admins.json")))
-        XCTAssertGreaterThanOrEqual(cases.count, 7)
-        for v in cases {
-            let n = v.records.count
-            var orders: [(String, [Member.Record])] = []
-            for start in 0..<n {
-                let forward = (0..<n).map { v.records[(start + $0) % n] }
-                orders.append(("from \(start)", forward))
-                orders.append(("from \(start), reversed", Array(forward.reversed())))
-            }
-            for (name, recs) in orders {
-                var set = RecordSet()
-                _ = set.addAll(recs, groupCA: v.group_ca)
-                XCTAssertEqual(set.roots.count, v.roots, "\(v.name), \(name)")
-                for k in v.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(v.name), \(name): \(k.name)") }
-            }
-        }
-    }
-
-    /// Reads testdata/interop/go-root-member.json, from Go's
-    /// TestGoRootMemberVectors: the root's own device when the root signed
-    /// two own device records at the same time, the one with the greater
-    /// record ID, and whether it is a phone or a computer, in every rotation
-    /// of the records.
-    func testGoRootMember() throws {
+    /// The set over testdata/interop/v2-records.json gives each case's
+    /// state, as Go's internal/authority does.
+    /// Runs the cases of testdata/interop/v2-records.json whose names start
+    /// with one of the prefixes (all of them for nil) through the set: the
+    /// core gives each case's state, the same as Go and the lite member.
+    /// Answers how many cases ran.
+    @discardableResult
+    func v2Cases(_ prefixes: [String]? = nil, file: StaticString = #filePath, line: UInt = #line) throws -> Int {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<6 { url.deleteLastPathComponent() }
         struct V: Decodable {
             struct Case: Decodable {
-                var name: String
-                var records: [Member.Record]
-                var root_device: String
-                var root_role: String
+                var name: String, group_ca: Data, group: String, now_ms: Int64, records: [Member.Record], state: String
+                var first_seen: [RecordSet.ClaimTime]?
+                var time_unknown: Bool?
             }
-            var group_ca: Data
             var cases: [Case]
         }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-root-member.json")))
-        XCTAssertGreaterThanOrEqual(v.cases.count, 4)
-        for c in v.cases {
-            let n = c.records.count
-            var orders: [(String, [Member.Record])] = []
-            for start in 0..<n {
-                let forward = (0..<n).map { c.records[(start + $0) % n] }
-                orders.append(("from \(start)", forward))
-                orders.append(("from \(start), reversed", Array(forward.reversed())))
-            }
-            for (name, recs) in orders {
-                var set = RecordSet()
-                XCTAssertEqual(set.addAll(recs, groupCA: v.group_ca).count, n, "\(c.name), \(name)")
-                let root = set.rootMember()?.device
-                XCTAssertEqual(root, c.root_device, "\(c.name), \(name)")
-                let role = set.devices.first { $0.id == root }?.role
-                XCTAssertEqual(role, c.root_role, "\(c.name), \(name)")
-                XCTAssertEqual(set.rootDevice, role == "phone" ? root : nil, "\(c.name), \(name): the root phone")
-            }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/v2-records.json")))
+        var n = 0
+        for c in v.cases where c.time_unknown != true {
+            if let prefixes, !prefixes.contains(where: { c.name.hasPrefix($0) }) { continue }
+            var set = RecordSet()
+            set.tag = c.group
+            set.nowMS = c.now_ms
+            let fresh = set.addAll(c.records, groupCA: c.group_ca)
+            guard fresh.count == c.records.count else { continue } // records the set does not keep
+            set.takeClaimTimes(c.first_seen ?? [])
+            let want = try JSONDecoder().decode(RecordSet.State.self, from: Data(c.state.utf8))
+            XCTAssertEqual(set.view.state, want, c.name, file: file, line: line)
+            n += 1
         }
+        XCTAssertGreaterThan(n, 0, "no case of \(prefixes ?? [])", file: file, line: line)
+        return n
     }
 
-    /// Reads testdata/interop/go-authority.json, from Go's
-    /// TestGoAuthorityVectors: a device is an admin, with the role and store
-    /// of that record, only by a record a root's own key signed, and a
-    /// removed admin's records no longer decide a device's entry.
+    func testV2Vectors() throws {
+        XCTAssertGreaterThan(try v2Cases(), 10)
+    }
+
+    // The cases of Go's records of version 1 had these tests; each now runs
+    // the cases of version 2 on the same subject.
+
     func testGoAuthority() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Device: Decodable { var id: String, name: String, admin: Bool, admin_key: Data?, role: String, store: String }
-            var group_ca: Data
-            var records: [Member.Record]
-            var devices: [Device]
-            var other: Data
-            var other_revoked: Bool
-            var later: [Member.Record]
-            var devices_later: [Device]
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-authority.json")))
-        var set = RecordSet()
-        func check(_ want: [V.Device]) {
-            let got = set.devices
-            XCTAssertEqual(got.map(\.id), want.map(\.id))
-            for (g, w) in zip(got, want) {
-                XCTAssertEqual(g.name, w.name)
-                XCTAssertEqual(g.admin, w.admin, g.name)
-                XCTAssertEqual(g.adminKey, w.admin_key, g.name)
-                XCTAssertEqual(g.role, w.role, g.name)
-                XCTAssertEqual(g.store, w.store, g.name)
-            }
-        }
-        XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
-        check(v.devices)
-        XCTAssertEqual(set.revoked.contains(v.other), v.other_revoked)
-        XCTAssertEqual(set.addAll(v.later, groupCA: v.group_ca).count, v.later.count)
-        check(v.devices_later)
+        try v2Cases(["basic", "record of a later version", "ignored records", "checkpoint"])
     }
 
-    /// An admin computer freezing another (go-freeze.json, docs/protocol.md
-    /// section 10, rule 4), as Go's TestGoFreezeVectors writes it.
+    func testGoAdminPowers() throws {
+        try v2Cases(["powers"])
+    }
+
+    func testGoEnvelopes() throws {
+        try v2Cases(["one record under two admin CAs", "two histories", "times at the ends"])
+    }
+
     func testGoFreeze() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Device: Decodable { var id: String, name: String, admin: Bool }
-            struct Key: Decodable { var name: String, key: Data, frozen: Bool }
-            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
-            var group_ca: Data
-            var records: [Member.Record]
-            var devices: [Device]
-            var keys: [Key]
-            var chains: [Chain]
-            var digest: String
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-freeze.json")))
-        var set = RecordSet()
-        XCTAssertEqual(set.addAll(v.records.reversed(), groupCA: v.group_ca).count, v.records.count)
-        XCTAssertEqual(set.digest, v.digest)
-        XCTAssertEqual(set.devices.map(\.name), v.devices.map(\.name))
-        XCTAssertEqual(set.devices.map(\.admin), v.devices.map(\.admin))
-        for k in v.keys {
-            XCTAssertEqual(set.isFrozen(k.key), k.frozen, k.name)
-            XCTAssertFalse(set.revoked.contains(k.key), k.name)
-        }
-        for c in v.chains { XCTAssertEqual(set.refused(chain: c.chain) != nil, c.refused, c.name) }
+        try v2Cases(["freeze and thaw", "freezes crossed"])
     }
 
-    /// testdata/interop/go-takeover.json, from Go's TestGoTakeoverVectors:
-    /// an admin computer hands over a group whose root is a computer, but
-    /// not a phone's group, not while another admin computer has frozen it,
-    /// and not once the old root removed it.
+    func testGoHandover() throws {
+        try v2Cases(["claim waits and takes effect", "settings delay", "claim disputed"])
+    }
+
+    func testGoHubOrder() throws {
+        try v2Cases(["hubs table"])
+    }
+
+    func testGoRemovedAdmin() throws {
+        try v2Cases(["root removal cuts an admin", "removed admin's device", "removed admin's claim"])
+    }
+
+    func testGoRemovedAdmins() throws {
+        try v2Cases(["admin removals"])
+    }
+
+    func testGoRootMember() throws {
+        try v2Cases(["removed phone after a takeover", "chain of claims"])
+    }
+
     func testGoTakeover() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Key: Decodable { var name: String, key: Data, revoked: Bool }
-            struct Case: Decodable {
-                var name: String
-                var group_ca: Data
-                var records: [Member.Record]
-                var roots: [Data]?
-                var keys: [Key]
-                var digest: String
-                var dropped: Int?
-            }
-            var cases: [Case]
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-takeover.json")))
-        XCTAssertEqual(v.cases.count, 4)
-        for c in v.cases {
-            var set = RecordSet()
-            XCTAssertEqual(c.dropped ?? 0, c.name == "phone root" ? 1 : 0, c.name)
-            XCTAssertEqual(set.addAll(c.records.reversed(), groupCA: c.group_ca).count, c.records.count - (c.dropped ?? 0), c.name)
-            XCTAssertEqual(set.digest, c.digest, c.name)
-            XCTAssertEqual(set.roots, c.roots ?? [], c.name)
-            for k in c.keys { XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(c.name): \(k.name)") }
-        }
+        try v2Cases(["two claims", "claim after removal", "claim while another waits", "stranger's claim", "claimed root signs early"])
     }
 
-    /// Watches (go-watch.json, from Go's TestGoWatchVectors; docs/protocol.md
-    /// section 10, rule 8): a watch freezes and removes as a computer's admin
-    /// CA does, but admits nobody, never makes a root, is never a hub and
-    /// signs only the commands that turn things off and action.
+    /// A watch's records count only for its powers: removing an admin is
+    /// not one of them, so a revocation of an admin's key that a watch
+    /// signs counts for nothing, while the root's does.
     func testGoWatch() throws {
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { url.deleteLastPathComponent() }
-        struct V: Decodable {
-            struct Device: Decodable { var id: String, name: String, role: String, admin: Bool }
-            struct Key: Decodable { var name: String, key: Data, revoked: Bool, frozen: Bool, watch: Bool }
-            struct Chain: Decodable { var name: String, chain: [Data], refused: Bool }
-            struct Command: Decodable { var name: String, command: Member.Record, ok: Bool }
-            struct Case: Decodable {
-                var name: String
-                var group_ca: Data
-                var records: [Member.Record]
-                var dropped: Int?
-                var devices: [Device]
-                var keys: [Key]
-                var chains: [Chain]?
-                var hubs: [String]
-                var `self`: String?
-                var now_ms: Int64?
-                var commands: [Command]?
-                var digest: String
-            }
-            var cases: [Case]
-        }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-watch.json")))
-        XCTAssertEqual(v.cases.count, 3)
-        for c in v.cases {
-            var set = RecordSet()
-            XCTAssertEqual(set.addAll(c.records.reversed(), groupCA: c.group_ca).count, c.records.count - (c.dropped ?? 0), c.name)
-            XCTAssertEqual(set.digest, c.digest, c.name)
-            XCTAssertEqual(set.roots, [], c.name)
-            XCTAssertEqual(set.devices.map { "\($0.id) \($0.name) \($0.role) \($0.admin)" },
-                           c.devices.map { "\($0.id) \($0.name) \($0.role) \($0.admin)" }, c.name)
-            for k in c.keys {
-                XCTAssertEqual(set.revoked.contains(k.key), k.revoked, "\(c.name): \(k.name) revoked")
-                XCTAssertEqual(set.isFrozen(k.key), k.frozen, "\(c.name): \(k.name) frozen")
-                XCTAssertEqual(set.isWatch(k.key), k.watch, "\(c.name): \(k.name) watch")
-            }
-            for ch in c.chains ?? [] { XCTAssertEqual(set.refused(chain: ch.chain) != nil, ch.refused, "\(c.name): \(ch.name)") }
-            XCTAssertEqual(set.hubOrder, c.hubs, c.name)
-            for d in set.devices where d.role == "watch" { XCTAssertFalse(set.mayHost(d.id), c.name) }
-            for cmd in c.commands ?? [] {
-                let ok = (try? Commands.verify(cmd.command, records: set, me: c.`self` ?? "", nowMS: c.now_ms ?? 0)) != nil
-                XCTAssertEqual(ok, cmd.ok, "\(c.name): \(cmd.name)")
-            }
-        }
+        var g = try Group(now: t0)
+        let watchKey = SoftwareSigner(), watch = SyncEngine.newID()
+        let (ca, _) = try g.root.addWatch(device: watch, name: "Watch", os: "watchos", adminKey: watchKey.publicKeyDER,
+                                          rootSigner: g.rootKey, now: t0.addingTimeInterval(1))
+        XCTAssertEqual(g.root.devices.first { $0.id == watch }?.powers, Records.watchPowers)
+        XCTAssertFalse(Records.watchPowers.contains("remove-admins"))
+        let adminKey = try Records.keyHash(cert: g.adminCA)
+        try g.root.records.signed(.revoke([adminKey], signer: watchKey, now: t0.addingTimeInterval(2)), watchKey, adminCA: ca,
+                                  groupCA: g.root.groupCA)
+        XCTAssertFalse(g.root.records.revoked.contains(adminKey))
+        XCTAssertTrue(g.root.devices.contains { $0.id == g.b.device })
+        try g.root.records.signed(.revoke([adminKey], signer: g.rootKey, now: t0.addingTimeInterval(3)), g.rootKey,
+                                  groupCA: g.root.groupCA)
+        XCTAssertTrue(g.root.records.revoked.contains(adminKey))
     }
 
     /// Writes swift-root.json for internal/group's TestSwiftRoot: a takeover
@@ -545,10 +358,11 @@ final class RootTests: XCTestCase {
     func testTakeOverForGo() throws {
         guard let dir = ProcessInfo.processInfo.environment["CBB_INTEROP_OUT"] else { return }
         var g = try Group(now: t0)
-        _ = try g.b.takeOver(from: g.root.device, adminSigner: g.adminKey, rootSigner: g.newRootKey, now: t0)
+        _ = try takeOver(&g)
         struct Out: Encodable {
             var group_ca: Data
             var records: [Member.Record]
+            var claim_times: [RecordSet.ClaimTime]
             var roots: [Data]
             var devices: [String]
             var digest: String
@@ -556,7 +370,7 @@ final class RootTests: XCTestCase {
         }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let out = Out(group_ca: g.root.groupCA, records: g.b.records.records.reversed(), roots: g.b.roots,
+        let out = Out(group_ca: g.root.groupCA, records: g.b.records.records.reversed(), claim_times: g.b.records.claimTimes, roots: g.b.roots,
                       devices: g.b.devices.map(\.id), digest: g.b.records.digest ?? "", lost: g.root.memberCert, kept: g.one.cert)
         try (enc.encode(out) + Data("\n".utf8)).write(to: URL(fileURLWithPath: dir).appendingPathComponent("swift-root.json"))
     }

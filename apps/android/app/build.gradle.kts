@@ -11,6 +11,7 @@ plugins {
 
 val release = Properties().apply { rootDir.resolve("version.properties").reader().use { load(it) } }
 val ndkPinned = property("cbb.ndk") as String
+val rustPinned = property("cbb.rust") as String
 
 android {
     namespace = "io.github.hunterewok.clipboardbridge"
@@ -84,24 +85,15 @@ android {
     }
 }
 
-// The tunnel for sync away from home: mobile/cbbtun, bound by gomobile into an AAR. It
-// needs Go and the Android NDK of ndkVersion (cbb.ndk in ../gradle.properties), which a
-// different NDK would build into a different library: ANDROID_NDK_HOME when it is that
-// version (F-Droid's buildserver sets it), else the SDK's ndk/<version>.
-val tunnelAar = layout.buildDirectory.file("cbbtun/cbbtun.aar")
+// The Android NDK of ndkVersion (cbb.ndk in ../gradle.properties), which a different NDK
+// would build into different libraries: ANDROID_NDK_HOME when it is that version (F-Droid's
+// buildserver sets it), else the SDK's ndk/<version>. Set for the task's command when it runs.
 val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME")
-val bindTunnel = tasks.register<Exec>("bindTunnel") {
-    val repo = rootDir.resolve("../..")
-    inputs.files(repo.resolve("go.mod"), repo.resolve("go.sum"))
-    inputs.dir(repo.resolve("mobile"))
-    inputs.dir(repo.resolve("internal/tunnel"))
-    inputs.property("ndk", ndkPinned)
-    outputs.file(tunnelAar)
-    workingDir = repo
-    commandLine("sh", "mobile/cbbtun/bind.sh", "android", tunnelAar.get().asFile.path)
+fun Exec.withPinnedNdk() {
     val sdk = androidComponents.sdkComponents.sdkDirectory
     val env = ndkHome
     val pinned = ndkPinned
+    inputs.property("ndk", pinned)
     doFirst {
         val sdkDir = sdk.get().asFile
         environment("ANDROID_HOME", sdkDir.path)
@@ -114,9 +106,46 @@ val bindTunnel = tasks.register<Exec>("bindTunnel") {
     }
 }
 
+// The tunnel for sync away from home: mobile/cbbtun, bound by gomobile into an AAR. It
+// needs Go and the pinned NDK.
+val tunnelAar = layout.buildDirectory.file("cbbtun/cbbtun.aar")
+val bindTunnel = tasks.register<Exec>("bindTunnel") {
+    val repo = rootDir.resolve("../..")
+    inputs.files(repo.resolve("go.mod"), repo.resolve("go.sum"))
+    inputs.dir(repo.resolve("mobile"))
+    inputs.dir(repo.resolve("internal/tunnel"))
+    outputs.file(tunnelAar)
+    workingDir = repo
+    commandLine("sh", "mobile/cbbtun/bind.sh", "android", tunnelAar.get().asFile.path)
+    withPinnedNdk()
+}
+
+// The group's rules: the Rust core's entry point (lite/ffi, docs/core-api.md), which the
+// kit calls through JNA, as libcbb_ffi.so for each ABI. It needs the Rust of cbb.rust in
+// ../gradle.properties with the Android targets, cargo-ndk and the pinned NDK (lite/ffi/bind.sh).
+val coreLibs = layout.buildDirectory.dir("cbbcore")
+val bindCore = tasks.register<Exec>("bindCore") {
+    val repo = rootDir.resolve("../..")
+    inputs.files(repo.resolve("lite/Cargo.lock"), repo.resolve("lite/Cargo.toml"))
+    inputs.files(repo.resolve("lite/core/Cargo.toml"), repo.resolve("lite/ffi/Cargo.toml"), repo.resolve("lite/ffi/bind.sh"))
+    inputs.dir(repo.resolve("lite/core/src"))
+    inputs.dir(repo.resolve("lite/ffi/src"))
+    outputs.dir(coreLibs)
+    workingDir = repo
+    commandLine("sh", "lite/ffi/bind.sh", "android", coreLibs.get().asFile.path)
+    inputs.property("rust", rustPinned)
+    environment("RUSTUP_TOOLCHAIN", rustPinned)
+    withPinnedNdk()
+}
+// The source set takes a folder, not a provider; preBuild builds what goes in it.
+android.sourceSets.getByName("main").jniLibs.srcDir(coreLibs.get().dir("jniLibs").asFile)
+tasks.named("preBuild") { dependsOn(bindCore) }
+
 dependencies {
     implementation(files(tunnelAar).builtBy(bindTunnel))
     implementation("io.github.hunterewok.clipboardbridge:kit:0")
+    // JNA with its native parts, through which the kit calls the Rust core.
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
     implementation(project(":shared"))
     // The kit's TLS: Conscrypt bundled, for TLS 1.3 with the exporter on every Android version.
     implementation("org.conscrypt:conscrypt-android:2.8.0")
