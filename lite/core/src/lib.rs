@@ -46,6 +46,7 @@ pub mod clip;
 pub mod credential;
 pub mod error;
 #[cfg(feature = "fuzzing")]
+#[allow(clippy::expect_used, clippy::panic, reason = "a fuzz target reports a broken promise by panicking")]
 pub mod fuzzing;
 pub mod hlc;
 pub mod identity;

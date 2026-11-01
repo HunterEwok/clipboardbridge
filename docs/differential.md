@@ -65,7 +65,11 @@ kits), so a reader that fails in another way also shows as a difference.
   (`internal/group`), `FuzzRelayWire` (`internal/relay`), `FuzzForwardWire`
   (`internal/forward`) and `FuzzDecodeDIB` (`internal/pasteboard`), and the lite core's
   `cargo fuzz` targets in `lite/core/fuzz` (`record_body`, `command`, `credential`,
-  `release`, `wire`), seeded by `go run ./tools/difffuzz seeds`.
+  `release`, `wire`, and `api`, the core's entry point of [core-api.md](core-api.md)),
+  seeded by `go run ./tools/difffuzz seeds`. `api` starts from requests for every operation,
+  each case of `v2-records.json` among them, and checks that any bytes get one answer of the
+  ABI, with `ok` or a listed error code, and that a request answered twice gets the same
+  answer.
 
 Manifests are compared but do not fail the run until 0.7 gives them the strict form
 ([roadmap](roadmap.md), item 42): `compare -report-only manifest` prints their differences.
