@@ -538,7 +538,14 @@ func TestOneConnectionBetweenTwo(t *testing.T) {
 	if n := high.accepted.Load() - pairing[high]; n != 1 {
 		t.Errorf("the member with the higher ID accepted %d member connections, want 1", n)
 	}
-	if now := a.status(t).Peers; len(now) != 1 || now[0] != since {
+	// The skew comes from the hello, which the engine may take only after
+	// the peer shows in the status: it is no sign of a new connection.
+	since.SkewMS = 0
+	now := a.status(t).Peers
+	for i := range now {
+		now[i].SkewMS = 0
+	}
+	if len(now) != 1 || now[0] != since {
 		t.Errorf("the connection changed: %+v, then %+v", since, now)
 	}
 }

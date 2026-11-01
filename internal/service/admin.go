@@ -83,23 +83,37 @@ func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 	// The device record names the admin CA first, so the iPhone CA that
 	// follows the admin message goes to a listed admin.
 	adminKey := group.KeyHashOf(adminCA)
-	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(peer.ID), Name: d.Name, Role: group.RoleFull,
-		OS: d.OS, Key: &peer.Key, Admin: &adminKey, Store: store, Kind: kind, Proof: proof})
-	if err != nil {
-		return "", err
-	}
-	s.publish(nd, r)
-	if !nd.SendAdmin(peer.ID, adminCA) {
-		return "", fmt.Errorf("%s left before it got its admin CA; it is listed as an admin, so run cbb admin again when it is back", d.Name)
-	}
 	// Its connection still shows no admin CA, and its hello the admin
-	// key: renewAdminCAs must not give it a second one.
+	// key: renewAdminCAs, which may run as soon as the record below is in
+	// the set, must not give it a second one. Noted before signing, and
+	// undone if it never gets this one.
 	s.mu.Lock()
 	if s.adminCAsUnder == nil {
 		s.adminCAsUnder = map[group.DeviceID]group.KeyHash{}
 	}
+	before, had := s.adminCAsUnder[peer.ID]
 	s.adminCAsUnder[peer.ID] = group.KeyHashOf(id.Root())
 	s.mu.Unlock()
+	undo := func() {
+		s.mu.Lock()
+		if had {
+			s.adminCAsUnder[peer.ID] = before
+		} else {
+			delete(s.adminCAsUnder, peer.ID)
+		}
+		s.mu.Unlock()
+	}
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(peer.ID), Name: d.Name, Role: group.RoleFull,
+		OS: d.OS, Key: &peer.Key, Admin: &adminKey, Store: store, Kind: kind, Proof: proof})
+	if err != nil {
+		undo()
+		return "", err
+	}
+	s.publish(nd, r)
+	if !nd.SendAdmin(peer.ID, adminCA) {
+		undo()
+		return "", fmt.Errorf("%s left before it got its admin CA; it is listed as an admin, so run cbb admin again when it is back", d.Name)
+	}
 	s.logf("cbb: made %s (%s) an admin of the group", d.Name, d.ID)
 	return d.Name, nil
 }

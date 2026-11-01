@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
+  and offers it in its hello; a root computer puts it in the device records, the first step
+  to commands sealed for their receiver (docs/protocol.md, section 15).
 - The group's main hubs in a table the root signs, or an admin that may be a hub (`cbb hubs`,
   a `hubs` record, docs/records-v2.md, "The hubs table"): they serve first, in the user's
   order, before the hubs the records give, in Go and the Rust core alike.
@@ -799,6 +802,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A computer that signs two group records in one pass, or at the same moment, gives them
+  consecutive numbers: before, both could take one number, which reads as two histories of
+  the signer and, for the root, stops the group.
 - A member that ends its connections after saying goodbye, as after `cbb global off -on`
   turned sync away from home off there, no longer resets them: it stops sending and reads
   what the other device still sends before it closes. A reset could make the admin lose the
