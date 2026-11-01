@@ -1294,6 +1294,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The bench's `phone` suite: the Android app on an emulator in a group with members of the
+  fleet, driven by instrumented tests (`apps/android/app/src/androidTest`) through a helper
+  that runs cbb on the members; so far the phone makes its own group, admits a computer and
+  syncs with it both ways. CI's new `Android app on an emulator` job runs it.
 - An open blind relay: `cbb relay -open` serves every group that registers, as the project's
   relay at `cbb.tools` will, within limits that keep groups nobody vouches for from filling
   it: 4096 groups, 16 registrations from one address and 64 from one network, and 1 MiB a
