@@ -177,7 +177,7 @@ var $q = (s) => document.querySelector(s);
 var $all = (s) => [...document.querySelectorAll(s)];
 var $h = () => $q("#headline")?.textContent ?? "";
 var $click = (s) => { const e = $q(s); if (!e) throw new Error("no " + s); e.click(); return true; };
-var $clickText = (s, text) => { const e = $all(s).find((x) => x.textContent.trim() === text); if (!e) throw new Error("no " + s + " " + text); e.click(); return true; };
+var $clickText = (s, text) => { const all = $all(s), e = all.find((x) => x.textContent.trim() === text); if (!e) throw new Error("no " + s + " " + text + " among " + JSON.stringify(all.map((x) => x.textContent.trim()))); e.click(); return true; };
 var $answer = (text) => { $q("#confirm-input").value = text; return $click("#confirm-ok"); };
 var $order = () => $all("#devices .tiles > .cell").map((c) => c.dataset.ref);
 var $search = (text) => { const s = $q("#search"); s.value = text; s.dispatchEvent(new Event("input", {bubbles: true})); return true; };
@@ -691,13 +691,26 @@ func startBrowser(t *testing.T, exe string) *cdpPage {
 			}
 		}
 	}()
-	var ws string
-	select {
-	case ws = <-found:
-	case <-time.After(30 * time.Second):
-		t.Fatalf("%s gave no DevTools address in 30 s", exe)
+	// Edge started from an elevated console starts itself again without the
+	// rights and ends, so its stderr never names the address; the profile's
+	// DevToolsActivePort does in both cases.
+	var host string
+	deadline := time.Now().Add(30 * time.Second)
+	for host == "" {
+		select {
+		case ws := <-found:
+			host = strings.SplitN(strings.TrimPrefix(ws, "ws://"), "/", 2)[0]
+		case <-time.After(200 * time.Millisecond):
+			if b, err := os.ReadFile(filepath.Join(profile, "DevToolsActivePort")); err == nil {
+				if port, _, _ := strings.Cut(string(b), "\n"); strings.TrimSpace(port) != "" {
+					host = "127.0.0.1:" + strings.TrimSpace(port)
+				}
+			}
+			if host == "" && time.Now().After(deadline) {
+				t.Fatalf("%s gave no DevTools address in 30 s", exe)
+			}
+		}
 	}
-	host := strings.SplitN(strings.TrimPrefix(ws, "ws://"), "/", 2)[0]
 	req, _ := http.NewRequest(http.MethodPut, "http://"+host+"/json/new?about:blank", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
