@@ -167,9 +167,10 @@ Not yet run on a real Android phone or emulator: the Keystore keys and Biometric
 `ACCESS_LOCAL_NETWORK` on Android 17, the accessibility overlay getting the focus, the copy
 events of each maker's apps, the foreground service across reboots and battery savers.
 
-Not yet verified on a real iPhone: Secure Enclave key creation with user presence, the
-Face ID prompt and reuse of its context, the keychain identity lookup for TLS, listening
-for a joining phone (`TLSListener`), the admin CA in the TLS chain, making a computer an admin and the takeover (a new
-Secure Enclave root key signed right after the admin key), and a run of the background app refresh
-(the simulator has no BGTaskScheduler). Test these on
-a device before relying on them.
+Verified on a real iPhone, Apple Watch and Mac (apps/ios/device.sh, a free Personal Team):
+Secure Enclave key creation with user presence, the Face ID prompt, the keychain identity
+for TLS, the admin CA in the TLS chain, making a computer an admin, sync both ways, the
+watch's list and remote paste to the Mac. Not yet: listening for a joining phone
+(`TLSListener`), the takeover (a new Secure Enclave root key signed right after the admin
+key) and a run of the background app refresh (the simulator has no BGTaskScheduler); test
+these on a device before relying on them.
