@@ -281,6 +281,14 @@ class RecordSet {
         override fun hashCode(): Int = record.contentHashCode()
     }
 
+    /** A conflict of the state: kind is admins, claims or two_histories. */
+    class Conflict(val kind: String, val records: List<ByteArray>, val signers: List<ByteArray>) {
+        override fun equals(other: Any?): Boolean =
+            other is Conflict && kind == other.kind && records.sameAs(other.records) && signers.sameAs(other.signers)
+
+        override fun hashCode(): Int = kind.hashCode()
+    }
+
     /** The parts of the group's state (docs/protocol.md, section 10, "The state") the phones show. */
     class State(
         val rootDevice: String? = null,
@@ -294,10 +302,15 @@ class RecordSet {
         val noSecretsTo: List<String> = emptyList(),
         /** The devices this member sends nothing but records. */
         val nothingTo: List<String> = emptyList(),
+        /** The conflicts that stop the group until its root decides. */
+        val conflicts: List<Conflict> = emptyList(),
+        /** How many records of a later version the set keeps. */
+        val newer: Int = 0,
     ) {
         override fun equals(other: Any?): Boolean =
             other is State && rootDevice == other.rootDevice && roots.sameAs(other.roots) && stop == other.stop && claims == other.claims &&
-                revoked.sameAs(other.revoked) && noSecretsTo == other.noSecretsTo && nothingTo == other.nothingTo
+                revoked.sameAs(other.revoked) && noSecretsTo == other.noSecretsTo && nothingTo == other.nothingTo &&
+                conflicts == other.conflicts && newer == other.newer
 
         override fun hashCode(): Int = stop.hashCode()
 
@@ -324,6 +337,11 @@ class RecordSet {
                 revoked = o.optBytesList("revoked").orEmpty(),
                 noSecretsTo = o.optArray("no_secrets_to").orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content },
                 nothingTo = o.optArray("nothing_to").orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content },
+                conflicts = o.optArray("conflicts").orEmpty().mapNotNull { e ->
+                    val c = e as? JsonObject ?: return@mapNotNull null
+                    Conflict(c.optString("kind") ?: "", c.optBytesList("records").orEmpty(), c.optBytesList("signers").orEmpty())
+                },
+                newer = o.optArray("newer")?.size ?: 0,
             )
         }
     }

@@ -257,7 +257,8 @@ final class RootTests: XCTestCase {
     /// core gives each case's state, the same as Go and the lite member.
     /// Answers how many cases ran.
     @discardableResult
-    func v2Cases(_ prefixes: [String]? = nil, file: StaticString = #filePath, line: UInt = #line) throws -> Int {
+    func v2Cases(_ prefixes: [String]? = nil, file: StaticString = #filePath, line: UInt = #line,
+                 check: ((String, RecordSet) -> Void)? = nil) throws -> Int {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<6 { url.deleteLastPathComponent() }
         struct V: Decodable {
@@ -280,6 +281,7 @@ final class RootTests: XCTestCase {
             set.takeClaimTimes(c.first_seen ?? [])
             let want = try JSONDecoder().decode(RecordSet.State.self, from: Data(c.state.utf8))
             XCTAssertEqual(set.view.state, want, c.name, file: file, line: line)
+            check?(c.name, set)
             n += 1
         }
         XCTAssertGreaterThan(n, 0, "no case of \(prefixes ?? [])", file: file, line: line)
@@ -288,6 +290,28 @@ final class RootTests: XCTestCase {
 
     func testV2Vectors() throws {
         XCTAssertGreaterThan(try v2Cases(), 10)
+    }
+
+    /// The alerts say each case's stop, conflicts and claims that wait or
+    /// stop the group, with the records a resolve names and the devices
+    /// involved.
+    func testAlerts() throws {
+        var kinds = Set<GroupAlert.Kind>()
+        try v2Cases { name, set in
+            let st = set.view.state
+            let alerts = set.alerts
+            kinds.formUnion(alerts.map(\.kind))
+            XCTAssertEqual(alerts.contains { $0.kind == .stopped }, st.stop == "full", name)
+            XCTAssertEqual(alerts.contains { $0.kind == .secretsStopped }, st.stop == "secrets", name)
+            for c in st.conflicts ?? [] {
+                let a = alerts.first { $0.records == c.records && [.twoHistories, .admins, .claims].contains($0.kind) }
+                XCTAssertNotNil(a, "\(name): \(c.kind)")
+                if c.kind == "two_histories" { XCTAssertFalse(a?.names.isEmpty ?? true, "\(name): who signed two histories") }
+            }
+            let waiting = (st.claims ?? []).filter { $0.state == "pending" }.count
+            XCTAssertEqual(alerts.filter { $0.kind == .claimPending }.count, waiting, name)
+        }
+        XCTAssertTrue(kinds.isSuperset(of: [.stopped, .twoHistories, .claimPending]), "\(kinds)")
     }
 
     // The cases of Go's records of version 1 had these tests; each now runs
