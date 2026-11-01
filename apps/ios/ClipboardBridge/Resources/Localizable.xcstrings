@@ -1,6 +1,66 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Sent to %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправлено на %@."
+          }
+        }
+      }
+    },
+    "Ready to paste: “%@” from %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Можно вставлять: «%@» с %@."
+          }
+        }
+      }
+    },
+    "Ready to paste, from %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Можно вставлять, получено с %@."
+          }
+        }
+      }
+    },
+    "Ready to paste.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Можно вставлять."
+          }
+        }
+      }
+    },
+    "Connecting to the computers…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключаюсь к компьютерам…"
+          }
+        }
+      }
+    },
+    "Syncing…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронизирую…"
+          }
+        }
+      }
+    },
     "Arrange" : {
       "localizations" : {
         "ru" : {
@@ -780,16 +840,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Все устройства группы покажут новое имя."
-          }
-        }
-      }
-    },
-    "Fetched from the computers.": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Получено с компьютеров."
           }
         }
       }

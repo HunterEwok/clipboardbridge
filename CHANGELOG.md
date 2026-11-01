@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The phone's Send or receive says where a text went or came from and that it is ready to
+  paste ("Ready to paste: “…” from Mac.lan", "Sent to Mac.lan"), with a tap in the hand while
+  the app is in front; the Shortcuts action (Back Tap) shows its progress while it connects,
+  and with Live Activities the Dynamic Island says so.
 - `apps/ios/device.sh` installs the iPhone app and its watch app on your own phone and watch,
   signed by a free Personal Team (an Apple ID in Xcode, no developer account), with a bundle
   identifier of its own; CONTRIBUTING.md, "The iPhone app on your own phone".

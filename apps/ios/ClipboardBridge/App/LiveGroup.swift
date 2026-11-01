@@ -1562,7 +1562,8 @@ final class LiveGroup: GroupController {
             } else if let u = usable {
                 write(u.text, kind: u.kind)
             }
-            return .fetched
+            let preview = curImage == nil && usable?.kind == .text ? usable.map { Self.preview($0.text) } : nil
+            return .fetched(from: cur.flatMap { c in devices.first { $0.id == c.origin && !$0.isSelf }?.name }, preview: preview)
         }
         if let cur, let u = usable, cur.origin != g.device, cur.via == .copy, cur.ageMS < Self.recentCopyMS, u.text != board {
             return try await fetch()
@@ -1574,13 +1575,21 @@ final class LiveGroup: GroupController {
             } else {
                 await node.send(text: t, kind: .text)
             }
-            return .sent
+            return .sent(to: devices.filter { online.contains($0.id) && !$0.isSelf }.map(\.name).sorted())
         }
         if let u = usable, u.text != board {
             return try await fetch()
         }
         if !(await connected(node)) { throw PendingGroup.Failure.noComputers }
         return .nothingNew
+    }
+
+    /// The start of a text the button fetched, on one line, for the line
+    /// that says it is ready to paste.
+    nonisolated static func preview(_ text: String, max: Int = 30) -> String {
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.count > max ? String(trimmed.prefix(max)) + "…" : trimmed
     }
 
     /// Whether a computer is connected, waiting up to connectWait for one:
