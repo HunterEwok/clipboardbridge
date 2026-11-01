@@ -41,8 +41,14 @@ func liteOptions(ctx context.Context, r *Report, f *Fleet, g *benchGroup, hub, l
 		if err := with("-name lite-hello -port 8800"); err != nil {
 			return err
 		}
-		if out, err := listening("t"); err != nil || !strings.Contains(out, ":8800 ") || strings.Contains(out, ":8764 ") {
-			return fmt.Errorf("with -port 8800 the lite member listens on %q (%v)", out, err)
+		// The service answers cbb status before it binds the member port.
+		if err := eventually(ctx, 20*time.Second, func() error {
+			if out, err := listening("t"); err != nil || !strings.Contains(out, ":8800 ") || strings.Contains(out, ":8764 ") {
+				return fmt.Errorf("with -port 8800 the lite member listens on %q (%v)", out, err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		return syncs(ctx, g, hub, lite, "with -port 8800", timeout)
 	})

@@ -195,33 +195,48 @@ func ufwRules(ctx context.Context, r *Report, f *Fleet, archive string) {
 		if err != nil {
 			return err
 		}
-		nets, err := Run(ctx, d, `ip -o -f inet addr show scope global | awk '{print $4}'`, "")
+		// The home networks install.sh must name: the private IPv4
+		// routes this computer is on, and link-local and unique-local IPv6
+		// when ufw takes IPv6.
+		routes, err := Run(ctx, d, `ip -o -f inet route show scope link | awk '{print $1}'`, "")
 		if err != nil {
 			return err
 		}
-		var added []string
+		var nets []string
+		for _, n := range strings.Fields(routes) {
+			if strings.HasPrefix(n, "10.") || strings.HasPrefix(n, "192.168.") || privateB.MatchString(n) {
+				nets = append(nets, n)
+			}
+		}
+		if !noIPv6 {
+			nets = append(nets, "fe80::/10", "fc00::/7")
+		}
+		want := map[string]bool{}
+		for _, n := range nets {
+			want["8764/tcp from "+n+" # clipboardbridge"] = true
+			want["5353/udp from "+n+" # clipboardbridge mDNS"] = true
+		}
 		in := map[string]bool{}
 		for _, l := range before {
 			in[l] = true
 		}
+		got := map[string]bool{}
 		for _, l := range after {
-			if !in[l] {
-				added = append(added, l)
+			delete(in, l)
+			if strings.Contains(l, "# clipboardbridge") {
+				rule, ok := ufwRule(l)
+				if !ok || !want[rule] {
+					return fmt.Errorf("install.sh added a rule it does not list: %q (home networks here: %q)", l, nets)
+				}
+				got[rule] = true
 			}
 		}
-		if len(added) == 0 {
-			return fmt.Errorf("install.sh added no ufw rule: %q", after)
+		if len(in) > 0 {
+			return fmt.Errorf("install.sh changed the rules that were there before: %v", in)
 		}
-		for _, l := range added {
-			ok := strings.HasSuffix(l, "# clipboardbridge") || strings.HasSuffix(l, "# clipboardbridge mDNS")
-			ok = ok && (strings.HasPrefix(l, "8764/tcp ") || strings.HasPrefix(l, "5353/udp "))
-			if ok {
-				// From a home network: the container's own or another
-				// private range, never Anywhere.
-				ok = !strings.Contains(l, "Anywhere")
-			}
-			if !ok {
-				return fmt.Errorf("install.sh added a rule it does not list: %q (networks here: %s)", l, strings.Fields(nets))
+		for rule := range want {
+			if !got[rule] {
+				return fmt.Errorf("install.sh did not add %q; it added %q", rule, after)
 			}
 		}
 		return nil
@@ -239,6 +254,53 @@ func ufwRules(ctx context.Context, r *Report, f *Fleet, archive string) {
 		}
 		return nil
 	})
+	r.Do(p+"ufw-without-ipv6", func() error {
+		// ufw set to take no IPv6 rules, quoted as its own file may be:
+		// install.sh adds the IPv4 rules and does not fail.
+		if _, err := Run(ctx, d, `sed -i 's/^IPV6=.*/IPV6="no"/' /etc/default/ufw && ufw reload >/dev/null`, ""); err != nil {
+			return err
+		}
+		defer Run(ctx, d, `sed -i 's/^IPV6=.*/IPV6=yes/' /etc/default/ufw && ufw reload >/dev/null`, "")
+		if _, err := installArchive(ctx, d, archive, "--express --auto-update off"); err != nil {
+			return fmt.Errorf("with IPV6=\"no\": %w", err)
+		}
+		after, err := numbered()
+		if err != nil {
+			return err
+		}
+		n := 0
+		for _, l := range after {
+			if strings.Contains(l, "# clipboardbridge") {
+				if strings.Contains(l, "(v6)") || strings.Contains(l, "::") {
+					return fmt.Errorf("with IPV6=\"no\" install.sh added %q", l)
+				}
+				n++
+			}
+		}
+		if n == 0 {
+			return fmt.Errorf("with IPV6=\"no\" install.sh added no rule: %q", after)
+		}
+		_, err = RunFor(ctx, d, "sh /usr/local/share/clipboardbridge/uninstall.sh --purge", "", 2*time.Minute)
+		return err
+	})
+}
+
+// privateB matches the private IPv4 range 172.16.0.0/12.
+var privateB = regexp.MustCompile(`^172\.(1[6-9]|2[0-9]|3[01])\.`)
+
+// ufwRule is a line of ufw status as "PORT/PROTO from SOURCE # COMMENT",
+// the same for an IPv4 and an IPv6 rule.
+func ufwRule(l string) (string, bool) {
+	to, rest, ok := strings.Cut(l, " ALLOW ")
+	if !ok {
+		return "", false
+	}
+	to = strings.TrimSuffix(to, " (v6)")
+	src, comment, ok := strings.Cut(strings.TrimPrefix(rest, "IN "), " # ")
+	if !ok {
+		return "", false
+	}
+	return to + " from " + src + " # " + comment, true
 }
 
 // lastLines is the last n lines of s.

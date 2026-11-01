@@ -729,8 +729,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ### Fixed
 
 - install.sh no longer fails with ufw on a computer whose kernel has no IPv6
-  (`ipv6.disable=1`) or whose ufw has `IPV6=no`: the firewall rules then name the IPv4
-  home networks only.
+  (`ipv6.disable=1`) or whose ufw has `IPV6=no`: the firewall rules it lists, prints and
+  adds then name the IPv4 home networks only.
 - A relay on Windows told to listen on any free port no longer gives up when
   the ports the system hands out fall in a range Windows reserves for the other protocol; it
   takes turns picking the UDP port first and the TCP port first.
