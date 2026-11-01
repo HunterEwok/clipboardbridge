@@ -637,6 +637,10 @@ pub struct State {
     /// The records that do not count and why.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ignored: Vec<Ignored>,
+    /// The root's checkpoint that counts: a member may drop the records it
+    /// leaves out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<Hash>,
 }
 
 /// A record of the set that does not count, with why: one of the WHY_
@@ -739,29 +743,61 @@ pub fn evaluate(input: &Input) -> State {
 /// is held whole down to seq 1, which a member saves to notice a record
 /// set rolled back (see Evaluation::seqs).
 pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
-    let e = Evaluation::new(input);
-    let seqs = e.seqs(key_hash_of(input.group_ca));
-    let mut path = vec![key_hash_of(input.group_ca)];
-    let mut cuts = BTreeMap::new();
-    let mut earlier = Vec::new();
-    loop {
-        let mut ep = Epoch::new(&e, path.clone(), cuts.clone());
-        match ep.decide_claims(input.now_ms, input.first_seen, input.time_unknown) {
-            Some((next, cut)) => {
-                earlier.append(&mut ep.claims);
-                cuts.insert(*path.last().unwrap_or(&Hash::default()), cut);
-                path.push(next);
-            }
-            None => {
-                earlier.append(&mut ep.claims);
-                ep.claims = earlier;
-                let mut state = ep.state();
-                state.newer = newer(input, &state, &e.roots);
-                state.ignored = ep.ignored(&state.newer);
-                return (state, seqs);
-            }
+    let group_ca = key_hash_of(input.group_ca);
+    let full = Evaluation::new(input, BTreeSet::new());
+    let seqs = full.seqs(group_ca);
+    // The set a root's checkpoint prunes is evaluated as if the member had
+    // dropped what it leaves out; the checkpoint that counts is the newest
+    // that still counts there (docs/records-v2.md, "Checkpoints").
+    let mut best: Option<((usize, i64, Hash), State)> = None;
+    for c in full.checkpoints(group_ca) {
+        let (c, id) = (full.recs[c].b(), full.recs[c].s.id);
+        let records = prune(input.records, input.group, c);
+        let pruned = Input { records: &records, ..*input };
+        let e = Evaluation::new(&pruned, anchors_of(c));
+        let ep = e.run(&pruned);
+        let Some(i) = e.recs.iter().position(|r| r.s.id == id) else { continue };
+        if !ep.root_record(i) {
+            continue;
+        }
+        let key = (ep.on_path.get(&c.signer).copied().unwrap_or(0), c.seq, id);
+        let better = match &best {
+            None => true,
+            Some((b, _)) => key.0 > b.0 || key.0 == b.0 && (key.1 > b.1 || key.1 == b.1 && key.2 < b.2),
+        };
+        if better {
+            let mut state = ep.finish(&pruned);
+            state.checkpoint = Some(id);
+            best = Some((key, state));
         }
     }
+    let state = match best {
+        Some((_, state)) => state,
+        None => full.run(input).finish(input),
+    };
+    (state, seqs)
+}
+
+/// How many of a set's checkpoints the evaluation tries: those of the
+/// highest seq, then the smallest ID.
+pub const MAX_CHECKPOINTS: usize = 8;
+
+/// Leaves out of a set what checkpoint c drops: each record of this group
+/// whose body reads, at or below its signer's head, that is neither a head
+/// nor kept, whether or not its signature checks.
+fn prune(records: &[Record], group: &str, c: &Body) -> Vec<Record> {
+    let heads: BTreeMap<Hash, &Head> = c.heads.iter().map(|h| (h.key, h)).collect();
+    let anchors = anchors_of(c);
+    records
+        .iter()
+        .filter(|r| match Body::parse(&r.body) {
+            Ok(b) if b.group == group => {
+                !matches!(heads.get(&b.signer), Some(h) if b.seq <= h.seq && !anchors.contains(&r.id()))
+            }
+            _ => true,
+        })
+        .cloned()
+        .collect()
 }
 
 /// The IDs of the records of a later version for this group that a
@@ -818,6 +854,9 @@ impl Rec {
 }
 
 struct Evaluation {
+    /// The heads and keep of the checkpoint it prunes by, where a prev
+    /// chain may end.
+    anchors: BTreeSet<Hash>,
     /// Why records were left out before the epochs, by ID.
     failed: BTreeMap<Hash, &'static str>,
     roots: BTreeMap<Hash, Cert>,
@@ -827,7 +866,7 @@ struct Evaluation {
 }
 
 impl Evaluation {
-    fn new(input: &Input) -> Evaluation {
+    fn new(input: &Input, anchors: BTreeSet<Hash>) -> Evaluation {
         let mut roots = BTreeMap::new();
         roots.insert(key_hash_of(input.group_ca), input.group_ca.clone());
         // The new roots of claims are the only other roots a record may be
@@ -847,6 +886,7 @@ impl Evaluation {
             }
         }
         let mut e = Evaluation {
+            anchors,
             failed: BTreeMap::new(),
             roots,
             recs: Vec::new(),
@@ -917,16 +957,7 @@ impl Evaluation {
     /// not the highest seq held, so that a record missing from the middle
     /// of a chain lowers it.
     fn seqs(&self, group_ca: Hash) -> BTreeMap<Hash, i64> {
-        let mut roots = BTreeSet::from([group_ca]);
-        let mut grew = true;
-        while grew {
-            grew = false;
-            for r in &self.recs {
-                if r.b().kind == TYPE_CLAIM && r.issuer.is_some_and(|h| roots.contains(&h)) {
-                    grew |= roots.insert(claim_root(r.b()));
-                }
-            }
-        }
+        let roots = self.group_roots(group_ca);
         // A root's checkpoint lets a chain end at its anchors, so that a
         // set pruned by it is not taken for a rollback.
         let anchors: BTreeSet<Hash> = self
@@ -968,6 +999,63 @@ impl Evaluation {
         true
     }
 
+    /// Turns the evaluation into its last epoch, with the claims of the
+    /// roots before the current one.
+    fn run(&self, input: &Input) -> Epoch<'_> {
+        let mut path = vec![key_hash_of(input.group_ca)];
+        let mut cuts = BTreeMap::new();
+        let mut earlier = Vec::new();
+        loop {
+            let mut ep = Epoch::new(self, path.clone(), cuts.clone());
+            match ep.decide_claims(input.now_ms, input.first_seen, input.time_unknown) {
+                Some((next, cut)) => {
+                    earlier.append(&mut ep.claims);
+                    cuts.insert(*path.last().unwrap_or(&Hash::default()), cut);
+                    path.push(next);
+                }
+                None => {
+                    earlier.append(&mut ep.claims);
+                    ep.claims = earlier;
+                    return ep;
+                }
+            }
+        }
+    }
+
+    /// The roots of the group: the group CA, and the root of each claim an
+    /// admin under one of them signed.
+    fn group_roots(&self, group_ca: Hash) -> BTreeSet<Hash> {
+        let mut roots = BTreeSet::from([group_ca]);
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for r in &self.recs {
+                if r.b().kind == TYPE_CLAIM && r.issuer.is_some_and(|h| roots.contains(&h)) {
+                    grew |= roots.insert(claim_root(r.b()));
+                }
+            }
+        }
+        roots
+    }
+
+    /// The checkpoints the evaluation tries, by index: a root's own, of a
+    /// root of the group, at most MAX_CHECKPOINTS.
+    fn checkpoints(&self, group_ca: Hash) -> Vec<usize> {
+        let roots = self.group_roots(group_ca);
+        let mut cs: Vec<usize> = (0..self.recs.len())
+            .filter(|&i| {
+                let r = &self.recs[i];
+                !r.admin() && r.b().kind == TYPE_CHECKPOINT && roots.contains(&r.b().signer)
+            })
+            .collect();
+        cs.sort_by(|&a, &b| {
+            let (ra, rb) = (&self.recs[a], &self.recs[b]);
+            rb.b().seq.cmp(&ra.b().seq).then(ra.s.id.cmp(&rb.s.id))
+        });
+        cs.truncate(MAX_CHECKPOINTS);
+        cs
+    }
+
     /// Finds the root that issued an admin CA.
     fn issuer_of(&self, c: &Cert) -> Option<Hash> {
         if !c.is_ca || c.path_len != Some(0) || !c.cert_sign || !c.p256 {
@@ -992,11 +1080,6 @@ struct Epoch<'a> {
     on_path: BTreeMap<Hash, usize>,
     cuts: BTreeMap<Hash, i64>,
     cur: Hash,
-    /// The checkpoint that counts, its heads by signer, and the IDs of its
-    /// heads and keep, where a prev chain may end.
-    cp: Option<usize>,
-    heads: BTreeMap<Hash, Head>,
-    anchors: BTreeSet<Hash>,
     voided: BTreeSet<Hash>,
     counted: Vec<bool>,
     forked: BTreeMap<Hash, i64>,
@@ -1023,9 +1106,6 @@ impl<'a> Epoch<'a> {
             on_path,
             cuts,
             cur,
-            cp: None,
-            heads: BTreeMap::new(),
-            anchors: BTreeSet::new(),
             voided: BTreeSet::new(),
             counted: vec![false; n],
             forked: BTreeMap::new(),
@@ -1039,7 +1119,6 @@ impl<'a> Epoch<'a> {
             stop_full: false,
             pending: None,
         };
-        ep.checkpoint();
         ep.voided = ep.voids();
         for (signer, rs) in &e.by_sig {
             ep.chain(*signer, rs);
@@ -1080,51 +1159,12 @@ impl<'a> Epoch<'a> {
         let mut v = BTreeSet::new();
         for &i in rs {
             let r = self.r(i);
-            if r.admin() || r.b().kind != TYPE_RESOLVE || self.dropped(i) || !self.whole(i, &by_id, &self.anchors) {
+            if r.admin() || r.b().kind != TYPE_RESOLVE || !self.whole(i, &by_id, &self.e.anchors) {
                 continue;
             }
             v.extend(r.b().records.iter().copied());
         }
         v
-    }
-
-    /// Finds the checkpoint that counts in this epoch: of a root on the
-    /// path's own records of type checkpoint, within that root's cut and
-    /// with a whole chain down to seq 1 or to one of its own anchors, the
-    /// newest (a later root on the path, then a higher seq).
-    fn checkpoint(&mut self) {
-        let mut best: Option<usize> = None;
-        for signer in self.on_path.keys() {
-            let rs = self.of(signer);
-            let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.r(i).s.id, i)).collect();
-            for &i in rs {
-                let b = self.r(i).b();
-                if self.r(i).admin() || b.kind != TYPE_CHECKPOINT {
-                    continue;
-                }
-                if matches!(self.cuts.get(signer), Some(cut) if b.seq > *cut) {
-                    continue;
-                }
-                if !self.whole(i, &by_id, &anchors_of(b)) || best.is_some_and(|c| !self.newer(i, c)) {
-                    continue;
-                }
-                best = Some(i);
-            }
-        }
-        self.cp = best;
-        if let Some(c) = best {
-            let b = self.r(c).b();
-            self.anchors = anchors_of(b);
-            self.heads = b.heads.iter().map(|h| (h.key, *h)).collect();
-        }
-    }
-
-    /// Reports whether the checkpoint that counts leaves record i out: a
-    /// record at or below its signer's head that is neither the head nor
-    /// kept.
-    fn dropped(&self, i: usize) -> bool {
-        let r = self.r(i);
-        matches!(self.heads.get(&r.b().signer), Some(h) if r.b().seq <= h.seq && !self.anchors.contains(&r.s.id))
     }
 
     /// Reports whether i's prev chain down to seq 1, or to a record whose ID
@@ -1135,10 +1175,7 @@ impl<'a> Epoch<'a> {
 
     /// Finds which of one signer's records count: whole chains, not on a
     /// branch a resolve voided, below the lowest seq with two records.
-    fn chain(&mut self, signer: Hash, all: &[usize]) {
-        // What the checkpoint leaves out is as if it were not in the set.
-        let rs: Vec<usize> = all.iter().copied().filter(|&i| !self.dropped(i)).collect();
-        let rs = rs.as_slice();
+    fn chain(&mut self, signer: Hash, rs: &[usize]) {
         let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.r(i).s.id, i)).collect();
         let mut by_seq: BTreeMap<i64, usize> = BTreeMap::new();
         for &i in rs {
@@ -1149,14 +1186,14 @@ impl<'a> Epoch<'a> {
             if self.voided.contains(&r.s.id) && by_seq[&r.b().seq] > 1 {
                 return true;
             }
-            if r.b().seq == 1 || self.anchors.contains(&r.s.id) {
+            if r.b().seq == 1 || self.e.anchors.contains(&r.s.id) {
                 return false;
             }
             i = by_id[r.b().prev.as_ref().unwrap_or(&Hash::default())];
         };
         let mut live: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
         for &i in rs {
-            if self.whole(i, &by_id, &self.anchors) && !dead(i) {
+            if self.whole(i, &by_id, &self.e.anchors) && !dead(i) {
                 live.entry(self.r(i).b().seq).or_default().push(i);
             }
         }
@@ -1430,9 +1467,9 @@ impl<'a> Epoch<'a> {
     /// Why record i does not count in this epoch; None when it counts.
     fn why_not(&self, i: usize) -> Option<&'static str> {
         let r = self.r(i);
-        Some(if self.counts(i) || self.dropped(i) {
-            // A dropped record is left out as if the member had already
-            // dropped it, so that the state is the same with it and without.
+        let effective = |id: Hash| self.claims.iter().any(|c| c.record == id && c.state == "effective");
+        Some(if self.counts(i) || r.b().kind == TYPE_CLAIM && effective(r.s.id) {
+            // A claim that took effect counted under the root before.
             return None;
         } else if !self.counted[i] {
             WHY_HISTORY
@@ -1445,6 +1482,14 @@ impl<'a> Epoch<'a> {
         } else {
             WHY_POWER
         })
+    }
+
+    /// The state, with the records of a later version and those left out.
+    fn finish(&self, input: &Input) -> State {
+        let mut state = self.state();
+        state.newer = newer(input, &state, &self.e.roots);
+        state.ignored = self.ignored(&state.newer);
+        state
     }
 
     /// Reports whether record i counts: a root's record in this epoch, or
@@ -1469,12 +1514,8 @@ impl<'a> Epoch<'a> {
         }
         let forked: Vec<(Hash, i64)> = self.forked.iter().map(|(k, v)| (*k, *v)).collect();
         for (signer, seq) in forked {
-            let records = self
-                .of(&signer)
-                .iter()
-                .filter(|&&i| self.r(i).b().seq == seq && !self.dropped(i))
-                .map(|&i| self.r(i).s.id)
-                .collect();
+            let records =
+                self.of(&signer).iter().filter(|&&i| self.r(i).b().seq == seq).map(|&i| self.r(i).s.id).collect();
             self.conflicts.push(Conflict { kind: "two_histories", records, signers: vec![signer] });
             if self.on_path.contains_key(&signer) {
                 self.stop_full = true;
@@ -1549,7 +1590,6 @@ impl<'a> Epoch<'a> {
             if c.b().kind != TYPE_CLAIM
                 || !c.admin()
                 || c.issuer != Some(self.cur)
-                || self.dropped(i)
                 || !self.counted[i] && !self.voided.contains(&c.s.id)
             {
                 continue;

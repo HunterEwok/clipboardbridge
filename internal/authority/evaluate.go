@@ -61,7 +61,41 @@ func Evaluate(input Input) (*State, error) {
 	if input.GroupCA == nil {
 		return nil, errors.New("authority: no group CA")
 	}
-	e := newEvaluation(input)
+	// The set a root's checkpoint prunes is evaluated as if the member had
+	// dropped what it leaves out; the checkpoint that counts is the newest
+	// that still counts there (docs/records-v2.md, "Checkpoints").
+	full := newEvaluation(input, nil)
+	var best *State
+	var bestKey [2]int64
+	var bestID Hash
+	for _, c := range full.checkpoints(KeyHashOf(input.GroupCA)) {
+		in := input
+		in.Records = prune(input.Records, input.Group, c)
+		e := newEvaluation(in, anchorsOf(&c.Body))
+		ep := e.run(in)
+		r := e.byID(c.ID)
+		if r == nil || !ep.rootRecord(r) {
+			continue
+		}
+		key := [2]int64{int64(ep.onPath[c.Body.Signer]), c.Body.Seq}
+		if best == nil || key[0] > bestKey[0] || key[0] == bestKey[0] && (key[1] > bestKey[1] || key[1] == bestKey[1] && c.ID.String() < bestID.String()) {
+			best, bestKey, bestID = ep.finish(in), key, c.ID
+			best.Checkpoint = &c.ID
+		}
+	}
+	if best != nil {
+		return best, nil
+	}
+	return full.run(input).finish(input), nil
+}
+
+// MaxCheckpoints is how many of a set's checkpoints the evaluation tries:
+// those of the highest seq, then the smallest ID.
+const MaxCheckpoints = 8
+
+// run turns the evaluation into its last epoch, with the claims of the
+// roots before the current one.
+func (e *evaluation) run(input Input) *epoch {
 	path, cuts := []Hash{KeyHashOf(input.GroupCA)}, map[Hash]int64{}
 	var ep *epoch
 	var earlier []Claim // the claims of the roots before the current one
@@ -76,10 +110,86 @@ func Evaluate(input Input) (*State, error) {
 		path = append(path, *next)
 	}
 	ep.claims = append(earlier, ep.claims...)
+	return ep
+}
+
+// finish builds the state of the last epoch.
+func (ep *epoch) finish(input Input) *State {
 	s := ep.state()
-	s.Newer = newer(input, s, e.roots)
+	s.Newer = newer(input, s, ep.e.roots)
 	s.Ignored = ep.ignored(s.Newer)
-	return s, nil
+	return s
+}
+
+// checkpoints returns the checkpoints the evaluation tries: a root's own,
+// of a root of the group (the group CA, or the root of a claim that an
+// admin under such a root signed), at most MaxCheckpoints.
+func (e *evaluation) checkpoints(groupCA Hash) []*rec {
+	roots := map[Hash]bool{groupCA: true}
+	for grew := true; grew; {
+		grew = false
+		for _, rs := range e.bySig {
+			for _, r := range rs {
+				if r.Body.Type != TypeClaim || r.AdminCA == nil || !roots[r.issuer] {
+					continue
+				}
+				if c, err := x509.ParseCertificate(r.Body.Root); err == nil && !roots[KeyHashOf(c)] {
+					roots[KeyHashOf(c)], grew = true, true
+				}
+			}
+		}
+	}
+	var cs []*rec
+	for signer := range roots {
+		for _, r := range e.bySig[signer] {
+			if r.AdminCA == nil && r.Body.Type == TypeCheckpoint {
+				cs = append(cs, r)
+			}
+		}
+	}
+	sort.Slice(cs, func(i, j int) bool {
+		if cs[i].Body.Seq != cs[j].Body.Seq {
+			return cs[i].Body.Seq > cs[j].Body.Seq
+		}
+		return cs[i].ID.String() < cs[j].ID.String()
+	})
+	if len(cs) > MaxCheckpoints {
+		cs = cs[:MaxCheckpoints]
+	}
+	return cs
+}
+
+// prune leaves out of a set what checkpoint c drops: each record of this
+// group whose body reads, at or below its signer's head, that is neither a
+// head nor kept, whether or not its signature checks.
+func prune(recs []Record, group string, c *rec) []Record {
+	heads := map[Hash]Head{}
+	for _, h := range c.Body.Heads {
+		heads[h.Key] = h
+	}
+	anchors := anchorsOf(&c.Body)
+	var out []Record
+	for _, r := range recs {
+		if b, err := ParseBody(r.Body); err == nil && b.Group == group {
+			if h, ok := heads[b.Signer]; ok && b.Seq <= h.Seq && !anchors[r.ID()] {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// byID finds a verified record.
+func (e *evaluation) byID(id Hash) *rec {
+	for _, rs := range e.bySig {
+		for _, r := range rs {
+			if r.ID == id {
+				return r
+			}
+		}
+	}
+	return nil
 }
 
 // newer returns the IDs of the records of a later version for this group
@@ -138,14 +248,15 @@ func newer(input Input, s *State, roots map[Hash]*x509.Certificate) []Hash {
 
 // evaluation holds the verified records of a set.
 type evaluation struct {
+	anchors map[Hash]bool              // the heads and keep of the checkpoint it prunes by, where a prev chain may end
 	failed  map[Hash]string            // why records left out before the epochs were, by ID
 	roots   map[Hash]*x509.Certificate // every root the group may have
 	bySig   map[Hash][]*rec            // records by signer
 	devices map[string][]*rec          // device records by device ID
 }
 
-func newEvaluation(input Input) *evaluation {
-	e := &evaluation{failed: map[Hash]string{}, roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, devices: map[string][]*rec{}}
+func newEvaluation(input Input, anchors map[Hash]bool) *evaluation {
+	e := &evaluation{anchors: anchors, failed: map[Hash]string{}, roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, devices: map[string][]*rec{}}
 	// The new roots of claims are the only other roots a record may be
 	// signed under; a claim itself is signed by an admin CA.
 	for _, r := range input.Records {
@@ -251,9 +362,6 @@ type epoch struct {
 	cuts   map[Hash]int64
 	cur    Hash
 
-	cp      *rec          // the checkpoint that counts, nil without one
-	heads   map[Hash]Head // its heads by signer
-	anchors map[Hash]bool // the IDs of its heads and keep, where a prev chain may end
 	voided  map[Hash]bool
 	counted map[Hash]bool // records whose chain is whole, before any fork, not voided
 	forked  map[Hash]int64
@@ -272,7 +380,6 @@ func (e *evaluation) epoch(path []Hash, cuts map[Hash]int64) *epoch {
 	for i, h := range path {
 		ep.onPath[h] = i
 	}
-	ep.checkpoint()
 	ep.voided = ep.voids()
 	ep.counted = map[Hash]bool{}
 	for signer, rs := range e.bySig {
@@ -299,39 +406,6 @@ func (ep *epoch) rootRecord(r *rec) bool {
 	return true
 }
 
-// checkpoint finds the checkpoint that counts in this epoch: of a root on
-// the path's own records of type checkpoint, within that root's cut and
-// with a whole chain down to seq 1 or to one of its own anchors, the
-// newest (a later root on the path, then a higher seq).
-func (ep *epoch) checkpoint() {
-	ep.anchors = map[Hash]bool{}
-	for signer := range ep.onPath {
-		byID := map[Hash]*rec{}
-		for _, r := range ep.e.bySig[signer] {
-			byID[r.ID] = r
-		}
-		for _, r := range ep.e.bySig[signer] {
-			if r.AdminCA != nil || r.Body.Type != TypeCheckpoint {
-				continue
-			}
-			if cut, ok := ep.cuts[signer]; ok && r.Body.Seq > cut {
-				continue
-			}
-			if !wholeTo(r, byID, anchorsOf(&r.Body)) || ep.cp != nil && !ep.newer(r, ep.cp) {
-				continue
-			}
-			ep.cp = r
-		}
-	}
-	ep.heads = map[Hash]Head{}
-	if ep.cp != nil {
-		ep.anchors = anchorsOf(&ep.cp.Body)
-		for _, h := range ep.cp.Body.Heads {
-			ep.heads[h.Key] = h
-		}
-	}
-}
-
 // anchorsOf returns the IDs a checkpoint names: its heads and keep.
 func anchorsOf(b *Body) map[Hash]bool {
 	a := map[Hash]bool{}
@@ -344,13 +418,6 @@ func anchorsOf(b *Body) map[Hash]bool {
 	return a
 }
 
-// dropped reports whether the checkpoint that counts leaves r out: a
-// record at or below its signer's head that is neither the head nor kept.
-func (ep *epoch) dropped(r *rec) bool {
-	h, ok := ep.heads[r.Body.Signer]
-	return ok && r.Body.Seq <= h.Seq && !ep.anchors[r.ID]
-}
-
 // voids returns the records the current root's resolve records name. A
 // resolve counts here when its own chain is whole, whatever forks it has,
 // so the root can end two histories of its own.
@@ -361,7 +428,7 @@ func (ep *epoch) voids() map[Hash]bool {
 		byID[r.ID] = r
 	}
 	for _, r := range ep.e.bySig[ep.cur] {
-		if r.AdminCA != nil || r.Body.Type != TypeResolve || ep.dropped(r) || !wholeTo(r, byID, ep.anchors) {
+		if r.AdminCA != nil || r.Body.Type != TypeResolve || !wholeTo(r, byID, ep.e.anchors) {
 			continue
 		}
 		for _, id := range r.Body.Records {
@@ -386,14 +453,7 @@ func wholeTo(r *rec, byID map[Hash]*rec, anchors map[Hash]bool) bool {
 
 // chain finds which of one signer's records count: whole chains, not on a
 // branch that a resolve voided, below the lowest seq with two records.
-func (ep *epoch) chain(signer Hash, all []*rec) {
-	// What the checkpoint leaves out is as if it were not in the set.
-	var rs []*rec
-	for _, r := range all {
-		if !ep.dropped(r) {
-			rs = append(rs, r)
-		}
-	}
+func (ep *epoch) chain(signer Hash, rs []*rec) {
 	byID, bySeq := map[Hash]*rec{}, map[int64][]*rec{}
 	for _, r := range rs {
 		byID[r.ID] = r
@@ -406,7 +466,7 @@ func (ep *epoch) chain(signer Hash, all []*rec) {
 			if ep.voided[r.ID] && len(bySeq[r.Body.Seq]) > 1 {
 				return true
 			}
-			if r.Body.Seq == 1 || ep.anchors[r.ID] {
+			if r.Body.Seq == 1 || ep.e.anchors[r.ID] {
 				return false
 			}
 			r = byID[*r.Body.Prev]
@@ -414,7 +474,7 @@ func (ep *epoch) chain(signer Hash, all []*rec) {
 	}
 	live := map[int64][]*rec{}
 	for _, r := range rs {
-		if wholeTo(r, byID, ep.anchors) && !dead(r) {
+		if wholeTo(r, byID, ep.e.anchors) && !dead(r) {
 			live[r.Body.Seq] = append(live[r.Body.Seq], r)
 		}
 	}
@@ -756,7 +816,7 @@ func (ep *epoch) collect() {
 	for signer := range ep.forked {
 		c := Conflict{Kind: "two_histories", Signers: []Hash{signer}}
 		for _, r := range ep.e.bySig[signer] {
-			if r.Body.Seq == ep.forked[signer] && !ep.dropped(r) {
+			if r.Body.Seq == ep.forked[signer] {
 				c.Records = append(c.Records, r.ID)
 			}
 		}
@@ -794,7 +854,7 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 	var live []*rec
 	for _, rs := range ep.e.bySig {
 		for _, c := range rs {
-			if c.Body.Type != TypeClaim || c.AdminCA == nil || c.issuer != ep.cur || ep.dropped(c) || !ep.counted[c.ID] && !ep.voided[c.ID] {
+			if c.Body.Type != TypeClaim || c.AdminCA == nil || c.issuer != ep.cur || !ep.counted[c.ID] && !ep.voided[c.ID] {
 				continue
 			}
 			root, _ := x509.ParseCertificate(c.Body.Root)
@@ -988,6 +1048,9 @@ type State struct {
 	// Ignored lists the records that do not count and why, so that the
 	// apps and the log can say what happened to a record.
 	Ignored []Ignored `json:"ignored,omitempty"`
+	// Checkpoint is the root's checkpoint that counts: a member may drop
+	// the records it leaves out (docs/records-v2.md, "Checkpoints").
+	Checkpoint *Hash `json:"checkpoint,omitempty"`
 }
 
 // Device is one device of the state.
@@ -1143,9 +1206,8 @@ func (ep *epoch) whyNot(r *rec) string {
 	switch {
 	case ep.counts(r):
 		return ""
-	case ep.dropped(r):
-		// Left out as if the member had already dropped it, so that the
-		// state is the same with it and without it.
+	case r.Body.Type == TypeClaim && ep.tookEffect(r.ID):
+		// A claim that took effect counted under the root before.
 		return ""
 	case !ep.counted[r.ID]:
 		return WhyHistory
@@ -1160,6 +1222,16 @@ func (ep *epoch) whyNot(r *rec) string {
 		return r.why
 	}
 	return WhyPower
+}
+
+// tookEffect reports whether claim id took effect on the path.
+func (ep *epoch) tookEffect(id Hash) bool {
+	for _, c := range ep.claims {
+		if c.Record == id && c.State == "effective" {
+			return true
+		}
+	}
+	return false
 }
 
 func sortHashes(hs []Hash) {

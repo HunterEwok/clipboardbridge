@@ -240,15 +240,24 @@ heads that still count: the newest `device` record of each device, the `revoke`,
 its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
 by themselves when the records pass three quarters of either limit.
 
-The checkpoint that counts is, of the records of type `checkpoint` that a root on the path
-signed within its cut and whose chain is whole down to seq 1 or to one of the records it names,
-the newest: a later root on the path, then a higher `seq`. With it, a record of a signer in
-`heads` with a `seq` at or below that head's, other than the head and the records in `keep`,
-is left out as if it were not in the set, whether the member still holds it or not; it is
-not listed in the state's `ignored`, so the state is the same with it and without it. A prev
-chain is whole when it reaches seq 1 or a record that the checkpoint names, so the records
-after the heads and the records in `keep` count without the ones dropped below them, and two
-histories below a head that the checkpoint does not keep end with it.
+A checkpoint leaves out of a set each record of the group whose body reads, of a signer in
+`heads`, with a `seq` at or below that head's, other than the heads and the records in `keep`,
+whether its signature checks or not. In the set it prunes, a prev chain is whole when it
+reaches seq 1 or a record the checkpoint names, so the records after the heads and the records
+in `keep` count without the ones dropped below them.
+
+The state is evaluated on the set as the checkpoint that counts prunes it, so it is the same
+whether a member still holds what the checkpoint leaves out or not. To find that checkpoint,
+the evaluation takes the root's own records of type `checkpoint` of a root of the group (the
+group CA, or the root of a claim that an admin under such a root signed), at most 8 of them:
+the highest `seq` first, then the smallest ID. It evaluates the set each one prunes, and the
+checkpoint counts there when it is a root's record that counts in that evaluation: its root
+on the path, within its cut, its chain whole and not voided. Of those that count, the newest
+counts: a later root on the path, then a higher `seq`, then the smaller ID. A checkpoint that
+does not keep what the path to its own root needs (a claim, the admin record that made the
+claimant an admin) does not count and drops nothing, nor does one a `resolve` voided, nor two
+of one `seq` (two histories of the root). Without one, the set is evaluated whole. The state
+names the checkpoint that counts in `checkpoint`.
 
 A member may delete the records the checkpoint that counts leaves out. A checkpoint that
 leaves out a record that mattered changes the state for every member alike; only a root signs
@@ -411,7 +420,8 @@ and returns the state as one canonical JSON object:
 | `no_secrets_to` | array of strings | sorted device IDs that get no secrets |
 | `nothing_to` | array of strings | sorted device IDs that get nothing |
 | `newer` | array of strings | sorted IDs of the records of a later version the member keeps, at most 16 |
-| `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not |
+| `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
+| `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
 
 The reasons in `ignored`, in the order they are decided:
 

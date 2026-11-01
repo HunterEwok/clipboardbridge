@@ -95,6 +95,7 @@ var scenarios = []struct {
 	{"claim disputed", TestClaimDisputed},
 	{"claimed root signs early", TestClaimedRootSignsEarly},
 	{"checkpoint", TestCheckpoint},
+	{"checkpoint edges", TestCheckpointEdges},
 	{"claim after removal", TestClaimAfterRemoval},
 	{"claim while another waits", TestPendingClaimRace},
 	{"removed admin's claim", TestRemovedAdminClaimVoid},

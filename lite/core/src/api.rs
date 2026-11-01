@@ -618,17 +618,16 @@ mod tests {
                 .iter()
                 .map(|r| serde_json::from_slice(&dec(&r["body"])).unwrap())
                 .collect();
-            // A root's own checkpoint (no chain); an admin's does not count.
+            // The checkpoint that counts, as the state names it.
+            let state: Value = serde_json::from_str(case["state"].as_str().unwrap()).unwrap();
+            let Some(cp) = state["checkpoint"].as_str() else { continue };
             let recs = case["records"].as_array().unwrap();
-            let Some(cp) = bodies
+            let cp = bodies
                 .iter()
                 .zip(recs)
-                .filter(|(b, r)| b["type"] == "checkpoint" && r["chain"].as_array().is_none_or(|c| c.is_empty()))
+                .find(|(_, r)| base64::engine::general_purpose::STANDARD.encode(Sha256::digest(dec(&r["body"]))) == cp)
                 .map(|(b, _)| b)
-                .max_by_key(|b| b["seq"].as_i64())
-            else {
-                continue;
-            };
+                .unwrap();
             let heads = cp["heads"].as_array().unwrap();
             let mut anchors: Vec<Value> = heads.iter().map(|h| h["id"].clone()).collect();
             anchors.extend(cp["keep"].as_array().into_iter().flatten().cloned());

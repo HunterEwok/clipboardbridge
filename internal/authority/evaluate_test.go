@@ -4,6 +4,7 @@
 package authority_test
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -678,15 +679,83 @@ func (w *world) pruned(cp authority.Record) []authority.Record {
 	var out []authority.Record
 	for _, r := range w.recs {
 		rb, err := authority.ParseBody(r.Body)
-		if err != nil {
-			w.t.Fatal(err)
-		}
-		if h, ok := heads[rb.Signer]; ok && rb.Seq <= h && !named[r.ID()] {
-			continue
+		if err == nil && rb.Group == tag {
+			if h, ok := heads[rb.Signer]; ok && rb.Seq <= h && !named[r.ID()] {
+				continue
+			}
 		}
 		out = append(out, r)
 	}
 	return out
+}
+
+// TestCheckpointEdges: a checkpoint after a takeover, one that keeps too
+// little, one the root voided, two of one seq, and a record that does not
+// verify below a head. The set a counting checkpoint prunes always gives
+// the state of the full set.
+func TestCheckpointEdges(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("B", "phone", phonePowers)
+	// The old root's head is past B's grant.
+	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(authority.DefaultDelay))}, nil)
+	c := w.claim("B", "R2", nil)
+	first := map[authority.Hash]int64{c.ID(): 0}
+	w.now = authority.DefaultDelay
+	w.device("R2", "D9", "full", nil, nil, false)
+	w.device("R2", "D8", "full", nil, nil, false) // the new root's head
+	if s := w.evalAll(first); len(s.Roots) != 2 {
+		t.Fatalf("the claim should take effect: %s", mustEncode(t, s))
+	}
+	keep := []authority.Record{w.byName["device rootphone by root"], w.byName["device B by root"], c}
+
+	// A checkpoint of the new root that does not keep B's grant loses the
+	// path to itself, so it does not count and drops nothing.
+	thin := w.fork()
+	thin.checkpoint("R2")
+	if s := thin.evalAll(first); findDevice(s, w.ids["D9"]) == nil || len(s.Roots) != 2 || s.Checkpoint != nil {
+		t.Fatalf("a checkpoint that does not count dropped records: %s", mustEncode(t, s))
+	}
+
+	// One that keeps the claim and the grant counts: D9, below the head
+	// and not kept, goes, with it and without it.
+	cp := w.checkpoint("R2", keep...)
+	full := w.evalAll(first)
+	if findDevice(full, w.ids["D9"]) != nil || len(full.Roots) != 2 || full.Checkpoint == nil || *full.Checkpoint != cp.ID() {
+		t.Fatalf("the new root's checkpoint should count: %s", mustEncode(t, full))
+	}
+	if got, want := mustEncode(t, w.eval(w.pruned(cp), first)), mustEncode(t, full); got != want {
+		t.Fatalf("the pruned set gives another state:\n got %s\nwant %s", got, want)
+	}
+
+	// A record of the new root below its head that does not verify is
+	// dropped too, not listed as ignored.
+	junk := authority.Record{Body: bytes.Replace(w.byName["device D9 by R2"].Body, []byte(`"time_ms":1`), []byte(`"time_ms":2`), 1), Sig: []byte{1}}
+	w.recs = append(w.recs, junk)
+	if got, want := mustEncode(t, w.evalAll(first)), mustEncode(t, full); got != want {
+		t.Fatalf("a record that does not verify below a head changed the state:\n got %s\nwant %s", got, want)
+	}
+
+	// The root voids its own checkpoint: it no longer counts, and what it
+	// dropped is back.
+	v := newWorld(t)
+	v.device("root", "D9", "full", nil, nil, false)
+	vcp := v.checkpoint("root", v.byName["device rootphone by root"])
+	v.sign("void", "root", authority.Body{Type: authority.TypeResolve, Records: []authority.Hash{vcp.ID()}}, nil)
+	if s := v.evalAll(nil); findDevice(s, v.ids["D9"]) == nil || s.Checkpoint != nil {
+		t.Fatalf("a voided checkpoint dropped records: %s", mustEncode(t, s))
+	}
+
+	// Two checkpoints of one seq are two histories of the root: neither
+	// counts, in any order of the set.
+	f := newWorld(t)
+	f.device("root", "D9", "full", nil, nil, false)
+	g := f.fork()
+	f.checkpoint("root", f.byName["device rootphone by root"])
+	g.checkpoint("root", g.byName["device rootphone by root"], g.byName["device D9 by root"])
+	f.recs = append(f.recs, g.recs[len(g.recs)-1])
+	if s := f.evalAll(nil); s.Stop != "full" || findDevice(s, f.ids["D9"]) == nil || s.Checkpoint != nil {
+		t.Fatalf("two checkpoints of one seq should stop the group and drop nothing: %s", mustEncode(t, s))
+	}
 }
 
 // TestCheckpoint: a root's checkpoint lets members drop the records it
@@ -723,15 +792,21 @@ func TestCheckpoint(t *testing.T) {
 	}
 	keep = append(keep, d1, settings, c, rm)
 	cp := w.checkpoint("root", keep...)
-	if got := mustEncode(t, w.evalAll(first)); got != before {
+	s = w.evalAll(first)
+	if s.Checkpoint == nil || *s.Checkpoint != cp.ID() {
+		t.Fatalf("the state should name the checkpoint that counts: %s", mustEncode(t, s))
+	}
+	withCP := mustEncode(t, s)
+	s.Checkpoint = nil
+	if got := mustEncode(t, s); got != before {
 		t.Fatalf("the checkpoint changed the state:\n got %s\nwant %s", got, before)
 	}
 	pruned := w.pruned(cp)
 	if len(pruned) != len(w.recs)-2 {
 		t.Fatalf("the checkpoint should let two records go, %d of %d are left", len(pruned), len(w.recs))
 	}
-	if got := mustEncode(t, w.eval(pruned, first)); got != before {
-		t.Fatalf("the pruned set gives another state:\n got %s\nwant %s", got, before)
+	if got := mustEncode(t, w.eval(pruned, first)); got != withCP {
+		t.Fatalf("the pruned set gives another state:\n got %s\nwant %s", got, withCP)
 	}
 
 	// A record after the checkpoint chains to it: the root cancels the
