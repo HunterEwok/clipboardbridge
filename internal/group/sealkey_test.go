@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestSealSecret(t *testing.T) {
 	if err != nil || !bytes.Equal(a, b) {
 		t.Fatalf("loaded again: %v, same %v", err, bytes.Equal(a, b))
 	}
-	if fi, err := os.Stat(filepath.Join(dir, SealKeyFileName)); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(filepath.Join(dir, SealKeyFileName)); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("the file: %v %v", fi, err)
 	}
 	for name, body := range map[string]string{
