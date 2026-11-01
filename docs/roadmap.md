@@ -463,12 +463,10 @@ and forgetting either entry on the TV forgets both, while the computer keeps its
 then fails every connection ("PIN or Key Missing"), so the keyboard drops a bond its host
 lost and becomes visible again. It typed in the TV's own layout: with Russian on the TV and
 `-layout us` on the computer, "clipboardbridge ble 123" came out in Cyrillic, the
-Russian letters on those keys, since a keyboard sends keys, not letters. What arrives must be the text the
-user sent, so before it types, the keyboard puts the device in the layout the text needs,
-with the device's shortcut (Control-Space on Apple's). A keyboard cannot read which layout
-the device has, so it keeps the one it last set, the user tells it once after pairing (in
-the app or `cbb keyboard`), and a button switches the device's layout by hand when someone
-changed it there. The Apple TV accepts a new
+Russian letters on those keys, since a keyboard sends keys, not letters. For now the keyboard types as it is,
+and the apps get a "switch the layout" action for the keyboard's device, with the quick
+actions (restart and the others): the keyboard presses the device's shortcut
+(Control-Space on Apple's). The Apple TV accepts a new
 remote only while Settings, AirPlay and HomeKit, Allow Access is "Everyone on the Same
 Network" (or "Everyone"); with "Only People Sharing This Home" it refuses every pairing, so
 the app's steps and the user guide say to switch it before pairing. A keyboard types with
