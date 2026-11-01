@@ -930,6 +930,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The iPhone app shows the group's notifications (a device joined, was removed, and the
+  others) while it is open too: iOS dropped them there.
 - `cbb keyboard` on a computer in no group said it cannot be a Bluetooth keyboard, though
   the keyboard ran: the status left the keyboard out without a group. `cbb keyboard on
   -layout us` works in the usage's order too, with the flags after the verb.
