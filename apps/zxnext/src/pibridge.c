@@ -59,12 +59,48 @@ static uint8_t esp_expect(const char *want, uint16_t seconds)
         if (!line[0]) continue;
         if (debug) printf("  esp: %s\n", line);
         if (strncmp(line, want, n) == 0) return 0;
+        if (strcmp(line, "ALREADY CONNECTED") == 0) return 0; // CIPSTART, still open
         if (strcmp(line, "ERROR") == 0 || strcmp(line, "FAIL") == 0 || strncmp(line, "busy", 4) == 0) return 1;
+    }
+}
+
+// The ROM's frame counter, 50 a second while interrupts run.
+#define FRAMES (*(volatile uint8_t *)23672)
+
+// Waits ticks frames; a cap on the rounds ends it if interrupts are off.
+static void wait_frames(uint8_t ticks)
+{
+    uint8_t last = FRAMES;
+    uint32_t rounds = 4000000UL;
+    while (ticks && --rounds) {
+        if (FRAMES != last) {
+            last = FRAMES;
+            ticks--;
+        }
+    }
+}
+
+// Reads and drops what the ESP still sends (the late answer to an earlier
+// command) until it is quiet for ticks frames.
+static void esp_quiet(uint8_t ticks)
+{
+    uint8_t last = FRAMES, left = ticks;
+    uint32_t rounds = 4000000UL;
+    while (left && --rounds) {
+        if (link_ready()) {
+            uint8_t c = link_get();
+            if (debug && c >= 32 && c < 127) putchar(c);
+            left = ticks;
+        } else if (FRAMES != last) {
+            last = FRAMES;
+            left--;
+        }
     }
 }
 
 static uint8_t esp_command(const char *cmd, const char *want, uint16_t seconds)
 {
+    esp_quiet(10);
     link_send_str(cmd);
     link_send_str("\r\n");
     return esp_expect(want, seconds);
@@ -96,9 +132,9 @@ static uint8_t pump(uint8_t from, uint8_t to, uint32_t *count)
 static void esp_hang_up(void)
 {
     link_use(LINK_ESP);
-    z80_delay_ms(1100); // the ESP takes +++ only after a second of quiet
+    wait_frames(60); // the ESP takes +++ only after a second of quiet
     link_send_str("+++");
-    z80_delay_ms(1100);
+    wait_frames(60);
     esp_command("AT+CIPMODE=0", "OK", 2);
     esp_command("AT+CIPCLOSE", "OK", 2);
 }
@@ -141,9 +177,11 @@ static int run(int argc, char **argv)
     esp_command("ATE0", "OK", 2);
     if (debug) esp_command("AT+GMR", "OK", 2);
     esp_command("AT+CIPMODE=0", "OK", 2);
-    esp_command("AT+CIPCLOSE", "OK", 2); // an old connection, if any
+    esp_command("AT+CIPCLOSE", "OK", 5); // an old connection, if any
+    esp_quiet(50); // old firmware (AT 1.2) can answer late
     sprintf(cmd, "AT+CIPSTART=\"TCP\",\"%s\",%u", argv[i], port);
     if (esp_command(cmd, "OK", 15)) {
+        esp_command("AT+CIPCLOSE", "OK", 5); // it may have connected anyway
         return fail("could not reach the computer; is Wi-Fi joined and the port open?", line);
     }
     if (esp_command("AT+CIPMODE=1", "OK", 2) || (link_send_str("AT+CIPSEND\r\n"), esp_prompt())) {
