@@ -453,7 +453,10 @@ One pull request each, smaller ones together:
 
 The TV variant is part of the one APK of the phone app. For Apple TV a spike with pyatv on a
 real Apple TV with tvOS 26 comes before the Companion protocol in Go; if text input does not
-work there, Apple TV is reached through the Bluetooth keyboards only. A keyboard types with
+work there, Apple TV is reached through the Bluetooth keyboards only. The Apple TV accepts a new
+remote only while Settings, AirPlay and HomeKit, Allow Access is "Everyone on the Same
+Network" (or "Everyone"); with "Only People Sharing This Home" it refuses every pairing, so
+the app's steps and the user guide say to switch it before pairing. A keyboard types with
 whatever layout the user sets for the target. In keyboard mode the Nano ESP32 swaps its
 USB-JTAG console for a CDC console with a "reboot to flash" command, and a reset of its
 settings also erases its Bluetooth pairings.
