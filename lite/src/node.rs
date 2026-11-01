@@ -218,6 +218,20 @@ impl Node {
         self.conns.lock().unwrap().contains_key(id)
     }
 
+    /// How far the records stop the exchange: "secrets" or "full", empty
+    /// when nothing stops.
+    pub fn stop(&self) -> String {
+        let s = self.records.lock().unwrap().stop();
+        if s == cbb_core::authority::STOP_NONE { String::new() } else { s }
+    }
+
+    /// Whether the records stop secrets to this member (docs/protocol.md,
+    /// section 10, "Stopping the exchange"): it then takes no secret paste.
+    pub fn secrets_stopped(&self) -> bool {
+        let id = self.ident.read().unwrap().id.clone();
+        self.records.lock().unwrap().no_secrets_to(id.as_str())
+    }
+
     /// The connected members that sent their hello, sorted by device ID.
     pub fn peers(&self) -> Vec<Peer> {
         let conns = self.conns.lock().unwrap();
@@ -292,9 +306,17 @@ impl Node {
 
     fn forward(&self, ev: &Event, from: Option<&DeviceId>) {
         let now = uptime::now();
+        let records = self.records.lock().unwrap();
         for c in self.conns.lock().unwrap().values() {
             if Some(&c.id) != from && !c.records_only {
-                self.enqueue(c, Out::Event(ev.clone(), now));
+                let mut ev = ev.clone();
+                // A peer the records stop secrets to gets the mark of a
+                // secret, never its text (docs/protocol.md, section 10,
+                // "Stopping the exchange").
+                if ev.kind == Kind::Secret && records.no_secrets_to(c.id.as_str()) {
+                    ev.text.clear();
+                }
+                self.enqueue(c, Out::Event(ev, now));
             }
         }
     }
@@ -400,7 +422,8 @@ impl Node {
 
     fn run(&self, sock: TcpStream, conn: tls::Session, id: DeviceId, chain: Vec<Cert>, addr: SocketAddr) -> Result<()> {
         sock.set_read_timeout(Some(TIMEOUT)).context("the connection broke")?;
-        let records_only = matches!(self.records.lock().unwrap().refused(&chain), Some(Refusal::NotListed));
+        let why = self.records.lock().unwrap().refused(&chain);
+        let records_only = matches!(why, Some(Refusal::NotListed | Refusal::Stopped));
         let (tx, rx) = mpsc::sync_channel(QUEUE_LEN);
         let c = Arc::new(Conn {
             id: id.clone(),
@@ -434,7 +457,8 @@ impl Node {
             }
         }
         if records_only {
-            self.logf(&format!("cbb: {id} at {addr}: {}; exchanging records only", Refusal::NotListed.why()));
+            let why = why.map_or("", |w| w.why());
+            self.logf(&format!("cbb: {id} at {addr}: {why}; exchanging records only"));
         } else {
             self.logf(&format!("cbb: connected to {id} at {addr}"));
         }
@@ -639,6 +663,15 @@ impl Node {
                 }
                 None if c.records_only => {
                     self.logf(&format!("cbb: the records let {} in; it connects again as a member", c.id));
+                    c.close(false);
+                    continue;
+                }
+                Some(Refusal::Stopped) if !c.records_only => {
+                    self.logf(&format!(
+                        "cbb: {}; the connection to {} carries records only from now on",
+                        Refusal::Stopped.why(),
+                        c.id
+                    ));
                     c.close(false);
                     continue;
                 }

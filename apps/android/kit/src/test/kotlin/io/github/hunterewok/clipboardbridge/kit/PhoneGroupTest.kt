@@ -118,7 +118,7 @@ class PhoneGroupTest {
         assertEquals(admin.device, GroupCertificates.verifyMember(admin.memberChain, root.groupCA, later))
 
         // The admin cannot remove the root; the root removes the admin and every listed device stays: the
-        // computer it admitted, and the root, whose certificate it renewed (docs/records-v2.md, "Removals and
+        // computer it admitted, and the root, whose certificate it renewed (docs/protocol.md, section 10, "Removals and
         // freezes keep what the author saw").
         assertFailsWith<PhoneGroup.Failure> { admin.revoke(root.device, adminKey, t0) }
         val revocation = root.revoke(second.device, rootKey, t0)
@@ -269,7 +269,7 @@ class PhoneGroupTest {
         assertFailsWith<PhoneGroup.Failure> { g.rename(SyncEngine.newID(), "x", root, t0) }
     }
 
-    /** The watch's emergency actions (section 10, rule 8): the phone builds the body, the watch signs it, and it counts as the rules say. */
+    /** The watch's emergency actions (section 10, "Watches"): the phone builds the body, the watch signs it, and it counts as the rules say. */
     @Test
     fun watchActions() {
         val root = SoftwareSigner()
@@ -307,7 +307,7 @@ class PhoneGroupTest {
         assertTrue(g.devices.none { it.id == deck })
     }
 
-    /** The root makes a watch an admin (section 10, rule 8): it may freeze but admits nobody, and removing it takes it out. */
+    /** The root makes a watch an admin (section 10, "Watches"): it may freeze but admits nobody, and removing it takes it out. */
     @Test
     fun addWatch() {
         val root = SoftwareSigner()

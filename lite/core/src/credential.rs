@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::certs::{KeyHash, b64, hex, sha256};
 use crate::error::{Error, Result};
-use crate::records::Records;
+use crate::group::Records;
 
 /// The types of credentials.
 pub const PERIOD: &str = "period";

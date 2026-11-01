@@ -3,7 +3,7 @@
 import SwiftUI
 
 /// The emergency actions a watch that is an admin has for one device
-/// (docs/protocol.md, section 10, rule 8): each asks for a tap on what it
+/// (docs/protocol.md, section 10, "Watches"): each asks for a tap on what it
 /// signs, then the watch signs it with its own key.
 struct WatchDeviceView: View {
     let device: WatchState.Device

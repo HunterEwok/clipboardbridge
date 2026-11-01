@@ -27,7 +27,7 @@ the same record set of the same signed records in any order and subset.
   another order, some twice, one with its chain dropped or its signature or body changed.
 - Each implementation has a **verdict test** that reads a corpus and writes one line per
   case: Go's `TestVerdicts` in `internal/group` (and in `internal/release` for the release
-  files), the lite core's `records::verdicts`, the Kotlin kit's `VerdictTest` and the Swift
+  files), the lite core's `command::verdicts`, the Kotlin kit's `VerdictTest` and the Swift
   kit's `VerdictTests`. Without a corpus each runs on a small one of its own, so the normal
   test runs keep it working.
 - `tools/difffuzz compare` reads the corpus and the verdicts and fails on any case the

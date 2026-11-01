@@ -43,6 +43,7 @@ pub mod api;
 pub mod authority;
 pub mod certs;
 pub mod clip;
+pub mod command;
 pub mod credential;
 pub mod error;
 #[cfg(feature = "fuzzing")]
@@ -55,8 +56,6 @@ pub mod invite;
 pub mod keyboard;
 pub mod media;
 pub mod pair;
-#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::expect_used)]
-pub mod records;
 pub mod release;
 pub mod seal;
 pub mod store;

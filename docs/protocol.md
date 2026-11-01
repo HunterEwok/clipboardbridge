@@ -62,19 +62,36 @@ these words depends on it.
     a field's own row may refuse them.
   - `form/depth`: arrays and objects nest at most 16 deep below the body's object.
   - `form/unknown`: a member the body's kind does not know is ignored, whatever its value, but
-    it still follows every rule above.
-  - The fields every body of its kind has are there: `v`, `type`, `group` and `time_ms` in a
-    record; `v`, `type`, `group`, `by`, `to`, `id`, `time_ms` and `expires_ms` in a command;
+    it still follows every rule above. A record refuses it instead (below).
+  - The fields every body of its kind has are there: `v`, `alg`, `type`, `group`, `signer`,
+    `seq` and `time_ms` in a record; `v`, `type`, `group`, `by`, `to`, `id`, `time_ms` and `expires_ms` in a command;
     `v`, `type`, `group`, `version` and `expires_ms` in a server credential; `v`, `type` and
     every field its table does not call optional in a release file.
   - Bytes are standard base64 with padding in its one form: decoding and encoding again
     gives the same string (no line breaks, no missing padding, no base64url, zero bits
     after the last byte).
 
-  A receiver checks a body in this order: its size (`size/records`, 8 KiB, section 10;
-  `size/commands`, section 15; `size/releases`, 256 KiB, section 16; `size/credentials`, 16
-  KiB, section 18) before anything else; then these rules; then each field
-  against its row in the tables of its kind ("Record fields" in section 10, "The command"
+  A record (section 10) is read more strictly still, in one canonical form, so that encoding
+  what a receiver read gives the bytes it received:
+  - `form/unknown`: a member the record's type does not name refuses the body. A new field
+    needs a new `v`.
+  - `form/empty`: an optional field whose value is empty (`""`, `[]`, `{}` or `false`) MUST be
+    left out, and a body with such a field is refused. An integer is never empty: where its
+    row allows 0, 0 is written.
+  - `form/canonical`: the body is exactly the bytes a receiver gets when it encodes what it
+    read again: no whitespace anywhere, outside strings; the members of every object sorted
+    by name, bytewise; integers as `0` or `-?[1-9][0-9]*`; in a string, `"` and `\` escaped
+    as `\"` and `\\`, each character below U+0020 as `\u00` and two lower-case hex digits,
+    and nothing else escaped (no `\/`, `\n` or `\t`, no `\u` for any other character),
+    every other character as its UTF-8; arrays in the order the field's row gives (a row
+    that says "sorted" means sorted bytewise by each value's string, for a key hash or record
+    ID its base64, or by the string field the row names, each value once); bytes as above.
+
+  A receiver checks a body in this order: its size (`size/records`, 8 KiB and 64 KiB for a
+  checkpoint, section 10; `size/commands`, section 15; `size/releases`, 256 KiB, section 16;
+  `size/credentials`, 16 KiB, section 18) before anything else; then these rules, and for a
+  record its canonical form (it encodes the value it parsed and compares bytes); then each
+  field against its row in the tables of its kind ("Field rows" in section 10, "The command"
   in section 15); then the group, the signature and the rules of evaluation. A body that
   fails a step is refused there, so a member never verifies a signature over a body it
   cannot read alike, and never evaluates a record whose fields another member reads
@@ -92,7 +109,11 @@ these words depends on it.
   `credentials/<type>/<field>` and `releases/<type>/<field>` for a row of a table) and whether
   a member takes the body, and in strict-files.json its `kind`; a vector with `pad` has `pad` bytes `a`
   inserted at the offset `pad_at` of its body. The tests fail when the file is not what the
-  tables give, and when any implementation reads a vector otherwise.
+  tables give, and when any implementation reads a vector otherwise. The records in these
+  files are still of version 1, which every member now refuses whatever the vector says; the
+  record bodies of version 2 are read by `internal/authority` and `cbb_core::authority`
+  alone (the phones through the core), and their strict and canonical forms are checked by
+  those packages' own tests and the differential run.
 - **Time.** Times on the wire are Unix milliseconds (`_ms`), and durations integer
   milliseconds, unless a field says otherwise. Local durations (ages, windows, timeouts) are
   measured on a clock that counts the time the machine sleeps and does not jump when the
@@ -156,11 +177,11 @@ the iPhone CA and holds both keys. The admins it makes (section 10, "Admins") ho
 CA under the root and the iPhone CA key; every other member holds neither and has no
 `clipboardbridge.local` certificate. A **legacy group**, made before admin CAs, has a group CA
 with path length 0, and every Linux and Windows member of it holds both CA keys, a Mac
-neither; `cbb upgrade` turns it into a group with a root (design.md, "Full members, admins
-and the operating system"). Implementations other than Go MAY refuse legacy groups. A phone
-never takes part in one: only a phone admits a phone (section 6), and a phone's group always
-has a root, so the phone kits join only a group whose CA has path length 1 and refuse the
-`root` record of an upgrade (section 10, rule 7). The joiner's certificate carries the key that the member certifies in the welcome
+neither (design.md, "Full members, admins and the operating system"). Records of version 2
+have no upgrade from it: a legacy group is set up again to get a root.
+Implementations other than Go MAY refuse legacy groups. A phone never takes part in one: only
+a phone admits a phone (section 6), and a phone's group always has a root, so the phone kits
+join only a group whose CA has path length 1. The joiner's certificate carries the key that the member certifies in the welcome
 (section 6).
 
 Checking a member certificate (`checkPeer`, `DeviceOf`): the chain MUST verify to the group
@@ -844,9 +865,9 @@ peer cannot put words in front of the user.
 | `cert` | bytes, DER | always: a member certificate from the group CA, or from `issuer`, for the key of the joiner's TLS certificate and its device ID |
 | `issuer` | bytes, DER | only from an admin phone or computer: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
-| `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
-| `records` | array of record envelopes (section 10) | the group's records (records-v2.md), so the new device takes its peers at once; always with `roots`, which they must lead to; otherwise left out when they do not fit in the frame, and the new device gets them over connections that carry records only |
-| `claim_times` | array of `{record, ms}` | with `records` that hold a claim: when the admitting member first held each claim, in Unix milliseconds; the joiner takes a time that is earlier than its own and not in the future, so a claim that took effect there takes effect on the joiner too (records-v2.md, "Handing the group over") |
+| `roots` | array of bytes, DER | only in a group that claims handed to new roots (section 10, "Handing the group over"): those roots in order, the current one last |
+| `records` | array of record envelopes (section 10) | the group's records (section 10), so the new device takes its peers at once; always with `roots`, which they must lead to; otherwise left out when they do not fit in the frame, and the new device gets them over connections that carry records only |
+| `claim_times` | array of `{record, ms}` | with `records` that hold a claim: when the admitting member first held each claim, in Unix milliseconds; the joiner takes a time that is earlier than its own and not in the future, so a claim that took effect there takes effect on the joiner too (section 10, "Handing the group over") |
 | `group_ca_key` | bytes, PKCS #8 DER | only in a legacy group (section 2), when ADa `os` is `linux` or `windows` without `role` `lite` |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
@@ -856,7 +877,7 @@ The joiner MUST check: the tag of `group_ca` equals ADb `group`; `issuer`, when 
 admin CA under `group_ca` or one of `roots` (section 10); the member's TLS certificate is
 signed by `issuer` or by one of those roots and names ADb `device` (section 2); `cert`
 verifies to one of them, through `issuer` when present; `roots` are exactly the path that
-`records` lead to from `group_ca` (section 10, rule 7), so an admin cannot make a joiner trust a
+`records` lead to from `group_ca` (section 10, "The state"), so an admin cannot make a joiner trust a
 root of its own; the joiner keeps `records` in its record set before it keeps the identity, keeps
 `roots`, and keeps `issuer` to send in its handshakes; the three CA fields are all present
 or all absent, and a `macos` or lite joiner refuses them; when present, the keys are P-256 and
@@ -1066,7 +1087,7 @@ connect. `CBB_ADMIN_SOCKET` overrides its path for clients. The control socket t
 `copy`, `paste`, `copy-media`, `copied-media`, `paste-media`, `config`, `status`, `devices`, `release`, `release-get`, `keys` (from root only) and `watch` (with
 the watcher's `copied`, `clipboard`, `injected` and `acted`) and refuses every other operation with an error; the admin socket takes them
 all, and MUST be the only way to them. So a program of a user in the group can use the clipboard but cannot admit, remove,
-rename, freeze or make admin a device, take over, upgrade, or change sync away from home and
+rename, freeze or make admin a device, take over, or change sync away from home and
 the holder setting. `cbb` dials the socket each operation needs. The lite member does the same
 with its own two sockets, but its control socket takes fewer: no `copy-media`, `copied-media`,
 `paste-media`, `config`, `release`, `release-get` or `keys`, and of the watcher's reports no
@@ -1294,24 +1315,20 @@ iPhone CA as well (section 10, "Admins").
 ## 10. Admin CAs, device records and revocation
 
 The wire side of "Admin phones, the devices list and revocation" in
-[design.md](design.md). Implemented in Go: the records, their exchange, refusing revoked
-keys, and `devices` and `revoke` in groups a computer created (`internal/group/records.go`,
-`internal/node`, `internal/service/devices.go`). ClipboardBridgeKit signs device and revocation
-records with the phone's root key and exchanges them in the member protocol (`Records.swift`,
-`MemberNode`); the Go tests check that Go reads them as Swift does. Admin CAs in member
-chains and records signed through one are implemented on both sides: Go's
-`Identity.Issuer`, the chain in member TLS and the Welcome's `issuer`; ClipboardBridgeKit's
-`GroupCertificates.adminCA`, `verifyMember(chain:)`, `RecordSet` and `Records.sign` with
-`adminCA` (cross-checked by `TestSwiftAdmin`). A second phone joins as an admin in
-ClipboardBridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records are
-implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
-`testdata/interop/go-root.json` holds a handover for the phone kit to check; `go-watch.json`
-what a watch's admin key may do, rule 8) and in
-ClipboardBridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
-`roots`; `TestSwiftRoot` checks a takeover the kit signs). Admins are
-implemented in Go (`Identity.AdminKey`, `Identity.AdminCA`, `Identity.Signer`, the hello's
-`admin_key` and `phone_ca`, the `admin` and `phone_ca` messages, `cbb admin`;
-`internal/service/admin.go`).
+[design.md](design.md). The group's authority records are of version 2: one rule evaluates
+a set of them into the group's state ("The state"), and it is written twice, in Go
+(`internal/authority`, with the record set in `internal/group/records.go`) for the
+computers, and in Rust (`cbb_core::authority` and `cbb_core::group`, `lite/core`) for the
+lite member and, through the core's entry point ([core-api.md](core-api.md)), for both
+phone apps, which sign records in their kits (`Records.swift`, `Records.kt`, with the
+Secure Enclave or the Keystore) but evaluate none themselves. Go's release builds evaluate
+through the core as well. The vectors (`testdata/interop/v2-records.json`) and the
+differential run compare the whole state; why the records changed from version 1 and how
+they are tested is in [records-v2.md](records-v2.md).
+
+There is no migration from version 1: a member that holds records of version 1, or a group
+made before them, refuses them, and the group is set up again. `cbb upgrade` of a legacy
+group went with version 1.
 
 ### Admin CA and chains
 
@@ -1357,13 +1374,15 @@ admin removes it.
   identity file (`admin_ca`) and issues itself a new member certificate from it, so the
   `issuer` of its Welcome also issued its own certificate. Its hello no longer carries
   `admin_key`. An admin CA that replaces the one it holds MUST be from the current root.
+  The `device` record names the admin key in `admin` and what it may do in `powers` and
+  `commands` ("Who signs what").
 - From then on it acts as an admin phone does, with its admin CA: it opens pairing windows
   (`cbb pair`) and admits computers and lite members, never phones, with a Welcome that
   carries `issuer` and `roots` and no CA keys; it signs the `device` record of each device it
-  admits and `revoke` records (`cbb revoke`), which for an admin also name its admin key and
-  keep the listed devices (it may have admitted or renewed any of them); it renews its own certificate and those of the computers it
-  is connected to. It never removes the root and makes no admins; when the root computer is
-  lost, it takes the group over (below, "Handing the group over").
+  admits and `revoke` records (`cbb revoke`) of devices; it renews its own certificate and
+  those of the computers it is connected to. It never removes the root or another admin and
+  makes no admins; when the root computer is lost, it claims the group (below, "Handing the
+  group over").
 - **The iPhone CA.** In a group a computer created, the root holds the iPhone CA, and so does
   every admin, so the shortcut works while any of them is on. A member that holds its key
   says so in its hello (`phone_ca`). When a member that holds a key that is not revoked meets
@@ -1380,8 +1399,9 @@ admin removes it.
   key the records revoke deletes it and its `clipboardbridge.local` certificate, and serves
   the shortcut again only once another admin sends the new one. A group a phone created has
   no iPhone CA, and its admins never get one.
-- It is removed as an admin phone is: a revocation of its member key and its admin key that
-  keeps the listed devices. In a group a computer created it held the iPhone CA, so the
+- It is removed as an admin phone is: a revocation of its member key and its admin key,
+  which keeps what it signed before the remover saw it ("Removals and freezes keep what the
+  author saw"). In a group a computer created it held the iPhone CA, so the
   member that removes it, the root or an admin with the iPhone CA, makes a new iPhone CA,
   revokes in the same record the old one's key and the key of every `shortcut` device (their
   tokens stop working), takes the new CA itself and sends it to the admins as above; the
@@ -1390,355 +1410,544 @@ admin removes it.
 - In the member handshake (section 4) a member MUST send its certificate followed by its
   issuer when the issuer is not the group CA. Checking a peer: the chain MUST verify to the
   group CA through at most one intermediate that is a CA with path length 0, with the time
-  rule of section 2; then the revocation rules below apply. A legacy group, whose CA has path
-  length 0, has no intermediates. The issuer those rules check, and the admin CA that makes a
+  rule of section 2; then the rules of "Certificates" below apply. A legacy group, whose CA
+  has path length 0, has no intermediates. The issuer those rules check, and the admin CA that makes a
   peer count as an admin, is the certificate that signed the leaf, found wherever it is in
   the chain; other certificates the peer sends are ignored, and a leaf whose issuer is in
   neither the chain nor the roots is refused.
 
 ### Records
 
-A record is a signed JSON body. On the wire and on disk it is an envelope:
+The envelope is unchanged: `{"body": bytes, "sig": bytes, "chain": [bytes]}`, with `sig` an
+ECDSA P-256 signature with SHA-256 over the exact bytes of `body`, DER, and `chain` empty
+when a root's own key signed, else the signer's admin CA certificate. The **record ID** is
+SHA-256 over `body`.
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| `body` | bytes | the record body, JSON (below); signed as these exact bytes, never re-encoded: a receiver MUST verify the signature over the bytes it received |
-| `sig` | bytes | ECDSA P-256 with SHA-256 over `body`, DER |
-| `chain` | array of bytes | the signer's certificates below the group CA: empty when the group CA key signed (the root, or a key holder of a legacy group), else the admin CA certificate |
+#### Fields every record has
 
-Body fields common to every record: `v` (1), `type`, `group` (the group tag), `time_ms` (the
-signer's wall clock; informative only, never used for ordering), `by` (the signer's device
-ID; informative). Types:
+| Field | JSON type | Values |
+|-------|-----------|--------|
+| `v` | integer | exactly `2`; a body of a later version is kept, never applied ("Records of a later version") |
+| `alg` | string | exactly `es256`: the envelope's `sig` is ECDSA P-256 with SHA-256, DER |
+| `type` | string | one of the types below |
+| `group` | string | the group tag (section 1) |
+| `signer` | string | SHA-256 of the signing key's SubjectPublicKeyInfo, base64: a root's key, or the admin key that the admin CA in `chain` certifies |
+| `seq` | integer | from 1 to 2^31-1: the signer's number for this record |
+| `prev` | string | the record ID of the signer's record with `seq` - 1; absent when `seq` is 1 |
+| `time_ms` | integer | the signer's wall clock, for display only; never used for ordering or for any rule |
+
+A receiver MUST refuse an envelope whose `signer` is not the hash of the key that `sig`
+verifies with: the key of the admin CA in `chain`, or, with an empty `chain`, the key of a
+root the group may have (the group CA, or the new root of a claim). So one body has one
+signer, and the same body under another signer is not a valid record.
+
+`alg` names the signature algorithm inside the signed bytes, so a later algorithm (a
+post-quantum one, say) comes with a new `v` and can never be mistaken for, or downgraded
+to, this one. A key hash covers the key's SubjectPublicKeyInfo, which names its algorithm.
+A signer's own code refuses to sign with any key that is not P-256.
+
+#### Records of a later version
+
+New record types and new fields come only with a new `v`, so a member that meets a body of a
+later version needs an update to read it. A record is **kept** when its body is at most the
+body's size and in the strict and canonical form, its `v` is an integer from 3 to 2^31-1,
+its `group` is the group's tag, and the envelope verifies as this version's does (`sig`
+ECDSA P-256 with SHA-256 over the body) with the key its `signer` names, which must be a root
+on the current path (`chain` empty) or an admin key of a device in the state (`chain` its
+admin CA). So only the group's current roots and admins can raise the signal, and nobody
+else can fill it with junk; a later version keeps signing with this algorithm whatever it
+adds. The member stores a kept record, passes it on in sync as it is and never applies it.
+The state lists the IDs of the kept records in `newer`, sorted, at most 16, and the member's
+status and the apps tell the user to update. Nothing else changes: the group goes on under
+the records the member can read. Any other body that does not read is left out, as before.
+
+A **key hash** is 32 bytes of SHA-256 in base64 (44 characters); a device ID 32 of `0`-`9`
+and `a`-`f`.
+
+#### Types
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name` (1-64 bytes, as the pairing Info), `role` (`full`, `phone`, `lite`, `shortcut` for a shortcut token, `watch` for a watch with an admin key of its own (rule 8); records made before read `linux` and `mac` as `full` and `iphone` as `shortcut`), `os` (as in the hello, and `watchos` or `wearos` for a watch; absent in records made before, where `mac` means `macos` and `iphone` `ios`), `key` (SHA-256 of the device's SubjectPublicKeyInfo; for `iphone`, of the phone ID; for a watch, which has no member key, of its admin key, as in `admin`), `admin` (SHA-256 of the admin CA's SubjectPublicKeyInfo, only for an admin), `store` (where its keys live, section 17; absent in records made before), `kind` and `proof` (with `store` `proven`, or after a checked proof that shows less: the kind of hardware, `android-tee`, `android-strongbox` or `tpm`, and the hex SHA-256 of the proof's leaf certificate; section 17) | a device in the group; a later `device` record for the same `device` from a valid signer updates `name`: renaming a device (`cbb rename`, the apps' Rename) is such a record, with the other fields of its newest one |
-| `revoke` | `keys` (array of SHA-256 of SubjectPublicKeyInfos or phone IDs), `keep` (array of the same, for certificates issued by a revoked admin CA that stay valid) | removes keys from the group |
-| `root` | `root` (the new group root CA certificate, DER) | hands the group from the CA it was signed under to a new root: a takeover in a group with a root, or `cbb upgrade` in a legacy group |
-| `freeze` | `keys` (the SHA-256 of admin CAs' SubjectPublicKeyInfos), `records` (array of record IDs: the records of those admins that stay) | stops admin computers until the root or an admin phone decides (rule 4) |
-| `thaw` | `records` (array of the IDs of `freeze` records) | ends those freezes (rule 4) |
+| `device` | `device`, `name`, `role`, `os`, `key`, `admin`, `powers`, `commands`, `store`, `kind`, `proof`, `holds_root`, `seal` | a device in the group, or a change of its name or powers |
+| `revoke` | `keys`, `seen` | removes keys from the group |
+| `freeze` | `keys`, `seen` | stops admins until the root or an admin with `thaw` ends it |
+| `thaw` | `records` | ends the `freeze` records it names |
+| `claim` | `root`, `seen` | an admin's claim to take the group over with a new root |
+| `resolve` | `records` | the current root voids the records it names: a cancelled claim, one side of a conflict, one of two records with one number |
+| `settings` | `takeover_delay_ms` | the root's settings for the group |
+| `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
+| `hubs` | `hubs` | the user's main hubs for sync away from home, in the order they serve |
+| `recovery` | `admin` | names the group's recovery key, an offline admin key that may only claim the group ("The recovery key") |
 
-Encodings: the `bytes` fields of the envelope and of the body are standard base64 with
-padding (RFC 4648, section 4), as everywhere in JSON in this document. A key hash (`key`,
-`admin`, each of `keys` and `keep`) and a record ID (each of `records`) is 32 bytes, so 44
-characters of base64.
-
-#### Record fields
-
-The exact rule for a record's body, after the strict form (Conventions, "Signed bodies"):
-each row is a field, its JSON type, and its values. A field of this table has its type in
-every record, also in a type that does not use it, so a `revoke` record with `"name": 5`
-or `"keys": ["x"]` is refused; one with `"name": "Laptop"` is taken, and the name means
-nothing there. A field the table does not name is ignored (`form/unknown`). The column
-"Needed in" names the types that are refused without the field; the vectors cite a row as
-`records/<type>/<field>`.
+#### Field rows
 
 | Field | JSON type | Needed in | Values |
 |-------|-----------|-----------|--------|
-| `v` | integer | every type | exactly `1` |
-| `type` | string | every type | `device`, `revoke`, `root`, `freeze` or `thaw`, exactly |
-| `group` | string | every type | compared with the member's group tag (rule 1), not here |
-| `time_ms` | integer | every type | any, from -2^63 to 2^63-1: informative only |
-| `by` | string | none | informative here; rule 2 compares it with `device` |
-| `device` | string | `device` | a device ID: exactly 32 of `0`-`9` and `a`-`f` once its escapes are read |
-| `name` | string | `device` | 1 to 64 bytes of UTF-8 once its escapes are read, without a control character (U+0000 to U+001F, U+007F to U+009F); other characters, such as U+00A0, U+200B or U+2028, are taken |
-| `role` | string | `device` | `full`, `phone`, `lite`, `shortcut`, `watch`, or of records made before, `linux`, `mac` and `iphone`, exactly |
-| `os` | string | none | `linux`, `windows`, `macos`, `ios`, `android`, `watchos`, `wearos`, `none`, or `""`, which is the same as leaving it out, exactly |
-| `key` | string | `device` | a key hash: 32 bytes in base64 |
-| `admin` | string | none | a key hash |
-| `store` | string | none | any; one the reader does not know counts as none (section 17) |
-| `kind`, `proof` | string | none | any; their meaning is in section 17 |
-| `keys` | array of strings | `revoke`, `freeze`, with one entry at least | key hashes; a hash may be there twice |
-| `keep` | array of strings | none | key hashes, none at all too |
-| `root` | string | `root`, not empty | bytes in base64, any length; the certificate is read when the record is verified |
-| `records` | array of strings | `thaw`, with one entry at least | record IDs, 32 bytes in base64 |
+| `device` | string | `device` | a device ID |
+| `name` | string | `device` | 1 to 64 bytes of UTF-8, no control character (U+0000 to U+001F, U+007F to U+009F) |
+| `role` | string | `device` | `full`, `phone`, `lite`, `watch` or `shortcut` |
+| `os` | string | none | `linux`, `windows`, `macos`, `ios`, `android`, `watchos`, `wearos` or `none` |
+| `key` | string | `device` | a key hash: the member key (for a watch, its admin key; for `shortcut`, the phone ID) |
+| `admin` | string | `recovery` | a key hash: the admin key its admin CA certifies; only in a record a root's own key signed |
+| `powers` | array of strings | none | sorted; from `admit`, `renew`, `remove`, `remove-admins`, `freeze`, `thaw`, `takeover`, `hub`; only with `admin` |
+| `commands` | array of strings | none | sorted; the command types (section 15) the admin may sign; only with `admin` |
+| `store`, `kind`, `proof` | string | none | as in section 17 |
+| `holds_root` | bool | none | `true`: this device holds the signer's root key; only in a record a root's own key signed |
+| `seal` | string | none | the device's public key for sealed messages, base64: 1216 bytes, an X-Wing key (HPKE KEM `0x647a`). The rules check only its size; a member checks the whole key before it seals a message to it |
+| `keys` | array of strings | `revoke`, `freeze`, one at least | sorted key hashes |
+| `seen` | array of objects | `revoke`, `freeze`, `claim`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": the highest seq of that signer the author held, 0 or more}`; `seq` here is never left out, 0 included |
+| `records` | array of strings | `thaw`, `resolve`, one at least | sorted record IDs |
+| `root` | string | `claim` | the new root CA certificate, DER, base64: self-signed, a CA with path length 1, a P-256 key |
+| `takeover_delay_ms` | integer | none | from 0 to 604 800 000 (7 days); absent means 259 200 000 (72 hours) |
+| `heads` | array of objects | `checkpoint`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": 1 or more, "id": the ID of that signer's record with that seq}` |
+| `keep` | array of strings | none | sorted record IDs: the records below the heads that still count |
+| `hubs` | array of strings | `hubs`, one at least | 1 to 16 device IDs, each once, in the user's order (not sorted) |
 
-A receiver MUST drop an envelope whose `body` is longer than 8 KiB before it checks
-anything else, and a body that is not valid: one that breaks the rules of signed bodies
-(Conventions), `v` other than 1, an unknown `type`, a key hash or record ID that is not 32
-bytes, or a type without its fields: a `device` record without a valid device ID, a valid `name`, a known
-`role` and a `key`, or with an unknown `os`; a `revoke` record without `keys`; a `root`
-record without `root`; a `freeze` record without `keys`; a `thaw` record without
-`records`.
+A field that a type does not list is refused in it (`form/unknown`), and so is a field
+with an empty value (`form/empty`). An envelope's body is at most 8 KiB, a checkpoint's
+64 KiB.
 
-The record ID is SHA-256 over the envelope's `body`. The same body may come signed by more
-than one signer: each signer's envelope is a record of its own, and a member keeps all of
-them, so a body counts when any of its envelopes counts, and the first envelope a member saw
-decides nothing. An envelope with the body and the signer of one it holds is a copy, and a
-member keeps the first. A member keeps every valid record it
-has seen, in a file next to its identity, at most 4096 records, plus up to 1024 more signed
-by the own key of a root on the path (rule 7), so a full set still takes the record in which
-the root removes an admin that filled it. A member checks a record's signature before these
-limits, and takes at most 1024 records from one signer, an admin CA or a root's own key. A
-member MUST check a record's signature before it counts it against these limits, and MUST
-bound the records it keeps from one signer.
+`seen` names every signer whose records the author held, its own included: the root's key,
+every admin key, and a removed admin's key too. A record that removes or freezes an admin
+MUST name that admin's key in `seen`, with `seq` 0 when it held none of its records (then
+all of them stop). The apps and `cbb` fill `seen` from the records they hold right before
+they sign; a signer MUST sync with a member first when it can, and MUST NOT write a `seq`
+higher than it held for anyone.
 
-Validity and evaluation, which depend only on the set of records, never on their order.
-Every member MUST apply these rules exactly as written: the group converges only when every
-member reaches the same devices list, the same revocations and the same root from the same
-set.
+#### Who signs what
 
-1. A record is **signed by an admin** when `group` is the member's group tag and `sig`
-   verifies with the group CA key (empty `chain`) or with the key of an admin CA in
-   `chain` that verifies to the group CA, or to a root records may be signed under (rule 7).
-   Other records are dropped. A member takes at most 1024 records signed by one signer, so
-   a stolen admin cannot fill the set.
-2. **Signers and their powers.** The roots **handed on to** from a set of admin phones
-   that are taken as removed are the group CA and, until nothing is added, the new root of
-   every `root` record signed under one of them by its own key, by a computer's admin CA
-   under a root that is a computer, or by an admin phone's admin CA that is not taken as
-   removed. The **removals** of a set of roots are the keys that a `revoke` record names
-   that one of those roots' own keys signed, or that an admin phone's admin CA under one of
-   them signed while no such `revoke` record from a root's own key names that signer. The
-   **known roots** are found from two sides in turns. The sure roots start as those handed
-   on to with every admin phone taken as removed. Each turn takes the roots that may count
-   as those handed on to with the removals of the sure roots taken as removed, then the new
-   sure roots as those handed on to with the removals of the roots that may count taken as
-   removed; the turns end when the sure roots stay the same. The known roots are the sure
-   roots. An admin phone under a known root is **removed** when the removals of the known
-   roots name it, or when the removals of the roots that may count name it: then the
-   `revoke` records that name it there are the records that revoked it (rule 3). An admin
-   phone that a root of the group, or another admin phone, removed thus hands the group to
-   nobody, whenever it signs. Where two admin phones hand the group to roots that would
-   each remove the other phone, neither root is known and both phones are removed; the
-   result does not depend on the order of the records.
-   A root is a **computer** when its own key
-   signed a `device` record with `by` = `device` and role `full` and none with role
-   `phone`; the admin CA must be named in `admin` by a `device` record that root's own key
-   signed, and no `revoke` record from that root's own key may name it. In a group whose
-   root is a computer the root key sits in a file as the admin's does, so an admin computer
-   may take the group over from a lost root, and a root that is still there undoes it by
-   removing that admin. Any other root that a computer's admin CA names is not known, so
-   its key signs nothing that counts. An admin CA is an **admin
-   phone's** when a `device` record with role `phone`, signed by a known root's own key,
-   names it in `admin`, and every `revoke` record from a known root's own key that names
-   that root keeps it. Any other admin CA is a **computer's**: its key sits in a file. The
-   **admin and root keys** are the keys of every root the set knows, every `admin` in a
-   `device` record that a known root's own key signed, and every admin CA that signed a
-   record. An `admin` in a record an admin CA signed makes no key an admin's.
-3. The **revoked set**, in strata that do not depend on each other in a circle:
-   - an admin phone that only the removals of roots that may count remove (rule 2) is
-     revoked and disabled, by the `revoke` records that name it there, and its admin CA is
-     not an admin phone's from then on;
-   - a `revoke` record signed by a known root's own key counts;
-   - an admin or root key that a `revoke` record from a known root's own key, or an admin
-     or non-root key that one from an admin phone's admin CA under a known root, names is
-     revoked and **disabled**, whether or not that signer is itself revoked, so two admin
-     phones that revoke each other are both revoked;
-   - a `revoke` record signed by an admin CA counts only when its root is known, the CA is
-     not disabled and stands under its root, and it names no known root's key; a
-     computer's admin CA must also name no admin or root key. A record that does counts
-     for nothing.
+A **root key** is the key of the group CA or of the new root of a claim that took effect
+(below). The **current root** is the last root on the path. An **admin key** is the `admin`
+of a `device` record that the current root's own key signed (or an earlier root on the path,
+for a record within that root's cut, below). An admin's **powers** and **commands** are
+those of the newest such record (the highest `seq` of that root) that names it.
 
-   The revoked set is the disabled keys and the `keys` of every `revoke` record that
-   counts. So a computer's admin CA removes devices but neither the root nor another admin,
-   and nothing it signs after it is removed counts. Its earlier removals stop counting with
-   it, so the record that removes an admin names again the keys its counting revocations
-   named, and its `keep` names the member keys of every listed device that it does not
-   remove: any admin may have issued or renewed their certificates.
-4. **Freezes.** An admin computer may not remove another admin, but any admin may freeze one
-   until the root decides. A **computer's admin CA** here is one that a `device` record of
-   a role other than `phone`, signed by a known root's own key, names in `admin`; the keys of
-   those records are its **device keys**. In strata after the disabled keys of rule 3:
-   - a `thaw` record signed by a known root's own key, or by an admin phone's admin CA under
-     a known root that is not disabled, ends the `freeze` records whose IDs it names;
-   - a `freeze` record that no such `thaw` ended counts when its root is known, it was
-     signed by that root's own key or by an admin CA that is not disabled and stands under
-     its root, and every key it names is a computer's admin CA. A freeze from a frozen admin
-     still counts: two admins that freeze each other both stay frozen, which keeps the
-     evaluation free of circles, until the root or an admin phone ends one freeze.
+| Record | Signed by |
+|--------|-----------|
+| `device` naming `admin`, or with role `phone` or `watch` | a root's own key |
+| other `device` | a root's own key, or an admin with `admit` |
+| `revoke` of member keys and phone IDs | a root's own key, or an admin with `remove` |
+| `revoke` of an admin key, or of the member key of a device whose newest root record names an admin key | a root's own key, or an admin with `remove-admins` |
+| `revoke` of a root key, or of the root's own device | nobody: a root is replaced only by a claim |
+| `freeze` | a root's own key, or an admin with `freeze`; each key it names is an admin key without `remove-admins` |
+| `thaw` | a root's own key, or an admin with `thaw` and `remove-admins` |
+| `claim` | an admin with `takeover`, under the current root |
+| `resolve`, `settings` | the current root's own key |
+| `checkpoint` | a root's own key |
+| `hubs` | a root's own key, or an admin with `hub` |
+| `recovery` | a root's own key |
 
-   A key is **frozen** when it is a computer's admin CA that a counting `freeze` names, or a
-   device key of such an admin CA. A record signed by a frozen admin CA counts only when
-   every counting `freeze` of that CA names its ID in `records`; the freezer lists there
-   every record of the frozen admin it holds, so what the admin did before stays and nothing
-   it signs later counts, `revoke` records included. A frozen admin is no admin in the
-   devices list. A member certificate is refused when its key is frozen, and one that a
-   frozen admin CA issued is refused unless a `device` record that counts names its key.
-   A freeze of an admin that is then removed stays; removing the admin that froze ends its
-   freezes, since a disabled signer's freezes do not count.
-5. A `device` or `root` record counts only when its signer's key is not revoked, and,
-   when an admin CA signed it, that admin CA still stands under its root (rule 6); a
-   `device` record also counts when every record that revoked its signer keeps the
-   device's key, so the devices a removed admin admitted stay in the list. A `device`
-   record counts only when it was signed under a root on the path (rule 7). A `root` record
-   counts only when its new root is known (rule 2).
-6. A certificate is refused when its key is revoked, or when its issuer's key is revoked
-   and not every record that revoked that issuer keeps the certificate's key. This holds for
-   a member certificate and its issuer (a root or an admin CA), and for an admin CA and its
-   root. A chain whose top (the leaf, or the admin CA that issued it) no root on the path
-   (rule 7) signed is refused too: a root that only an identity or a TLS pool trusts, as one a
-   Welcome named, anchors nothing.
-7. **Roots.** The group CA is the group's first root and names the group for good: the
-   group tag, `group` in records and `g=` in mDNS stay its tag. A `root` record is valid
-   only when it was signed under a root with path length 1, or, in a legacy group, by the
-   group CA's own key (empty `chain`; `cbb upgrade`; the phones, never in a legacy group,
-   take only the first), and its `root` is a self-signed CA
-   with path length 1 and a P-256 key. Such an upgrade record also counts while the group
-   CA's key is revoked, as long as every record that revokes that key was signed under the
-   root it names: a leftover copy of the old key can then break the group, by revoking
-   itself or signing a rival handover, but never take it over. Records are signed under the
-   group CA and the new root of every valid `root` record that may make it known: one its
-   root's own key signed, or an admin CA that a `device` record from that root's own key
-   names, with role `phone`, or with another role when that root is a computer (rule 2,
-   leaving out the revocations and freezes that can still stop it). A record signed under
-   any other root is dropped, so the root that a computer's admin CA names in a phone's group
-   neither signs records nor fills the set. A member adds a batch of records until nothing
-   new is added, so a record signed under a new root is taken together with the records that
-   make that root known. The **path** starts at the group CA; from each root,
-   of the `root` records signed under it that count (rule 5) and whose new root is not on
-   the path yet, the one whose new root certificate has the smallest SHA-256 leads to the
-   next root. The last root on the path is the current root. A member trusts every root on
-   the path for member certificates and admin CAs (certificates from earlier roots stay
-   valid until they expire or rule 6 refuses them), takes renewals from any of them, and
-   keeps the path next to its identity, replacing it whenever the records lead to another
-   path (compared by content, not by length; an empty set changes nothing). A new member gets
-   the path in the Welcome's `roots`, with the path records that lead to it in `records`.
-8. **Watches.** A watch's admin key sits in its Secure Enclave or Keystore, but a watch on
-   the wrist signs without Face ID or a fingerprint, so its powers are few. A **watch's
-   admin CA** is one that a `device` record with role `watch`, signed by a known root's own
-   key, names in `admin`. For rules 3 and 4 it is a computer's admin CA: its revocations
-   count when they name no admin or root key, its freezes count, any admin freezes it, and
-   only the root and the admin phones remove it. Beyond that, nothing else it signs counts:
-   a `device` record it signs counts for nothing (rule 5), so it admits nobody; a `root`
-   record it signs makes no root known (rules 2 and 7), so it never takes the group over,
-   not even in a group whose root is a computer; a certificate it issues is refused (rule
-   6); and of the commands (section 15) it signs only `paste-off`, `actions-off`, `away-off`
-   and `action`. A watch is listed as an admin while its admin CA is neither revoked nor
-   frozen, but it is never a hub (section 11) and no server credential names it (section
-   18): it reaches the group only through its phone, which carries what it signs. The
-   phone builds the body (a `freeze` or `revoke` record, or a command with `by` the watch's
-   device ID), the watch checks its type, group, signer and, for a command, `to` and
-   `action`, then signs it; the phone adds the record to its records and sends it, or passes
-   the command on as it passes its own (section 15).
+A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
+names any key its signer may not remove or freeze. The powers the apps and `cbb`
+write:
 
-**Handing the group over.** When the root is lost, an admin takes over: in a phone's group
-an admin phone, never a computer; in a group a computer created an admin computer, with
-`cbb takeover NAME` (NAME the lost root):
+| Admin | `powers` | `commands` |
+|-------|----------|-----------|
+| a phone | all eight | all |
+| a computer | `admit`, `renew`, `remove`, `freeze`, `hub`, and `takeover` when the root is a computer | all |
+| a watch | `remove`, `freeze` | `paste-off`, `actions-off`, `away-off`, `action` |
 
-1. It creates a new root (as in section 9) and signs a `root` record naming it, with its
-   admin CA under the current root.
-2. As the new root, it signs a `revoke` record whose `keys` are the old root's key and the
-   lost root's member and admin keys, and whose `keep` names every other key the old root
-   certified: the member keys of every listed device, which it admitted or whose certificates
-   it may have renewed, the admin CA keys of the
-   other admins, its own included, and those of removed admins whose removals keep one of
-   those devices, whose certificates from them hold only while their admin CA stands under
-   the old root. By rule 6 nothing the old root's key signs from then on
-   counts: neither new certificates nor new admin CAs, `device` records nor `root` records.
-   In a group a computer created the lost root held the iPhone CA, so the record also names
-   the iPhone CA's key and the key of every `shortcut` device, and the new root makes a new
-   iPhone CA and passes it to the admins, as when an admin is removed ("Admins").
-3. It signs a `device` record for itself under the new root (by = itself), which marks it
-   as the root in the list, and from then on renews certificates from the new root. A
-   computer that takes over keeps the new root's key in the identity file (`root_key`,
-   PKCS #8), drops its admin key and admin CA, and issues itself a member certificate from
-   the new root. It keeps the member certificate it had, which the old root or its own admin
-   CA issued and the `keep` above still covers, with that admin CA (`prev_cert` and
-   `prev_issuer`), and presents that chain on member connections until the certificate is
-   due for renewal: a member that was away during the takeover knows only the old root, and
-   meets the new one, verifies it and takes the `root` record from it. Pairing uses the
-   certificate from the new root.
-4. Each other admin computer still holds an admin CA from the old root, and a root record it
-   signed would hang under that root, not under the new one, and split the group's roots
-   (rule 7). So when such an admin is connected, its admin CA in its chain or its key in its
-   hello, the new root signs a `device` record for it under its own key that names the same
-   admin key, and sends it a new admin CA for that key, as when it makes an admin; the records
-   name the key, not the certificate, so nothing else changes. A frozen admin gets it once it
-   is unfrozen. The admin CA may come before the records that make it valid (the `root`
-   record, a thaw); the admin keeps it and takes it once they are in. An admin whose admin CA
-   is from a root before the current one does not take the group over (`cbb takeover`
-   refuses).
+So whether an admin computer may take the group over is decided once, by the root, when it
+makes the admin, not by each member from other records.
 
-A computer that gets the `root` record starts trusting the new root and saves it with its
-identity; a computer that held the root it replaces is no longer the root, and gives up its
-iPhone CA. The exception is a takeover from a root computer: the old root keeps its root key
-and its iPhone CA, and `cbb status` there names the admin that took over, since the old root
-may still be in use and undo it (rule 2) by removing that admin (`cbb revoke NAME`, a
-revocation its own key signs that names the admin CA).
+#### Watches
 
-**The old root's records.** The takeover's revocation names the old root's member key, so
-the members refuse its connections, and its removal of the admin would reach no one. So a
-member keeps a connection with a peer whose member certificate the old root certified for
-its own device (its device record under that root names the key) while the takeover from
-that root counts, for records only: it sends its hello with no current event and nothing
-but its records digest, sends its records when the digests differ, takes `records` from
-the peer, and sends and takes nothing else (no events, credentials, commands, tunnel keys,
-hubs or iPhone CA). It closes the connection once the records it took let the peer in
-(the takeover no longer counts), or when no records came for 5 seconds; the peer connects
-again later, as a member if the takeover was undone. The old root learns of the takeover
-the same way. Only full members keep such a connection; the lite member and the phones
-refuse the old root, and take the records that undo the takeover from the others.
+A watch's admin key sits in its Secure Enclave or Keystore, but a watch on the wrist signs
+without Face ID or a fingerprint, so its powers are few: the root's `device` record for it
+has role `watch`, `powers` `freeze` and `remove`, and `commands` `paste-off`, `actions-off`,
+`away-off` and `action` (the table above). So it removes devices but no admin, freezes
+admins without `remove-admins`, and admits, renews and hands over nothing: a `device` or
+`claim` record it signs counts for nothing, and a certificate it issues is refused
+("Certificates"). It is never a hub (section 11), and no server credential names it (section
+18): it reaches the group only through its phone, which carries what it signs. The phone
+builds the body (a `freeze` or `revoke` record, or a command with `by` the watch's device
+ID), the watch checks its type, group, signer and, for a command, `to` and `action`, then
+signs it; the phone adds the record to its records and sends it, or passes the command on as
+it passes its own (section 15). A watch is listed as an admin while its admin key is neither
+revoked nor frozen.
 
-**Upgrading a legacy group.** `cbb upgrade` on a member that holds the legacy group's keys,
-after every member runs this version:
+#### Chains and numbers
 
-1. It creates a new root and signs a `root` record naming it with the group CA's own key.
-   The group keeps its tag, so no device pairs again.
-2. As the new root, it signs a `revoke` record whose `keys` are the group CA's key, the
-   iPhone CA's key and the key of every `shortcut` device, and whose `keep` names the key of
-   every other listed device, and a `device` record for every listed device (role and `os`
-   as listed), its own among them. It keeps the new root's key as `root_key`, deletes the
-   old CA keys and serves the shortcut with a new iPhone CA.
-3. Every other member that gets the records deletes its copies of the group CA and iPhone
-   CA keys and its `clipboardbridge.local` certificate, makes an admin key, and connects
-   again. While a member holds the group CA key of a legacy group its hello carries
-   `"old_keys": true`. The upgrading member keeps a list of the computers that held the keys
-   (`oldkeys.json`) and drops each from it when it connects with a hello without
-   `old_keys`; until then `cbb status` marks it (`old_keys` in the `devices` answer) and
-   `cbb revoke` refuses to remove it.
+A signer's records form a chain: the record with `seq` n names in `prev` the ID of the one
+with `seq` n - 1. A record **counts** only when the member holds the whole chain below it.
+A record whose chain is not complete waits (a member keeps at most 1024 records of one
+signer, waiting ones included) and counts once the missing ones arrive.
 
-The devices list is, for each device, the `device` record that counts, among those whose key
-is not revoked, whose signer's key is not revoked if any such record counts, with the largest
-`time_ms` (then the largest record ID, then the largest signer's key hash). So a device whose records name more than one key stays
-listed while any of them stands, and the records of a removed admin, which still count for the
-devices it admitted, no longer decide their names. Removing a device revokes every key that its
-counting records name and that is not revoked yet, and the key of its connection. Only a
-known root's own key gives a device powers: of the device's counting records that such a key
-signed, the one with the largest `time_ms` (then the largest record ID and signer's key hash) decides. A device is
-an admin when that record names an admin CA whose key is neither revoked nor frozen; an
-admin's `role`, `store`, `kind` and `proof`, which decide what its commands may do (section
-15) and where it serves as a hub (section 11), are that record's too. A later record from the
-root without `admin` demotes it. An `admin` in a record an admin CA signed counts for nothing.
-Members before 0.6 took `admin`, `role` and `store` from the device's latest record, whoever
-signed it, so they may list as an admin a device that newer members do not. The **root** is the phone or computer whose
-own `device` record (`by` = `device`, role `phone` or `full`) the current root's key signed,
-the latest of them; a peer is the root only when its certificate's key is the one that
-record names, since a device ID alone proves nothing; a legacy group has none, and there every Linux and Windows member that
-holds the CA keys is an admin. Go keeps the records in `records.json` next to the
-identity (mode 0600) and the path in the identity file's `roots`.
+**Two numbers.** Two different records of one signer with the same `seq`, or a record whose
+`prev` is not the ID of the signer's record with `seq` - 1, prove that the signer's key
+signed two histories: a stolen key, or a device brought back from a backup that signed again.
+From the lowest such `seq` k, no record of that signer counts, on either branch, until the
+current root voids one branch with `resolve` (naming the first record of that branch; the
+records after it on that branch go with it). Meanwhile (see "Stopping the exchange") the
+devices whose counting `device` records that signer alone signed get nothing, and the whole
+group stops sending secrets. A root that signed two histories stops the group fully, and only
+its own `resolve` ends it.
+
+**Voiding.** A record that a counting `resolve` names counts for nothing. When it has a
+sibling (another record of its signer with the same `seq`), the records whose `prev` chain
+passes through it count for nothing too, so `resolve` ends two histories by naming the first
+record of the branch that goes. Without a sibling only the named record goes, and the
+signer's chain goes on through it.
+
+**Going on after two histories.** The root may void both branches, naming both records of
+seq k. The signer's next record then has seq k and `prev` the record of seq k - 1, a third
+record of that seq and the only one that counts, so the signer goes on below the fork.
+A member gives a key's next record the seq one above its highest record that is on no
+voided branch (of two records with one seq, the one with the lower ID), and signs nothing
+but a root's `resolve` with a key the state names in a conflict of two histories.
+
+A device keeps a log of the records it signed. When the root's `resolve` voids both
+histories of its key, it signs again, in their order, the voided records of that log that
+admit, remove, freeze, thaw or set (`device`, `revoke`, `freeze`, `thaw`, `hubs`,
+`settings`); the voided records it did not sign, as a thief's or its own from before a backup
+was restored, stay void, and its user does again what was theirs. Before a record its user
+asks for, a computer waits up to 10 seconds until it holds another member's records (a
+hello with its digest, or the records a member sent), so that a device brought back from
+a backup rarely signs a seq again; when no member answers, it signs anyway and logs it.
+
+#### Checkpoints
+
+A group's records only grow, and a member keeps at most 1 MiB of them (1024 records). A root's
+own key signs a `checkpoint` so that members may drop what no longer matters: `heads` names,
+for each signer, its newest record the checkpoint covers, and `keep` the records below the
+heads that still count: the newest `device` record of each device, the `revoke`, `freeze` and
+`thaw` records that count, the newest `settings`, the `hubs` record that counts, the `recovery` record that counts, every claim not yet decided and the records
+its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
+by themselves when the records pass three quarters of either limit.
+
+A checkpoint leaves out of a set each record of the group whose body reads, of a signer in
+`heads`, with a `seq` at or below that head's, other than the heads and the records in `keep`,
+whether its signature checks or not. In the set it prunes, a prev chain is whole when it
+reaches seq 1 or a record the checkpoint names, so the records after the heads and the records
+in `keep` count without the ones dropped below them.
+
+The state is evaluated on the set as the checkpoint that counts prunes it, so it is the same
+whether a member still holds what the checkpoint leaves out or not. To find that checkpoint,
+the evaluation takes the root's own records of type `checkpoint` of a root of the group (the
+group CA, or the root of a claim that an admin under such a root signed), at most 8 of them:
+the highest `seq` first, then the smallest ID. It evaluates the set each one prunes, and the
+checkpoint counts there when it is a root's record that counts in that evaluation: its root
+on the path, within its cut, its chain whole and not voided. Of those that count, the newest
+counts: a later root on the path, then a higher `seq`, then the smaller ID. A checkpoint that
+does not keep what the path to its own root needs (a claim, the admin record that made the
+claimant an admin) does not count and drops nothing, nor does one a `resolve` voided, nor two
+of one `seq` (two histories of the root). Without one, the set is evaluated whole. The state
+names the checkpoint that counts in `checkpoint`.
+
+A member may delete the records the checkpoint that counts leaves out. A checkpoint that
+leaves out a record that mattered changes the state for every member alike; only a root signs
+one, and the root always wins.
+
+#### Limits
+
+A set is never refused for its size: whatever an admin signs, the group goes on. Records past
+a limit count for nothing, with the reason `limit`, and the rest is evaluated as if they were
+not there. The limits are taken after a checkpoint's pruning, in the set each candidate
+checkpoint prunes; the candidates themselves come from the whole set, so that the root's
+checkpoint brings a set past the limits back under them though it is past them itself.
+
+| Limit | Value | Past it |
+|-------|-------|---------|
+| records in the set | 1024 | the records after the 1024th, in the order below |
+| bytes in the set: each record's body, signature and chain | 1 MiB | the record that would pass it and every record after it |
+| devices with a `device` record | 256 | every `device` record of a device past the 256th |
+| admin keys a root's own `device` records name | 64 | every root's `device` record naming an admin key past the 64th |
+| roots on the path: the group CA and 15 handovers | 16 | a claim that would add the 17th is `void` |
+
+The order: a record's rank (0 for the group CA's own records, 1 for those of the other roots
+of the group, 2 for those under an admin CA of one of its roots, 3 for the rest; a signer's
+lowest rank counts for all its records), then its depth (how many of its signer's records
+have a lower `seq`), then the signer's key hash and the record's ID, in byte order. The
+evaluation stops at the first record that does not fit, so each signer keeps the start of
+its chain, never a record past a gap, and the root's records go before any admin's. Devices
+and admin keys are taken in the order of their first `device` record; a device or an admin
+key past its limit drops every `device` record naming it, the first ones too, so that no
+chain is left with a hole. A `revoke` naming one still counts.
+
+The apps keep well under these: at the most, 256 devices of about 1.6 KB each (a record with
+its sealing key) are about 0.4 MiB, and a checkpoint drops the old records of each.
+
+#### The hubs table
+
+The group's hubs serve in an order every member derives from the records (section 11, "Several
+hubs"). A `hubs` record lets the user put main hubs first: its `hubs`
+come first, in their order, and the other hubs follow in the derived order.
+
+Of the `hubs` records that count, one counts for the table: a root's beats an admin's, of two
+roots' the later root on the path, then the higher `seq`; of two admins' the later `time_ms`,
+then the smaller signer, then the higher `seq`. Between admins this trusts each signer's
+clock: an admin whose clock runs ahead keeps its table until the root signs one, which beats
+any admin's. The state lists in `hubs` the devices of that table that are devices of the state
+with the role `full` or `phone`, in its order; a member puts first those of them that may be
+hubs by the records (the root's own device, or an admin with `hub`), so a table naming a
+removed device or one that lost `hub` does not stop the others. A device the table does not
+name still serves after the main hubs.
+
+#### Removals and freezes keep what the author saw
+
+A `revoke` record that a root's own key signed, or that counts, removes its `keys`. For each
+removed admin key A, the records of A with `seq` up to the record's `seen` entry for A keep
+counting, and none after: what the admin did before the remover saw it stays, the devices it
+admitted among it, and nothing it signs later counts.
+
+A `freeze` that counts stops the admin keys it names in the same way while no counting
+`thaw` names it: the records of a frozen admin up to the freeze's `seen` entry count, the
+later ones do not, and they count again once the freeze ends. A member certificate of a
+device whose newest root record names a frozen admin key is refused.
+
+#### Which admin records count
+
+An admin's record may be cut by a removal or a freeze of that admin. Which records count is
+decided the same way on every member, in any order, as follows.
+
+A record a **attacks** a record b when b's signer is an admin key, a is a `revoke` or a
+`freeze` whose `keys` name that admin key, a's signer may sign a (the table above), and a's
+`seen` entry for b's signer is below b's `seq`: a cuts b off. A `claim` is the exception: an
+admin's removal does not attack it but disputes it ("Handing the group over"); only a root's
+removal or freeze cuts a claim off. A `thaw` attacks each `freeze` it names. Records of a root's own key are never attacked; records of a root on the path
+count up to that root's cut, and the current root's all count.
+
+Every admin record is then **in** (it counts), **out** (it counts for nothing) or
+**undecided**, the grounded labelling of these attacks:
+
+1. a record whose attackers are all out is in, and so is one nobody attacks;
+2. a record attacked by a record that is in, or by a root's record, is out;
+3. repeat 1 and 2 until nothing changes; what is left is undecided.
+
+A record r **happened before** a record s of another signer when s's `seen` names r's signer
+with a `seq` of r's `seq` or more: s's author held r when it signed. So for two admins S and T
+whose records r (S removes T) and q (T removes S) attack each
+other only when neither author held the other's record:
+
+- q happened before r (S held q when it signed r): r does not attack q, q attacks r; q is in,
+  r is out. S was removed before it signed r.
+- r happened before q: the same with the sides swapped.
+- each held the other's (one of them lies): neither attacks; both are in, both are removed.
+- they **cross** (neither held the other's): each attacks the other; both are undecided, and
+  that is a **conflict**: the group stops (below) until the current root voids one of them, or
+  both, with `resolve`, or removes S or T itself. Longer circles (S removes T, T removes U, U
+  removes S) end the same way.
+
+An undecided record counts for nothing, and neither do the records it would cut. To keep
+the attacks free of circles that do not involve a thief, the powers are in two tiers: an admin
+with `remove-admins` is never frozen, and `thaw` counts only from an admin that also has
+`remove-admins` (or from a root's own key). So freezes and thaws never chase each other, and a
+conflict always means two admins acted against each other without seeing it.
+
+A thief with an admin key can always write a `seen` that pretends it did not see a removal,
+and so stop the group; it cannot make its record win. A removal of an admin by another admin
+is settled for good when the current root signs it again (a root's record is never
+attacked), and the apps ask the root's user to confirm each such removal.
+
+#### Handing the group over
+
+When the root is lost, an admin with `takeover` signs a `claim`: a new root CA certificate,
+and `seen` with what it held, the current root's records among them. A claim:
+
+- is **pending** from the moment a member first holds it (by its own clock, which counts
+  sleep and does not jump: Conventions, "Time"; never the signer's clock) until
+  the root's `takeover_delay_ms` (the newest counting `settings` record of the current root;
+  72 hours without one) has passed on that member. A member that does not know how long it
+  has held the claim (its clock started again and it kept no time) keeps it pending, without
+  a time left, until it knows; only a delay of 0 needs no time. Every device tells its user
+  when a claim arrives, and `cbb status` and the apps show it with the time left. Sync and
+  the admins' other powers go on; only the new root waits, and the claimant gets no secrets
+  meanwhile ("Stopping the exchange");
+- is **cancelled** for good when the current root's own key signs a `resolve` that names it,
+  or a `revoke` of the claimant's admin key, at any time, before or after the delay: the
+  root always wins. When that happens after the claim took effect, the new root and every
+  record under it stop counting, and the group is the old root's again;
+- is **void** when its new root is not a valid root CA or is already on the path, when it
+  does not count (its author lacks `takeover`, a root's removal or freeze cuts it off, it is
+  on a dead branch), when its author had seen a counting admin `revoke` or `freeze` of its
+  own admin key or member key (the claimant was removed first), or when its author had seen
+  another claim under the same root that is not void or cancelled (one claim at a time: a
+  claim made while another waits, or after it took effect, counts for nothing);
+- is **disputed** when a counting admin `revoke` or `freeze` names the claimant's admin key
+  or member key and the claimant had not seen it, whatever else its author had seen. An
+  admin who objects to a claim removes the claimant, and the group stops fully until the
+  current root decides: a `resolve` of the claim cancels it and the removal stands, a
+  `resolve` of the removal lets the claim go on. Nothing in `seen` tells a removal written
+  after the handover, since a claimed root can sign before its claim takes effect. After the
+  handover an admin removes under an admin CA of the new root, which counts only under that
+  root, and the apps always sign with the admin CA of the newest root on the path; a removal
+  of the claimant under the old root's admin CA disputes the claim even then;
+- **takes effect** when the delay has passed on that member and it is none of the above,
+  it is the only such claim under the current root, and no root's freeze holds its
+  claimant. Its new root becomes the current root and starts its own `seq` at 1; the old
+  root's records up to the claim's `seen` entry for the old root keep counting, and its
+  later ones count only to cancel the claim, as above.
+
+A new member takes, for each claim the Welcome's records hold, the time the admitting member
+first held it when that is earlier than its own and not in the future (section 6, the
+Welcome's `claim_times`): it trusts that member with its certificate already, and a claim
+that took effect there takes effect on it too; the rest of the group keeps its own times.
+
+**Two claims** under one root that are neither void nor cancelled stop the group fully on
+every member that holds both, at once and whatever their order or delay: no sync, no
+messages, no admissions. Only the current root ends it, by cancelling one or both; a group
+whose root is lost is set up again. A disputed claim stops the group the same way.
+
+After a claim takes effect the new root signs `device` records for the admins it keeps
+(their admin keys stay, so their `seq` goes on) and issues them admin CAs under itself; an admin CA from the old root still signs while the old root is on the path.
+
+So a removed or stolen admin phone cannot take the group: its claim waits, the root cancels
+it, a second claim or a removal of the claimant stops the group instead of choosing, and
+once a new root removes it, nothing it signs counts under that root. What it can do without
+the root, by pretending it had not seen a record or by removing the claimant under its old
+admin CA, is stop the group: never take it.
+
+#### The recovery key
+
+A recovery key lets the user take the group back when every phone with the root or
+`takeover` is lost: an offline key, printed or on a hardware key, kept away from the devices.
+The root's own key issues it an admin CA, as for an admin, and signs a `recovery` record whose
+`admin` is its key hash. It has no device and no `device` record.
+
+Of the `recovery` records that count (a root's own key on the path signed them, within its
+cut), the newest counts. The key it names is an admin key with only `takeover` and no
+commands, unless a `device` record of a root names the same key as an admin, whose powers
+then hold. So the recovery key signs one thing that counts, a `claim`, with its admin CA as
+the chain; every other record it signs is `ignored` with `power`. Its claim is a claim as
+above: it waits the root's `takeover_delay_ms`, the root cancels it with a `resolve` or a
+`revoke` of the key, a counting admin removal or freeze of the key disputes it, and one claim
+at a time holds.
+
+A newer `recovery` record replaces the older one: the key the older one named is no admin
+any more, and its claims do not count. A `revoke` of the key removes it (a root's own key, or
+an admin with `remove-admins`, as for any admin key). The state names the key in `recovery`
+while it is neither removed nor frozen.
+
+The apps make the key and sign the record later; 0.6 has the record and its rules.
+
+#### Certificates
+
+A member certificate is taken when its chain verifies to a root on the path (section 2 and "Admin CA and chains"), its key is the `key` of a counting `device`
+record that is not revoked, its issuer is a root on the path or the admin CA of an admin
+whose newest root record gives `admit` or `renew` (also when that admin was removed later,
+for the devices whose records stay), and neither its key nor its issuer is frozen. An admin CA
+is taken when it is under a root on the path and its key is an admin key that is not
+revoked. A certificate that passes everything but the rule on its `device` record, as a
+device whose record has not reached this member yet or a new member that holds no records
+yet, gets a connection that carries records only, so the records reach whichever side lacks
+them; it connects as a member once they name it. The **root's own device** is the device of the newest `device` record with `holds_root` that
+the current root's own key signed (the apps and `cbb` sign it right after making the group
+or taking it over); a peer is the root only when its member key is that record's `key`.
+
+### Stopping the exchange
+
+When the records show a likely thief, the exchange stops until the root decides. The state
+says how far:
+
+| Cause | `stop` | Effect |
+|-------|--------|--------|
+| two claims under one root; a disputed claim; a conflict between admins; a root that signed two histories | `full` | every member stops sync, events, media, commands and admissions with every peer; its connections carry records only ("Records only" in the exchange), so the root's decision reaches it |
+| an admin that signed two histories | `secrets` | no member sends a secret event's text (`kind` `secret`; it sends the event's mark) or takes a `secret` paste; the devices that admin alone admitted get nothing: their connections carry records only |
+| a pending claim | none | the claimant's devices get no secret's text and take no `secret` paste |
+
+A member applies it as soon as it holds the records, and lifts it as soon as it holds the
+root's records that end it: the check of a peer's certificate ("Certificates") lets a
+connection carry records only while the stop holds, and the member connects again as a member
+once it ends. `cbb status` and the apps show the cause, the devices involved and what ends it
+(in Go `control.Status`'s `stop`, `claims`, `conflicts` and `newer`). A user who has lost the
+root sets the group up again.
+
+### The state
+
+The function takes the group CA certificate, the record set, the current time on the
+member's clock or that the member does not know the time, and, for each claim's record ID,
+the time the member first held it (a time after the current one counts as the current one;
+the time since and the time left are held at the ends of a 64-bit integer, never wrapped),
+and returns the state as one canonical JSON object:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `roots` | array of strings | the path: the root certificates' key hashes from the group CA to the current root |
+| `root_device` | string | the root's own device ID; absent when there is none |
+| `devices` | array of objects | sorted by `device`: `device`, `name`, `role`, `os`, `keys` (sorted member key hashes that stand), the newest record's `store`, `kind`, `proof` and `seal` when it has them, and, for an admin, `admin`, `powers`, `commands`, `frozen` (true when frozen) |
+| `revoked` | array of strings | sorted key hashes the records remove |
+| `claims` | array of objects | sorted by `record`: `record`, `claimant` (admin key hash), `root` (new root key hash), `state` (`pending`, `effective`, `cancelled`, `void`, `competing` or `disputed`), `left_ms` while pending |
+| `conflicts` | array of objects | sorted by the first record ID: `kind` (`admins`, `claims`, `two_histories`), `records` (sorted record IDs), `signers` (sorted key hashes) |
+| `stop` | string | `none`, `secrets` or `full` |
+| `no_secrets_to` | array of strings | sorted device IDs that get no secrets |
+| `nothing_to` | array of strings | sorted device IDs that get nothing |
+| `newer` | array of strings | sorted IDs of the records of a later version the member keeps, at most 16 |
+| `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
+| `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
+| `hubs` | array of strings | the main hubs of the `hubs` record that counts ("The hubs table"): its devices that are in `devices` with the role `full` or `phone`, in its order |
+| `recovery` | string | the key hash of the recovery key ("The recovery key"), while it is neither removed nor frozen |
+
+The reasons in `ignored`, in the order they are decided:
+
+| `why` | The record |
+|-------|------------|
+| `unreadable` | its body is not a record of version 2 |
+| `signature` | its signature or chain does not check |
+| `group` | is of another group |
+| `issuer` | its admin CA is from no root of the group |
+| `limit` | past a limit on the set (see "Limits") |
+| `history` | its prev chain is broken, on a branch a `resolve` voided, or at or after a second history |
+| `not_root` | a root's own record whose signer is no root on the path |
+| `cut` | a root's record past its root's cut, or an admin record a root's removal, freeze or thaw cut off |
+| `undecided` | an admin record in a conflict between admins |
+| `power` | an admin record its signer had no admin power for, or with an admin CA of a root off the path |
+| `removed` | an admin record a counting admin removal or freeze cut off |
+
+Of two copies of one body left out before the evaluation (the first five reasons) for
+different reasons, the reason first in byte order is kept.
+
+Empty fields are left out, as in signed bodies, so two implementations agree when their
+states are the same bytes. The state does not depend on the order in which records arrived;
+the vectors give each set in every order of its records (up to 8 records; in random orders
+beyond) and check the same bytes.
 
 ### Exchange in the member protocol
 
+- A member keeps every record it can read (and those of a later version, "Records of a
+  later version") in a file next to its identity: at most 4096, plus up to 1024 more signed
+  by the own key of a root on the path, so a full set still takes the record in which the
+  root removes an admin that filled it, and at most 1024 of one signer. It MUST check a
+  record's signature before it counts it against these limits. The limits of "Limits" then
+  decide which of them count. An envelope with the body and the signature of one it holds
+  is a copy, and it keeps the first. Go keeps the records in `records.json` (mode 0600) with
+  the time it first held each claim, and the path in the identity file's `roots`.
 - The hello object (section 4) carries `records`, the digest of the records the sender
-  holds: SHA-256 over, for each record, its record ID and then the SHA-256 of its signer's
-  SubjectPublicKeyInfo (the root's or the admin CA's), each the raw 32 bytes, the 64-byte
-  pairs sorted bytewise and concatenated; standard base64; absent when it holds none. Two
-  members that hold the same bodies under different signers so send each other their
-  records. Members before 0.6 hashed the record IDs alone, so their digest differs from a
-  newer member's, and the two send each other their records at each connection; nothing
-  else changes.
+  holds: SHA-256 over, for each record, its record ID and then the SHA-256 of its `sig`, each
+  the raw 32 bytes, the 64-byte pairs sorted bytewise and concatenated; standard base64;
+  absent when it holds none.
 - A side that holds records and whose digest differs from the peer's sends, after the peer's
   hello, `{"t":"records","records":[envelope, ...]}` with every record it holds, split into
   messages of about 1 MiB each. A receiver adds the valid ones, saves them, and sends the
   records that were new to it to its other peers, which have sent their hello, the same way.
   Invalid records are logged and dropped; the connection stays.
-- After adding a revocation a member first queues the new records for its peers, then closes
-  every connection whose peer certificate is now refused (rule 6), after what is queued for
-  it and a `bye`, and the TLS check refuses it from then on. So a revoked member that is
-  connected gets the record that revokes it. A member that learns that its own key is
-  revoked logs that it was removed from the group, and its status says so (`removed`); an
-  admin computer whose admin key is frozen says that instead (`frozen`); the others refuse
-  it. A member MUST close a connection, and refuse new ones, whose peer
-  certificate the records refuse, as soon as it holds the record.
-- A member that holds the group CA key (the root, or a key holder of a legacy group) records
-  every device it admits (its name and `os`
-  from the pairing Info, role `full` or `lite`) and every iPhone it pairs (`shortcut`, `os`
-  `ios`, name `iPhone`, device = the phone ID), and, for groups made before the list
-  existed, itself and every connected peer that has no record yet, with the name and `os`
-  from the peer's hello (or the role and the first 8 characters of its ID). When a computer's
-  hello states an `os` that its record does not, it signs a new record for it with that `os`
-  and the rest of the record unchanged.
+- **Records only.** A peer whose certificate passes every rule of "Certificates" but the one
+  on its `device` record (a device whose record has not reached this member yet, a new member
+  that holds no records yet, or a root's own device during a claim), and any peer while the
+  state stops the exchange with it ("Stopping the exchange"), gets a connection that
+  carries records only: each side sends its hello with no current event and nothing but its
+  records digest, sends its records when the digests differ, takes `records` from the peer,
+  and sends and takes nothing else (no events, credentials, commands, tunnel keys, hubs or
+  iPhone CA). It closes the connection once the records let the peer in, and the side that
+  dialed connects again at once as a member, or when no records came for 5 seconds. Every
+  member keeps such a connection while the state stops the exchange with the peer, so that
+  the root's decision reaches it; for the other cases only full members keep it, and the
+  lite member and the phones refuse the peer and take the records from the others.
+- After adding records that refuse a certificate a member first queues the new records for
+  its peers, then closes every connection whose peer certificate is now refused
+  ("Certificates"), after what is queued for it and a `bye`, and the TLS check refuses it from
+  then on. So a revoked member that is connected gets the record that revokes it. A member
+  that learns that its own key is revoked logs that it was removed from the group, and its
+  status says so (`removed`); an admin computer whose admin key is frozen says that instead
+  (`frozen`); the others refuse it. A member MUST close a connection, and refuse new ones,
+  whose peer certificate the records refuse, as soon as it holds the record. When the state
+  stops the exchange ("Stopping the exchange"), a member applies it to every connection at
+  once.
+- A member that holds the root's key records every device it admits (its name and `os` from
+  the pairing Info, role `full` or `lite`) and every iPhone it pairs (`shortcut`, `os` `ios`,
+  name `iPhone`, device = the phone ID), and itself and every connected peer that has no
+  record yet, with the name and `os` from the peer's hello (or the role and the first 8
+  characters of its ID). When a computer's hello states an `os` that its record does not, it
+  signs a new record for it with that `os` and the rest of the record unchanged.
 - The iPhone endpoints (section 7) treat the token of a revoked iPhone as unknown.
 
 ### Control operations
@@ -1747,13 +1956,13 @@ identity (mode 0600) and the path in the identity file's `roots`.
 |------|---------|---------|
 | `devices` | none | `{devices: [{id, name, role, os, form, os_version, version, mac, admin, root, frozen, old_keys, online, last_seen_ms, self, listed}], done}`: the listed devices, then this device and the connected peers that have no record yet (`listed` false). `last_seen_ms` is when this member last saw the device connected; `form`, `os_version`, `version` and `mac` are what its hello says (section 4, "Device"), for this device and the connected ones only |
 | `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "off", device}`, `{name: "hub", addrs, port, forwarder, forwarder_key, obfuscate?, vless?}`, `{name: "move", device, forwarder?, forwarder_key?, addrs?}` or `{name: "relay", relay, relay_key, consent}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer whose keys are not in a TPM); `off` deletes `tunnel.json`, and with `device`, on an admin, sends that device an `away-off` command (section 15); `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14), and needs `consent`, since the relay learns which devices talk; `move`, on the hub, an admin, makes the member `device` the hub in its place with a signed `hub` command (section 15), reached at `addrs` and through `forwarder`, or through this hub's forwarder when none are given; `obfuscate` and `vless` with `hub` are the settings of section 11. Members connect again afterwards, so their hellos carry the change (section 11) |
-| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root is removed only by the admin that takes the group over (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
+| `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root or an admin whose powers allow it (`remove`, and `remove-admins` for an admin; "Who signs what"); a device cannot remove itself; the root is never removed, only replaced by a claim (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
-| `takeover` | `{name}`: the lost root, a device ID or a name (case-insensitive) | `{name, done}` or an error. Only on an admin computer of a group whose root is a computer, and holding the iPhone CA: signs a `claim` against the root that name names, which takes effect when the root's takeover delay has passed on each member, unless the root cancels it (records-v2.md, "Handing the group over") |
+| `takeover` | `{name}`: the lost root, a device ID or a name (case-insensitive) | `{name, done}` or an error. Only on an admin computer of a group whose root is a computer, and holding the iPhone CA: signs a `claim` against the root that name names, which takes effect when the root's takeover delay has passed on each member, unless the root cancels it ("Handing the group over") |
 | `takeover-delay` | `{value}`: a duration from `0s` to `168h` | `{done}` or an error. Only on the group's root: signs a `settings` record with `takeover_delay_ms`, how long a claim waits on each member |
 | `hubs` | `{hubs}`: 1 to 16 names or device IDs of computers and phones, in the order they serve | `{done}` or an error. On the group's root or an admin with `hub`: signs a `hubs` record, the group's main hubs |
-| `freeze` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin that is not frozen: freezes another admin computer, never the root or an admin phone (rule 4) |
-| `thaw` | `{name}` | `{name, done}` or an error. Only on the root computer: ends every freeze of that admin computer (rule 4) |
+| `freeze` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin that is not frozen: freezes another admin without `remove-admins`, never the root or an admin phone ("Removals and freezes keep what the author saw") |
+| `thaw` | `{name}` | `{name, done}` or an error. Only on the root computer (a computer's admin has no `thaw`): ends every freeze of that admin ("Removals and freezes keep what the author saw") |
 
 ## 11. Tunnel keys
 
@@ -1822,7 +2031,7 @@ and then syncs at home only ("Through the tunnel" below).
   address, where `mobile/cbbtun`'s `Hub` leads each connection through the tunnel) and
   admits clients and answers with the offer by the rules above (`PhoneHub`, MemberNode's
   `hub`); `cbbtun`'s `SetClients` takes the clients it keeps.
-- When records revoke a device (section 10, rule 6, on the chain it presented), the hub
+- When records revoke a device (section 10, "Certificates", on the chain it presented), the hub
   MUST forget its key at once.
 - All of this happens inside member TLS, so a device gets into the tunnel only after it met
   the hub as a member, with the key that member sent. A device that is not yet a member
@@ -1864,10 +2073,10 @@ its own hub on; the clients keep its offer as any hub's.
 The group's root and admins with a hub set up are its hubs, in an order every member
 derives from the records alone: phones first (a phone is the hub while its app is open,
 so it serves whenever it is there), then computers; within each, the root first, then by
-device ID. The vectors in `testdata/interop/go-hubs.json` (Go's `TestGoHubVectors`) give an
+device ID. The vectors in `testdata/interop/v2-hubs.json` (Go's `TestGoHubVectors`) give an
 order that Go (`Records.HubOrder`), both kits (`RecordSet.hubOrder`) and the lite member
 (`hub_order`) must all derive. The root, or an admin with `hub`, may sign a table of main
-hubs in the user's order (a `hubs` record, docs/records-v2.md, "The hubs table"; `cbb hubs`):
+hubs in the user's order (a `hubs` record, section 10, "The hubs table"; `cbb hubs`):
 its hubs come first, in its order, then the others in the derived order (D-65 in
 [design.md](design.md)).
 
@@ -2170,7 +2379,7 @@ close the connection beyond that; a sender MUST stay below it.
    its server key (section 18) presents only a certificate of that key, self-signed, with
    the subject `clipboardbridge server`, no names, key usage digitalSignature and client
    use. Any other hub presents its member certificate, its admin CA if it has one, and the
-   group's roots (the group CA, then any `root` records' CAs).
+   group's roots (the group CA, then the new roots of the claims that took effect).
 2. The forwarder takes the hub's certificate as a member certificate when it names a device
    (section 1), and verifies it, for client authentication, to a self-signed CA among the
    presented certificates, whose tag names the group (section 1). Otherwise it must be the
@@ -2207,7 +2416,7 @@ close the connection beyond that; a sender MUST stay below it.
      current root signed) or an admin that is not frozen (the devices list, section 10,
      names it an admin with that key). Go hubs (`internal/forward`) and
      the phones' hub (`mobile/cbbtun`) do this; any other hub is refused as before.
-   - `records` are the group's authority records: the path records (section 6, the Welcome; section 10, rule 7), every record
+   - `records` are the group's authority records: the path records (section 6, the Welcome; section 10, "The state"), every record
      that is not a `device` record, and of the `device` records a root signed with its own key
      those of a root's own device and every record of each device a root made an admin, so
      that a demotion counts. The records of the other devices, with their names, are not
@@ -2386,11 +2595,11 @@ per message, no length prefix, at most 1 MiB in all from the other side.
    server name. It MUST accept only the pinned key. A device whose period's members' credential
    lists its server key (section 18) presents only the certificate of that key, as a hub to
    its forwarder (section 13, step 1). Any other presents its member certificate, its admin
-   CA if it has one, and the group's roots (the group CA, then any `root` records' CAs).
+   CA if it has one, and the group's roots (the group CA, then the new roots of the claims that took effect).
 2. With a member certificate, the relay checks that the leaf names a device (section 1) and
    verifies it, for client authentication, to one of the presented self-signed CAs whose
    tag is among the groups it serves. That tag names the group. A group that took a new root
-   (`root` records, section 10) is served under each of its tags the relay is given.
+   (a claim, section 10) is served under each of its tags the relay is given.
 3. The key proof is the forwarder's (section 13, step 3) with the label
    `clipboardbridge relay key`: `{"e": bytes, "roots": bool}` from the relay, `{"key":
    bytes, "proof": bytes, "records": [record], "credentials": [credential], "roots":
@@ -2600,7 +2809,7 @@ The receiver MUST take a command only when:
 - `group` is its group and `to` its own device ID;
 - the signature verifies under a root on the path of the group's records, and the signer is
   that root or an admin CA under it that is neither revoked nor frozen; a watch's admin CA
-  (section 10, rule 8) signs only `paste-off`, `actions-off`, `away-off` and `action`;
+  (section 10, "Watches") signs only `paste-off`, `actions-off`, `away-off` and `action`;
 - `expires_ms` is after its clock and `time_ms` at most 60 s ahead of it;
 - its `id` is not in its replay cache, which keeps the IDs of the commands it carried out
   until they expire (at most 4096 at a time);
@@ -3000,7 +3209,7 @@ What a forwarder and a relay check in place of the group's records, so that no d
 name, system, root or date leaves the group, and a server cannot follow a group or a device
 from one month to the next ([design.md](design.md), D-67 and D-75). Implemented in Go
 (`internal/group/credential.go` and `serverkeys.go`, `internal/forward`, `internal/relay`,
-`internal/service/credentials.go`). The vectors in `testdata/interop/go-credentials.json`
+`internal/service/credentials.go`). The vectors in `testdata/interop/v2-credentials.json`
 (Go's `TestGoCredentialVectors`) give a group's records, the lists its credentials must hold,
 a period with its server credentials, its hubs' and members' credentials, and sets a server
 refuses. The lite member's core reads and checks them as Go does (`lite/core/src/credential.rs`:

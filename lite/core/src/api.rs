@@ -14,6 +14,7 @@
 //! always answers.
 
 mod group;
+mod signed;
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -76,6 +77,10 @@ pub enum Code {
     /// A command is refused: its signer, its target, its time or its
     /// limits.
     Command = 15,
+    /// A signed body that is not a record (a command, a server
+    /// credential, a release file or a manifest) is refused: its form or a
+    /// field.
+    Signed = 16,
 }
 
 impl Code {
@@ -92,6 +97,7 @@ impl Code {
             Code::Rollback => "rollback",
             Code::Saved => "saved",
             Code::Command => "command",
+            Code::Signed => "signed",
         }
     }
 }
@@ -176,6 +182,7 @@ fn dispatch(op: &str, args: Value) -> Result<Vec<u8>, Refusal> {
         "check_member" => check_member(serde_json::from_value(args).map_err(bad_args)?),
         "read_invite" => read_invite(serde_json::from_value(args).map_err(bad_args)?),
         _ => group::dispatch(op, &args)
+            .or_else(|| signed::dispatch(op, &args))
             .unwrap_or_else(|| Err(refuse(Code::Op, Error::msg(alloc::format!("The core has no call named {op:?}."))))),
     }
 }

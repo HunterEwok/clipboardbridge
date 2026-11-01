@@ -176,6 +176,8 @@ func (s *Service) pasted(body group.CommandBody, c group.Record, from sender) no
 		res.Status, res.Reason = node.ResultFailed, fmt.Sprintf("reading the remote paste settings: %v", err)
 	case !set.On:
 		res = refuse(errPasteOff.Error())
+	case body.Kind == "secret" && s.secretsStopped():
+		res = refuse("the group's records stop secrets until its root decides (cbb status says why)")
 	case body.Enter && !set.Enter:
 		res = refuse("this device takes pastes without Enter only; its user allows Enter with cbb paste-receive on -enter")
 	case !s.pastes.Allow(from.key, s.cfg.now()):
@@ -559,4 +561,13 @@ func (s *Service) pasteStatusLocked() *control.Paste {
 	}
 	slices.Sort(p.Targets)
 	return p
+}
+
+// secretsStopped reports whether the records stop secrets to this device
+// (group.Records.NoSecretsTo): it then takes no secret paste either.
+func (s *Service) secretsStopped() bool {
+	s.mu.Lock()
+	id := s.id
+	s.mu.Unlock()
+	return id != nil && s.noSecretsTo(id.ID)
 }

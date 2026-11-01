@@ -14,12 +14,12 @@ import (
 )
 
 // CheckCanonical checks that b is a signed body in the strict form and in
-// its canonical form (docs/records-v2.md, "Canonical form of signed
-// bodies"): no whitespace outside strings, the members of every object in
-// bytewise order of their names, and in strings only the escapes \", \\
-// and \u00XX, in lower-case hex, for a character below U+0020. So b is
-// the bytes Canonicalize gives for what it holds. Each name in required
-// must be a member of the object.
+// its canonical form (docs/protocol.md, Conventions, "Signed bodies"): no
+// whitespace outside strings, the members of every object in bytewise order
+// of their names, and in strings only the escapes \", \\ and \u00XX, in
+// lower-case hex, for a character below U+0020. So b is the bytes
+// Canonicalize gives for what it holds. Each name in required must be a
+// member of the object.
 func CheckCanonical(b []byte, required ...string) error {
 	if err := Check(b, required...); err != nil {
 		return err

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/benchtime"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -351,6 +352,13 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpResolve:
+		who, err := s.resolveHistories()
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Name: strings.Join(who, ", "), Done: true}, nil)
 	case control.OpFreeze, control.OpThaw:
 		name, err := s.freeze(m.Name, m.Op == control.OpFreeze)
 		if err != nil {
@@ -457,6 +465,7 @@ func (s *Service) statusWithRemoved() *control.Status {
 		return st
 	}
 	switch err := s.allow(id.ID, ownChain(id)); {
+	case errors.Is(err, group.ErrStopped):
 	case errors.Is(err, group.ErrRecordsOnly):
 		st.TakenOverBy = s.takenOverBy(id)
 	case err != nil && s.frozen(id):
@@ -464,7 +473,37 @@ func (s *Service) statusWithRemoved() *control.Status {
 	case err != nil:
 		st.Removed = true
 	}
+	s.groupStatus(st)
 	return st
+}
+
+// groupStatus adds to st what the records stop and why: the claims that
+// wait or stop the group, the conflicts, and the records of a later
+// version (docs/protocol.md, section 10, "Stopping the exchange").
+func (s *Service) groupStatus(st *control.Status) {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return
+	}
+	gs := s.records.State()
+	if gs.Stop != authority.StopNone {
+		st.Stop = gs.Stop
+	}
+	for _, c := range gs.Claims {
+		switch c.State {
+		case "pending", "competing", "disputed":
+			st.Claims = append(st.Claims, control.Claim{By: s.records.SignerName(c.Claimant), State: c.State, LeftMS: c.LeftMS})
+		}
+	}
+	for _, c := range gs.Conflicts {
+		cf := control.Conflict{Kind: c.Kind}
+		for _, k := range c.Signers {
+			cf.Devices = append(cf.Devices, s.records.SignerName(k))
+		}
+		st.Conflicts = append(st.Conflicts, cf)
+	}
+	st.Newer = len(gs.Newer)
 }
 
 // pair opens a pairing window and reports its end; a client that hangs up

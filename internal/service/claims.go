@@ -14,7 +14,7 @@ import (
 
 // claimCheck is how often a member looks again at the claims to take the
 // group over: a claim takes effect when its delay ends, without a new
-// record (docs/records-v2.md, "Handing the group over").
+// record (docs/protocol.md, section 10, "Handing the group over").
 var claimCheck = max(benchtime.D(time.Minute), time.Second)
 
 // claimLoop follows the claims until ctx is done: when one takes effect,

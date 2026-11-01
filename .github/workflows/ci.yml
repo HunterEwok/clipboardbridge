@@ -1711,6 +1711,9 @@ jobs:
         run: |
           (cd lite && cargo build --locked --release -p clipboardbridge-ffi)
           go test -race -tags cbbcore ./internal/core -v
+      - name: Go reads commands, server credentials and release files through the Rust core, and takes the same bodies
+        working-directory: .
+        run: go test -race -tags cbbcore ./internal/release ./internal/group -run 'Strict|Command|Credential|Watch|Release'
       - name: Go runs the Rust core as WebAssembly under wazero, as on Windows, macOS and FreeBSD, and gets each vector's state
         working-directory: .
         run: |

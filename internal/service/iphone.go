@@ -224,6 +224,7 @@ func (s *Service) revokeShortcuts() error {
 	if len(keys) == 0 {
 		return nil
 	}
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordRevoke, Keys: keys})
 	if err != nil {
 		return err

@@ -581,6 +581,13 @@ fn cmd_status(g: &Global, args: &[String]) -> Result<()> {
     if !s.mode.is_empty() {
         println!("mode    {}", s.mode);
     }
+    match s.stop.as_str() {
+        "full" => println!(
+            "The group is stopped: its members exchange records only, no clipboard, until the group's root decides."
+        ),
+        "secrets" => println!("The group sends no secrets until its root decides."),
+        _ => {}
+    }
     if s.peers.is_empty() {
         println!("no members connected");
     }

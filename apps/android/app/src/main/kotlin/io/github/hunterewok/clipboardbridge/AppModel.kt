@@ -11,6 +11,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.hunterewok.clipboardbridge.kit.GroupAlert
 import io.github.hunterewok.clipboardbridge.kit.Arrangement
 import io.github.hunterewok.clipboardbridge.kit.Content
 import io.github.hunterewok.clipboardbridge.kit.InvitationWindow
@@ -92,6 +93,14 @@ class AppModel(private val app: Context) {
     var joinCode by mutableStateOf<JoinCode?>(null)
         private set
     var isAdmin by mutableStateOf(group.isAdmin)
+        private set
+
+    /** Whether this phone holds the group's root, which ends conflicts. */
+    var isRoot by mutableStateOf(false)
+        private set
+
+    /** What the group's records stop and what ends it. */
+    var alerts by mutableStateOf<List<GroupAlert>>(emptyList())
         private set
 
     /** The one-time note on the Start screen that this phone is ready. */
@@ -359,6 +368,9 @@ class AppModel(private val app: Context) {
         val (d, admin) = withContext(Dispatchers.IO) { group.devices to group.isAdmin }
         devices = d
         isAdmin = admin
+        val (root, a) = withContext(Dispatchers.IO) { group.isRoot to group.alerts }
+        isRoot = root
+        alerts = a
         notifier.observe(d)
         away = group.awayFromHome?.let { a ->
             // The last failure only while it is still trying; once connected or at home it is old news.
@@ -635,6 +647,22 @@ class AppModel(private val app: Context) {
         return done
     }
 
+    /** Ends a conflict or cancels a claim as the group's root: voids the alert's records. */
+    suspend fun resolve(alert: GroupAlert) {
+        message = try {
+            group.resolve(alert.records)
+            when (alert.kind) {
+                GroupAlert.Kind.CLAIMS, GroupAlert.Kind.CLAIM_PENDING, GroupAlert.Kind.CLAIM_STOPPED -> Note(R.string.claim_cancelled)
+                else -> Note(R.string.histories_voided)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            describe(e)
+        }
+        update()
+    }
+
     /** Unfreezes an admin computer that another admin froze. */
     suspend fun unfreeze(id: String) {
         message = try {
@@ -668,7 +696,7 @@ class AppModel(private val app: Context) {
 
     /**
      * Makes the connected Wear OS watch an admin with a key of its own, for
-     * the emergency actions (docs/protocol.md, section 10, rule 8): the
+     * the emergency actions (docs/protocol.md, section 10, "Watches"): the
      * watch makes the key, and the root signs after the user confirms.
      */
     suspend fun addWatch() {

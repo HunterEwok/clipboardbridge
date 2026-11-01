@@ -97,6 +97,7 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Tokens.spacingLarge) {
                 summary
+                AlertsCard()
                 Button {
                     Task { await model.sync() }
                 } label: {
@@ -124,6 +125,7 @@ struct HomeView: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: Tokens.spacingMedium) {
                 summary
+                AlertsCard()
                 if let message = model.message {
                     Text(message).foregroundStyle(palette.textDim)
                 }

@@ -102,10 +102,8 @@ type actionVectors struct {
 // TestGoActionVectors checks action and actions-off commands for a lite
 // member, signed by the root phone, an admin phone, an admin computer with
 // its keys in a file and one with them in a TPM, and which device each
-// signer is (docs/protocol.md, section 15), in records v:2; the records of
-// testdata/interop/go-actions.json are v:1 and refused.
+// signer is (docs/protocol.md, section 15), in records v:2.
 func TestGoActionVectors(t *testing.T) {
-	checkV1Refused(t, "go-actions.json")
 	var v actionVectors
 	{
 		pg := newPhoneGroup(t)

@@ -157,6 +157,7 @@ function render() {
     : !inGroup ? t("This computer is in no group yet") : t("%d of %d online", online, others.length);
   $("tag").textContent = inGroup ? s.status.group : "";
   renderAway(inGroup ? s.status.away : undefined, inGroup);
+  renderAlerts(inGroup ? s.status : undefined);
   for (const b of document.querySelectorAll("[data-layout]")) b.setAttribute("aria-checked", String(b.dataset.layout === s.settings.layout));
   $("bar").hidden = !inGroup;
   $("send").disabled = $("fetch").disabled = $("update").disabled = s.busy;
@@ -189,6 +190,87 @@ function render() {
 // The devices as tiles or a list: in the user's order with the
 // collections, a collection's page, or flat while a search or a filter is
 // on (more than 12 devices).
+// What the group's records stop and what ends it, from cbb status
+// (docs/protocol.md, section 10, "Stopping the exchange"): on the group's
+// root, cbb resolve for two histories and removing an admin for the others.
+function renderAlerts(st) {
+  const box = $("alerts");
+  const lines = st ? alertLines(st) : [];
+  box.hidden = lines.length === 0;
+  const root = state.devices.find((x) => x.self)?.root;
+  box.innerHTML = "";
+  for (const l of lines) {
+    const p = document.createElement("p");
+    p.className = l.newer ? "alert newer" : "alert";
+    p.textContent = "⚠ " + l.text;
+    box.append(p);
+    if (!l.resolve && l.remove.length === 0) continue;
+    if (!root) {
+      const d = document.createElement("p");
+      d.className = "dim";
+      d.textContent = t("The group's root decides.");
+      box.append(d);
+      continue;
+    }
+    const row = document.createElement("div");
+    row.className = "buttons";
+    if (l.resolve) {
+      const b = document.createElement("button");
+      b.className = "glass";
+      b.textContent = t("Void both histories");
+      b.disabled = state.busy;
+      b.onclick = async () => {
+        if (await ask(t("Void both histories?"), t("Records signed with a stolen key are gone too; the device whose key it was signs its own again by itself."), t("Void both histories"))) await act("Resolve");
+      };
+      row.append(b);
+    }
+    for (const name of l.remove) {
+      const b = document.createElement("button");
+      b.className = "glass danger";
+      b.textContent = t("Remove %s", name);
+      b.disabled = state.busy;
+      b.onclick = async () => {
+        if (await ask(t("Remove %s?", name), t("It will no longer sync with your devices. To add it again, pair it again."), t("Remove"))) await act("Remove", name);
+      };
+      row.append(b);
+    }
+    box.append(row);
+  }
+}
+
+// A wait in days, hours or minutes.
+function roughly(ms) {
+  const h = Math.floor(ms / 3600000);
+  if (h >= 48) return t("%d d", Math.floor(h / 24));
+  if (h >= 2) return t("%d h", h);
+  return t("%d min", Math.max(1, Math.floor(ms / 60000)));
+}
+
+// The alerts of a status: a sentence each, whether cbb resolve ends it, and
+// the devices whose removal does.
+function alertLines(st) {
+  const out = [];
+  if (st.stop === "full") out.push({ text: t("The group is stopped: its devices exchange only their records, no clipboard, until the group's root decides."), remove: [] });
+  if (st.stop === "secrets") out.push({ text: t("The group sends no secrets until its root decides."), remove: [] });
+  for (const c of st.conflicts ?? []) {
+    const who = c.devices?.length ? c.devices.join(", ") : t("devices unknown here");
+    if (c.kind === "two_histories") out.push({ text: t("%s signed two histories with one key, as a stolen key or a restore from a backup would.", who), resolve: true, remove: [] });
+    if (c.kind === "admins") out.push({ text: t("Admins removed or froze each other without seeing it: %s. The root removes one of them.", who), remove: c.devices ?? [] });
+    if (c.kind === "claims") out.push({ text: t("Two claims to take the group over: %s. The root cancels one or both by removing its admin.", who), remove: c.devices ?? [] });
+  }
+  for (const c of st.claims ?? []) {
+    if (c.state === "pending") {
+      out.push({ text: c.left_ms > 0
+        ? t("%s claims the group, to take it over from its root: it takes effect in %s, unless the root removes it.", c.by, roughly(c.left_ms))
+        : t("%s claims the group, to take it over from its root, unless the root removes it.", c.by), remove: [c.by] });
+    } else if (c.state === "competing" || c.state === "disputed") {
+      out.push({ text: t("%s claims the group, and the group is stopped until its root decides.", c.by), remove: [c.by] });
+    }
+  }
+  if (st.newer > 0) out.push({ text: t("The group holds %d records of a later version: update Clipboard Bridge to read them.", st.newer), newer: true, remove: [] });
+  return out;
+}
+
 function renderArranged(box, others) {
   const list = state.settings.layout === "list";
   const byId = new Map(others.map((d) => [d.id, d]));

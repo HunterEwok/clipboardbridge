@@ -225,10 +225,13 @@ public enum Commands {
         var hub: Order?
     }
 
-    /// Reads and checks a command's body, in the strict form of signed
-    /// bodies, as Go's parseCommandBody.
+    /// Reads a command's body once the Rust core took it (parse_body), in
+    /// the strict form of signed bodies, as Go's parseCommandBody.
     static func parse(_ data: Data) throws -> Body {
         func refuse(_ reason: String) -> Refused { Refused(reason: reason) }
+        // The core decides whether the body is taken; the checks below only
+        // read its fields.
+        if let why = Core.bodyRefusal("command", data) { throw refuse("the command is not valid: \(why)") }
         guard data.count <= maxPasteBody else { throw refuse("the command is too large") }
         do {
             try Strict.check(data, required: fields)

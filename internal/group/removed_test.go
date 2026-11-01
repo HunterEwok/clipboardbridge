@@ -15,11 +15,9 @@ import (
 // root of its own, whose key then revokes the group's admins: the claim
 // counts for nothing, so none of it counts, in any order and after any
 // delay. The cases of testdata/interop/v2-records.json about removed admins
-// say the same through a Records set; the records of version 1 that
-// go-removed-admin.json keeps for the phone kits are refused.
+// say the same through a Records set.
 func TestRemovedAdminVectors(t *testing.T) {
 	checkV2Cases(t, "removed admin's claim", "removed phone after a takeover", "claim after removal")
-	checkV1Refused(t, "go-removed-admin.json")
 
 	pg := newPhoneGroup(t)
 	g := pg.root.Cert
@@ -56,11 +54,8 @@ func TestRemovedAdminVectors(t *testing.T) {
 // Admins that remove each other in order or crossed, a root's removal that
 // cuts an admin off, a chain of claims and two claims under one root: the
 // cases of testdata/interop/v2-records.json for them through a Records set.
-// The records of version 1 that go-removed-admins.json keeps for the phone
-// kits are refused.
 func TestRemovedAdminCases(t *testing.T) {
 	checkV2Cases(t, "admin removals in order", "admin removals crossed", "root removal cuts an admin", "chain of claims", "two claims")
-	checkV1Refused(t, "go-removed-admins.json")
 }
 
 // fastP256 reports whether Go's P-256 has assembly on this architecture,

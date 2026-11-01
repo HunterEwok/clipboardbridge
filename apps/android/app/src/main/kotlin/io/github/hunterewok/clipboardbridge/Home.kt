@@ -4,6 +4,9 @@
 package io.github.hunterewok.clipboardbridge
 
 import android.Manifest
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -56,6 +59,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.github.hunterewok.clipboardbridge.kit.Arrangement as Tiles
+import io.github.hunterewok.clipboardbridge.kit.GroupAlert
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -164,6 +169,7 @@ private fun HomeMain(model: AppModel, open: (HomePage) -> Unit, openCollection: 
             model.settings.layout = it
         }
         Summary(model)
+        Alerts(model)
         SyncButton(model)
         model.message?.let { NoteText(it, dim = true) }
         Devices(model, search, layout, select, openCollection)
@@ -185,6 +191,7 @@ private fun WideHome(model: AppModel, selected: String?, select: (String?) -> Un
                 model.settings.wideLayout = it
             }
             Summary(model)
+            Alerts(model)
             model.message?.let { NoteText(it, dim = true) }
             // The orbit keeps the group's order; Arrange mode and a search show tiles.
             if (layout == DeviceLayout.ORBIT && !arrange.on && !search.active) {
@@ -358,6 +365,91 @@ private fun Summary(model: AppModel) {
             style = MaterialTheme.typography.bodySmall,
             color = LocalPalette.current.textDim,
         )
+    }
+}
+
+/**
+ * What the group's records stop and what ends it: the stop, each conflict and
+ * each claim (GroupAlert). On the root phone each comes with what ends it,
+ * after the fingerprint or the screen lock: voiding both histories of a key,
+ * cancelling a claim, or removing one of two admins that removed each other.
+ */
+@Composable
+private fun Alerts(model: AppModel) {
+    if (model.alerts.isEmpty()) return
+    val palette = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    Column(Modifier.fillMaxWidth().card().padding(Tokens.spacingMedium), verticalArrangement = Arrangement.spacedBy(Tokens.spacingSmall)) {
+        for (alert in model.alerts) {
+            Text(
+                alertText(alert),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (alert.kind == GroupAlert.Kind.NEWER) palette.text else palette.danger,
+            )
+            when (alert.kind) {
+                GroupAlert.Kind.TWO_HISTORIES ->
+                    if (model.isRoot) {
+                        QuietButton(stringResource(R.string.void_both_histories), onClick = { scope.launch { model.resolve(alert) } })
+                    } else {
+                        RootDecides()
+                    }
+                GroupAlert.Kind.CLAIMS, GroupAlert.Kind.CLAIM_PENDING, GroupAlert.Kind.CLAIM_STOPPED ->
+                    if (model.isRoot) {
+                        QuietButton(stringResource(R.string.cancel_claim), onClick = { scope.launch { model.resolve(alert) } })
+                    } else {
+                        RootDecides()
+                    }
+                GroupAlert.Kind.ADMINS ->
+                    if (model.isRoot) {
+                        for ((id, name) in alert.devices.zip(alert.names)) {
+                            QuietButton(stringResource(R.string.remove_device, name), onClick = { scope.launch { model.remove(id) } })
+                        }
+                    } else {
+                        RootDecides()
+                    }
+                else -> {}
+            }
+        }
+    }
+}
+
+@Composable
+private fun RootDecides() {
+    Text(stringResource(R.string.alert_root_decides), style = MaterialTheme.typography.bodySmall, color = LocalPalette.current.textDim)
+}
+
+/** A wait in days, hours or minutes, in the user's language. */
+private fun roughly(ms: Long): String {
+    val h = ms / 3_600_000
+    val m = when {
+        h >= 48 -> Measure(h / 24, MeasureUnit.DAY)
+        h >= 2 -> Measure(h, MeasureUnit.HOUR)
+        else -> Measure(maxOf(1, ms / 60_000), MeasureUnit.MINUTE)
+    }
+    return MeasureFormat.getInstance(Locale.getDefault(), MeasureFormat.FormatWidth.WIDE).format(m)
+}
+
+/** The alert in a sentence. */
+@Composable
+private fun alertText(alert: GroupAlert): String {
+    val who = if (alert.names.isEmpty()) stringResource(R.string.alert_unknown_devices) else alert.names.joinToString(", ")
+    return when (alert.kind) {
+        GroupAlert.Kind.STOPPED -> stringResource(R.string.alert_stopped)
+        GroupAlert.Kind.SECRETS_STOPPED -> stringResource(R.string.alert_secrets_stopped)
+        GroupAlert.Kind.TWO_HISTORIES -> stringResource(R.string.alert_two_histories, who)
+        GroupAlert.Kind.ADMINS -> stringResource(R.string.alert_admins, who)
+        GroupAlert.Kind.CLAIMS -> stringResource(R.string.alert_claims, who)
+        GroupAlert.Kind.CLAIM_PENDING -> {
+            val ms = alert.leftMS
+            if (ms == null || ms <= 0) {
+                stringResource(R.string.alert_claim_pending, who)
+            } else {
+                val left = roughly(ms)
+                stringResource(R.string.alert_claim_pending_left, who, left)
+            }
+        }
+        GroupAlert.Kind.CLAIM_STOPPED -> stringResource(R.string.alert_claim_stopped, who)
+        GroupAlert.Kind.NEWER -> stringResource(R.string.alert_newer, alert.count)
     }
 }
 

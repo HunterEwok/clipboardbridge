@@ -96,4 +96,29 @@ public enum Core {
 
     /// The linked core's version, ABI and the commit it was built from.
     public static func version() throws -> Version { try run("version") }
+
+    /// Checks a signed body that is not a record through the core's
+    /// parse_body (docs/core-api.md, "Signed bodies"): `kind` is
+    /// `command`, `credential`, `keys`, `release`, `channel` or
+    /// `attest-status`. The core alone decides whether the body is taken;
+    /// a body it refuses throws its Refusal.
+    static func checkBody(_ kind: String, _ body: Data) throws {
+        struct Args: Encodable { var kind: String, body: Data }
+        struct Answer: Decodable {}
+        _ = try run("parse_body", Args(kind: kind, body: body), as: Answer.self)
+    }
+
+    /// checkBody, with a refusal in words for the log: the core's message
+    /// and its details.
+    static func bodyRefusal(_ kind: String, _ body: Data) -> String? {
+        do {
+            try checkBody(kind, body)
+            return nil
+        } catch let r as Refusal {
+            guard let d = r.details, !d.isEmpty else { return r.message }
+            return "\(r.message): \(d)"
+        } catch {
+            return "\(error)"
+        }
+    }
 }
