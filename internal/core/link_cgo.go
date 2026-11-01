@@ -15,6 +15,8 @@ import "C"
 
 import "unsafe"
 
+const how = "cgo"
+
 const linked = true
 
 func abi() (int, error) { return int(C.cbb_abi()), nil }

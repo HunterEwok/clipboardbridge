@@ -24,6 +24,8 @@ import (
 //go:embed cbb_core.wasm
 var module []byte
 
+const how = "WebAssembly under wazero"
+
 const linked = true
 
 var (
