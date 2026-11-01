@@ -107,7 +107,6 @@ func newJoiner(t *testing.T, os string) *Joiner {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j.Now = func() time.Time { return t0 }
 	return j
 }
 
@@ -1278,5 +1277,73 @@ func TestIdleAttemptsFromOneAddress(t *testing.T) {
 	}
 	if closed(f.window) {
 		t.Error("the window closed")
+	}
+}
+
+// withOldCAKeys returns w with the CA key fields that legacy groups sent,
+// which no joiner reads any more.
+func withOldCAKeys(t *testing.T, w *Welcome, ca *group.CA) *Welcome {
+	t.Helper()
+	data, err := json.Marshal(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	key, err := x509.MarshalPKCS8PrivateKey(ca.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m["group_ca_key"], m["phone_ca"], m["phone_ca_key"] = key, ca.Cert.Raw, key
+	if data, err = json.Marshal(m); err != nil {
+		t.Fatal(err)
+	}
+	var out Welcome
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	return &out
+}
+
+// TestJoinerRefusesKeysFromARoot checks that a Linux joiner takes no CA key
+// from a Welcome that still carries the fields of legacy groups.
+func TestJoinerRefusesKeysFromARoot(t *testing.T) {
+	f := newFixture(t)
+	j := newJoiner(t, "linux")
+	cert, err := f.admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := f.window.welcome(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := memberAD{Device: f.admin.ID, Group: group.Tag(f.admin.GroupCA.Cert)}
+	id, err := j.identity(withOldCAKeys(t, w, &f.admin.GroupCA), f.admin.Cert, member)
+	if err != nil || id.GroupCA.Key != nil || id.PhoneCA != nil || id.ServesPhone() {
+		t.Fatalf("a Linux joiner took CA keys: %v", err)
+	}
+}
+
+// TestMacRefusesCAKeys checks the same for a Mac.
+func TestMacRefusesCAKeys(t *testing.T) {
+	admin, err := group.Create(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := newJoiner(t, "macos")
+	cert, err := admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wel, err := (&Window{admin: admin}).welcome(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := j.identity(withOldCAKeys(t, wel, &admin.GroupCA), admin.Cert, memberAD{Device: admin.ID, Group: group.Tag(admin.GroupCA.Cert)})
+	if err != nil || id.GroupCA.Key != nil || id.PhoneCA != nil {
+		t.Fatalf("a Mac took CA keys: %v", err)
 	}
 }

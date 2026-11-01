@@ -29,7 +29,6 @@ type Joiner struct {
 	ID   group.DeviceID
 	Key  crypto.Signer // a P-256 key, in a file or a TPM
 	Info Info
-	Now  func() time.Time // time.Now if nil
 
 	// Member is the device ID of the member that admitted this device,
 	// once a join succeeded.
@@ -58,13 +57,6 @@ func NewJoiner(info Info) (*Joiner, error) {
 		return nil, err
 	}
 	return &Joiner{ID: group.NewDeviceID(), Key: key, Info: info}, nil
-}
-
-func (j *Joiner) now() time.Time {
-	if j.Now != nil {
-		return j.Now()
-	}
-	return time.Now()
 }
 
 // cert returns the joiner's self-signed certificate for its key, the same

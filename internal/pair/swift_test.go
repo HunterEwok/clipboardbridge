@@ -62,7 +62,6 @@ func TestSwiftMemberAdmitsGoJoiner(t *testing.T) {
 			conn.SetDeadline(time.Now().Add(20 * time.Second))
 
 			j := newJoiner(t, "linux")
-			j.Now = time.Now
 			memberDER, err := readBlob(conn)
 			if err != nil {
 				t.Fatal(err)
@@ -163,7 +162,6 @@ func TestSwiftMemberAdmitsGoJoinerTLS(t *testing.T) {
 			}
 			defer ln.Close()
 			j := newJoiner(t, "macos")
-			j.Now = time.Now
 			fp, err := j.Fingerprint()
 			if err != nil {
 				t.Fatal(err)
@@ -257,7 +255,6 @@ func TestSwiftHubAdmitsInvitedGoJoiner(t *testing.T) {
 				t.Fatal(err)
 			}
 			j := newJoiner(t, "linux")
-			j.Now = time.Now
 			fp, _ := j.Fingerprint()
 			saved := 0
 			id, joinErr := j.JoinSecret(ctx, conn, tc.secret, 30*time.Second, func(*group.Identity) error { saved++; return nil })
