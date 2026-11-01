@@ -28,14 +28,6 @@ func resign(t *testing.T, r Record, signer *CA, chain ...*x509.Certificate) Reco
 	return out
 }
 
-type envelopeVectors struct {
-	GroupCA []byte     `json:"group_ca"`
-	Records []Record   `json:"records"` // in the order a device that saw the admin's copy first got them
-	Keys    []adminKey `json:"keys"`
-	Digest  string     `json:"digest"`
-	Count   int        `json:"count"` // records in the set: the body signed twice counts twice
-}
-
 // In v:2 a body names its signer, so one body signed by another signer is
 // no record: a set refuses the copy a computer admin signed of the root's
 // removal of an admin phone, and the root's own copy removes the phone

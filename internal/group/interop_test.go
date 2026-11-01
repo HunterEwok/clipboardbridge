@@ -275,18 +275,6 @@ func TestSwiftAdmin(t *testing.T) {
 	}
 }
 
-type adminKey struct {
-	Name    string  `json:"name"`
-	Key     KeyHash `json:"key"`
-	Revoked bool    `json:"revoked"`
-}
-
-type rootDevice struct {
-	ID    DeviceID `json:"id"`
-	Name  string   `json:"name"`
-	Admin bool     `json:"admin"`
-}
-
 type rootChain struct {
 	Name    string   `json:"name"`
 	Chain   [][]byte `json:"chain"` // leaf first, then its admin CA
