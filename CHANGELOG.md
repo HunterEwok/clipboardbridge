@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- A model of the rules for handing the group over in records v:2, in Quint
+  (`docs/model/claims.qnt`): CI's `model` job checks its scenarios and the promises of
+  docs/records-v2.md over random runs.
 - CI checks the workflows with zizmor (template injection, tokens left to later steps, wide
   permissions, cache poisoning) and the lite member's and the ESP32 firmware's crates with
   cargo-deny: each under a license that fits the AGPL-3.0 (`lite/deny.toml`), from crates.io

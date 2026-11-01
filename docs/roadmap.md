@@ -114,9 +114,13 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 
 ### Next
 
-- **42.** **Points 1, 2, 3 and 9 are being built for 0.6**
+- **42.** **Points 1 to 6, 8 and 9 are being built for 0.6**
     ([records-v2.md](records-v2.md)), without a migration from `v:1`: groups made before
-    are set up again. The rest stays planned for 0.7. A simpler protocol for the group's authority, so that
+    are set up again; of point 4, the Welcome's format without a CA key is in 0.6 and the
+    legacy path goes with item 17. Everything that changes the rules core or a format it
+    reads or signs is done in 0.6, so 0.7 does not change the core: the Go service calls
+    `cbb_core` too (natively on Linux, as WebAssembly elsewhere), for the records, every
+    signed body and the certificate checks, and keeps its own code only as a test oracle. A simpler protocol for the group's authority, so that
     fewer of its rules can be read two ways. Today a signer's powers are derived from the
     records (whether a root is a computer, whether an admin CA is a phone's, a computer's or
     a watch's), removing an admin undoes what it signed so the remover lists in `keep` what
@@ -178,7 +182,8 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 - **31.** **Key levels**: the user picks who may be the group's root, an admin or a hub: only
     devices whose hardware key is proven by attestation, devices with a key in hardware (the
     default), or, after a warning, devices with a key in a file too. The evidence and the
-    marks are built; the setting is next. See "Key levels" below.
+    marks are built; the setting is next, its record's format in 0.6 with the rules core
+    (item 42). See "Key levels" below.
 - **33.** **Researched; not built (D-73).** The iPhone as a hub in the background, as a Network
     Extension. See "Research: the iPhone hub in a Network Extension" below.
 - **34.** **Collections** in the apps: the user's own sets of devices and the order of the tiles,
@@ -227,7 +232,7 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     3. Sync away from home there: gomobile builds no visionOS framework
        ([golang/go#65251](https://github.com/golang/go/issues/65251)), so the phones' tunnel
        needs another build of the same Go code or the lite member's tunnel in Rust.
-- **41.** **Planned for 0.7.** Commands sealed for their receiver: a command's body (a
+- **41.** **Being built for 0.6**, with the rules core (item 42). Commands sealed for their receiver: a command's body (a
     paste's text among it) is signed but not encrypted, so a hub that passes a command on
     for a device the sender cannot reach reads it; since 0.6 only the hubs pass commands
     on. Each member gets a key for this beside its member key (X25519; the keys in the TPM,
@@ -248,8 +253,9 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       and a prominent disclosure in the app before the user turns the service on; the Data
       safety form; the reason for the `connectedDevice` foreground service; the current
       target API level. The GitHub and F-Droid builds are not affected.
-- **44.** **Planned for 0.7.** More tools that check the code, after the records `v:2` and
-    the one rules core settle (all free and run only in CI, none ships in the product):
+- **44.** More tools that check the code (all free and run only in CI, none ships in the
+    product). Mutation testing of the records' code and Kani are done in 0.6 with the rules
+    core (item 42); the rest is planned for 0.7, after the core settles:
     - Mutation testing, nightly, on the records' code only: cargo-mutants for `cbb_core` and
       gremlins for Go change the code (drop a check, turn `<` into `<=`) and report every
       change that no test notices, so a weakened check cannot go unseen.
@@ -263,6 +269,11 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     - The Swift code that stays in Swift (the network, `AppModel`, `LiveGroup`): the
       Thread Sanitizer in the Mac app's CI job, then the Swift 6 language mode with its
       strict checks of concurrency.
+- **45.** **Planned after 0.6.** Two things the rules core does not yet allow:
+    - One device in several groups (a family's and a work group, or a phone that helps in a
+      relative's group): every call into the core and every saved state names its group.
+    - A temporary guest: a device record with an end date, after which the device leaves the
+      group without being removed by hand.
 
 ## Devices that are hard to type into
 
