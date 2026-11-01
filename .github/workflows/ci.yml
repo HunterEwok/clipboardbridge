@@ -1672,7 +1672,9 @@ jobs:
       - name: the MIPS builds under qemu with Go members, all but sync away from home
         run: |
           for a in mips mipsel; do
-            printf '#!/bin/sh\nexec qemu-%s-static %s "$@"\n' "$a" "$PWD/lite/target/$a-unknown-linux-musl/release/cbb" >"$RUNNER_TEMP/cbb-$a"
+            # Ubuntu 26.04's qemu-user is static and has no -static names.
+            q=$(command -v "qemu-$a-static" || command -v "qemu-$a")
+            printf '#!/bin/sh\nexec %s %s "$@"\n' "$q" "$PWD/lite/target/$a-unknown-linux-musl/release/cbb" >"$RUNNER_TEMP/cbb-$a"
             chmod +x "$RUNNER_TEMP/cbb-$a"
             "$RUNNER_TEMP/cbb-$a" version | grep -q 'linux/mips'
             CBB_LITE="$RUNNER_TEMP/cbb-$a" go test ./internal/service -run 'TestLite' -skip 'TestLiteMemberAway' -v
