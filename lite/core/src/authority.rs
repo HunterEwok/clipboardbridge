@@ -370,13 +370,11 @@ impl Body {
                 if self.heads.is_empty() {
                     return Err(Error::msg("a checkpoint needs heads"));
                 }
-                for (i, h) in self.heads.iter().enumerate() {
-                    if h.seq < 1 || h.seq > MAX_SEQ {
-                        return Err(Error::msg(format!("a head's seq {} is not from 1 to {MAX_SEQ}", h.seq)));
-                    }
-                    if i > 0 && self.heads[i - 1].key >= h.key {
-                        return Err(Error::msg("heads is not sorted by key, each once"));
-                    }
+                if let Some(h) = self.heads.iter().find(|h| h.seq < 1 || h.seq > MAX_SEQ) {
+                    return Err(Error::msg(format!("a head's seq {} is not from 1 to {MAX_SEQ}", h.seq)));
+                }
+                if self.heads.windows(2).any(|w| matches!(w, [a, b] if a.key >= b.key)) {
+                    return Err(Error::msg("heads is not sorted by key, each once"));
                 }
                 sorted_hashes(&self.keep, "keep")
             }
@@ -431,7 +429,7 @@ pub fn valid_name(s: &str) -> bool {
 }
 
 fn sorted_hashes(hs: &[Hash], field: &str) -> Result<()> {
-    if hs.windows(2).any(|w| w[0] >= w[1]) {
+    if hs.windows(2).any(|w| matches!(w, [a, b] if a >= b)) {
         return Err(Error::msg(format!("{field} is not sorted, each once")));
     }
     Ok(())
@@ -441,20 +439,18 @@ fn check_seen(seen: &[Seen]) -> Result<()> {
     if let Some(s) = seen.iter().find(|s| !(0..=MAX_SEQ).contains(&s.seq)) {
         return Err(Error::msg(format!("a seen seq {} is not from 0 to {MAX_SEQ}", s.seq)));
     }
-    if seen.windows(2).any(|w| w[0].key >= w[1].key) {
+    if seen.windows(2).any(|w| matches!(w, [a, b] if a.key >= b.key)) {
         return Err(Error::msg("seen is not sorted by key, each once"));
     }
     Ok(())
 }
 
 fn sorted_of(vs: &[String], known: &[&str], field: &str) -> Result<()> {
-    for (i, v) in vs.iter().enumerate() {
-        if !known.contains(&v.as_str()) {
-            return Err(Error::msg(format!("an unknown value {v:?} in {field}")));
-        }
-        if i > 0 && vs[i - 1] >= *v {
-            return Err(Error::msg(format!("{field} is not sorted, each once")));
-        }
+    if let Some(v) = vs.iter().find(|v| !known.contains(&v.as_str())) {
+        return Err(Error::msg(format!("an unknown value {v:?} in {field}")));
+    }
+    if vs.windows(2).any(|w| matches!(w, [a, b] if a >= b)) {
+        return Err(Error::msg(format!("{field} is not sorted, each once")));
     }
     Ok(())
 }
@@ -508,7 +504,7 @@ impl SigCache {
     }
 
     fn entry(key: &Cert, data: &[u8], sig: &[u8]) -> [u8; 32] {
-        let mut m = Vec::with_capacity(16 + 32 + 32 + sig.len());
+        let mut m = Vec::with_capacity(sig.len().saturating_add(16 + 32 + 32));
         m.extend_from_slice(b"cbb sig cache v1");
         m.extend_from_slice(&key_hash_of(key).0);
         m.extend_from_slice(&sha256(data));
@@ -765,7 +761,8 @@ pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
     // that still counts there (docs/records-v2.md, "Checkpoints").
     let mut best: Option<((usize, i64, Hash), State)> = None;
     for c in full.checkpoints(group_ca) {
-        let (c, id) = (full.recs[c].b(), full.recs[c].s.id);
+        let Some(r) = full.recs.get(c) else { continue };
+        let (c, id) = (r.b(), r.s.id);
         let records = prune(input.records, input.group, c);
         let pruned = Input { records: &records, ..*input };
         let e = Evaluation::new(&pruned, anchors_of(c));
@@ -879,6 +876,11 @@ struct Evaluation {
     devices: BTreeMap<String, Vec<usize>>,
 }
 
+// The evaluation keeps its records in one Vec and refers to them by their
+// positions, which it takes from that Vec itself (`0..recs.len()`, and maps
+// filled from it), and its per-record flags are Vecs of the same length; so
+// an index here is always in range.
+#[allow(clippy::indexing_slicing, reason = "positions come from the records' own Vec")]
 impl Evaluation {
     fn new(input: &Input, anchors: BTreeSet<Hash>) -> Evaluation {
         let mut roots = BTreeMap::new();
@@ -1001,16 +1003,20 @@ impl Evaluation {
     /// Reports whether i's prev chain down to seq 1, or to a record whose ID
     /// is one of anchors, is held, each step one seq lower.
     fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>, anchors: &BTreeSet<Hash>) -> bool {
-        let mut steps = 0;
-        while self.recs[i].b().seq > 1 && !anchors.contains(&self.recs[i].s.id) {
-            let Some(&p) = self.recs[i].b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
-            if self.recs[p].b().seq != self.recs[i].b().seq - 1 || steps > MAX_SEQ {
+        let mut steps: i64 = 0;
+        loop {
+            let Some(r) = self.recs.get(i) else { return false };
+            if r.b().seq <= 1 || anchors.contains(&r.s.id) {
+                return true;
+            }
+            let Some(&p) = r.b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
+            let Some(prev) = self.recs.get(p) else { return false };
+            if Some(prev.b().seq) != r.b().seq.checked_sub(1) || steps > MAX_SEQ {
                 return false;
             }
             i = p;
-            steps += 1;
+            steps = steps.saturating_add(1);
         }
-        true
     }
 
     /// Turns the evaluation into its last epoch, with the claims of the
@@ -1109,6 +1115,7 @@ struct Epoch<'a> {
     pending: Option<Hash>,
 }
 
+#[allow(clippy::indexing_slicing, reason = "positions come from the records' own Vec")]
 impl<'a> Epoch<'a> {
     fn new(e: &'a Evaluation, path: Vec<Hash>, cuts: BTreeMap<Hash, i64>) -> Epoch<'a> {
         let cur = *path.last().unwrap_or(&Hash::default());
@@ -1193,7 +1200,8 @@ impl<'a> Epoch<'a> {
         let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.r(i).s.id, i)).collect();
         let mut by_seq: BTreeMap<i64, usize> = BTreeMap::new();
         for &i in rs {
-            *by_seq.entry(self.r(i).b().seq).or_default() += 1;
+            let n = by_seq.entry(self.r(i).b().seq).or_default();
+            *n = n.saturating_add(1);
         }
         let dead = |mut i: usize| loop {
             let r = self.r(i);

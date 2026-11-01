@@ -84,7 +84,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [record_body, command, credential, release, wire]
+        target: [record_body, command, credential, release, wire, api]
     defaults:
       run:
         working-directory: lite/core

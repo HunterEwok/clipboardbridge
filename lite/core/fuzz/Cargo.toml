@@ -56,3 +56,10 @@ path = "fuzz_targets/wire.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "api"
+path = "fuzz_targets/api.rs"
+test = false
+doc = false
+bench = false
