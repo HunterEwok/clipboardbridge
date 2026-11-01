@@ -8,6 +8,8 @@ import android.content.res.Configuration
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -68,7 +70,8 @@ class ScreensTest {
         show()
         compose.onNodeWithContentDescription(str(R.string.settings)).performClick()
         for (a in Appearance.entries) {
-            compose.onNodeWithText(str(a.title)).performScrollTo().performClick()
+            // The theme comes first; the language list has its own "System".
+            compose.onAllNodesWithText(str(a.title)).onFirst().performScrollTo().performClick()
             compose.waitForIdle()
             assertEquals(a, model.settings.appearance)
         }
