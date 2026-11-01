@@ -612,9 +612,15 @@ people run on servers of their own without a site.
   repository; `site/README.md` gains the step, and the forwarder runs with XHTTP.
 - **Then, on the lite member:** AmneziaWG (its changes to WireGuard's packets: junk
   packets, shifted sizes and headers, padding) as a layer around GotaTun's UDP socket,
-  ported from amneziawg-go (MIT) under `third_party` and checked against it, so the lite
-  member also reaches an obfuscated hub (today `lite/src/tunnel.rs` refuses one); and the
-  blind relay (item 28), which it does not reach yet.
+  ported from amneziawg-go (MIT, already in `internal/third_party/amneziawg-go`) to a
+  sans-I/O layer in `cbb_core` under `src/third_party`, checked against it with interop
+  vectors, an end-to-end test against a hub with `-obfuscate` and fuzzing of the incoming
+  packets, so the lite member also reaches an obfuscated hub (today `lite/src/tunnel.rs`
+  refuses one). WireGuard's Noise and keys stay GotaTun's; the layer recomputes `mac1` for
+  the changed message types. Padding inside the encrypted packets and random rekey times
+  live inside GotaTun and need a small patch of it (`[patch]` in `lite/Cargo.toml`, as for
+  the ring stand-in). Then the blind relay (item 28), which the lite member does not reach
+  yet.
 
 Steps: the protocol and the Go forwarder and hub first, with Xray's XHTTP transport; then
 the phones' tunnel; then the lite member's client and its vectors; then cbb.tools' nginx
