@@ -33,6 +33,11 @@ and always logs them ([errors](reference/errors.md)). The call never panics and 
 bytes, also bytes that are not a request. A change an older caller would misread raises
 `abi`.
 
+The phones reach `call` through UniFFI (`lite/ffi`, `bind.sh`). The same library exports it
+as C functions, declared in `lite/ffi/include/cbb_core.h`, for callers that link C: `cbb_call`
+takes the request's bytes and returns the answer's, which the caller gives back with
+`cbb_free`; `cbb_abi` gives the ABI.
+
 ## Operations
 
 | `op` | `args` | `ok` |
