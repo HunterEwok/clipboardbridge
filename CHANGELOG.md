@@ -924,6 +924,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Android: a camera that does not start on the add-device screen (none at the back, or held
+  by another app) no longer ends the app; it says so, and the QR code's text still works.
 - The tray app keeps the last of quick changes in its settings: two changes close together
   could leave the earlier one in `desktop.json`.
 - The tray app no longer hangs when the service does not answer, and opened while the

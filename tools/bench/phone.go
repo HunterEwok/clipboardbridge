@@ -108,8 +108,13 @@ func phoneResults(r *Report, dir string) (int, error) {
 		} `xml:"failure"`
 		Skipped *struct{} `xml:"skipped"`
 	}
+	// Gradle writes <testsuites> around one <testsuite>; older versions
+	// wrote the <testsuite> alone.
 	type suite struct {
-		Cases []testcase `xml:"testcase"`
+		Cases  []testcase `xml:"testcase"`
+		Suites []struct {
+			Cases []testcase `xml:"testcase"`
+		} `xml:"testsuite"`
 	}
 	n := 0
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -124,7 +129,11 @@ func phoneResults(r *Report, dir string) (int, error) {
 		if err := xml.Unmarshal(data, &s); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		for _, c := range s.Cases {
+		cases := s.Cases
+		for _, inner := range s.Suites {
+			cases = append(cases, inner.Cases...)
+		}
+		for _, c := range cases {
 			n++
 			class := c.Class[strings.LastIndex(c.Class, ".")+1:]
 			name := "phone/" + class + "/" + c.Name
