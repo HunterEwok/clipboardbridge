@@ -798,6 +798,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A computer that signs two group records in one pass, or at the same moment, gives them
+  consecutive numbers: before, both could take one number, which reads as two histories of
+  the signer and, for the root, stops the group.
 - A member that ends its connections after saying goodbye, as after `cbb global off -on`
   turned sync away from home off there, no longer resets them: it stops sending and reads
   what the other device still sends before it closes. A reset could make the admin lose the
