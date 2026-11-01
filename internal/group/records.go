@@ -6,9 +6,6 @@ package group
 import (
 	"bytes"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -16,40 +13,39 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
+	"github.com/HunterEwok/clipboardbridge/internal/core"
 )
 
 // RecordsFileName is the name of the records file in the state directory.
 const RecordsFileName = "records.json"
 
-// Limits of the record set (docs/protocol.md, section 10).
+// Limits of the record set (docs/records-v2.md): a member keeps at most
+// MaxPerSigner records of one signer, waiting ones included, and
+// MaxRecords in all.
 const (
-	MaxRecords = 4096
-	// MaxPerAdmin bounds the records one signer (an admin CA, or a root's
-	// own key) signs, so a stolen admin cannot fill the set and shut the
-	// others out. Past MaxRecords, the set still takes up to MaxPerAdmin
-	// records signed by the own key of a root on the path, so a full set
-	// still takes the record that removes the admin that filled it.
-	MaxPerAdmin   = 1024
-	maxRecordBody = 8 << 10
-	recordVersion = 1
+	MaxRecords   = 4096
+	MaxPerSigner = 1024
 )
 
-// Record types.
+// Record types (docs/records-v2.md, "Types").
 const (
-	RecordDevice = "device"
-	RecordRevoke = "revoke"
-	RecordRoot   = "root"
-	RecordFreeze = "freeze"
-	RecordThaw   = "thaw"
+	RecordDevice     = authority.TypeDevice
+	RecordRevoke     = authority.TypeRevoke
+	RecordFreeze     = authority.TypeFreeze
+	RecordThaw       = authority.TypeThaw
+	RecordClaim      = authority.TypeClaim
+	RecordResolve    = authority.TypeResolve
+	RecordSettings   = authority.TypeSettings
+	RecordCheckpoint = authority.TypeCheckpoint
 )
 
 // Device roles in device records: the member roles, shortcut for an
@@ -92,14 +88,6 @@ func StoreOf(store, role string) string {
 	}
 	return StoreFile
 }
-
-// The roles of records made before a device's system was apart from its
-// role; Role reads them as RoleFull and RoleShortcut.
-const (
-	roleLinux  = "linux"
-	roleMac    = "mac"
-	roleIPhone = "iphone"
-)
 
 // Operating systems in device records, hellos and the pairing Info: what
 // the device runs, shown and never trusted for anything else.
@@ -148,409 +136,132 @@ func OSName(os string) string {
 	return "?"
 }
 
-// role returns the role a record body names, with the roles of earlier
-// records read as today's.
-func role(r string) string {
-	switch r {
-	case roleLinux, roleMac:
-		return RoleFull
-	case roleIPhone:
-		return RoleShortcut
-	}
-	return r
-}
-
-// osOf returns the system a record body names, or the one its earlier role
-// implies; "" when neither tells.
-func osOf(b RecordBody) string {
-	switch {
-	case b.OS != "":
-		return b.OS
-	case b.Role == roleMac:
-		return OSMacOS
-	case b.Role == roleIPhone || b.Role == RoleShortcut:
-		return OSiOS
-	}
-	return ""
-}
-
 // A KeyHash names a key in records: SHA-256 over a SubjectPublicKeyInfo, or
-// over the 16 bytes of a phone ID for an iPhone's token.
-type KeyHash [sha256.Size]byte
+// over the 16 bytes of a phone ID for an iPhone's token; also a record ID.
+type KeyHash = authority.Hash
 
-// KeyHashOf returns the hash of a certificate's public key.
+// KeyHashOf returns the key hash of a certificate's key.
 func KeyHashOf(cert *x509.Certificate) KeyHash { return sha256.Sum256(cert.RawSubjectPublicKeyInfo) }
 
-// PhoneKeyHash returns the hash that names an iPhone's token: SHA-256 over
-// the phone ID's 16 bytes.
+// PhoneKeyHash returns the key hash that names an iPhone's token.
 func PhoneKeyHash(phoneID []byte) KeyHash { return sha256.Sum256(phoneID) }
 
-func (h KeyHash) MarshalJSON() ([]byte, error) {
-	return json.Marshal(h[:])
-}
-
-func (h *KeyHash) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	raw, err := decodeStrictBase64(s)
-	if err != nil {
-		return err
-	}
-	if len(raw) != len(h) {
-		return errors.New("group: a key hash is not 32 bytes")
-	}
-	copy(h[:], raw)
-	return nil
-}
-
-// A RecordBody is what a record says; its fields depend on its type.
-type RecordBody struct {
-	V      int      `json:"v"`
-	Type   string   `json:"type"`
-	Group  string   `json:"group"`
-	TimeMS int64    `json:"time_ms"`
-	By     DeviceID `json:"by,omitempty"`
-
-	// device
-	Device DeviceID `json:"device,omitempty"`
-	Name   string   `json:"name,omitempty"`
-	Role   string   `json:"role,omitempty"`
-	OS     string   `json:"os,omitempty"`
-	Key    *KeyHash `json:"key,omitempty"`
-	Admin  *KeyHash `json:"admin,omitempty"` // the key of the device's admin CA
-	Store  string   `json:"store,omitempty"` // StoreFile, StoreHardware or StoreProven: where its keys live
-	// Kind and Proof, with StoreProven or after a checked attestation that
-	// proves less: the kind of hardware (attest.KindAndroidTEE and the
-	// others) and the hex SHA-256 of the attestation's leaf certificate.
-	Kind  string `json:"kind,omitempty"`
-	Proof string `json:"proof,omitempty"`
-
-	// revoke
-	Keys []KeyHash `json:"keys,omitempty"`
-	Keep []KeyHash `json:"keep,omitempty"`
-
-	// root
-	Root []byte `json:"root,omitempty"`
-
-	// freeze: the records of the frozen admins that still count; thaw: the
-	// freeze records it ends. Both are record IDs.
-	Records []KeyHash `json:"records,omitempty"`
-}
+// A RecordBody is what a record says (docs/records-v2.md, "The record").
+type RecordBody = authority.Body
 
 // A Record is a signed record body: the body's exact bytes, an ECDSA
-// signature over them, and the signer's certificates below the group CA
-// (none when the group CA key signed).
-type Record struct {
-	Body  []byte   `json:"body"`
-	Sig   []byte   `json:"sig"`
-	Chain [][]byte `json:"chain,omitempty"`
-}
-
-// ID returns the record's ID: SHA-256 over its body.
-func (r Record) ID() [sha256.Size]byte { return sha256.Sum256(r.Body) }
-
-// Type returns the type its body names, without checking the record.
-func (r Record) Type() string {
-	var b struct {
-		Type string `json:"type"`
-	}
-	json.Unmarshal(r.Body, &b)
-	return b.Type
-}
-
-// SignRecord signs body with key, the group CA key (chain empty) or an
-// admin CA key (chain holds the admin CA certificate).
-func SignRecord(body RecordBody, key crypto.Signer, chain ...*x509.Certificate) (Record, error) {
-	body.V = recordVersion
-	if err := body.check(); err != nil {
-		return Record{}, err
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return Record{}, err
-	}
-	if len(data) > maxRecordBody {
-		return Record{}, errors.New("group: the record is too large")
-	}
-	sum := sha256.Sum256(data)
-	sig, err := key.Sign(rand.Reader, sum[:], crypto.SHA256)
-	if err != nil {
-		return Record{}, err
-	}
-	r := Record{Body: data, Sig: sig}
-	for _, c := range chain {
-		r.Chain = append(r.Chain, c.Raw)
-	}
-	return r, nil
-}
-
-// parseRecordBody reads and checks a record's body, in the strict form of
-// signed bodies.
-func parseRecordBody(data []byte) (RecordBody, error) {
-	var body RecordBody
-	if len(data) > maxRecordBody {
-		return body, errors.New("group: the record is too large")
-	}
-	if err := checkStrict(data, "v", "type", "group", "time_ms"); err != nil {
-		return body, err
-	}
-	if err := json.Unmarshal(data, &body); err != nil {
-		return body, fmt.Errorf("group: a record: %w", err)
-	}
-	// The root's certificate is the only plain bytes of a body; the key
-	// hashes check their own form.
-	var raw struct {
-		Root *string `json:"root"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return body, fmt.Errorf("group: a record: %w", err)
-	}
-	if raw.Root != nil {
-		if _, err := decodeStrictBase64(*raw.Root); err != nil {
-			return body, fmt.Errorf("group: a root record: %w", err)
-		}
-	}
-	return body, body.check()
-}
-
-func (b *RecordBody) check() error {
-	if b.V != recordVersion {
-		return fmt.Errorf("group: unknown record version %d", b.V)
-	}
-	switch b.Type {
-	case RecordDevice:
-		if _, err := ParseDeviceID(string(b.Device)); err != nil {
-			return err
-		}
-		if !ValidName(b.Name) {
-			return errors.New("group: a device record has no valid name")
-		}
-		switch role(b.Role) {
-		case RoleFull, RolePhone, RoleLite, RoleShortcut, RoleWatch:
-		default:
-			return fmt.Errorf("group: unknown role %q in a device record", b.Role)
-		}
-		if b.OS != "" && !ValidOS(b.OS) {
-			return fmt.Errorf("group: unknown system %q in a device record", b.OS)
-		}
-		if b.Key == nil {
-			return errors.New("group: a device record names no key")
-		}
-	case RecordRevoke:
-		if len(b.Keys) == 0 {
-			return errors.New("group: a revocation record names no key")
-		}
-	case RecordRoot:
-		if len(b.Root) == 0 {
-			return errors.New("group: a root record has no certificate")
-		}
-	case RecordFreeze:
-		if len(b.Keys) == 0 {
-			return errors.New("group: a freeze record names no admin")
-		}
-	case RecordThaw:
-		if len(b.Records) == 0 {
-			return errors.New("group: a thaw record names no freeze record")
-		}
-	default:
-		return fmt.Errorf("group: unknown record type %q", b.Type)
-	}
-	return nil
-}
+// signature over them, and the admin CA that certifies the signing key
+// (none when a root's own key signed).
+type Record = authority.Record
 
 // ValidName reports whether s is a device name: 1 to 64 bytes of UTF-8
 // without control characters.
-func ValidName(s string) bool {
-	if s == "" || len(s) > 64 || !utf8.ValidString(s) {
-		return false
-	}
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return false
-		}
-	}
-	return true
-}
+func ValidName(s string) bool { return authority.ValidName(s) }
 
-// A signedRecord is a record whose signature was checked, with what
-// evaluating the set needs from it.
-type signedRecord struct {
-	Record
-	id     KeyHash // the record ID
-	body   RecordBody
-	signer KeyHash
-	anchor KeyHash           // the root it was signed under: the signer, or the root of its admin CA
-	root   *x509.Certificate // the new root of a root record
-}
-
-// envelope names one signer's signature of a record body: a set keeps every
-// signer's, so which of them a device saw first changes nothing.
-type envelope struct {
-	id     [sha256.Size]byte
-	signer KeyHash
-}
-
-// Records is the set of a group's records. It only grows; what it says
-// depends on the records alone, never on the order in which they were added
-// (docs/protocol.md, section 10). It is not safe for concurrent use.
+// Records is the set of a group's records. What it says depends on the
+// records alone, never on the order in which they were added, and on the
+// member's clock for the claims it waits on (docs/records-v2.md). It is
+// not safe for concurrent use.
 type Records struct {
 	groupCA *x509.Certificate
 	tag     string
-	caKey   KeyHash
-	// byID holds each body under every signer that signed it, and sigs the
-	// exact records held, by body.
-	byID map[envelope]*signedRecord
-	sigs map[[sha256.Size]byte][]Record
-	// roots are the roots records may be signed under: the group CA and
-	// the new root of every root record that may make it a known root
-	// (mayBeKnown); the others wait in pending.
-	roots   map[KeyHash]*x509.Certificate
-	pending []*signedRecord
-	// named holds, for each root, the admin CAs that device records signed
-	// by its own key name: namedPhone for a phone's record, namedWatch for
-	// a watch's, namedOther for any other; own the roles of the root's own
-	// device records.
-	named map[KeyHash]map[KeyHash]uint8
-	own   map[KeyHash]uint8
-	// perSigner counts the records each signer signed (MaxPerAdmin).
-	perSigner map[KeyHash]int
-	// ev is what the set says about revocations, worked out on first use
-	// after a change.
-	ev *evaluation
+	// recs holds each record once, by body and signature; bySigner counts
+	// each signer's records (MaxPerSigner).
+	recs     map[held]Record
+	bySigner map[KeyHash]int
+	// roots are the keys records may be signed with without an admin CA:
+	// the group CA and the new root of every claim in the set.
+	roots map[KeyHash]*x509.Certificate
+	// firstSeen is when, on now's clock, the set first held each claim.
+	firstSeen map[KeyHash]int64
+	now       func() time.Time
+	// st is the state, worked out on first use after a change; at is the
+	// time it was worked out at, since a waiting claim changes it with time.
+	st *authority.State
+	at time.Time
+}
+
+type held struct {
+	id  KeyHash
+	sig string
 }
 
 // NewRecords returns an empty set for the group of groupCA, the group's
 // first root, which names the group for good.
 func NewRecords(groupCA *x509.Certificate) *Records {
-	caKey := KeyHashOf(groupCA)
 	return &Records{
 		groupCA:   groupCA,
 		tag:       Tag(groupCA),
-		caKey:     caKey,
-		byID:      map[envelope]*signedRecord{},
-		sigs:      map[[sha256.Size]byte][]Record{},
-		roots:     map[KeyHash]*x509.Certificate{caKey: groupCA},
-		named:     map[KeyHash]map[KeyHash]uint8{},
-		own:       map[KeyHash]uint8{},
-		perSigner: map[KeyHash]int{},
+		recs:      map[held]Record{},
+		bySigner:  map[KeyHash]int{},
+		roots:     map[KeyHash]*x509.Certificate{KeyHashOf(groupCA): groupCA},
+		firstSeen: map[KeyHash]int64{},
+		now:       time.Now,
 	}
 }
 
-// Bits of Records.named and Records.own.
-const (
-	namedPhone uint8 = 1 << iota
-	namedOther
-	namedWatch
-)
+// SetClock sets the clock the set counts a claim's wait by.
+func (s *Records) SetClock(now func() time.Time) {
+	s.now = now
+	s.st = nil
+}
 
-// Len returns the number of records, a body that several signers signed
-// counting once for each.
-func (s *Records) Len() int { return len(s.byID) }
+// Len returns the number of records.
+func (s *Records) Len() int { return len(s.recs) }
 
-// Has reports whether the set holds exactly the record r, its body with
-// the same signature and chain, so that a caller can tell which of a batch
-// Add would have to verify.
+// Has reports whether the set holds exactly the record r.
 func (s *Records) Has(r Record) bool {
-	for _, o := range s.sigs[r.ID()] {
-		if bytes.Equal(o.Sig, r.Sig) && slices.EqualFunc(o.Chain, r.Chain, bytes.Equal) {
-			return true
-		}
-	}
-	return false
+	_, ok := s.recs[held{r.ID(), string(r.Sig)}]
+	return ok
 }
 
-// Add checks a record and adds it. It reports whether the record was new: a
-// body that the set holds signed by another signer is, and the same body
-// signed again by the same signer is not. A record that is not valid for
-// this group is an error. The limits are checked after the signature, so
-// that a record nobody signed never fills the set.
+// Add checks a record and adds it. It reports whether the record was new.
+// A record that is not of this group, does not read, or whose signature
+// does not verify with a root the set knows or its admin CA is an error;
+// whether its signer may sign it is for the evaluation.
 func (s *Records) Add(r Record) (bool, error) {
 	if s.Has(r) {
 		return false, nil
 	}
-	sr, err := s.verify(r)
+	sr, err := authority.Verify(r, func(h KeyHash) crypto.PublicKey {
+		if c := s.roots[h]; c != nil {
+			return c.PublicKey
+		}
+		return nil
+	})
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("group: %w", err)
 	}
-	key := envelope{sr.id, sr.signer}
-	if _, ok := s.byID[key]; ok {
-		return false, nil
+	if sr.Body.Group != s.tag {
+		return false, errors.New("group: a record of another group")
 	}
-	if s.perSigner[sr.signer] >= MaxPerAdmin {
+	if s.bySigner[sr.Body.Signer] >= MaxPerSigner {
 		return false, errors.New("group: too many records from one signer")
 	}
-	if n := len(s.byID); n >= MaxRecords && (n >= MaxRecords+MaxPerAdmin || sr.signer != sr.anchor || !s.onPath()[sr.anchor]) {
+	if len(s.recs) >= MaxRecords {
 		return false, errors.New("group: too many records")
 	}
-	s.perSigner[sr.signer]++
-	s.byID[key] = sr
-	s.sigs[sr.id] = append(s.sigs[sr.id], r)
-	s.ev = nil
-	b := sr.body
-	if b.Type == RecordDevice && sr.signer == sr.anchor {
-		bit := namedOther
-		switch role(b.Role) {
-		case RolePhone:
-			bit = namedPhone
-		case RoleWatch:
-			bit = namedWatch
+	if r.Chain == nil {
+		r.Chain = [][]byte{}
+	}
+	s.recs[held{sr.ID, string(r.Sig)}] = r
+	s.bySigner[sr.Body.Signer]++
+	if sr.Body.Type == RecordClaim {
+		if c, err := x509.ParseCertificate(sr.Body.Root); err == nil {
+			s.roots[KeyHashOf(c)] = c
 		}
-		if b.Admin != nil {
-			if s.named[sr.anchor] == nil {
-				s.named[sr.anchor] = map[KeyHash]uint8{}
-			}
-			s.named[sr.anchor][*b.Admin] |= bit
-		}
-		if b.Device == b.By {
-			s.own[sr.anchor] |= bit
+		if _, ok := s.firstSeen[sr.ID]; !ok {
+			s.firstSeen[sr.ID] = s.now().UnixMilli()
 		}
 	}
-	if sr.root != nil {
-		s.pending = append(s.pending, sr)
-	}
-	s.promote()
+	s.st = nil
 	return true, nil
 }
 
-// promote moves the root records of pending that may make their new root a
-// known root into roots, until none does.
-func (s *Records) promote() {
-	for grew := true; grew; {
-		grew = false
-		rest := s.pending[:0]
-		for _, r := range s.pending {
-			if !s.mayBeKnown(r) {
-				rest = append(rest, r)
-				continue
-			}
-			if k := KeyHashOf(r.root); s.roots[k] == nil {
-				s.roots[k], grew = r.root, true
-			}
-		}
-		clear(s.pending[len(rest):])
-		s.pending = rest
-	}
-}
-
-// mayBeKnown reports whether the root record r may make its new root a
-// known root (knownRoots), leaving out the revocations and freezes that can
-// still stop it: it was signed by its root's own key, by an admin CA that a
-// phone's device record from that root's own key names, or by one a
-// computer's names when that root is a computer. A root that a computer's
-// admin CA names in a phone's group is never known, so nothing signed under
-// it enters the set, and its key cannot fill the set past the admin's own
-// limit.
-func (s *Records) mayBeKnown(r *signedRecord) bool {
-	named := s.named[r.anchor][r.signer]
-	return r.signer == r.anchor || named&namedPhone != 0 || named&namedOther != 0 && s.own[r.anchor] == namedOther
-}
-
 // AddAll adds the valid records among rs and returns those that were new,
-// and an error for each record that is not valid. A record signed under a
-// new root is taken once the records that may make that root known are in
-// the set, so the result does not depend on the order of rs.
+// and an error for each record that is not valid. A record signed by a
+// claim's new root is taken once the claim is in the set, so the result
+// does not depend on the order of rs.
 func (s *Records) AddAll(rs []Record) (fresh []Record, errs []error) {
 	pending := rs
 	for {
@@ -574,206 +285,81 @@ func (s *Records) AddAll(rs []Record) (fresh []Record, errs []error) {
 	}
 }
 
-func (s *Records) verify(r Record) (*signedRecord, error) {
-	body, err := parseRecordBody(r.Body)
+// All returns every record, sorted by ID and then signature.
+func (s *Records) All() []Record {
+	keys := make([]held, 0, len(s.recs))
+	for k := range s.recs {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if c := bytes.Compare(keys[i].id[:], keys[j].id[:]); c != 0 {
+			return c < 0
+		}
+		return keys[i].sig < keys[j].sig
+	})
+	out := make([]Record, len(keys))
+	for i, k := range keys {
+		out[i] = s.recs[k]
+	}
+	return out
+}
+
+// bodies returns the body of every record that reads, with its ID.
+func (s *Records) bodies() []parsed {
+	var out []parsed
+	for _, r := range s.All() {
+		if b, err := authority.ParseBody(r.Body); err == nil {
+			out = append(out, parsed{r.ID(), b, r})
+		}
+	}
+	return out
+}
+
+type parsed struct {
+	id KeyHash
+	b  RecordBody
+	r  Record
+}
+
+// State returns what the records say (docs/records-v2.md, "The state"),
+// from the Rust core when the build links it.
+func (s *Records) State() *authority.State {
+	now := s.now()
+	if s.st != nil && (len(s.st.Claims) == 0 || now.Sub(s.at) < time.Second) {
+		return s.st
+	}
+	st, err := core.Evaluate(authority.Input{
+		GroupCA:   s.groupCA,
+		Group:     s.tag,
+		Records:   s.All(),
+		NowMS:     now.UnixMilli(),
+		FirstSeen: maps.Clone(s.firstSeen),
+	})
 	if err != nil {
-		return nil, err
+		// The evaluation refuses only a broken input, such as a group CA
+		// it cannot read: nothing counts then, and the group stops.
+		st = &authority.State{Roots: []KeyHash{KeyHashOf(s.groupCA)}, Stop: "full"}
 	}
-	if body.Group != s.tag {
-		return nil, errors.New("group: the record is for another group")
-	}
-	sr := &signedRecord{Record: r, id: r.ID(), body: body}
-	if sr.signer, sr.anchor, err = s.signerOf(r); err != nil {
-		return nil, err
-	}
-	if body.Type == RecordRoot {
-		// A legacy group CA hands the group to its first root itself, with
-		// its own key (cbb upgrade); a root with path length 1 also through
-		// its admins.
-		switch anchor := s.roots[sr.anchor]; {
-		case anchor.MaxPathLen == 1:
-		case sr.anchor == s.caKey && sr.signer == sr.anchor:
-		default:
-			return nil, errors.New("group: only a group with a root is handed to a new root")
-		}
-		root, err := x509.ParseCertificate(body.Root)
-		if err != nil {
-			return nil, fmt.Errorf("group: a root record: %w", err)
-		}
-		if err := checkRoot(root); err != nil {
-			return nil, err
-		}
-		sr.root = root
-	}
-	return sr, nil
+	s.st, s.at = st, now
+	return st
 }
 
-// signerOf checks the signature of a record or a command: by a known root's
-// own key (no chain), or by an admin CA under one (the chain holds it). It
-// returns the signer's key and the root it was signed under.
-func (s *Records) signerOf(r Record) (signer, anchor KeyHash, err error) {
-	sum := sha256.Sum256(r.Body)
-	switch len(r.Chain) {
-	case 0:
-		for k, root := range s.roots {
-			if ecdsa.VerifyASN1(root.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
-				return k, k, nil
-			}
-		}
-		return KeyHash{}, KeyHash{}, errors.New("group: the record's signature is not valid")
-	case 1:
-		admin, err := x509.ParseCertificate(r.Chain[0])
-		if err != nil {
-			return KeyHash{}, KeyHash{}, fmt.Errorf("group: a record's signer: %w", err)
-		}
-		anchor, ok := KeyHash{}, false
-		err = errors.New("group: the signer is not an admin CA of the group")
-		for k, root := range s.roots {
-			if err = checkAdminCA(admin, root); err == nil {
-				anchor, ok = k, true
-				break
-			}
-		}
-		if !ok {
-			return KeyHash{}, KeyHash{}, err
-		}
-		if !ecdsa.VerifyASN1(admin.PublicKey.(*ecdsa.PublicKey), sum[:], r.Sig) {
-			return KeyHash{}, KeyHash{}, errors.New("group: the record's signature is not valid")
-		}
-		return KeyHashOf(admin), anchor, nil
-	}
-	return KeyHash{}, KeyHash{}, errors.New("group: a record's chain is too long")
-}
+// Stop returns how far the records stop the exchange: "", "secrets" or
+// "full" (docs/records-v2.md, "Stopping the exchange").
+func (s *Records) Stop() string { return s.State().Stop }
 
-// checkRoot checks the new root of a root record: a self-signed CA with
-// path length 1 and a P-256 key, as the root a phone creates.
-func checkRoot(c *x509.Certificate) error {
-	if err := checkCA(&CA{Cert: c}, "new root", maxGroupCAPath); err != nil {
-		return err
-	}
-	if c.MaxPathLen != 1 || c.KeyUsage&x509.KeyUsageCertSign == 0 {
-		return errors.New("group: the new root does not certify admin CAs")
-	}
-	return nil
-}
-
-// path returns the roots the group went through, from the group CA to the
-// current root (docs/protocol.md, section 10, rule 7): from each root, the
-// root record signed under it that counts and whose new root has the
-// smallest SHA-256 leads to the next.
+// path returns the roots on the path as certificates, the group CA first.
 func (s *Records) path() []*x509.Certificate {
-	path, _ := s.steps()
-	return path
-}
-
-// steps returns the path and the root records that lead along it, one for
-// each root after the group CA.
-func (s *Records) steps() ([]*x509.Certificate, []*signedRecord) {
-	path := []*x509.Certificate{s.groupCA}
-	var steps []*signedRecord
-	on := map[KeyHash]bool{s.caKey: true}
-	for {
-		cur := KeyHashOf(path[len(path)-1])
-		var next *signedRecord
-		var best [sha256.Size]byte
-		for _, r := range s.byID {
-			if r.root == nil || r.anchor != cur || on[KeyHashOf(r.root)] || s.Revoked(r.signer) && !s.upgradeStands(r) || !s.fromRoot(r) || !s.mayHandOver(r) {
-				continue
-			}
-			if sum := sha256.Sum256(r.root.Raw); next == nil || bytes.Compare(sum[:], best[:]) < 0 {
-				next, best = r, sum
-			}
+	var out []*x509.Certificate
+	for _, h := range s.State().Roots {
+		if c := s.roots[h]; c != nil {
+			out = append(out, c)
 		}
-		if next == nil {
-			return path, steps
-		}
-		path = append(path, next.root)
-		steps = append(steps, next)
-		on[KeyHashOf(next.root)] = true
 	}
-}
-
-// PathRecords returns the records that lead to the path: each root record
-// on it and, for one an admin CA signed, the device records its root's own
-// key signed that name that admin CA or the root's own device. A new
-// member gets them in the Welcome's records and checks with them that the
-// Welcome's roots are the group's (docs/protocol.md, section 5).
-func (s *Records) PathRecords() []Record {
-	_, steps := s.steps()
-	var out []Record
-	for _, st := range steps {
-		out = append(out, st.Record)
-		if st.signer == st.anchor {
-			continue
-		}
-		for _, id := range s.sortedIDs() {
-			r := s.byID[id]
-			b := r.body
-			if b.Type == RecordDevice && r.signer == st.anchor && r.anchor == st.anchor && (b.Device == b.By || b.Admin != nil && *b.Admin == st.signer) {
-				out = append(out, r.Record)
-			}
-		}
+	if len(out) == 0 {
+		out = []*x509.Certificate{s.groupCA}
 	}
 	return out
-}
-
-// AuthorityRecords returns the records that say who governs the group: the
-// path records, every record that is no device record (revocations,
-// freezes, thaws, roots), and of the device records a root signed with its
-// own key those of a root's own device and of every device that one of them
-// ever made an admin, all of its records, so that a later one that demotes
-// it counts. A hub or a member sends them to its forwarder or relay, which
-// knows no records otherwise, so that it can tell a removed or demoted
-// device (docs/protocol.md, section 13); the other devices' records, with
-// their names, stay in the group.
-func (s *Records) AuthorityRecords() []Record {
-	type held struct {
-		id  [sha256.Size]byte
-		sig string
-	}
-	seen := map[held]bool{}
-	var out []Record
-	add := func(r Record) {
-		if k := (held{r.ID(), string(r.Sig)}); !seen[k] {
-			seen[k] = true
-			out = append(out, r)
-		}
-	}
-	for _, r := range s.PathRecords() {
-		add(r)
-	}
-	governs := map[DeviceID]bool{}
-	for _, r := range s.byID {
-		if b := r.body; b.Type == RecordDevice && r.signer == r.anchor && (b.Admin != nil || b.Device == b.By) {
-			governs[b.Device] = true
-		}
-	}
-	for _, id := range s.sortedIDs() {
-		r := s.byID[id]
-		if r.body.Type != RecordDevice || r.signer == r.anchor && governs[r.body.Device] {
-			add(r.Record)
-		}
-	}
-	return out
-}
-
-// upgradeStands reports whether the root record r, in which a legacy group
-// CA hands the group to its first root (cbb upgrade), still counts though
-// the group CA's key is revoked: every record that revokes it was signed
-// under the root that r names. A leftover copy of the old key can sign a
-// rival root record or a revocation of its own, which breaks the group,
-// but it never takes it over.
-func (s *Records) upgradeStands(r *signedRecord) bool {
-	if r.anchor != s.caKey || r.signer != r.anchor || s.groupCA.MaxPathLen != 0 {
-		return false
-	}
-	root := KeyHashOf(r.root)
-	for _, rv := range s.byID {
-		if rv.body.Type == RecordRevoke && slices.Contains(rv.body.Keys, r.signer) && rv.anchor != root {
-			return false
-		}
-	}
-	return true
 }
 
 // Roots returns the roots that took the group over from the group CA, in
@@ -781,630 +367,24 @@ func (s *Records) upgradeStands(r *signedRecord) bool {
 // never handed over.
 func (s *Records) Roots() []*x509.Certificate { return s.path()[1:] }
 
-// onPath returns the keys of the roots on the path.
-func (s *Records) onPath() map[KeyHash]bool {
-	on := map[KeyHash]bool{}
-	for _, c := range s.path() {
-		on[KeyHashOf(c)] = true
-	}
-	return on
-}
+// Revoked reports whether a revocation that counts names the key k.
+func (s *Records) Revoked(k KeyHash) bool { return slices.Contains(s.State().Revoked, k) }
 
-// fromRoot reports whether the admin CA that signed a record still stands
-// under its root: the root is not revoked, or every record that revoked it
-// keeps the admin CA. A root's own signature always does.
-func (s *Records) fromRoot(r *signedRecord) bool {
-	return r.signer == r.anchor || s.issued(r.anchor, r.signer)
-}
-
-// issued reports whether what issuer certified, the key k, still stands:
-// the issuer is not revoked, or every record that revoked it keeps k.
-func (s *Records) issued(issuer, k KeyHash) bool {
-	return !s.Revoked(issuer) || s.kept(issuer, k)
-}
-
-// CheckAdminCA checks that c is an admin CA certified by root: a CA with
-// path length 0 and a P-256 key, signed by root, which allows one level of
-// CAs below it.
-func CheckAdminCA(c, root *x509.Certificate) error { return checkAdminCA(c, root) }
-
-// checkAdminCA checks that c is an admin CA certified by root: a CA with
-// path length 0 and a P-256 key, signed by root, which allows one level of
-// CAs below it.
-func checkAdminCA(c, root *x509.Certificate) error {
-	if !c.IsCA || !c.BasicConstraintsValid || c.MaxPathLen != 0 || c.KeyUsage&x509.KeyUsageCertSign == 0 {
-		return errors.New("group: the signer is not an admin CA")
-	}
-	if pub, ok := c.PublicKey.(*ecdsa.PublicKey); !ok || pub.Curve != elliptic.P256() {
-		return errors.New("group: the admin CA key is not a P-256 key")
-	}
-	if root.MaxPathLen < 1 {
-		return errors.New("group: the group CA certifies no admin CAs")
-	}
-	if err := c.CheckSignatureFrom(root); err != nil {
-		return fmt.Errorf("group: the admin CA is not from the group CA: %w", err)
-	}
-	return nil
-}
-
-// Revoked reports whether a key is revoked (docs/protocol.md, section 10,
-// rules 2 and 3): named by a revocation record that counts, or an admin or root
-// key named by a revocation from a root or an admin phone.
-func (s *Records) Revoked(k KeyHash) bool { return s.eval().revoked[k] }
-
-// Watch reports whether k is a watch's admin CA (docs/protocol.md, section
-// 10, rule 8): one that a device record of a watch, signed by a known
-// root's own key, names. Such an admin freezes admin computers, removes
-// ordinary devices and signs the commands that turn things off and run
-// quick actions, and nothing else.
-func (s *Records) Watch(k KeyHash) bool { return s.eval().watch[k] }
-
-// Frozen reports whether a key is frozen (docs/protocol.md, section 10,
-// rule 4): a computer's admin CA that a freeze that counts names, or the
-// device key of such an admin.
+// Frozen reports whether k is a frozen admin key, or a key of the device
+// of a frozen admin.
 func (s *Records) Frozen(k KeyHash) bool {
-	ev := s.eval()
-	return len(ev.freezes[k]) > 0 || ev.frozenKeys[k]
-}
-
-// SignedBy returns the IDs of the records that the admin CA with key admin
-// signed: what a freeze of that admin keeps.
-func (s *Records) SignedBy(admin KeyHash) []KeyHash {
-	var out []KeyHash
-	for _, id := range s.sortedIDs() {
-		if r := s.byID[id]; r.signer == admin && r.signer != r.anchor {
-			out = append(out, r.id)
-		}
-	}
-	return out
-}
-
-// FreezesOf returns the IDs of the freezes of the admin CA with key admin
-// that count: what a thaw of that admin ends.
-func (s *Records) FreezesOf(admin KeyHash) []KeyHash {
-	var out []KeyHash
-	for _, r := range s.eval().freezes[admin] {
-		out = append(out, r.id)
-	}
-	slices.SortFunc(out, func(a, b KeyHash) int { return bytes.Compare(a[:], b[:]) })
-	return out
-}
-
-// mayHandOver reports whether the signer of a root record may hand the
-// group over: a root's own key, an admin phone's admin CA, or a computer's
-// admin CA when the root it replaces is a computer too (computerHandOver).
-func (s *Records) mayHandOver(r *signedRecord) bool {
-	ev := s.eval()
-	return ev.rootSigned(r) || ev.phoneAdmin[r.signer] && ev.roots[r.anchor] || ev.roots[r.anchor] && s.computerHandOver(r)
-}
-
-// AdminUnder reports whether a device record that the root key signed
-// with its own key names the admin CA key admin: what lets that admin
-// computer take the group over from that root (computerHandOver).
-func (s *Records) AdminUnder(root, admin KeyHash) bool {
-	for _, r := range s.byID {
-		if r.body.Type == RecordDevice && r.signer == root && r.anchor == root && r.body.Admin != nil && *r.body.Admin == admin {
+	for _, d := range s.State().Devices {
+		if d.Frozen && (d.Admin != nil && *d.Admin == k || slices.Contains(d.Keys, k)) {
 			return true
 		}
 	}
 	return false
 }
 
-// computerHandOver reports whether r, a root record, was signed by the
-// admin CA of a computer under its anchor, a root that is a computer
-// itself: the root's own key signed a device record that names that admin
-// CA, of a role other than a phone's or a watch's, and the root's own
-// device record is a computer's. Only that root's
-// own records can stop it: a revocation from its own key that names the
-// admin CA, or a freeze of it that the root's own key or another admin CA
-// it certified (and did not revoke), a watch's among them, signed and the root's own key did not
-// thaw. In a group whose root is a computer the root key sits in a file as
-// the admin's does, so an admin computer may take the group over from a
-// lost root; a root that is still there undoes it by removing that admin
-// (docs/protocol.md, section 10, rule 2).
-func (s *Records) computerHandOver(r *signedRecord) bool {
-	if r.root == nil || r.signer == r.anchor {
-		return false
-	}
-	R := r.anchor
-	admins, freezers, revoked, thawed := map[KeyHash]bool{}, map[KeyHash]bool{}, map[KeyHash]bool{}, map[KeyHash]bool{}
-	computer := false
-	for _, o := range s.byID {
-		b := o.body
-		if o.signer != R || o.anchor != R {
-			continue
-		}
-		switch b.Type {
-		case RecordRevoke:
-			for _, k := range b.Keys {
-				revoked[k] = true
-			}
-		case RecordThaw:
-			for _, id := range b.Records {
-				thawed[id] = true
-			}
-		case RecordDevice:
-			switch {
-			case role(b.Role) == RolePhone && b.Device == b.By:
-				return false
-			case b.Device == b.By && role(b.Role) == RoleFull:
-				computer = true
-			}
-			if b.Admin != nil && role(b.Role) != RolePhone {
-				// A watch freezes an admin computer as any admin does, but
-				// never takes the group over.
-				freezers[*b.Admin] = true
-				if role(b.Role) != RoleWatch {
-					admins[*b.Admin] = true
-				}
-			}
-		}
-	}
-	if !computer || !admins[r.signer] || revoked[r.signer] {
-		return false
-	}
-	for _, o := range s.byID {
-		if o.body.Type != RecordFreeze || o.anchor != R || !slices.Contains(o.body.Keys, r.signer) || thawed[o.id] {
-			continue
-		}
-		if o.signer == R || freezers[o.signer] && !revoked[o.signer] {
-			return false
-		}
-	}
-	return true
-}
-
-// TakenOver reports whether chain is the member certificate of a root
-// computer that an admin computer took the group over from (cbb takeover):
-// its leaf is the old root's own device, certified by that root, and the
-// root record of the takeover counts. It returns the device of the admin
-// that took over and that admin's CA key, which the takeover's root record
-// was signed with. Such a peer is refused, but its connections carry
-// records (ErrRecordsOnly), so that the old root, if it is still in use,
-// can undo the takeover by removing that admin (docs/protocol.md, section
-// 10, "Handing the group over").
-func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool) {
-	if len(chain) == 0 {
-		return "", KeyHash{}, false
-	}
-	leaf := KeyHashOf(chain[0])
-	path, steps := s.steps()
-	for i, st := range steps {
-		root := path[i]
-		if st.signer == st.anchor || KeyHashOf(root) != st.anchor || chain[0].CheckSignatureFrom(root) != nil || !s.computerHandOver(st) {
-			continue
-		}
-		own, by := false, DeviceID("")
-		for _, o := range s.byID {
-			b := o.body
-			if b.Type != RecordDevice || o.signer != st.anchor || o.anchor != st.anchor {
-				continue
-			}
-			if b.Device == b.By && b.Key != nil && *b.Key == leaf {
-				own = true
-			}
-			if b.Admin != nil && *b.Admin == st.signer {
-				by = b.Device
-			}
-		}
-		if own {
-			return by, st.signer, true
-		}
-	}
-	return "", KeyHash{}, false
-}
-
-// ErrRecordsOnly is what a check of a peer returns for a root that an
-// admin took the group over from (Records.TakenOver): its connection
-// carries records and nothing else.
-var ErrRecordsOnly = errors.New("group: the group was taken over from this root; its connection carries records only")
-
-// An evaluation is what the set says about revocations (docs/protocol.md,
-// section 10, rules 2 and 3), in strata that do not depend on each other
-// in a circle:
-//
-//  1. A revocation signed by a root's own key always counts.
-//  2. An admin CA is an admin phone's when a device record of a phone,
-//     signed by a root's own key that the root revocations leave standing
-//     for it, names it as its admin CA.
-//  3. An admin or root key that a revocation from a root or an admin phone
-//     names is disabled: the records its admin CA signs no longer count.
-//  4. A computer's admin CA is one that a device record of a computer,
-//     signed by a root's own key, names. A thaw signed by a root's own key
-//     or an admin phone that is not disabled ends the freeze records it
-//     names.
-//  5. A freeze that no thaw ended counts when a root's own key signed it,
-//     or an admin CA that is not disabled and still stands under its root,
-//     and every key it names is a computer's admin CA. A frozen admin CA's
-//     records count only when every freeze of it names them, and its
-//     device's key is refused.
-//  6. A revocation signed by an admin CA counts when that admin CA is not
-//     disabled and still stands under its root, and, for a computer's
-//     admin CA, when it names no admin or root key; an admin phone's names
-//     no root key.
-//  7. A watch's admin CA, one that a device record of a watch signed by a
-//     root's own key names, counts as a computer's for revocations and
-//     freezes; its device and root records never count, and nor do the
-//     certificates it issues.
-type evaluation struct {
-	revoked    map[KeyHash]bool
-	revokers   map[KeyHash][]*signedRecord // the records that revoked each key
-	phoneAdmin map[KeyHash]bool
-	watch      map[KeyHash]bool            // the watches' admin CAs (rule 8)
-	roots      map[KeyHash]bool            // the known roots (knownRoots)
-	freezes    map[KeyHash][]*signedRecord // the freezes that count, for each frozen admin CA
-	frozenKeys map[KeyHash]bool            // the device keys of the frozen admins
-}
-
-// kept reports whether every freeze of r's signer names r, as for the
-// records of an admin that is not frozen.
-func (ev *evaluation) kept(r *signedRecord) bool {
-	for _, f := range ev.freezes[r.signer] {
-		if !slices.Contains(f.body.Records, r.id) {
-			return false
-		}
-	}
-	return true
-}
-
-func (s *Records) eval() *evaluation {
-	if s.ev != nil {
-		return s.ev
-	}
-	roots, disputed := s.knownRoots()
-	ev := &evaluation{revoked: map[KeyHash]bool{}, revokers: map[KeyHash][]*signedRecord{}, phoneAdmin: map[KeyHash]bool{},
-		watch: map[KeyHash]bool{}, roots: roots, freezes: map[KeyHash][]*signedRecord{}, frozenKeys: map[KeyHash]bool{}}
-	byRoot := map[KeyHash][]*signedRecord{} // the root revocations of each key
-	privileged := map[KeyHash]bool{}        // the root and admin keys
-	for k := range s.roots {
-		privileged[k] = true
-	}
-	for _, r := range s.byID {
-		switch {
-		case r.body.Type == RecordRevoke && ev.rootSigned(r):
-			for _, k := range r.body.Keys {
-				byRoot[k] = append(byRoot[k], r)
-			}
-		case r.body.Type == RecordDevice && r.body.Admin != nil && ev.rootSigned(r):
-			privileged[*r.body.Admin] = true
-		}
-		if r.signer != r.anchor {
-			privileged[r.signer] = true
-		}
-	}
-	// standsForRoots reports whether what issuer certified, the key k,
-	// stands as far as the root revocations go.
-	standsForRoots := func(issuer, k KeyHash) bool {
-		for _, r := range byRoot[issuer] {
-			if !slices.Contains(r.body.Keep, k) {
-				return false
-			}
-		}
-		return true
-	}
-	for _, r := range s.byID {
-		if a := phoneAdminOf(r, ev.roots); a != nil && standsForRoots(r.signer, *a) {
-			ev.phoneAdmin[*a] = true
-		}
-		if b := r.body; b.Type == RecordDevice && b.Admin != nil && role(b.Role) == RoleWatch && ev.rootSigned(r) {
-			ev.watch[*b.Admin] = true
-		}
-	}
-	// An admin phone whose removal is in dispute (knownRoots) is removed, by
-	// the records that would remove it.
-	disabled := map[KeyHash]bool{}
-	for k, rs := range disputed {
-		delete(ev.phoneAdmin, k)
-		disabled[k] = true
-		ev.revoked[k] = true
-		ev.revokers[k] = rs
-	}
-	for _, r := range s.byID {
-		if r.body.Type != RecordRevoke || !ev.rootSigned(r) && !(ev.phoneAdmin[r.signer] && ev.roots[r.anchor]) {
-			continue
-		}
-		for _, k := range r.body.Keys {
-			if privileged[k] && (ev.rootSigned(r) || !ev.roots[k]) {
-				disabled[k] = true
-				ev.revoked[k] = true
-				ev.revokers[k] = append(ev.revokers[k], r)
-			}
-		}
-	}
-	computers := map[KeyHash][]KeyHash{} // the device keys of each computer's admin CA
-	thawed := map[KeyHash]bool{}
-	for _, r := range s.byID {
-		b := r.body
-		switch {
-		case b.Type == RecordDevice && b.Admin != nil && role(b.Role) != RolePhone && ev.rootSigned(r) && !ev.phoneAdmin[*b.Admin]:
-			computers[*b.Admin] = append(computers[*b.Admin], *b.Key)
-		case b.Type == RecordThaw && (ev.rootSigned(r) || ev.phoneAdmin[r.signer] && ev.roots[r.anchor] && !disabled[r.signer]):
-			for _, id := range b.Records {
-				thawed[id] = true
-			}
-		}
-	}
-	for _, r := range s.byID {
-		if !ev.freezeCounts(r, disabled, computers, thawed, standsForRoots) {
-			continue
-		}
-		for _, k := range r.body.Keys {
-			ev.freezes[k] = append(ev.freezes[k], r)
-			for _, d := range computers[k] {
-				ev.frozenKeys[d] = true
-			}
-		}
-	}
-	for _, r := range s.byID {
-		if r.body.Type != RecordRevoke || !ev.counts(r, disabled, privileged, standsForRoots) || !ev.kept(r) {
-			continue
-		}
-		for _, k := range r.body.Keys {
-			if !slices.Contains(ev.revokers[k], r) {
-				ev.revoked[k] = true
-				ev.revokers[k] = append(ev.revokers[k], r)
-			}
-		}
-	}
-	s.ev = ev
-	return ev
-}
-
-// knownRoots returns the roots whose own signatures may count, and the admin
-// phones whose removal is in dispute, with the records that remove them.
-//
-// The group CA counts, and so does the new root of every root record that a
-// counted root's own key signed or that an admin computer signed under a
-// root that is a computer (computerHandOver). A root record of an admin
-// phone under a counted root hands the group on while that phone is not
-// removed: named by a revoke from the own key of a root that counts, or from
-// another admin phone that no such revoke names.
-//
-// Whether a phone is removed depends on the roots that count, and those on
-// the phones that are not removed, so the roots are found from both sides,
-// in turns, until neither changes: the roots that surely count (at first
-// only those handed on without any phone) and the roots that may count
-// (those handed on by every phone that the sure roots do not remove). A
-// root counts only when it surely counts. A root that may count makes the
-// phones it would remove lose their rights all the same: a root of a
-// removed phone, or of one of two phones whose roots remove each other,
-// counts for nobody, and neither do such phones. Nothing depends on the
-// order of the records.
-func (s *Records) knownRoots() (map[KeyHash]bool, map[KeyHash][]*signedRecord) {
-	sure := s.handedOn(nil)
-	for {
-		may := s.handedOn(keysOf(s.removals(sure)))
-		next := s.handedOn(keysOf(s.removals(may)))
-		if len(next) == len(sure) {
-			disputed := map[KeyHash][]*signedRecord{}
-			removed := s.removals(sure)
-			phones := s.phoneAdmins(sure)
-			for k, rs := range s.removals(may) {
-				if phones[k] && removed[k] == nil {
-					disputed[k] = rs
-				}
-			}
-			return sure, disputed
-		}
-		sure = next
-	}
-}
-
-// handedOn returns the roots the group CA hands on to: by the own keys of
-// the roots, by the admin computers (computerHandOver), and by the admin
-// phones under these roots that are not in removed. With removed nil no
-// phone hands the group on.
-func (s *Records) handedOn(removed map[KeyHash]bool) map[KeyHash]bool {
-	known := map[KeyHash]bool{s.caKey: true}
-	for grew := true; grew; {
-		grew = false
-		phones := map[KeyHash]bool{}
-		if removed != nil {
-			phones = s.phoneAdmins(known)
-		}
-		for _, r := range s.byID {
-			if r.root == nil || !known[r.anchor] {
-				continue
-			}
-			if r.signer != r.anchor && !s.computerHandOver(r) && (!phones[r.signer] || removed[r.signer]) {
-				continue
-			}
-			if k := KeyHashOf(r.root); !known[k] {
-				known[k], grew = true, true
-			}
-		}
-	}
-	return known
-}
-
-// phoneAdmins returns the admin CAs of the phones that the own keys of
-// roots certified.
-func (s *Records) phoneAdmins(roots map[KeyHash]bool) map[KeyHash]bool {
-	phones := map[KeyHash]bool{}
-	for _, r := range s.byID {
-		if a := phoneAdminOf(r, roots); a != nil {
-			phones[*a] = true
-		}
-	}
-	return phones
-}
-
-// removals returns the keys that a revoke from the own key of one of roots
-// names, and those that a revoke from an admin phone under them names when
-// no such revoke names that phone, each with the records that name it.
-func (s *Records) removals(roots map[KeyHash]bool) map[KeyHash][]*signedRecord {
-	phones := s.phoneAdmins(roots)
-	out := map[KeyHash][]*signedRecord{}
-	for _, r := range s.byID {
-		if r.body.Type == RecordRevoke && r.signer == r.anchor && roots[r.anchor] {
-			for _, k := range r.body.Keys {
-				out[k] = append(out[k], r)
-			}
-		}
-	}
-	for _, r := range s.byID {
-		if r.body.Type == RecordRevoke && phones[r.signer] && roots[r.anchor] && !rootRemoved(out, r.signer) {
-			for _, k := range r.body.Keys {
-				out[k] = append(out[k], r)
-			}
-		}
-	}
-	return out
-}
-
-// rootRemoved reports whether a revoke from a root's own key in removals
-// names k.
-func rootRemoved(removals map[KeyHash][]*signedRecord, k KeyHash) bool {
-	return slices.ContainsFunc(removals[k], func(r *signedRecord) bool { return r.signer == r.anchor })
-}
-
-// keysOf returns the keys of m as a set.
-func keysOf(m map[KeyHash][]*signedRecord) map[KeyHash]bool {
-	out := make(map[KeyHash]bool, len(m))
-	for k := range m {
-		out[k] = true
-	}
-	return out
-}
-
-// phoneAdminOf returns the admin CA key that r, a device record of a phone
-// signed by the own key of one of roots, names; nil for any other record.
-func phoneAdminOf(r *signedRecord, roots map[KeyHash]bool) *KeyHash {
-	b := r.body
-	if b.Type != RecordDevice || b.Admin == nil || role(b.Role) != RolePhone || r.signer != r.anchor || !roots[r.signer] {
-		return nil
-	}
-	return b.Admin
-}
-
-// rootSigned reports whether a known root's own key signed r.
-func (ev *evaluation) rootSigned(r *signedRecord) bool {
-	return r.signer == r.anchor && ev.roots[r.anchor]
-}
-
-// freezeCounts reports whether r is a freeze that counts (rule 5 above). A
-// frozen admin's freezes still count, so two admins that freeze each other
-// both stay frozen until the root or an admin phone decides.
-func (ev *evaluation) freezeCounts(r *signedRecord, disabled map[KeyHash]bool, computers map[KeyHash][]KeyHash, thawed map[KeyHash]bool, standsForRoots func(issuer, k KeyHash) bool) bool {
-	if r.body.Type != RecordFreeze || thawed[r.id] || !ev.roots[r.anchor] {
-		return false
-	}
-	if r.signer != r.anchor && (disabled[r.signer] || !standsForRoots(r.anchor, r.signer)) {
-		return false
-	}
-	for _, k := range r.body.Keys {
-		if computers[k] == nil {
-			return false
-		}
-	}
-	return true
-}
-
-// counts reports whether a revocation record counts (rule 6 above).
-func (ev *evaluation) counts(r *signedRecord, disabled, privileged map[KeyHash]bool, standsForRoots func(issuer, k KeyHash) bool) bool {
-	if r.signer == r.anchor {
-		return ev.roots[r.anchor]
-	}
-	if !ev.roots[r.anchor] || disabled[r.signer] || !standsForRoots(r.anchor, r.signer) {
-		return false
-	}
-	for _, k := range r.body.Keys {
-		if ev.roots[k] || privileged[k] && !ev.phoneAdmin[r.signer] {
-			return false
-		}
-	}
-	return true
-}
-
-// counts reports whether a device record counts: it was signed under a
-// root on the path, by an admin CA that still stands under it and is no
-// watch's, which admits nobody (rule 8), and its
-// signer's key is not revoked, or every record that revoked it keeps the
-// device's key, as when an admin is removed and the devices it admitted
-// stay.
-func (s *Records) counts(r *signedRecord, on map[KeyHash]bool) bool {
-	ev := s.eval()
-	return on[r.anchor] && s.fromRoot(r) && s.issued(r.signer, *r.body.Key) && ev.kept(r) && !ev.watch[r.signer]
-}
-
-// kept reports whether admin is revoked only by records that keep the key
-// leaf. A key that one record keeps and another drops is not kept.
-func (s *Records) kept(admin, leaf KeyHash) bool {
-	rs := s.eval().revokers[admin]
-	for _, r := range rs {
-		if !slices.Contains(r.body.Keep, leaf) {
-			return false
-		}
-	}
-	return len(rs) > 0
-}
-
-// Refused reports why a member certificate chain (leaf first, then its
-// issuer when that is an admin CA) is refused, or nil. A chain whose top
-// is not signed by a root on the path is refused. A certificate is
-// refused when its key is revoked, or when its issuer's key is revoked and
-// not every record that revoked the issuer keeps it: for the leaf and, when
-// an admin CA issued it, for that admin CA under its root.
-//
-// The issuer checked is the certificate that signed the leaf, wherever it
-// is in the chain: a peer may present certificates it does not need, and
-// TLS verification ignores them, so position alone proves nothing.
-func (s *Records) Refused(chain []*x509.Certificate) error {
-	if len(chain) == 0 {
-		return errors.New("group: no certificate")
-	}
-	leaf := KeyHashOf(chain[0])
-	if s.Revoked(leaf) {
-		return errors.New("group: the device was removed from the group")
-	}
-	if s.Frozen(leaf) {
-		return errors.New("group: the device is a frozen admin; the root or an admin phone unfreezes or removes it")
-	}
-	path := s.path()
-	top := chain[0]
-	if !signedByAny(top, path) {
-		var issuer *x509.Certificate
-		for _, c := range chain[1:] {
-			if top.CheckSignatureFrom(c) == nil {
-				issuer = c
-				break
-			}
-		}
-		if issuer == nil {
-			return errors.New("group: the certificate's issuer is not in its chain")
-		}
-		admin := KeyHashOf(issuer)
-		if s.eval().watch[admin] {
-			return errors.New("group: a watch certifies no devices")
-		}
-		if !s.issued(admin, leaf) {
-			return errors.New("group: the admin that admitted the device was removed")
-		}
-		// A frozen admin's certificates hold only for devices the records
-		// already list, so it cannot bring in a new one.
-		if s.Frozen(admin) && !s.listed(leaf) {
-			return errors.New("group: the admin that certified the device is frozen")
-		}
-		top, leaf = issuer, admin
-	}
-	// The chain must end at a root on the path: a root that only an
-	// identity or a TLS pool trusts, as one a Welcome named, is no anchor.
-	for _, root := range path {
-		if top.CheckSignatureFrom(root) == nil {
-			if !s.issued(KeyHashOf(root), leaf) {
-				return errors.New("group: the certificate is from a root that handed the group over")
-			}
-			return nil
-		}
-	}
-	return errors.New("group: the certificate is not from a root of the group")
-}
-
-// listed reports whether a device record that counts names the key k.
-func (s *Records) listed(k KeyHash) bool {
-	on := s.onPath()
-	for _, r := range s.byID {
-		if r.body.Type == RecordDevice && *r.body.Key == k && s.counts(r, on) {
+// Watch reports whether k is a watch's admin key.
+func (s *Records) Watch(k KeyHash) bool {
+	for _, d := range s.State().Devices {
+		if d.Role == RoleWatch && d.Admin != nil && *d.Admin == k {
 			return true
 		}
 	}
@@ -1417,84 +397,60 @@ type Device struct {
 	Name string
 	Role string // RoleFull, RolePhone, RoleLite, RoleShortcut or RoleWatch
 	OS   string // "" when its record does not tell
-	Key  KeyHash
+	// Key is the member key of its newest counting record.
+	Key KeyHash
 	// Store is where its keys live (StoreOf); Kind and Proof name the
 	// attestation the root checked, if any.
 	Store, Kind, Proof string
-	Admin              bool
-	// AdminKey is the key of its admin CA, as its record names it; nil
-	// when it has none.
-	AdminKey *KeyHash
+	// Seal is its public key for sealed messages, if its record has one.
+	Seal  []byte
+	Admin bool
+	// AdminKey is its admin key, nil when it is no admin; Powers and
+	// Commands what its newest root record gives it.
+	AdminKey         *KeyHash
+	Powers, Commands []string
 	// Keys are every key that a counting device record names for it and
 	// that is not revoked, Key among them: what removing it revokes.
 	Keys  []KeyHash
-	By    DeviceID // the admin that admitted it, as its record says
 	Since time.Time
-	// Frozen says that it is an admin computer that another admin froze:
-	// it is no admin until the root or an admin phone unfreezes it, and its
-	// connections are refused.
+	// Frozen says that another admin froze it: it is no admin until the
+	// freeze ends, and its connections are refused.
 	Frozen bool
 }
 
-// Devices returns the devices list: the latest device record that counts
-// for each device among those whose key is not revoked, sorted by name and
-// then ID. The "latest" record of a device is one whose signer is not
-// revoked before one whose signer is, then the one with the largest time,
-// then the largest record ID, so every member picks the same one. A device
-// is an admin only by the latest of its counting records that a known
-// root's own key signed, which also gives an admin its role, store, kind and
-// proof: an admin's record names no admin and gives no admin its powers. A
-// device whose records name more than one key stays listed while any of
-// them is not revoked, so none of its keys hides behind a revoked one.
+// May reports whether the device is an admin with the power p.
+func (d Device) May(p string) bool { return d.Admin && slices.Contains(d.Powers, p) }
+
+// Devices returns the devices list, sorted by name and then ID.
 func (s *Records) Devices() []Device {
-	ev := s.eval()
-	latest := map[DeviceID]*signedRecord{}
-	certified := map[DeviceID]*signedRecord{} // the latest a known root's own key signed
-	first := map[DeviceID]int64{}
-	keys := map[DeviceID][]KeyHash{}
-	on := s.onPath()
-	for _, id := range s.sortedIDs() {
-		r := s.byID[id]
-		if r.body.Type != RecordDevice || !s.counts(r, on) || s.Revoked(*r.body.Key) {
+	st := s.State()
+	newest := map[string]parsed{}
+	for _, p := range s.bodies() {
+		if p.b.Type != RecordDevice {
 			continue
 		}
-		d := r.body.Device
-		if !slices.Contains(keys[d], *r.body.Key) {
-			keys[d] = append(keys[d], *r.body.Key)
-		}
-		if t, ok := first[d]; !ok || r.body.TimeMS < t {
-			first[d] = r.body.TimeMS
-		}
-		if cur, ok := latest[d]; !ok || s.Revoked(cur.signer) && !s.Revoked(r.signer) || s.Revoked(cur.signer) == s.Revoked(r.signer) && newer(r, cur) {
-			latest[d] = r
-		}
-		if cur, ok := certified[d]; ev.rootSigned(r) && (!ok || newer(r, cur)) {
-			certified[d] = r
+		if o, ok := newest[p.b.Device]; !ok || p.b.TimeMS > o.b.TimeMS || p.b.TimeMS == o.b.TimeMS && p.b.Seq > o.b.Seq {
+			newest[p.b.Device] = p
 		}
 	}
 	var out []Device
-	for id, r := range latest {
-		// a is the record that says what powers the device has.
-		a, admin := r, (*KeyHash)(nil)
-		if c := certified[id]; c != nil && c.body.Admin != nil {
-			a, admin = c, c.body.Admin
+	for _, d := range st.Devices {
+		dev := Device{ID: DeviceID(d.Device), Name: d.Name, Role: d.Role, OS: d.OS, Store: StoreOf(d.Store, d.Role), Kind: d.Kind, Proof: d.Proof,
+			Seal: d.Seal, Keys: d.Keys, Powers: d.Powers, Commands: d.Commands, Frozen: d.Frozen}
+		if d.Admin != nil {
+			a := *d.Admin
+			dev.Admin, dev.AdminKey = true, &a
 		}
-		out = append(out, Device{
-			ID:       id,
-			Name:     r.body.Name,
-			Role:     role(a.body.Role),
-			OS:       osOf(r.body),
-			Key:      *r.body.Key,
-			Store:    StoreOf(a.body.Store, role(a.body.Role)),
-			Kind:     a.body.Kind,
-			Proof:    a.body.Proof,
-			Admin:    admin != nil && !s.Revoked(*admin) && !s.Frozen(*admin),
-			AdminKey: admin,
-			Keys:     keys[id],
-			By:       r.body.By,
-			Since:    time.UnixMilli(first[id]),
-			Frozen:   s.Frozen(*r.body.Key) || admin != nil && s.Frozen(*admin),
-		})
+		if p, ok := newest[d.Device]; ok {
+			dev.Since = time.UnixMilli(p.b.TimeMS)
+			if p.b.Key != nil && slices.Contains(d.Keys, *p.b.Key) {
+				dev.Key = *p.b.Key
+			}
+		}
+		if dev.Key == (KeyHash{}) && len(d.Keys) > 0 {
+			dev.Key = d.Keys[len(d.Keys)-1]
+		}
+		out = append(out, dev)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Name != out[j].Name {
@@ -1505,112 +461,122 @@ func (s *Records) Devices() []Device {
 	return out
 }
 
-// Admitted returns the keys of the devices whose records the admin with
-// key admin signed, and that a freeze of it keeps: what a revocation of
-// that admin keeps, so the devices it admitted stay in the group.
-func (s *Records) Admitted(admin KeyHash) []KeyHash {
-	ev := s.eval()
-	var out []KeyHash
-	for _, id := range s.sortedIDs() {
-		r := s.byID[id]
-		if r.body.Type == RecordDevice && r.signer == admin && ev.kept(r) && !slices.Contains(out, *r.body.Key) {
-			out = append(out, *r.body.Key)
+// listed reports whether a device of the list has the key k.
+func (s *Records) listed(k KeyHash) bool {
+	for _, d := range s.State().Devices {
+		if slices.Contains(d.Keys, k) {
+			return true
 		}
 	}
-	return out
+	return false
 }
 
-// Staying returns the keys that a record removing the admin CA with key
-// admin keeps: those of the devices it admitted, and those of every listed
-// device, whose certificate it may have renewed; and the keys of the admin
-// CAs removed earlier whose removals keep one of those devices, since
-// their certificates for it hold only while their admin CA stands under its
-// root, which a takeover removes (docs/protocol.md, section 10). The
-// caller drops the keys the record revokes.
-func (s *Records) Staying(admin KeyHash) []KeyHash {
-	out := s.Admitted(admin)
-	for _, d := range s.Devices() {
-		for _, k := range d.Keys {
-			if !slices.Contains(out, k) {
-				out = append(out, k)
-			}
+// adminDevice returns the device whose admin key is k.
+func (s *Records) adminDevice(k KeyHash) (authority.Device, bool) {
+	for _, d := range s.State().Devices {
+		if d.Admin != nil && *d.Admin == k {
+			return d, true
 		}
 	}
-	var removed []KeyHash
-	for k := range s.eval().revokers {
-		if !slices.Contains(out, k) && slices.ContainsFunc(out, func(d KeyHash) bool { return s.kept(k, d) }) {
-			removed = append(removed, k)
-		}
-	}
-	slices.SortFunc(removed, func(a, b KeyHash) int { return bytes.Compare(a[:], b[:]) })
-	return append(out, removed...)
+	return authority.Device{}, false
 }
 
-// RevokedBy returns the keys that revocations signed by the admin CA with
-// key admin revoked and that count: what the record that removes that
-// admin names again, so its removals stand once its own records no longer
-// count (docs/protocol.md, section 10).
-func (s *Records) RevokedBy(admin KeyHash) []KeyHash {
-	ev := s.eval()
-	var out []KeyHash
-	for _, id := range s.sortedIDs() {
-		r := s.byID[id]
-		if r.body.Type != RecordRevoke || r.signer != admin {
-			continue
-		}
-		for _, k := range r.body.Keys {
-			if slices.Contains(ev.revokers[k], r) && !slices.Contains(out, k) {
-				out = append(out, k)
-			}
+// Refused returns why a member's chain is not taken, nil when it is
+// (docs/records-v2.md, "Certificates"): its key must be a listed device's
+// that is not revoked nor frozen, and its issuer a root on the path or the
+// admin CA, under one, of an admin that may admit or renew, not frozen.
+func (s *Records) Refused(chain []*x509.Certificate) error {
+	if len(chain) == 0 {
+		return errors.New("group: no certificate")
+	}
+	leaf := KeyHashOf(chain[0])
+	if s.Revoked(leaf) {
+		return errors.New("group: the device was removed from the group")
+	}
+	if s.Frozen(leaf) {
+		return errors.New("group: the device is a frozen admin; the root or an admin with thaw unfreezes or removes it")
+	}
+	if !s.listed(leaf) {
+		return errors.New("group: no device record that counts names the device's key")
+	}
+	path := s.path()
+	if signedByAny(chain[0], path) {
+		return nil
+	}
+	var issuer *x509.Certificate
+	for _, c := range chain[1:] {
+		if chain[0].CheckSignatureFrom(c) == nil {
+			issuer = c
+			break
 		}
 	}
-	return out
+	if issuer == nil {
+		return errors.New("group: the certificate's issuer is not in its chain")
+	}
+	if !signedByAny(issuer, path) {
+		return errors.New("group: the certificate is not from a root of the group")
+	}
+	admin := KeyHashOf(issuer)
+	if s.Frozen(admin) {
+		return errors.New("group: the admin that certified the device is frozen")
+	}
+	// An admin removed later still certified the devices whose records
+	// stay; one listed must have a power to certify.
+	if d, ok := s.adminDevice(admin); ok && !slices.Contains(d.Powers, authority.PowerAdmit) && !slices.Contains(d.Powers, authority.PowerRenew) {
+		return errors.New("group: the admin that certified the device certifies no devices")
+	}
+	return nil
+}
+
+// signedByAny reports whether one of roots signed c.
+func signedByAny(c *x509.Certificate, roots []*x509.Certificate) bool {
+	for _, root := range roots {
+		if c.CheckSignatureFrom(root) == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // RootDevice returns the phone or computer that holds the group's current
-// root: the one whose own device record the current root's key signed, the
-// latest of them; "" when there is none, as in a legacy group not yet
-// upgraded, whose key every Linux member holds.
+// root: the device of the newest device record with holds_root that the
+// current root's own key signed; "" when there is none.
 func (s *Records) RootDevice() DeviceID {
 	dev, _ := s.RootMember()
 	return dev
 }
 
-// RootMember returns the device that holds the group's current root, as
-// RootDevice, and the member key its own device record names: a peer is
-// the root only when its certificate has that key, since a device ID is
-// what a joining device picks itself.
+// RootMember returns the device that holds the group's current root and
+// its member key: a peer is the root only when its certificate has that
+// key.
 func (s *Records) RootMember() (DeviceID, KeyHash) {
-	path := s.path()
-	if path[len(path)-1].MaxPathLen == 0 {
+	st := s.State()
+	if st.RootDevice == "" {
 		return "", KeyHash{}
 	}
-	cur := KeyHashOf(path[len(path)-1])
-	var best *signedRecord
-	for _, r := range s.byID {
-		b := r.body
-		if b.Type == RecordDevice && r.signer == cur && (role(b.Role) == RolePhone || role(b.Role) == RoleFull) && b.Device == b.By && (best == nil || newer(r, best)) {
-			best = r
+	cur := st.Roots[len(st.Roots)-1]
+	var best *parsed
+	for _, p := range s.bodies() {
+		if p.b.Type == RecordDevice && p.b.HoldsRoot && p.b.Signer == cur && p.b.Device == st.RootDevice && (best == nil || p.b.Seq > best.b.Seq) {
+			best = &p
 		}
 	}
-	if best == nil {
+	if best == nil || best.b.Key == nil {
 		return "", KeyHash{}
 	}
-	return best.body.Device, *best.body.Key
+	return DeviceID(st.RootDevice), *best.b.Key
 }
 
 // MayHost reports whether the device dev may be the group's hub for sync
 // away from home by the records alone: the root's own device, whose key is
-// not revoked, or a device listed as an admin other than a watch, which
-// never connects to the group (docs/protocol.md, section
-// 11). A peer's offer is also checked against the key of its certificate;
-// this is for a hub that a hub moving names (section 11, "Moving the hub").
+// not revoked, or an admin with the power hub (docs/protocol.md, section
+// 11).
 func (s *Records) MayHost(dev DeviceID) bool {
 	if root, key := s.RootMember(); root == dev && !s.Revoked(key) {
 		return true
 	}
 	for _, d := range s.Devices() {
-		if d.ID == dev && d.Admin && d.Role != RoleWatch {
+		if d.ID == dev && d.May(authority.PowerHub) {
 			return true
 		}
 	}
@@ -1620,8 +586,7 @@ func (s *Records) MayHost(dev DeviceID) bool {
 // HubOrder returns the devices that may be the group's hubs, in the order
 // in which they serve (docs/protocol.md, section 11, "Several hubs"):
 // first the phones, whose keys are in hardware, then the others, and in
-// each part the root's own device first, then by device ID. Every member
-// gets the same order from the same records.
+// each part the root's own device first, then by device ID.
 func (s *Records) HubOrder() []DeviceID {
 	root, key := s.RootMember()
 	if root != "" && s.Revoked(key) {
@@ -1633,7 +598,7 @@ func (s *Records) HubOrder() []DeviceID {
 	}
 	var hubs []hub
 	for _, d := range s.Devices() {
-		if d.ID == root || d.Admin && d.Role != RoleWatch {
+		if d.ID == root || d.May(authority.PowerHub) {
 			hubs = append(hubs, hub{d.ID, d.Role == RolePhone})
 		}
 	}
@@ -1654,73 +619,181 @@ func (s *Records) HubOrder() []DeviceID {
 	return out
 }
 
-// Known reports whether a valid device record names the device dev, with
-// any key and whether or not it counts: an ID a new device may not take
+// Known reports whether a device record that reads names the device dev,
+// whether or not it counts: an ID a new device may not take
 // (docs/protocol.md, section 6).
 func (s *Records) Known(dev DeviceID) bool {
-	for _, r := range s.byID {
-		if r.body.Type == RecordDevice && r.body.Device == dev {
+	for _, p := range s.bodies() {
+		if p.b.Type == RecordDevice && p.b.Device == string(dev) {
 			return true
 		}
 	}
 	return false
 }
 
-func newer(a, b *signedRecord) bool {
-	if a.body.TimeMS != b.body.TimeMS {
-		return a.body.TimeMS > b.body.TimeMS
+// FreezesOf returns the IDs of the freeze records that name the admin key
+// admin and that no thaw record names: what a thaw of that admin ends.
+func (s *Records) FreezesOf(admin KeyHash) []KeyHash {
+	ps := s.bodies()
+	thawed := map[KeyHash]bool{}
+	for _, p := range ps {
+		if p.b.Type == RecordThaw {
+			for _, id := range p.b.Records {
+				thawed[id] = true
+			}
+		}
 	}
-	if c := bytes.Compare(a.id[:], b.id[:]); c != 0 {
-		return c > 0
-	}
-	return bytes.Compare(a.signer[:], b.signer[:]) > 0
-}
-
-// All returns every record, sorted by ID and, for a body several signers
-// signed, by signer.
-func (s *Records) All() []Record {
-	ids := s.sortedIDs()
-	out := make([]Record, len(ids))
-	for i, id := range ids {
-		out[i] = s.byID[id].Record
+	var out []KeyHash
+	for _, p := range ps {
+		if p.b.Type == RecordFreeze && slices.Contains(p.b.Keys, admin) && !thawed[p.id] && !slices.Contains(out, p.id) {
+			out = append(out, p.id)
+		}
 	}
 	return out
 }
 
-func (s *Records) sortedIDs() []envelope {
-	ids := make([]envelope, 0, len(s.byID))
-	for id := range s.byID {
-		ids = append(ids, id)
+// TakenOver reports whether chain is the member certificate of a root's
+// own device that a claim took the group over from: its leaf is the key of
+// a holds_root device record of a root on the path that is no longer the
+// current root, which certified it. It returns the device and admin key
+// of the claimant. Such a peer is refused, but its connections carry
+// records (ErrRecordsOnly), so that the old root, if it is still in use,
+// can cancel the claim (docs/records-v2.md, "Handing the group over").
+func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool) {
+	if len(chain) == 0 {
+		return "", KeyHash{}, false
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		if c := bytes.Compare(ids[i].id[:], ids[j].id[:]); c != 0 {
-			return c < 0
+	st := s.State()
+	path := s.path()
+	leaf := KeyHashOf(chain[0])
+	for i, root := range path[:len(path)-1] {
+		if chain[0].CheckSignatureFrom(root) != nil {
+			continue
 		}
-		return bytes.Compare(ids[i].signer[:], ids[j].signer[:]) < 0
-	})
-	return ids
+		rk := KeyHashOf(root)
+		own := false
+		for _, p := range s.bodies() {
+			if p.b.Type == RecordDevice && p.b.HoldsRoot && p.b.Signer == rk && p.b.Key != nil && *p.b.Key == leaf {
+				own = true
+			}
+		}
+		if !own {
+			continue
+		}
+		next := KeyHashOf(path[i+1])
+		for _, c := range st.Claims {
+			if c.Root == next && c.State == "effective" {
+				dev := DeviceID("")
+				for _, p := range s.bodies() {
+					if p.b.Type == RecordDevice && p.b.Admin != nil && *p.b.Admin == c.Claimant {
+						dev = DeviceID(p.b.Device)
+					}
+				}
+				return dev, c.Claimant, true
+			}
+		}
+	}
+	return "", KeyHash{}, false
 }
 
-// Digest returns SHA-256 over each record's ID and signer's key hash, sorted
-// as All sorts them, in base64: the value a hello carries; "" for an empty
-// set. Two sets with the same bodies under different signers differ, so
-// devices that saw a body from different signers exchange their records.
+// ErrRecordsOnly is what a check of a peer returns for a root that a claim
+// took the group over from (Records.TakenOver): its connection carries
+// records and nothing else.
+var ErrRecordsOnly = errors.New("group: the group was taken over from this root; its connection carries records only")
+
+// Next returns the seq and prev of the next record the key signer signs:
+// one above its newest record in the set.
+func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
+	var seq int64
+	var prev KeyHash
+	for _, p := range s.bodies() {
+		if p.b.Signer == signer && p.b.Seq > seq {
+			seq, prev = p.b.Seq, p.id
+		}
+	}
+	if seq == 0 {
+		return 1, nil
+	}
+	return seq + 1, &prev
+}
+
+// Seen returns, for every signer of the set, the highest seq the set holds
+// of it: what a removal, a freeze or a claim names in seen.
+func (s *Records) Seen() []authority.Seen {
+	top := map[KeyHash]int64{}
+	for _, p := range s.bodies() {
+		if p.b.Seq > top[p.b.Signer] {
+			top[p.b.Signer] = p.b.Seq
+		}
+	}
+	out := make([]authority.Seen, 0, len(top))
+	for k, n := range top {
+		out = append(out, authority.Seen{Key: k, Seq: n})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key.String() < out[j].Key.String() })
+	return out
+}
+
+// Sign signs body as the next record of key, a root's own key (adminCA
+// nil) or the admin key adminCA certifies: it sets the group, seq and prev,
+// and seen for a removal, freeze or claim, from the set. The caller adds
+// the record to the set.
+func (s *Records) Sign(body RecordBody, key crypto.Signer, adminCA *x509.Certificate) (Record, error) {
+	signer, err := authority.PublicKeyHash(key.Public())
+	if err != nil {
+		return Record{}, err
+	}
+	body.Group = s.tag
+	body.Seq, body.Prev = s.Next(signer)
+	switch body.Type {
+	case RecordRevoke, RecordFreeze, RecordClaim:
+		body.Seen = s.Seen()
+		if !slices.ContainsFunc(body.Seen, func(e authority.Seen) bool { return e.Key == signer }) {
+			body.Seen = append(body.Seen, authority.Seen{Key: signer, Seq: body.Seq - 1})
+		}
+	}
+	return authority.Sign(body, key, adminCA)
+}
+
+// Digest returns SHA-256 over each record's ID and signature, sorted as
+// All sorts them, in base64: the value a hello carries; "" for an empty
+// set.
 func (s *Records) Digest() string {
-	if len(s.byID) == 0 {
+	if len(s.recs) == 0 {
 		return ""
 	}
 	h := sha256.New()
-	for _, e := range s.sortedIDs() {
-		h.Write(e.id[:])
-		h.Write(e.signer[:])
+	for _, r := range s.All() {
+		id := r.ID()
+		sig := sha256.Sum256(r.Sig)
+		h.Write(id[:])
+		h.Write(sig[:])
 	}
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+// recordsFile is the records file: the records and when this member first
+// held each claim.
+type recordsFile struct {
+	V         int         `json:"v"`
+	Records   []Record    `json:"records"`
+	FirstSeen []firstSeen `json:"first_seen,omitempty"`
+}
+
+type firstSeen struct {
+	Record KeyHash `json:"record"`
+	MS     int64   `json:"ms"`
 }
 
 // Save writes the records to dir/records.json, replacing the file in one
 // step.
 func (s *Records) Save(dir string) error {
-	data, err := json.MarshalIndent(s.All(), "", "\t")
+	f := recordsFile{V: 2, Records: s.All()}
+	for id, ms := range s.firstSeen {
+		f.FirstSeen = append(f.FirstSeen, firstSeen{id, ms})
+	}
+	sort.Slice(f.FirstSeen, func(i, j int) bool { return f.FirstSeen[i].Record.String() < f.FirstSeen[j].Record.String() })
+	data, err := json.MarshalIndent(f, "", "\t")
 	if err != nil {
 		return err
 	}
@@ -1728,8 +801,8 @@ func (s *Records) Save(dir string) error {
 }
 
 // LoadRecords reads dir/records.json for the group of groupCA. A missing
-// file is an empty set; records that are not valid for the group, such as
-// those of an earlier group, are left out.
+// file, or one of version 1, is an empty set; records that are not valid
+// for the group are left out.
 func LoadRecords(dir string, groupCA *x509.Certificate) (*Records, error) {
 	s := NewRecords(groupCA)
 	data, err := os.ReadFile(filepath.Join(dir, RecordsFileName))
@@ -1739,20 +812,25 @@ func LoadRecords(dir string, groupCA *x509.Certificate) (*Records, error) {
 	if err != nil {
 		return nil, err
 	}
-	var all []Record
-	if err := json.Unmarshal(data, &all); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, RecordsFileName), err)
+	var f recordsFile
+	if err := json.Unmarshal(data, &f); err != nil || f.V != 2 {
+		// Version 1's file was a bare array: its group is set up again.
+		return s, nil
 	}
-	s.AddAll(all) // records of another group are dropped
+	for _, e := range f.FirstSeen {
+		s.firstSeen[e.Record] = e.MS
+	}
+	s.AddAll(f.Records)
 	return s, nil
 }
 
-// signedByAny reports whether one of roots signed c.
-func signedByAny(c *x509.Certificate, roots []*x509.Certificate) bool {
-	for _, root := range roots {
-		if c.CheckSignatureFrom(root) == nil {
-			return true
-		}
-	}
-	return false
-}
+// AuthorityRecords returns the records a hub or a member sends its
+// forwarder or relay so that it can tell a removed device: all of them,
+// until the servers take only server credentials (docs/records-v2.md, "What
+// else changes with it").
+func (s *Records) AuthorityRecords() []Record { return s.All() }
+
+// PathRecords returns the records a new member gets in the Welcome to check
+// that the Welcome's roots are the group's: all of them, since it evaluates
+// the set as every member does.
+func (s *Records) PathRecords() []Record { return s.All() }

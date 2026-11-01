@@ -6,6 +6,7 @@ package group
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -13,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -92,6 +94,8 @@ const MaxHubClients = 256
 // text JSON may escape.
 const (
 	maxCommandBody = 64 << 10
+	// commandVersion is the version of command bodies.
+	commandVersion = 1
 	maxPasteBody   = 2 << 20
 )
 
@@ -158,7 +162,7 @@ func NewCommandID() string {
 // SignCommand signs a command with key, a root's key (chain empty) or an
 // admin CA key (chain holds the admin CA certificate).
 func SignCommand(body CommandBody, key crypto.Signer, chain ...*x509.Certificate) (Record, error) {
-	body.V = recordVersion
+	body.V = commandVersion
 	if err := body.check(); err != nil {
 		return Record{}, err
 	}
@@ -188,7 +192,7 @@ func SignCommand(body CommandBody, key crypto.Signer, chain ...*x509.Certificate
 
 func (b *CommandBody) check() error {
 	switch {
-	case b.V != recordVersion:
+	case b.V != commandVersion:
 		return fmt.Errorf("group: unknown command version %d", b.V)
 	case len(b.ID) != 32 || strings.Trim(b.ID, "0123456789abcdef") != "":
 		return errors.New("group: a command has no valid ID")
@@ -243,12 +247,12 @@ func (b *CommandBody) check() error {
 }
 
 // VerifyCommand checks a command for the member self at the time now: its
-// signer is an admin of the group now (a root on the path, or an admin CA
-// under one that is neither revoked nor frozen, and a watch's only for the
-// commands WatchCommand allows), its by is the signer's device when the
-// records show that device (CommandSigner), it is for self in this
-// group, it has not expired, and it was not signed in the future. The
-// caller keeps the replay cache.
+// signer is a root on the path, or an admin key under one that is listed,
+// neither revoked nor frozen, and whose newest root record gives it the
+// command's type in commands (docs/records-v2.md, "What else changes with
+// it"); its by is the signer's device; it is for self in this group, has
+// not expired, and was not signed in the future. The caller keeps the
+// replay cache.
 func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (CommandBody, error) {
 	var body CommandBody
 	body, err := parseCommandBody(c.Body)
@@ -265,19 +269,17 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 	if err != nil {
 		return body, err
 	}
-	if !s.onPath()[anchor] || s.Revoked(signer) || s.Frozen(signer) || !s.fromRoot(&signedRecord{signer: signer, anchor: anchor}) {
-		return body, errors.New("group: the command's signer is not an admin of the group")
+	dev, _, ok := s.signerDevice(signer, anchor)
+	if signer != anchor {
+		if !ok || s.Revoked(signer) || s.Frozen(signer) {
+			return body, errors.New("group: the command's signer is not an admin of the group")
+		}
+		if !slices.Contains(dev.Commands, body.Type) {
+			return body, fmt.Errorf("group: the command's signer may not sign %s commands", body.Type)
+		}
 	}
-	if s.Watch(signer) && !WatchCommand(body.Type) {
-		return body, fmt.Errorf("group: a watch does not sign %s commands", body.Type)
-	}
-	// by names the signer's device whenever the records show it, and
-	// otherwise no device the records show, unless the key is a legacy
-	// group CA, which each full member holds.
-	if dev, _, ok := s.signerDevice(signer, anchor); ok && dev.ID != body.By {
+	if !ok || dev.ID != body.By {
 		return body, errors.New("group: a command's by is not the device of its signer")
-	} else if d, listed := s.device(body.By); !ok && listed && !(s.legacyRoot(signer, anchor) && role(d.Role) == RoleFull) {
-		return body, errors.New("group: a command's by names a device that does not hold its signer's key")
 	}
 	ms := now.UnixMilli()
 	switch {
@@ -326,9 +328,8 @@ func (s *Records) CommandSigner(c Record) (dev Device, root, ok bool) {
 
 // CommandSender returns whom the limits per sender and the logs count for
 // the command c, with by, that VerifyCommand took: by, verified, when the
-// records show that its device holds the signing key (for a legacy group
-// CA, that it is a full member), and otherwise the signing key itself, as
-// "key " and its hash in hex, since by is then only the signer's word.
+// records show that its device holds the signing key, and otherwise the
+// signing key itself, as "key " and its hash in hex.
 func (s *Records) CommandSender(c Record, by DeviceID) (sender string, verified bool) {
 	signer, anchor, err := s.signerOf(c)
 	if err != nil {
@@ -337,28 +338,41 @@ func (s *Records) CommandSender(c Record, by DeviceID) (sender string, verified 
 	if dev, _, ok := s.signerDevice(signer, anchor); ok && dev.ID == by {
 		return string(by), true
 	}
-	if d, listed := s.device(by); listed && s.legacyRoot(signer, anchor) && role(d.Role) == RoleFull {
-		return string(by), true
-	}
 	return "key " + hex.EncodeToString(signer[:]), false
 }
 
-// device returns the device id the records show.
-func (s *Records) device(id DeviceID) (Device, bool) {
-	for _, d := range s.Devices() {
-		if d.ID == id {
-			return d, true
-		}
-	}
-	return Device{}, false
-}
-
-// legacyRoot reports whether signer is the key of a legacy group CA (one
-// no root record has handed on), which every full member of the group
-// holds, so that the records cannot show which device signed.
-func (s *Records) legacyRoot(signer, anchor KeyHash) bool {
+// signerOf returns the key that signed r, a command, and the root on the
+// path it was signed under: a root's own key with no chain, or the admin
+// CA of the chain, certified by that root.
+func (s *Records) signerOf(r Record) (signer, anchor KeyHash, err error) {
+	sum := sha256.Sum256(r.Body)
 	path := s.path()
-	return signer == anchor && path[len(path)-1].MaxPathLen == 0
+	switch len(r.Chain) {
+	case 0:
+		for _, root := range path {
+			if pub, ok := root.PublicKey.(*ecdsa.PublicKey); ok && ecdsa.VerifyASN1(pub, sum[:], r.Sig) {
+				k := KeyHashOf(root)
+				return k, k, nil
+			}
+		}
+		return KeyHash{}, KeyHash{}, errors.New("group: the command is not signed by a root of the group")
+	case 1:
+		ca, err := x509.ParseCertificate(r.Chain[0])
+		if err != nil {
+			return KeyHash{}, KeyHash{}, fmt.Errorf("group: the command's admin CA: %w", err)
+		}
+		pub, ok := ca.PublicKey.(*ecdsa.PublicKey)
+		if !ok || !ecdsa.VerifyASN1(pub, sum[:], r.Sig) {
+			return KeyHash{}, KeyHash{}, errors.New("group: the command's signature does not verify")
+		}
+		for _, root := range path {
+			if ca.CheckSignatureFrom(root) == nil {
+				return KeyHashOf(ca), KeyHashOf(root), nil
+			}
+		}
+		return KeyHash{}, KeyHash{}, errors.New("group: the command's admin CA is not from a root of the group")
+	}
+	return KeyHash{}, KeyHash{}, errors.New("group: a command's chain holds more than its admin CA")
 }
 
 // signerDevice is CommandSigner for the key signer under the root anchor.
