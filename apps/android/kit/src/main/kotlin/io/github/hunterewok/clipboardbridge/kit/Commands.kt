@@ -312,7 +312,7 @@ object Commands {
         return b
     }
 
-    /** Reads and checks a command's body, in the strict form of signed bodies, as Go's parseCommandBody. */
+    /** Reads a command's body once the Rust core took it (parse_body), in the strict form of signed bodies, as Go's parseCommandBody. */
     internal fun parse(body: ByteArray): Body =
         try {
             parseBody(body)
@@ -321,6 +321,8 @@ object Commands {
         }
 
     private fun parseBody(body: ByteArray): Body {
+        // The core decides whether the body is taken; the checks below only read its fields.
+        Core.bodyRefusal("command", body)?.let { throw Refused("the command is not valid: $it") }
         if (body.size > MAX_PASTE_BODY) throw Refused("the command is too large")
         try {
             Strict.check(body, "v", "type", "group", "by", "to", "id", "time_ms", "expires_ms")

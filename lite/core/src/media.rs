@@ -76,6 +76,13 @@ impl Manifest {
     }
 
     /// Checks a manifest received from another member.
+    pub fn parse(data: &[u8]) -> Result<Manifest> {
+        let m: Manifest = serde_json::from_slice(data).map_err(|e| Error::with("the manifest is not valid", e))?;
+        m.validate()?;
+        Ok(m)
+    }
+
+    /// Checks a manifest as every program does (docs/protocol.md, section 7).
     pub fn validate(&self) -> Result<()> {
         if self.parts.is_empty() || self.parts.len() > MAX_PARTS {
             return Err(Error::msg(format!("a manifest has {} parts, not 1 to {MAX_PARTS}", self.parts.len())));

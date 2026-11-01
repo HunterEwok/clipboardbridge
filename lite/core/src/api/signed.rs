@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 HunterEwok
+
+//! The entry point's call for the signed bodies that are not records
+//! (docs/core-api.md, "Signed bodies"): commands, server credentials,
+//! release files and manifests. Go and the phone kits read each through
+//! the core, so that every program takes exactly the same bodies.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use super::{Code, Refusal, bad_args, json, refuse};
+use crate::certs::b64;
+use crate::error::{Error, Result};
+
+/// The arguments of `parse_body`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ParseArgs {
+    kind: String,
+    #[serde(with = "b64")]
+    body: Vec<u8>,
+}
+
+/// The kinds of body `parse_body` reads.
+pub const KINDS: [&str; 7] = ["command", "credential", "keys", "release", "channel", "attest-status", "manifest"];
+
+/// Reads a body of the kind and gives it back as its value.
+fn read(kind: &str, body: &[u8]) -> Result<Value> {
+    fn value<T: Serialize>(t: T) -> Result<Value> {
+        serde_json::to_value(t).map_err(|e| Error::with("The body could not be written back.", e))
+    }
+    // The release files carry their body inside an envelope of at most
+    // this size, as Go's and the kits' readers check first.
+    let release = matches!(kind, "keys" | "release" | "channel" | "attest-status");
+    if release && body.len() > crate::release::MAX_BODY {
+        return Err(Error::msg("The file is too large."));
+    }
+    match kind {
+        "command" => value(crate::records::Command::parse(body)?),
+        "credential" => value(crate::credential::Body::parse(body)?),
+        "keys" => value(crate::release::decode_keys(body)?),
+        "release" => value(crate::release::decode_release(body)?),
+        "channel" => value(crate::release::decode_channel(body)?),
+        "attest-status" => value(crate::release::decode_status(body)?),
+        "manifest" => value(crate::media::Manifest::parse(body)?),
+        _ => Err(Error::msg(alloc::format!("The core reads no body of the kind {kind:?}."))),
+    }
+}
+
+/// `parse_body`: a signed body of a kind other than a record, checked as
+/// every program checks it (the strict form, each field against its row),
+/// and given back as `{"kind": kind, "value": the body's fields}`.
+fn parse_body(a: ParseArgs) -> core::result::Result<Vec<u8>, Refusal> {
+    if !KINDS.contains(&a.kind.as_str()) {
+        return Err(refuse(
+            Code::Request,
+            Error::msg(alloc::format!("The core reads no body of the kind {:?}.", a.kind)),
+        ));
+    }
+    let v = read(&a.kind, &a.body).map_err(|e| refuse(Code::Signed, e))?;
+    let mut m = Map::new();
+    m.insert("kind".into(), Value::String(String::from(a.kind.as_str())));
+    m.insert("value".into(), v);
+    Ok(json(Value::Object(m)))
+}
+
+/// Runs a call over a signed body; None for an op that is not one.
+pub(super) fn dispatch(op: &str, args: &Value) -> Option<core::result::Result<Vec<u8>, Refusal>> {
+    Some(match op {
+        "parse_body" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(parse_body),
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+    use alloc::string::ToString;
+    use alloc::vec;
+
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use serde_json::Value;
+
+    use super::super::call;
+    use super::KINDS;
+
+    fn ask(kind: &str, body: &[u8]) -> Value {
+        let req =
+            format!(r#"{{"abi":1,"op":"parse_body","args":{{"kind":"{kind}","body":"{}"}}}}"#, STANDARD.encode(body));
+        serde_json::from_slice(&call(req.as_bytes())).unwrap()
+    }
+
+    fn vectors(name: &str) -> Value {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop").join(name);
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    fn bytes(v: &Value) -> alloc::vec::Vec<u8> {
+        STANDARD.decode(v.as_str().unwrap()).unwrap()
+    }
+
+    /// Each case of the strict vectors of these kinds through the call.
+    #[test]
+    fn strict_vectors() {
+        let mut wrong = vec![];
+        let mut n = 0;
+        let mut check = |kind: &str, c: &Value| {
+            let mut body = bytes(&c["body"]);
+            if let Some(pad) = c["pad"].as_u64() {
+                let at = c["pad_at"].as_u64().unwrap() as usize;
+                body.splice(at..at, std::iter::repeat_n(b'a', pad as usize));
+            }
+            let got = ask(kind, &body);
+            let taken = got.get("ok").is_some();
+            if !taken {
+                assert_eq!(got["error"]["name"], "signed", "{got}");
+            }
+            n += 1;
+            if taken != c["valid"].as_bool().unwrap() {
+                wrong.push(format!("{kind} {}: valid {}, got {got}", c["name"], c["valid"]));
+            }
+        };
+        let mut files = vec!["strict.json".to_string(), "strict-generated.json".to_string()];
+        files.extend((1..).map(|i| format!("strict-mutants-{i}.json")).take_while(|f| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop").join(f).exists()
+        }));
+        for f in &files {
+            let v = vectors(f);
+            for (section, kind) in [("commands", "command"), ("manifests", "manifest")] {
+                for c in v[section].as_array().into_iter().flatten() {
+                    check(kind, c);
+                }
+            }
+        }
+        let v = vectors("strict-files.json");
+        for c in v["credentials"].as_array().unwrap() {
+            check("credential", c);
+        }
+        for c in v["releases"].as_array().unwrap() {
+            check(c["kind"].as_str().unwrap(), c);
+        }
+        assert!(n > 100, "{n} vectors");
+        assert!(wrong.is_empty(), "{} vectors read otherwise:\n{}", wrong.len(), wrong.join("\n"));
+    }
+
+    /// A good body comes back as its fields; an unknown kind is refused as
+    /// a request.
+    #[test]
+    fn answers() {
+        let v = vectors("strict.json");
+        let good = v["commands"].as_array().unwrap().iter().find(|c| c["valid"] == true).unwrap();
+        let got = ask("command", &bytes(&good["body"]));
+        assert_eq!(got["ok"]["kind"], "command");
+        assert!(got["ok"]["value"]["type"].is_string(), "{got}");
+        assert_eq!(ask("nothing", b"{}")["error"]["name"], "request");
+        assert_eq!(KINDS.len(), 7);
+        for kind in KINDS {
+            assert_eq!(ask(kind, b"{}")["error"]["name"], "signed", "{kind}");
+        }
+    }
+}

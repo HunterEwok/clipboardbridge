@@ -23,6 +23,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `group_command` and the other `group_` calls, docs/core-api.md, "The record set"), so the
   phones keep the records file and ask the core instead of applying the group's rules
   themselves.
+- Commands, server credentials and release files are read through the Rust core's
+  `parse_body` (docs/core-api.md, "Signed bodies") by Go in the release builds and by the
+  phone apps, so every program takes exactly the same bodies.
 - The Rust core's entry point checks a peer's member certificates (`check_member`, docs/core-api.md),
   for the TLS verify callbacks of the computers and the phones, and gives the same answer as Go's
   crypto/tls on shared vectors (`testdata/interop/member-chains.json`). The lite member now takes

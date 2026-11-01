@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 use core::cell::{Ref, RefCell};
 
 use base64::Engine as _;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::certs::{self, Cert, KeyHash, b64, sha256};
 use crate::error::{Context, Error, Result};
@@ -49,7 +49,7 @@ pub const COMMAND_LIFETIME_MS: i64 = 30_000;
 pub const COMMAND_AHEAD_MS: i64 = 60_000;
 
 /// A command (docs/protocol.md, section 15), as its receiver checked it.
-#[derive(Deserialize, Default, Clone, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct Command {
     #[serde(default)]
     v: i64,

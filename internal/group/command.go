@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/core"
 )
 
 // The types of commands (docs/protocol.md, section 15): CommandMode sets
@@ -303,6 +305,15 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 // of signed bodies.
 func parseCommandBody(data []byte) (CommandBody, error) {
 	var body CommandBody
+	if checked, err := core.CheckBody(core.KindCommand, data); checked {
+		if err != nil {
+			return body, fmt.Errorf("group: a command: %w", err)
+		}
+		if err := json.Unmarshal(data, &body); err != nil {
+			return body, fmt.Errorf("group: a command: %w", err)
+		}
+		return body, nil
+	}
 	if len(data) > maxPasteBody {
 		return body, errors.New("group: the command is too large")
 	}

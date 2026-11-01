@@ -64,6 +64,7 @@ lands in the source tree.
 | `group_admin_peer` | the set's arguments, `device`, `chain` | `{"admin"}`: whether the device is the group's root or an admin, which alone may be a hub |
 | `group_command` | the set's arguments, `command` (`{body, sig, chain}`), `me` (the member's device) | `{"command", "signer", "root", "sender", "verified"}`: the command's body as an object, the device that signed it, whether it signed as the root, and the device the limits count it for, `verified` when that device's own key signed; a command refused is code 15 |
 | `group_claim_times` | the set's arguments, `claim_times` (`[{record, ms}]`, from a Welcome) | `{"file"}`: the times earlier than the set's own and not in the future taken |
+| `parse_body` | `kind` (`command`, `credential`, `keys`, `release`, `channel`, `attest-status` or `manifest`), `body` (base64) | `{"kind", "value"}`: the body's fields as an object, once it checks; see "Signed bodies" |
 | `group_body` | the set's arguments, `body` (a record body as `canonical_body` takes it, with `signer` set) | `{"body"}`: the canonical bytes of the signer's next record, to sign: the group, seq and prev set from the set, and for a removal, a freeze or a claim `seen` from the set, the signer's own previous seq among them |
 
 The arguments of `evaluate` are a case of `testdata/interop/v2-records.json` as it is.
@@ -89,6 +90,7 @@ The numbers and names never change meaning; new codes are added at the end of th
 | 13 | `rollback` | the record set is older than the saved one: a signer's whole chain ends below the seq saved |
 | 14 | `saved` | the saved state cannot be read, is of another version or group, or its check with the secret does not match |
 | 15 | `command` | a command is refused: its signer, its target, its time or its limits |
+| 16 | `signed` | a signed body that is not a record (a command, a server credential, a release file or a manifest) is refused: its size, form or a field |
 
 ## Member chains
 
@@ -136,6 +138,21 @@ most the records records-v2.md allows. `group_view` answers:
 | `claim_times` | `[{record, ms}]`: when the set first held each claim, which a Welcome passes on |
 | `known` | every device ID a device record names, counted or not: IDs a new device must not take |
 | `records` | the number of records the set holds |
+
+## Signed bodies
+
+`parse_body` reads the signed bodies other than records as every program reads them
+([protocol.md](protocol.md): commands in section 15, server credentials in section 13, the
+release files in section 16, manifests in section 7): the strict form of signed bodies, then
+each field against its row. A release file's body is refused above 256 KiB, as its envelope
+allows. It checks the body alone; the signature, the signer and the time are the caller's, or
+`group_command`'s for a command. Go calls it in a build that links the core, as the release
+builds do, and decodes the fields from the bytes it checked; a build without the core reads the
+bodies with Go's own code, which the strict vectors keep the same. The phone kits call it for
+each command, credential and release file they take. A manifest comes inside a frame, not as
+bytes of its own, and the fields Go and the kits decode from the frame cannot show everything
+the frame held (an empty field and a missing one look alike), so they still check manifests with
+their own code, which the strict vectors keep the same as the core's.
 
 ## Signatures already checked
 

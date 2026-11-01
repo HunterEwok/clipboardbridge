@@ -237,6 +237,9 @@ public enum Releases {
     static let channelRE = "^[a-z][a-z0-9-]{0,31}$"
 
     static func decode<T: Decodable>(_ body: Data, _ type: String, as: T.Type) throws -> T {
+        // The core decides whether the body is taken (parse_body); the
+        // checks here and in the callers only read its fields.
+        if let why = Core.bodyRefusal(type, body) { throw Refused("the file is not valid: \(why)") }
         // The strict form of signed bodies first, so that every program reads a file alike (docs/protocol.md, section 16).
         do {
             try Strict.check(body, required: ["v", "type"])
