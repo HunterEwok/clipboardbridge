@@ -526,6 +526,7 @@ type epoch struct {
 	forked  map[Hash]int64
 
 	admins    map[Hash]*rec // each admin key's newest root record naming it
+	recovery  *rec          // the recovery record that counts, if any
 	revoked   map[Hash]bool
 	frozen    map[Hash]bool
 	conflicts []Conflict
@@ -678,12 +679,29 @@ func (ep *epoch) findAdmins() {
 			}
 		}
 	}
+	// The recovery key: the admin of the newest recovery record a root on
+	// the path signed, with takeover only, unless a device record makes
+	// that key an admin too.
+	ep.recovery = nil
+	for signer := range ep.onPath {
+		for _, r := range ep.e.bySig[signer] {
+			if r.Body.Type == TypeRecovery && ep.rootRecord(r) && (ep.recovery == nil || ep.newer(r, ep.recovery)) {
+				ep.recovery = r
+			}
+		}
+	}
+	if r := ep.recovery; r != nil && ep.admins[*r.Body.Admin] == nil {
+		ep.admins[*r.Body.Admin] = r
+	}
 }
 
 func (ep *epoch) has(admin Hash, power string) bool {
 	r := ep.admins[admin]
 	if r == nil {
 		return false
+	}
+	if r.Body.Type == TypeRecovery {
+		return power == PowerTakeover
 	}
 	i := sort.SearchStrings(r.Body.Powers, power)
 	return i < len(r.Body.Powers) && r.Body.Powers[i] == power
@@ -696,7 +714,7 @@ func (ep *epoch) isAdmin(k Hash) bool {
 		return true
 	}
 	for _, r := range ep.admins {
-		if *r.Body.Key == k {
+		if r.Body.Key != nil && *r.Body.Key == k {
 			return true
 		}
 	}
@@ -1150,7 +1168,7 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 // the admin key k or the member key of its device.
 func (ep *epoch) removals(k Hash) []*rec {
 	keys := []Hash{k}
-	if d := ep.admins[k]; d != nil {
+	if d := ep.admins[k]; d != nil && d.Body.Key != nil {
 		keys = append(keys, *d.Body.Key)
 	}
 	var out []*rec
@@ -1231,6 +1249,10 @@ type State struct {
 	// KeyLevel is the key level of the current root's newest settings
 	// record that counts; "" when it sets none, which means "hardware".
 	KeyLevel string `json:"key_level,omitempty"`
+	// Recovery is the admin key of the group's recovery key, from the
+	// newest recovery record of a root on the path, while it is neither
+	// revoked nor frozen (docs/records-v2.md, "The recovery key").
+	Recovery *Hash `json:"recovery,omitempty"`
 }
 
 // Device is one device of the state.
@@ -1328,6 +1350,10 @@ func (ep *epoch) state() *State {
 	s.Hubs = ep.hubs(s.Devices)
 	if r := ep.settings(); r != nil {
 		s.KeyLevel = r.Body.KeyLevel
+	}
+	if r := ep.recovery; r != nil && ep.admins[*r.Body.Admin] == r && !ep.revoked[*r.Body.Admin] && !ep.frozen[*r.Body.Admin] {
+		k := *r.Body.Admin
+		s.Recovery = &k
 	}
 	switch {
 	case ep.stopFull:

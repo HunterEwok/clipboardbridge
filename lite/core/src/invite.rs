@@ -137,6 +137,42 @@ impl Invitation {
     pub fn expired(&self, now: i64) -> bool {
         now >= self.expires
     }
+
+    /// The invitation as the core's entry point answers it, and as the
+    /// valid cases of testdata/interop/invites.json write it: keys and the
+    /// secret in base64, addresses as ip:port, ranges as "min-max".
+    pub fn to_json(&self) -> Value {
+        let b64 = |b: &[u8]| Value::from(STANDARD.encode(b));
+        let eps: Vec<Value> = self.endpoints.iter().map(|e| Value::from(e.to_string())).collect();
+        let mut m = Map::new();
+        m.insert("group".into(), Value::from(self.group.as_str()));
+        m.insert("hub".into(), Value::from(self.hub.as_str()));
+        m.insert("hub_key".into(), b64(&self.hub_key));
+        m.insert("endpoints".into(), Value::Array(eps));
+        m.insert("guest_key".into(), b64(&self.guest_key));
+        m.insert("guest_psk".into(), b64(&self.guest_psk));
+        m.insert("secret".into(), b64(&self.secret));
+        m.insert("expires".into(), Value::from(self.expires));
+        m.insert("obfuscation".into(), self.obfuscation.as_ref().map_or(Value::Null, Obfuscation::to_json));
+        Value::Object(m)
+    }
+}
+
+impl Obfuscation {
+    fn to_json(&self) -> Value {
+        let r = |r: Range| Value::from(alloc::format!("{}-{}", r.min, r.max));
+        let mut m = Map::new();
+        for (k, v) in [("jc", self.jc), ("jmin", self.jmin), ("jmax", self.jmax)] {
+            m.insert(k.into(), Value::from(v));
+        }
+        for (i, (s, h)) in self.s.iter().zip(self.h.iter()).enumerate() {
+            let n = i.saturating_add(1);
+            m.insert(alloc::format!("s{n}"), Value::from(*s));
+            m.insert(alloc::format!("h{n}"), r(*h));
+        }
+        m.insert("header_protection_key".into(), Value::from(STANDARD.encode(self.header_protection_key)));
+        Value::Object(m)
+    }
 }
 
 const FIELDS: [&str; 10] = ["v", "g", "h", "hk", "ep", "k", "psk", "s", "exp", "o"];
@@ -331,13 +367,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn obf_json(o: &Obfuscation) -> Value {
-        let r = |r: Range| alloc::format!("{}-{}", r.min, r.max);
-        json!({"jc": o.jc, "jmin": o.jmin, "jmax": o.jmax, "s1": o.s[0], "s2": o.s[1], "s3": o.s[2], "s4": o.s[3],
-            "h1": r(o.h[0]), "h2": r(o.h[1]), "h3": r(o.h[2]), "h4": r(o.h[3]),
-            "header_protection_key": STANDARD.encode(o.header_protection_key)})
-    }
-
     /// Every text of testdata/interop/invites.json parses, or is refused,
     /// as in Go.
     #[test]
@@ -350,12 +379,9 @@ mod tests {
         for c in valid {
             let name = c["name"].as_str().unwrap();
             let got = parse(c["text"].as_str().unwrap()).unwrap_or_else(|r| panic!("{name}: {r:?}"));
-            let eps: Vec<String> = got.endpoints.iter().map(|e| e.to_string()).collect();
-            let obf = got.obfuscation.as_ref().map_or(Value::Null, obf_json);
-            let want = json!({"name": name, "text": c["text"], "group": got.group, "hub": got.hub,
-                "hub_key": STANDARD.encode(got.hub_key), "endpoints": eps, "guest_key": STANDARD.encode(got.guest_key),
-                "guest_psk": STANDARD.encode(got.guest_psk), "secret": STANDARD.encode(&got.secret),
-                "expires": got.expires, "obfuscation": obf});
+            let mut want = got.to_json();
+            want["name"] = json!(name);
+            want["text"] = c["text"].clone();
             assert_eq!(&want, c, "{name}");
         }
         for c in refused {

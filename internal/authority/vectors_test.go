@@ -124,6 +124,11 @@ var scenarios = []struct {
 	{"path limit", TestPathLimit},
 	{"record limit", TestRecordLimit},
 	{"hubs table", TestHubsTable},
+	{"recovery key", TestRecoveryKey},
+	{"recovery delay", TestRecoveryDelay},
+	{"recovery key removed", TestRecoveryRemoved},
+	{"recovery key replaced", TestRecoveryReplaced},
+	{"recovery by an admin", TestRecoveryByAdmin},
 }
 
 // TestV2Vectors writes (with -update) and checks
