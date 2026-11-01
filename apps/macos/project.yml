@@ -63,6 +63,23 @@ targets:
         # XcodeGen names the host after the target; the app's product is CBB.
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/CBB.app/Contents/MacOS/CBB
         BUNDLE_LOADER: $(TEST_HOST)
+  # The window driven as a person would (XCUITest).
+  ClipboardBridgeMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - ClipboardBridgeMacUITests
+      # The app's texts, to look up the Russian the window shows.
+      - path: ClipboardBridgeMac/Resources/Localizable.xcstrings
+        buildPhase: resources
+    dependencies:
+      - target: ClipboardBridgeMac
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: ClipboardBridgeMac
+        # The tests' own strings stay out of the app's catalog.
+        SWIFT_EMIT_LOC_STRINGS: NO
 schemes:
   ClipboardBridgeMac:
     build:
@@ -71,3 +88,4 @@ schemes:
     test:
       targets:
         - ClipboardBridgeMacTests
+        - ClipboardBridgeMacUITests

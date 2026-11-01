@@ -429,3 +429,18 @@ func TestWithDebug(t *testing.T) {
 		}
 	}
 }
+
+func TestSoakFlat(t *testing.T) {
+	flat := []soakSample{{rss: 20000, fds: 30}, {rss: 21000, fds: 31}, {rss: 22000, fds: 32}}
+	if _, err := soakFlat(flat); err != nil {
+		t.Errorf("a flat run failed: %v", err)
+	}
+	leak := []soakSample{{rss: 20000, fds: 30}, {rss: 40000, fds: 31}, {rss: 80000, fds: 32}}
+	if _, err := soakFlat(leak); err == nil {
+		t.Error("memory that quadrupled passed")
+	}
+	fds := []soakSample{{rss: 20000, fds: 30}, {rss: 20000, fds: 60}}
+	if _, err := soakFlat(fds); err == nil {
+		t.Error("descriptors that doubled passed")
+	}
+}

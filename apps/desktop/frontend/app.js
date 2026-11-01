@@ -638,16 +638,18 @@ async function deviceAction(action) {
   }
 }
 
-async function saveSettings(change) {
+// saving holds the last save, so that quick changes reach the service one
+// after another and the last choice is the one kept.
+let saving = Promise.resolve();
+
+function saveSettings(change) {
   state.settings = { ...state.settings, ...change };
   applyTheme();
   render();
   renderSettings();
-  try {
-    await call("SaveSettings", state.settings);
-  } catch (e) {
-    console.error("settings", e);
-  }
+  const s = state.settings;
+  saving = saving.then(() => call("SaveSettings", s)).catch((e) => console.error("settings", e));
+  return saving;
 }
 
 function renderSettings() {

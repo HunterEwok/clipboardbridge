@@ -214,6 +214,31 @@ vm)
 		pgrep -f "cbb service" >/dev/null
 		echo "vm: it waited for NTP and started after it"
 
+		# UCI: the memory limit reaches the service as GOMEMLIMIT after a
+		# reload; procd starts a killed service again.
+		svcpid() { pgrep -f "cbb service" | head -n1; }
+		tr "\0" "\n" </proc/$(svcpid)/environ | grep -qx GOMEMLIMIT=64MiB
+		uci set clipboardbridge.main.memlimit=48MiB && uci commit clipboardbridge
+		/etc/init.d/clipboardbridge reload
+		for i in $(seq 20); do p=$(svcpid); [ -n "$p" ] && tr "\0" "\n" </proc/$p/environ | grep -qx GOMEMLIMIT=48MiB && break; sleep 1; done
+		tr "\0" "\n" </proc/$(svcpid)/environ | grep -qx GOMEMLIMIT=48MiB
+		old=$(svcpid)
+		kill -9 "$old"
+		for i in $(seq 30); do p=$(svcpid); [ -n "$p" ] && [ "$p" != "$old" ] && break; sleep 1; done
+		p=$(svcpid); [ -n "$p" ] && [ "$p" != "$old" ]
+		echo "vm: UCI changes reach the service, and procd starts it again"
+
+		# A sysupgrade keeps the state, the settings and the program: its
+		# list of kept files and its backup hold them.
+		touch /etc/clipboardbridge/state/keep-probe
+		sysupgrade -l >/tmp/keep.list
+		for f in /etc/clipboardbridge/state/keep-probe /etc/config/clipboardbridge /usr/bin/cbb /etc/init.d/clipboardbridge; do
+			grep -qx "$f" /tmp/keep.list || { echo "sysupgrade would not keep $f" >&2; exit 1; }
+		done
+		sysupgrade -b /tmp/backup.tgz
+		tar -tzf /tmp/backup.tgz | grep -qx "etc/clipboardbridge/state/keep-probe"
+		echo "vm: a sysupgrade keeps the state, the settings and the program"
+
 		sh /usr/share/clipboardbridge/uninstall.sh --purge
 		if pgrep -f "cbb service" >/dev/null; then echo "still running" >&2; exit 1; fi
 	'

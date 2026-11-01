@@ -423,7 +423,52 @@ func verify(args []string) error {
 			return err
 		}
 	}
+	if err := checkSums(dir, r); err != nil {
+		return err
+	}
 	fmt.Fprintf(stdout, "%s %s: keys.json, %s.json, release.json and %d files check out\n", r.Version, r.Channel, *ch, len(r.Files))
+	if r.Docker != nil {
+		// The release workflow compares it with the image ghcr.io serves.
+		fmt.Fprintf(stdout, "docker %s@%s\n", r.Docker.Image, r.Docker.Digest)
+	}
+	return nil
+}
+
+// checkSums checks the release's SHA256SUMS, when release.json lists one,
+// against the files and the manifest: every line names a file there with
+// that sum, and every other file of the manifest has a line with its own.
+func checkSums(dir string, r release.Release) error {
+	if _, ok := r.Asset("SHA256SUMS"); !ok {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "SHA256SUMS"))
+	if err != nil {
+		return err
+	}
+	sums := map[string]string{}
+	for i, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		sum, name, ok := strings.Cut(strings.TrimRight(line, "\r"), " ")
+		name = strings.TrimPrefix(strings.TrimPrefix(name, " "), "*")
+		if b, err := hex.DecodeString(sum); !ok || err != nil || len(b) != sha256.Size || name == "" {
+			return fmt.Errorf("SHA256SUMS line %d is not a sum and a name: %q", i+1, line)
+		}
+		file, err := os.ReadFile(filepath.Join(dir, filepath.Base(name)))
+		if err != nil {
+			return fmt.Errorf("SHA256SUMS names %s: %w", name, err)
+		}
+		if got := sha256.Sum256(file); hex.EncodeToString(got[:]) != strings.ToLower(sum) {
+			return fmt.Errorf("SHA256SUMS gives %s another sum than the file has", name)
+		}
+		sums[name] = strings.ToLower(sum)
+	}
+	for _, a := range r.Files {
+		if a.Name == "SHA256SUMS" {
+			continue
+		}
+		if sums[a.Name] != strings.ToLower(a.SHA256) {
+			return fmt.Errorf("SHA256SUMS and release.json disagree on %s", a.Name)
+		}
+	}
 	return nil
 }
 
