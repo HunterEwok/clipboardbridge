@@ -57,7 +57,8 @@ lands in the source tree.
 | `check_member` | `chain` (the peer's certificates as it sent them, leaf first, base64 DER), `trusted` (the roots the member trusts, the current root first), `usage` (`"server"` for a member this one dialed, `"client"` for one that dialed it), `now_ms` | `{"device", "used"}`: the device the leaf names and the certificates the records then judge, base64: the leaf and the admin CA that issued it, if one did, wherever the peer put it; see "Member chains" |
 | `group_add` | the set's arguments (see "The record set"), `records` | `{"file", "fresh", "errors"}`: the new file, the records it did not hold before, and why it left others out (optional) |
 | `group_view` | the set's arguments | `{"state", "devices", "path", "root_member", "hub_order", "digest", "claim_times", "records"}`: see "The record set" |
-| `group_refused` | the set's arguments, `chain` (a chain `check_member` took, leaf first) | `{"verdict", "why"}`: `ok`, `not_listed` (the set does not name the device yet) or `refused`, with the reason for the log |
+| `group_refused` | the set's arguments, `chain` (a chain `check_member` took, leaf first) | `{"verdict", "why", "claimant"}`: `ok`, `not_listed` (the set does not name the device yet), `taken_over` (the root's own device that a claim took the group over from, whose connection carries records only; `claimant` is `{device, admin}`) or `refused`, with the reason for the log |
+| `group_taken_over` | the set's arguments, `chain` (the member's own) | `{"claimant"}`: `{device, admin}` of the admin that took the group over from this root by a claim that took effect; `{}` when none did |
 | `group_refused_admin_ca` | the set's arguments, `ca` (base64 DER) | `{"verdict", "why"}` for an admin CA, as for `group_refused` |
 | `group_admin_peer` | the set's arguments, `device`, `chain` | `{"admin"}`: whether the device is the group's root or an admin, which alone may be a hub |
 | `group_command` | the set's arguments, `command` (`{body, sig, chain}`), `me` (the member's device) | `{"command", "signer", "root", "sender", "verified"}`: the command's body as an object, the device that signed it, whether it signed as the root, and the device the limits count it for, `verified` when that device's own key signed; a command refused is code 15 |
@@ -126,12 +127,13 @@ most the records records-v2.md allows. `group_view` answers:
 | Field | Meaning |
 |---|---|
 | `state` | the group's state, as `evaluate` gives it for the records the set keeps |
-| `devices` | `[{device, name, role, os, key, store, admin, admin_key, powers, commands, frozen, keys}]`: the devices list the apps show; `key` and `keys` base64 |
+| `devices` | `[{device, name, role, os, key, store, admin, admin_key, powers, commands, frozen, freezes, keys}]`: the devices list the apps show; `key` and `keys` base64; `freezes`, for a frozen admin, the IDs of the freezes a thaw names |
 | `path` | the roots' certificates on the path, the group CA first, base64 DER |
 | `root_member` | `{device, key}`: the device that holds the root key, when the set names one |
 | `hub_order` | the devices that may be hubs, in the order members try them |
 | `digest` | the set's digest, which a hello carries; left out for an empty set |
 | `claim_times` | `[{record, ms}]`: when the set first held each claim, which a Welcome passes on |
+| `known` | every device ID a device record names, counted or not: IDs a new device must not take |
 | `records` | the number of records the set holds |
 
 ## Signatures already checked

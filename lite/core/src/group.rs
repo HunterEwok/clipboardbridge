@@ -760,6 +760,69 @@ impl Records {
         top.into_iter().map(|(key, seq)| Seen { key, seq }).collect()
     }
 
+    /// Every device ID a device record of the set names, whether it counts
+    /// or not, sorted: IDs a new device must not take.
+    pub fn known(&self) -> Vec<String> {
+        let mut out: Vec<String> =
+            self.bodies().filter(|(_, b)| b.kind == authority::TYPE_DEVICE).map(|(_, b)| b.device).collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// The IDs of the freezes of the admin key, which a thaw names.
+    pub fn freezes_of(&self, admin: &KeyHash) -> Vec<Hash> {
+        let mut out: Vec<Hash> = Vec::new();
+        for (id, b) in self.bodies() {
+            if b.kind == authority::TYPE_FREEZE && b.keys.iter().any(|k| k.0 == *admin) && !out.contains(&id) {
+                out.push(id);
+            }
+        }
+        out
+    }
+
+    /// Whether chain is the member certificate of a root's own device that
+    /// a claim took the group over from, as Go's TakenOver: its leaf is the
+    /// key of a holds_root device record of a root on the path that is no
+    /// longer the current root, which certified it, and a claim to the
+    /// next root took effect. It gives the claimant's device and admin
+    /// key. Such a peer is refused, but its connections carry records, so
+    /// that the old root, if it is still in use, can cancel the claim
+    /// (docs/records-v2.md, "Handing the group over").
+    pub fn taken_over(&self, chain: &[Cert]) -> Option<(String, KeyHash)> {
+        let first = chain.first()?;
+        let st = self.state();
+        let path = self.path();
+        let leaf = first.key_hash();
+        for (i, root) in path.iter().enumerate() {
+            let Some(next) = path.get(i.saturating_add(1)) else { break };
+            if !from(first, root) {
+                continue;
+            }
+            let rk = root.key_hash();
+            let own = self.bodies().any(|(_, b)| {
+                b.kind == authority::TYPE_DEVICE
+                    && b.holds_root
+                    && b.signer.0 == rk
+                    && b.key.is_some_and(|k| k.0 == leaf)
+            });
+            if !own {
+                continue;
+            }
+            let nk = next.key_hash();
+            if let Some(c) = st.claims.iter().find(|c| c.root.0 == nk && c.state == "effective") {
+                let dev = self
+                    .bodies()
+                    .filter(|(_, b)| b.kind == authority::TYPE_DEVICE && b.admin == Some(c.claimant))
+                    .last()
+                    .map(|(_, b)| b.device)
+                    .unwrap_or_default();
+                return Some((dev, c.claimant.0));
+            }
+        }
+        None
+    }
+
     /// The certificates of the roots on the path, the group CA first.
     pub fn path_certs(&self) -> Vec<Cert> {
         self.path()

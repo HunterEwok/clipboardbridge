@@ -16,7 +16,7 @@ use serde_json::{Map, Value};
 
 use super::{Code, Refusal, b64_value, bad_args, json, refuse};
 use crate::authority::{Hash, Record, Seen, TYPE_CLAIM, TYPE_FREEZE, TYPE_REVOKE};
-use crate::certs::{Cert, b64};
+use crate::certs::{Cert, KeyHash, b64};
 use crate::error::Error;
 use crate::group::{ClaimTime, Device, Records, Refusal as Verdict};
 
@@ -86,7 +86,7 @@ fn certs_of(list: &[Vec<u8>]) -> Result<Vec<Cert>, Refusal> {
         .collect()
 }
 
-fn device_value(d: &Device) -> Value {
+fn device_value(d: &Device, s: &Records) -> Value {
     let mut m = Map::new();
     m.insert("device".into(), Value::from(d.id.as_str()));
     m.insert("name".into(), Value::from(d.name.as_str()));
@@ -110,13 +110,26 @@ fn device_value(d: &Device) -> Value {
     }
     if d.frozen {
         m.insert("frozen".into(), Value::from(true));
+        if let Some(k) = &d.admin_key {
+            let ids: Vec<Value> = s.freezes_of(k).iter().map(|h| b64_value(&h.0)).collect();
+            m.insert("freezes".into(), Value::from(ids));
+        }
     }
     m.insert("keys".into(), Value::from(d.keys.iter().map(|k| b64_value(k)).collect::<Vec<_>>()));
     Value::Object(m)
 }
 
-fn verdict(v: Option<Verdict>) -> Vec<u8> {
+fn verdict(v: Option<Verdict>, taken: Option<(String, KeyHash)>) -> Vec<u8> {
     let mut m = Map::new();
+    if let (Some(_), Some((dev, admin))) = (&v, taken) {
+        m.insert("verdict".into(), Value::from("taken_over"));
+        m.insert(
+            "why".into(),
+            Value::from("the group was taken over from this root; its connection carries records only"),
+        );
+        m.insert("claimant".into(), claimant(&dev, &admin));
+        return json(Value::Object(m));
+    }
     match v {
         None => {
             m.insert("verdict".into(), Value::from("ok"));
@@ -140,6 +153,7 @@ pub(super) fn dispatch(op: &str, args: &Value) -> Option<Result<Vec<u8>, Refusal
         "group_view" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(|a: SetArgs| view(&a)),
         "group_refused" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(refused),
         "group_refused_admin_ca" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(refused_admin_ca),
+        "group_taken_over" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(taken_over),
         "group_admin_peer" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(admin_peer),
         "group_command" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(command),
         "group_claim_times" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(claim_times),
@@ -187,7 +201,7 @@ fn view(a: &SetArgs) -> Result<Vec<u8>, Refusal> {
         serde_json::from_slice(&st.encode())
             .map_err(|e| refuse(Code::Request, Error::with("The state does not encode.", e)))?,
     );
-    m.insert("devices".into(), Value::from(s.devices().iter().map(device_value).collect::<Vec<_>>()));
+    m.insert("devices".into(), Value::from(s.devices().iter().map(|d| device_value(d, &s)).collect::<Vec<_>>()));
     m.insert("path".into(), Value::from(s.path_certs().iter().map(|c| b64_value(&c.der)).collect::<Vec<_>>()));
     if let Some((dev, key)) = s.root_member() {
         let mut r = Map::new();
@@ -208,6 +222,7 @@ fn view(a: &SetArgs) -> Result<Vec<u8>, Refusal> {
                 .map_err(|e| refuse(Code::Request, Error::with("The times do not encode.", e)))?,
         );
     }
+    m.insert("known".into(), Value::from(s.known()));
     m.insert("records".into(), Value::from(s.len()));
     Ok(json(Value::Object(m)))
 }
@@ -226,7 +241,8 @@ struct ChainArgs {
 /// already verified to a trusted root (`check_member`).
 fn refused(a: ChainArgs) -> Result<Vec<u8>, Refusal> {
     let s = a.set.open()?;
-    Ok(verdict(s.refused(&certs_of(&a.chain)?)))
+    let chain = certs_of(&a.chain)?;
+    Ok(verdict(s.refused(&chain), s.taken_over(&chain)))
 }
 
 #[derive(Deserialize)]
@@ -241,7 +257,25 @@ struct CaArgs {
 fn refused_admin_ca(a: CaArgs) -> Result<Vec<u8>, Refusal> {
     let s = a.set.open()?;
     let ca = Cert::parse(&a.ca).map_err(|e| refuse(Code::Cert, e.context("The admin CA could not be read.")))?;
-    Ok(verdict(s.refused_admin_ca(&ca)))
+    Ok(verdict(s.refused_admin_ca(&ca), None))
+}
+
+fn claimant(dev: &str, admin: &KeyHash) -> Value {
+    let mut c = Map::new();
+    c.insert("device".into(), Value::from(dev));
+    c.insert("admin".into(), b64_value(admin));
+    Value::Object(c)
+}
+
+/// `group_taken_over`: whether a claim took the group over from the root
+/// whose own device has the chain, and who claimed it.
+fn taken_over(a: ChainArgs) -> Result<Vec<u8>, Refusal> {
+    let s = a.set.open()?;
+    let mut m = Map::new();
+    if let Some((dev, admin)) = s.taken_over(&certs_of(&a.chain)?) {
+        m.insert("claimant".into(), claimant(&dev, &admin));
+    }
+    Ok(json(Value::Object(m)))
 }
 
 /// `group_admin_peer`: whether the device with the chain is the group's
@@ -277,7 +311,7 @@ fn command(a: CommandArgs) -> Result<Vec<u8>, Refusal> {
             .map_err(|e| refuse(Code::Request, Error::with("The command's body does not read.", e)))?,
     );
     if let Some(d) = dev {
-        m.insert("signer".into(), device_value(&d));
+        m.insert("signer".into(), device_value(&d, &s));
     }
     if root {
         m.insert("root".into(), Value::from(true));
@@ -417,7 +451,12 @@ mod tests {
             let held = view["records"].as_u64().unwrap() as usize;
             // A record given twice is held once.
             assert!(held + all.len() - kept.len() <= case["records"].as_array().unwrap().len(), "{name}");
-            assert!(view["devices"].is_array(), "{name}");
+            let devices = view["devices"].as_array().unwrap();
+            let known = view["known"].as_array().unwrap();
+            assert!(devices.iter().all(|d| known.contains(&d["device"])), "{name}");
+            for d in devices.iter().filter(|d| d["frozen"] == true && d.get("admin_key").is_some()) {
+                assert!(!d["freezes"].as_array().unwrap().is_empty(), "{name}");
+            }
             // Adding them all again changes nothing.
             let mut again = set.clone();
             again["records"] = case["records"].clone();
@@ -531,6 +570,7 @@ mod tests {
         chain["chain"] = Value::from(alloc::vec![case["group_ca"].clone()]);
         let got = ok("group_refused", chain.clone());
         assert_ne!(got["verdict"], "ok", "{got}");
+        assert_eq!(ok("group_taken_over", chain.clone()), serde_json::json!({}));
         chain["device"] = "0123".into();
         assert_eq!(ok("group_admin_peer", chain)["admin"], false);
         assert_eq!(code(&ask("group_nothing", set)), Code::Op as u64);
