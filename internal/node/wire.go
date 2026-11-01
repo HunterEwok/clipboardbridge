@@ -277,6 +277,8 @@ type helloBody struct {
 	Actions []string `json:"actions,omitempty"`
 	// Media tells that the sender serves the content of media events.
 	Media bool `json:"media,omitempty"`
+	// Seal is the sender's public key for sealed messages.
+	Seal []byte `json:"seal,omitempty"`
 	// ReleaseSeq is the seq of the channel file of the signed release
 	// the sender holds; 0 for none.
 	ReleaseSeq uint64 `json:"release_seq,omitempty"`
@@ -317,6 +319,9 @@ type helloOut struct {
 	Actions []string `json:"actions,omitempty"`
 	// Media tells that this member serves the content of media events.
 	Media bool `json:"media,omitempty"`
+	// Seal is this member's public key for sealed messages, for the root
+	// or an admin to put in its device record.
+	Seal []byte `json:"seal,omitempty"`
 	// ReleaseSeq is the seq of the channel file of the signed release
 	// this member holds, and ReleaseKeys that of its keys.json, so that a
 	// peer sends only a newer one.

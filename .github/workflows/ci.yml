@@ -109,7 +109,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       # The runner's Windows session has a clipboard that the tests may overwrite.
       CBB_TEST_CLIPBOARD: ${{ matrix.os == 'windows-latest' && '1' || '' }}
@@ -130,9 +130,11 @@ jobs:
       - name: go test
         # bash: PowerShell splits -coverprofile=cover-go.out at the dot. Each
         # system's file has a name of its own: the coverage job downloads
-        # them all into one folder.
+        # them all into one folder. The service's tests take close to go
+        # test's default 10 minutes under -race on the macOS runner, so the
+        # package has 20.
         shell: bash
-        run: go test -race -coverprofile="cover-go-${{ matrix.os }}.out" ./...
+        run: go test -race -timeout 20m -coverprofile="cover-go-${{ matrix.os }}.out" ./...
       # int is 32 bits there, as on the Raspberry Pi's armv7 and the routers'
       # mips, and 386 runs on the runner without an emulator.
       - name: go test of the member protocol on a 32-bit build

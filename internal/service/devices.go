@@ -4,6 +4,7 @@
 package service
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/seal"
 )
 
 // The group's devices list and revocation (docs/protocol.md, section 10):
@@ -314,7 +316,21 @@ func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.R
 	if s.records == nil {
 		return group.Record{}, s.errNoGroup()
 	}
-	return s.records.Sign(body, ca.Key, adminCA)
+	r, err := s.records.Sign(body, ca.Key, adminCA)
+	if err != nil {
+		return group.Record{}, err
+	}
+	// The set holds the record before the lock is let go, so that the
+	// next record this signer signs, here or in another goroutine, takes
+	// the next seq and names it in prev: two records with one seq would be
+	// two histories of the signer. publish sends it on.
+	if _, err := s.records.Add(r); err != nil {
+		return group.Record{}, err
+	}
+	if err := s.records.Save(s.cfg.StateDir); err != nil {
+		s.logf("cbb: saving the device records: %v", err)
+	}
+	return r, nil
 }
 
 // computerAdminPowers are the powers of an admin computer: takeover too
@@ -345,11 +361,13 @@ var errNotAdmin = errors.New("only an admin can change the devices list: the gro
 
 // publish adds records made on this member and sends them to the peers.
 func (s *Service) publish(nd *node.Node, rs ...group.Record) {
-	fresh := s.addRecords("", rs)
-	if len(fresh) > 0 && nd != nil {
-		nd.SendRecords(fresh)
+	// signRecord already put this member's own records in the set, so
+	// they are sent and settled whether or not they are fresh here.
+	s.addRecords("", rs)
+	if len(rs) > 0 && nd != nil {
+		nd.SendRecords(rs)
 	}
-	s.settleRecords(fresh)
+	s.settleRecords(rs)
 }
 
 // recordDevice records a device this member admitted, if it is an admin.
@@ -428,8 +446,11 @@ func (s *Service) ensureListed() {
 	}
 	s.recMu.Unlock()
 	var rs []group.Record
-	add := func(dev group.DeviceID, name, role, os string, key group.KeyHash, store string) {
-		body := group.RecordBody{Type: group.RecordDevice, Device: string(dev), Name: name, Role: role, OS: os, Key: &key, Store: store}
+	add := func(dev group.DeviceID, name, role, os string, key group.KeyHash, store string, sealKey []byte) {
+		if seal.CheckPublicKey(sealKey) != nil {
+			sealKey = nil
+		}
+		body := group.RecordBody{Type: group.RecordDevice, Device: string(dev), Name: name, Role: role, OS: os, Key: &key, Store: store, Seal: sealKey}
 		if d, ok := listed[key]; ok {
 			// A computer whose record names no system or another one, as a
 			// Windows PC that joined as a Linux member, or that its record
@@ -441,12 +462,20 @@ func (s *Service) ensureListed() {
 			newOS := os != "" && d.OS != os
 			rootless := store == group.StoreRootless && d.Store != group.StoreRootless
 			newStore := d.Store == group.StoreFile && store == group.StoreHardware || rootless
-			// A lite member's record changes only to say rootless.
-			if d.Role != group.RoleFull && (d.Role != group.RoleLite || !rootless) || !newOS && !newStore {
+			// A lite member's record changes only to say rootless. A
+			// computer's or a lite member's record takes the key for
+			// sealed messages its hello offers (docs/protocol.md,
+			// section 15).
+			changed := d.Role == group.RoleFull && (newOS || newStore) || d.Role == group.RoleLite && rootless
+			newSeal := sealKey != nil && !bytes.Equal(d.Seal, sealKey) && (d.Role == group.RoleFull || d.Role == group.RoleLite)
+			if !changed && !newSeal {
 				return
 			}
 			body.Name, body.Admin, body.Kind, body.Proof = d.Name, d.AdminKey, d.Kind, d.Proof
-			body.Powers, body.Commands, body.Seal = d.Powers, d.Commands, d.Seal
+			body.Powers, body.Commands = d.Powers, d.Commands
+			if !newSeal {
+				body.Seal = d.Seal
+			}
 			if rootless {
 				body.Admin, body.Kind, body.Proof, body.Powers, body.Commands = nil, "", "", nil, nil
 			}
@@ -467,9 +496,9 @@ func (s *Service) ensureListed() {
 		}
 		rs = append(rs, r)
 	}
-	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyHashOf(id.Cert), s.keyStore(id))
+	add(id.ID, s.cfg.Name, roleOf(s.cfg.Role), s.cfg.OS, group.KeyHashOf(id.Cert), s.keyStore(id), s.sealPublic)
 	for _, p := range nd.Peers() {
-		add(p.ID, p.Name, roleOf(p.Role), p.OS, p.Key, p.KeyStore)
+		add(p.ID, p.Name, roleOf(p.Role), p.OS, p.Key, p.KeyStore, p.Seal)
 	}
 	if len(rs) > 0 {
 		s.publish(nd, rs...)
@@ -852,4 +881,22 @@ func (s *Service) deviceRecord(dev group.DeviceID) *group.Device {
 		}
 	}
 	return nil
+}
+
+// loadSealSecretLocked loads this device's secret for sealed messages,
+// making it on first use. A device without one works on, and gets
+// commands only unsealed (docs/protocol.md, section 15).
+func (s *Service) loadSealSecretLocked() {
+	if s.sealSecret != nil {
+		return
+	}
+	secret, err := group.LoadSealSecret(s.cfg.StateDir)
+	if err == nil {
+		var pub []byte
+		if pub, err = seal.PublicKey(secret); err == nil {
+			s.sealSecret, s.sealPublic = secret, pub
+			return
+		}
+	}
+	s.logf("cbb: the key for sealed commands: %v; commands come unsealed", err)
 }

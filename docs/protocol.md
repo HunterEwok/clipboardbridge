@@ -494,6 +494,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `release_seq` | integer or absent | the `seq` of the channel file of the newest signed release the sender holds (section 16, "In the group"); absent when it holds none, and from a member before 0.6 |
 | `release_keys_seq` | integer or absent | with `release_seq`: the `seq` of that release's `keys.json`; absent from a member before 0.6, which a receiver reads as 0 |
 | `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
+| `seal` | string or absent | the sender's public key for sealed messages, 1216 bytes in base64 (an X-Wing key, `internal/seal`), which the group's root puts in the sender's device record (`seal`, docs/records-v2.md) so that commands for it can be sealed (section 15); a key of another size is ignored; absent from a member before 0.6 and from the lite member and the phones for now |
 
 ### Device
 
@@ -2570,6 +2571,11 @@ turns each control character (C0, DEL, C1) into a space and cuts it to 256 bytes
 character boundary. A `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
 commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
 (20 s for `hub`).
+
+Each computer keeps a secret for sealed messages in `seal.json` next to its identity (sealed
+by the TPM where it has one, as the WireGuard key) and offers its public key in its hello
+(`seal`, section 4); a root computer records it in the device's record, as it records a
+changed system. Commands sealed to that key come in a later step of 0.6.
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
 `action`, `actions-off` or `away-off` command to the group's hubs it is connected to (the
