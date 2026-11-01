@@ -1696,7 +1696,9 @@ jobs:
         working-directory: .
         run: |
           rustup target add wasm32-unknown-unknown
-          cargo clippy --manifest-path lite/Cargo.toml --locked -p clipboardbridge-wasm --target wasm32-unknown-unknown -- -D warnings
+          # From lite/, so cargo reads lite/.cargo/config.toml, which picks
+          # getrandom's custom backend for this target.
+          (cd lite && cargo clippy --locked -p clipboardbridge-wasm --target wasm32-unknown-unknown -- -D warnings)
           sh lite/wasm/build.sh
           go test -race -overlay lite/target/cbb-core-overlay.json -tags cbbwasm ./internal/core -v
       - name: the lite member joins by the phone, syncs with Go members and takes their remote pastes
