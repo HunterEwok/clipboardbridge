@@ -7,6 +7,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ## [Unreleased]
 
 ### Added
+- A single-colour glyph for the Mac's menu bar and the tray on Windows and Linux: the app icon's
+  clipboard and key, in three states (no group, in a group, another device online). `tools/icon`
+  makes the Mac's template images, the symbolic SVGs for Linux and white and black ICOs for
+  Windows from the drawings in `apps/design/icon/tray`.
 - The phones seal their commands too: a paste, a mode, an action or a hub command to a device
   whose record has a key for sealed messages carries its orders sealed to that key, through
   the core's new `seal_command` (docs/core-api.md). A computer or a lite member sends its key
