@@ -264,6 +264,35 @@ A member may delete the records the checkpoint that counts leaves out. A checkpo
 leaves out a record that mattered changes the state for every member alike; only a root signs
 one, and the root always wins.
 
+### Limits
+
+A set is never refused for its size: whatever an admin signs, the group goes on. Records past
+a limit count for nothing, with the reason `limit`, and the rest is evaluated as if they were
+not there. The limits are taken after a checkpoint's pruning, in the set each candidate
+checkpoint prunes; the candidates themselves come from the whole set, so that the root's
+checkpoint brings a set past the limits back under them though it is past them itself.
+
+| Limit | Value | Past it |
+|-------|-------|---------|
+| records in the set | 1024 | the records after the 1024th, in the order below |
+| bytes in the set: each record's body, signature and chain | 1 MiB | the record that would pass it and every record after it |
+| devices with a `device` record | 256 | every `device` record of a device past the 256th |
+| admin keys a root's own `device` records name | 64 | every root's `device` record naming an admin key past the 64th |
+| roots on the path: the group CA and 15 handovers | 16 | a claim that would add the 17th is `void` |
+
+The order: a record's rank (0 for the group CA's own records, 1 for those of the other roots
+of the group, 2 for those under an admin CA of one of its roots, 3 for the rest; a signer's
+lowest rank counts for all its records), then its depth (how many of its signer's records
+have a lower `seq`), then the signer's key hash and the record's ID, in byte order. The
+evaluation stops at the first record that does not fit, so each signer keeps the start of
+its chain, never a record past a gap, and the root's records go before any admin's. Devices
+and admin keys are taken in the order of their first `device` record; a device or an admin
+key past its limit drops every `device` record naming it, the first ones too, so that no
+chain is left with a hole. A `revoke` naming one still counts.
+
+The apps keep well under these: at the most, 256 devices of about 1.6 KB each (a record with
+its sealing key) are about 0.4 MiB, and a checkpoint drops the old records of each.
+
 ### Removals and freezes keep what the author saw
 
 A `revoke` record that a root's own key signed, or that counts, removes its `keys`. For each
@@ -432,6 +461,7 @@ The reasons in `ignored`, in the order they are decided:
 | `signature` | its signature or chain does not check |
 | `group` | is of another group |
 | `issuer` | its admin CA is from no root of the group |
+| `limit` | past a limit on the set (see "Limits") |
 | `history` | its prev chain is broken, on a branch a `resolve` voided, or at or after a second history |
 | `not_root` | a root's own record whose signer is no root on the path |
 | `cut` | a root's record past its root's cut, or an admin record a root's removal, freeze or thaw cut off |
@@ -439,7 +469,7 @@ The reasons in `ignored`, in the order they are decided:
 | `power` | an admin record its signer had no admin power for, or with an admin CA of a root off the path |
 | `removed` | an admin record a counting admin removal or freeze cut off |
 
-Of two copies of one body left out before the evaluation (the first four reasons) for
+Of two copies of one body left out before the evaluation (the first five reasons) for
 different reasons, the reason first in byte order is kept.
 
 Empty fields are left out, as in signed bodies, so two implementations agree when their
@@ -449,7 +479,8 @@ beyond) and check the same bytes.
 
 ## Vectors and tests
 
-- `testdata/interop/v2-records.json`, written by Go (`go test ./internal/authority -run
+- `testdata/interop/v2-records.json` (and `v2-flood.json`, the sets at the limit on records,
+  apart for the size of a file), written by Go (`go test ./internal/authority -run
   TestV2Vectors -update`, from the evaluation tests' scenarios): record sets with the expected state, at
   least the cases of the audit findings of version 1 (each with every order): an admin that
   removes another after a claim took effect (X1 and X2 of the second verification), two admin
@@ -457,7 +488,9 @@ beyond) and check the same bytes.
   cancelled before and after its delay, two claims, a claim disputed by a removal of its
   claimant and resolved either way, a claim after its author's removal, two histories of an admin and of the root,
   a removed admin's later `device` and `claim` records, freezes that cross, a `resolve` of each
-  kind.
+  kind; and each limit: 262 devices, 65 admin keys, 16 handovers, a set of 1033 records, then
+  the same with the root's checkpoint. (The 1 MiB limit has a Go test only: its set would be
+  over a megabyte of vectors.)
 - `testdata/interop/strict-generated.json` and `strict-files.json` written again from the
   tables above, with the canonical-form and unknown-field vectors.
 - An order-independence fuzz in Go: random sets over a few phones, computers and roots,

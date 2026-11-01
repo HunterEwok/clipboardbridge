@@ -41,6 +41,7 @@ func updates(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	const p = "fleet/I8-update/"
 	var fd *feed
 	builds := map[string]string{}
+	defer func() { fd.remove() }()
 	if r.Do(p+"feed", func() error {
 		var err error
 		if fd, err = newFeed(ctx); err != nil {
@@ -208,4 +209,5 @@ func updates(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	inviteGrant(ctx, r, f, builds["0.6.0"])
 	besideAvahi(ctx, r, f, builds["0.6.0"])
 	installerErrors(ctx, r, f, builds["0.6.0"])
+	systemLimit(ctx, r, f, builds["0.6.0"], timeout)
 }
