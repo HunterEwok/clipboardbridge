@@ -81,11 +81,21 @@ enum Injector {
     static let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
     static let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
 
-    /// Whether macOS lets the app press keys (Accessibility).
-    static var allowed: Bool { CGPreflightPostEventAccess() }
+    /// Whether macOS lets the app press keys (Accessibility). The answer of
+    /// CGPreflightPostEventAccess can stay what it was when the app started,
+    /// so a leave given in System Settings while the app runs shows through
+    /// AXIsProcessTrusted, which reads the setting each time.
+    static var allowed: Bool { AXIsProcessTrusted() || CGPreflightPostEventAccess() }
 
-    /// Asks macOS for leave to press keys; it opens System Settings.
-    static func askLeave() { _ = CGRequestPostEventAccess() }
+    /// Asks macOS for leave to press keys. macOS asks only once; after that,
+    /// and when the user took the leave back by hand, the app opens the
+    /// Accessibility pane of System Settings itself.
+    static func askLeave() {
+        if CGRequestPostEventAccess() { return }
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
     /// Why keys cannot go to the focus now, or nil.
     static func blocked() -> Failure? {
