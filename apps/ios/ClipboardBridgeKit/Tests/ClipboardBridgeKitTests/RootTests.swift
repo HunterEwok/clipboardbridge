@@ -252,7 +252,12 @@ final class RootTests: XCTestCase {
 
     /// The set over testdata/interop/v2-records.json gives each case's
     /// state, as Go's internal/authority does.
-    func testV2Vectors() throws {
+    /// Runs the cases of testdata/interop/v2-records.json whose names start
+    /// with one of the prefixes (all of them for nil) through the set: the
+    /// core gives each case's state, the same as Go and the lite member.
+    /// Answers how many cases ran.
+    @discardableResult
+    func v2Cases(_ prefixes: [String]? = nil, file: StaticString = #filePath, line: UInt = #line) throws -> Int {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<6 { url.deleteLastPathComponent() }
         struct V: Decodable {
@@ -266,6 +271,7 @@ final class RootTests: XCTestCase {
         let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/v2-records.json")))
         var n = 0
         for c in v.cases where c.time_unknown != true {
+            if let prefixes, !prefixes.contains(where: { c.name.hasPrefix($0) }) { continue }
             var set = RecordSet()
             set.tag = c.group
             set.nowMS = c.now_ms
@@ -273,10 +279,78 @@ final class RootTests: XCTestCase {
             guard fresh.count == c.records.count else { continue } // records the set does not keep
             set.takeClaimTimes(c.first_seen ?? [])
             let want = try JSONDecoder().decode(RecordSet.State.self, from: Data(c.state.utf8))
-            XCTAssertEqual(set.view.state, want, c.name)
+            XCTAssertEqual(set.view.state, want, c.name, file: file, line: line)
             n += 1
         }
-        XCTAssertGreaterThan(n, 10)
+        XCTAssertGreaterThan(n, 0, "no case of \(prefixes ?? [])", file: file, line: line)
+        return n
+    }
+
+    func testV2Vectors() throws {
+        XCTAssertGreaterThan(try v2Cases(), 10)
+    }
+
+    // The cases of Go's records of version 1 had these tests; each now runs
+    // the cases of version 2 on the same subject.
+
+    func testGoAuthority() throws {
+        try v2Cases(["basic", "record of a later version", "ignored records", "checkpoint"])
+    }
+
+    func testGoAdminPowers() throws {
+        try v2Cases(["powers"])
+    }
+
+    func testGoEnvelopes() throws {
+        try v2Cases(["one record under two admin CAs", "two histories", "times at the ends"])
+    }
+
+    func testGoFreeze() throws {
+        try v2Cases(["freeze and thaw", "freezes crossed"])
+    }
+
+    func testGoHandover() throws {
+        try v2Cases(["claim waits and takes effect", "settings delay", "claim disputed"])
+    }
+
+    func testGoHubOrder() throws {
+        try v2Cases(["hubs table"])
+    }
+
+    func testGoRemovedAdmin() throws {
+        try v2Cases(["root removal cuts an admin", "removed admin's device", "removed admin's claim"])
+    }
+
+    func testGoRemovedAdmins() throws {
+        try v2Cases(["admin removals"])
+    }
+
+    func testGoRootMember() throws {
+        try v2Cases(["removed phone after a takeover", "chain of claims"])
+    }
+
+    func testGoTakeover() throws {
+        try v2Cases(["two claims", "claim after removal", "claim while another waits", "stranger's claim", "claimed root signs early"])
+    }
+
+    /// A watch's records count only for its powers: removing an admin is
+    /// not one of them, so a revocation of an admin's key that a watch
+    /// signs counts for nothing, while the root's does.
+    func testGoWatch() throws {
+        var g = try Group(now: t0)
+        let watchKey = SoftwareSigner(), watch = SyncEngine.newID()
+        let (ca, _) = try g.root.addWatch(device: watch, name: "Watch", os: "watchos", adminKey: watchKey.publicKeyDER,
+                                          rootSigner: g.rootKey, now: t0.addingTimeInterval(1))
+        XCTAssertEqual(g.root.devices.first { $0.id == watch }?.powers, Records.watchPowers)
+        XCTAssertFalse(Records.watchPowers.contains("remove-admins"))
+        let adminKey = try Records.keyHash(cert: g.adminCA)
+        try g.root.records.signed(.revoke([adminKey], signer: watchKey, now: t0.addingTimeInterval(2)), watchKey, adminCA: ca,
+                                  groupCA: g.root.groupCA)
+        XCTAssertFalse(g.root.records.revoked.contains(adminKey))
+        XCTAssertTrue(g.root.devices.contains { $0.id == g.b.device })
+        try g.root.records.signed(.revoke([adminKey], signer: g.rootKey, now: t0.addingTimeInterval(3)), g.rootKey,
+                                  groupCA: g.root.groupCA)
+        XCTAssertTrue(g.root.records.revoked.contains(adminKey))
     }
 
     /// Writes swift-root.json for internal/group's TestSwiftRoot: a takeover
