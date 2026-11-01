@@ -747,6 +747,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A member that ends its connections after saying goodbye, as after `cbb global off -on`
+  turned sync away from home off there, no longer resets them: it stops sending and reads
+  what the other device still sends before it closes. A reset could make the admin lose the
+  command's result and report that the device closed the connection before it answered.
 - install.sh no longer fails with ufw on a computer whose kernel has no IPv6
   (`ipv6.disable=1`) or whose ufw has `IPV6=no`: the firewall rules it lists, prints and
   adds then name the IPv4 home networks only.
