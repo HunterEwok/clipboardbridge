@@ -1147,7 +1147,7 @@ jobs:
           awayAllow 'on'
           homeOnly 'Outbound Block True'
           if ((blocked clipboardbridge-home-only).Count -ne 9) { throw "with no servers: $(blocked clipboardbridge-home-only)" }
-          & $cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key "sha256:$('A' * 43)"
+          & $cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key "$('A' * 43)="
           if ($LASTEXITCODE -ne 0) { throw 'cbb global hub -forwarder failed' }
           awayAllow 'on 198.51.100.9'
           $b = blocked clipboardbridge-home-only
