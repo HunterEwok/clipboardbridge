@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: f3e807bbde74 -->
+<!-- source: 5a17c9adbba6 -->
 # 封锁 VPN 的网络
 
 离家后，你的设备通过群组自己的 WireGuard 隧道连接中枢。有些网络会封锁 WireGuard：酒店和办公室的 Wi-Fi、部分移动运营商，以及整个过滤 VPN 的国家。Clipboard Bridge 有两种绕开的办法。两者都在中枢上开启，设备会在下次回家与中枢碰面时获取。
@@ -31,7 +31,7 @@ sudo cbb global hub -obfuscate 203.0.113.7:8764
 使用转发器时，同样加上 `-obfuscate`：
 
 ```sh
-sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 中枢会随机生成一次群组的设置，只要 `-obfuscate` 还在，就一直保留。之后请让每台笔记本和手机回家一次，或在家时保持应用打开，让它获取新的设置。轻量成员只支持普通 WireGuard：在启用混淆的群组中，它只能在家同步。
@@ -51,7 +51,7 @@ VLESS 运行在你的设备和转发器之间。REALITY 让转发器像一个真
 2. **在中枢上**：
 
    ```sh
-   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:... -vless
+   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key> -vless
    ```
 
    你愿意的话也可以加上 `-obfuscate`；两者会同时生效。

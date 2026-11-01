@@ -16,7 +16,7 @@ class RelayOnPhoneTest {
     private val phone = "8".repeat(32)
     private val pc = "1".repeat(32)
     private val tv = "f".repeat(32)
-    private val pin = "sha256:" + "A".repeat(43)
+    private val pin = "A".repeat(43) + "="
 
     private class FakeLink(val args: List<String>, val memberPort: Int, var shown: String) : RelayLink {
         @Volatile var closed = false
@@ -63,7 +63,7 @@ class RelayOnPhoneTest {
         r.start(group())
         assertTrue("off: no link", links.started.isEmpty())
         assertEquals(RelayOnPhone.Status.OFF, r.status(false).first)
-        assertThrows(IllegalArgumentException::class.java) { r.turnOn("203.0.113.9:8764", "sha256:short") }
+        assertThrows(IllegalArgumentException::class.java) { r.turnOn("203.0.113.9:8764", "short") }
         assertTrue(saved.isEmpty())
 
         r.turnOn("203.0.113.9:8764", pin)

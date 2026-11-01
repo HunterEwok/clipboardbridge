@@ -417,7 +417,7 @@ func relayAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		return syncs(ctx, g, m2, m3, "after the member restarted", 2*timeout)
 	})
 	r.Do("fleet/W36-wrong-key", func() error {
-		err := on(m3, "sha256:"+strings.Repeat("A", 43))
+		err := on(m3, strings.Repeat("A", 43)+"=")
 		var re *RunError
 		switch {
 		case err != nil && errors.As(err, &re) && strings.Contains(strings.ToLower(re.Output), "key"):

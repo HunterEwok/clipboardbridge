@@ -7,14 +7,10 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -31,7 +27,6 @@ type Joiner struct {
 	ID   group.DeviceID
 	Key  crypto.Signer // a P-256 key, in a file or a TPM
 	Info Info
-	Now  func() time.Time // time.Now if nil
 
 	// Member is the device ID of the member that admitted this device,
 	// once a join succeeded.
@@ -60,13 +55,6 @@ func NewJoiner(info Info) (*Joiner, error) {
 		return nil, err
 	}
 	return &Joiner{ID: group.NewDeviceID(), Key: key, Info: info}, nil
-}
-
-func (j *Joiner) now() time.Time {
-	if j.Now != nil {
-		return j.Now()
-	}
-	return time.Now()
 }
 
 // cert returns the joiner's self-signed certificate for its key, the same
@@ -115,11 +103,16 @@ func (j *Joiner) Fingerprint() (string, error) {
 	return CertFingerprint(der), nil
 }
 
-// CertFingerprint returns the fingerprint of a certificate in the form a
-// join QR code carries: SHA-256 over the DER, in base64url without padding.
+// CertFingerprint returns the fingerprint of a certificate's key, the one
+// form of docs/protocol.md (Conventions, "Fingerprints"): SHA-256 over its
+// SubjectPublicKeyInfo in standard base64, as a record's key hash. It is
+// "" for bytes that are no certificate.
 func CertFingerprint(der []byte) string {
-	sum := sha256.Sum256(der)
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
+		return ""
+	}
+	return group.KeyHashOf(c).String()
 }
 
 // Join runs the joining side of a pairing over conn, a connection the
@@ -333,46 +326,8 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 	if dev, err := group.DeviceOf(memberCert); err != nil || dev != member.Device {
 		return nil, errors.New("pair: the member's certificate does not name the member")
 	}
-	// Only in a legacy group does a Linux or Windows computer get the CA
-	// keys; in a group with a root no device gets them by joining, and a
-	// Mac or a lite member never does.
-	keys := w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil
-	if keys && (!j.Info.holdsKeys() || id.GroupCA.Cert.MaxPathLen != 0) {
-		return nil, errors.New("pair: the member sent CA keys to a device that never holds them")
-	}
-	if keys {
-		if w.GroupCAKey == nil || w.PhoneCA == nil || w.PhoneCAKey == nil {
-			return nil, errors.New("pair: the member sent only some of the CA keys")
-		}
-		if id.GroupCA.Key, err = parseKey(w.GroupCAKey); err != nil {
-			return nil, err
-		}
-		phoneCA := &group.CA{}
-		if phoneCA.Cert, err = x509.ParseCertificate(w.PhoneCA); err != nil {
-			return nil, err
-		}
-		if phoneCA.Key, err = parseKey(w.PhoneCAKey); err != nil {
-			return nil, err
-		}
-		id.PhoneCA = phoneCA
-		if id.Phone, err = phoneCA.IssuePhone(group.PublicKey(j.Key), j.now()); err != nil {
-			return nil, err
-		}
-	}
 	if err := id.Check(); err != nil {
 		return nil, err
 	}
 	return id, nil
-}
-
-func parseKey(der []byte) (*ecdsa.PrivateKey, error) {
-	k, err := x509.ParsePKCS8PrivateKey(der)
-	if err != nil {
-		return nil, err
-	}
-	key, ok := k.(*ecdsa.PrivateKey)
-	if !ok || key.Curve != elliptic.P256() {
-		return nil, errors.New("pair: a CA key is not a P-256 key")
-	}
-	return key, nil
 }

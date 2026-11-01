@@ -17,6 +17,10 @@ import time
 
 QEMU, FLASH, WORK = sys.argv[1:4]
 TIMEOUT = float(os.environ.get("TIMEOUT", "300"))
+# How long a line may wait for its first echo before it is sent again, and
+# how many times it is sent.
+ECHO_WAIT = float(os.environ.get("ECHO_WAIT", "20"))
+SENDS = 3
 PROMPT = b"cbb> "
 transcript = []
 
@@ -60,13 +64,40 @@ class Board:
         transcript.append(self.out.decode(errors="replace"))
         self.out = b""
 
+    def send(self, line):
+        """Sends a line, and sends it again while the board answers
+        nothing at all: right after a boot, QEMU's UART has been seen to
+        drop what came before the firmware read it, though the prompt was
+        out. A board that hangs answers none of the copies either, and a
+        line it began to echo is never sent twice."""
+        data = line.encode() + b"\r"
+        for attempt in range(SENDS):
+            self.uart.sendall(data)
+            deadline = time.time() + ECHO_WAIT
+            while not self.out and time.time() < deadline:
+                try:
+                    got = self.uart.recv(4096)
+                except socket.timeout:
+                    continue
+                if not got:
+                    fail("QEMU closed the UART")
+                self.out += got
+            if self.out:
+                return
+            note = f"no echo of {line!r} in {ECHO_WAIT:.0f} s; sending it again"
+            transcript.append(f"({note})")
+            # Loud on purpose: a line the board dropped must not pass unseen.
+            # GitHub shows ::warning:: on the job and the pull request.
+            print(f"::warning title=qemu-test::{note}", file=sys.stderr, flush=True)
+        fail(f"no echo of {line!r}")
+
     def type(self, line, want, timeout=TIMEOUT):
-        self.uart.sendall(line.encode() + b"\r")
+        self.send(line)
         self.expect(want.encode(), timeout)
 
     def answer(self, line, question):
         """Types a line that the board answers with another question."""
-        self.uart.sendall(line.encode() + b"\r")
+        self.send(line)
         deadline = time.time() + TIMEOUT
         while question.encode() not in self.out:
             if time.time() > deadline:

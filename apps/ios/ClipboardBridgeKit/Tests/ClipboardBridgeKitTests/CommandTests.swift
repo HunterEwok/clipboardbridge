@@ -29,7 +29,7 @@ final class CommandTests: XCTestCase {
     func testHubCommand() throws {
         let root = SoftwareSigner()
         let client = PhoneHub.Client(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", key: Data(repeating: 1, count: 32), psk: Data(repeating: 2, count: 32))
-        let c = try Commands.hub(to: pc, forwarder: ("203.0.113.9:8764", "sha256:AAAA"), clients: [client], group: "tag", by: "by",
+        let c = try Commands.hub(to: pc, forwarder: ("203.0.113.9:8764", "AAAA"), clients: [client], group: "tag", by: "by",
                                  now: now, signer: root)
         let b = try JSONDecoder().decode(Commands.Body.self, from: c.body)
         XCTAssertEqual(b.type, "hub")
@@ -195,7 +195,7 @@ final class CommandTests: XCTestCase {
         let out = Out(group_ca: ca, records: set.records, to: pc, commands: [
             try Commands.mode(to: pc, mode: "receive", group: tag, by: by, now: now, signer: root),
             try Commands.mode(to: pc, mode: "receive", group: tag, by: adminBy, now: now, signer: admin, adminCA: adminCA),
-            try Commands.hub(to: pc, forwarder: ("203.0.113.9:8764", "sha256:AAAA"),
+            try Commands.hub(to: pc, forwarder: ("203.0.113.9:8764", "AAAA"),
                              clients: [PhoneHub.Client(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", key: Data(repeating: 1, count: 32),
                                                        psk: Data(repeating: 2, count: 32))],
                              group: tag, by: by, now: now, signer: root),

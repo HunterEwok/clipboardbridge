@@ -469,7 +469,7 @@ func testAwayThroughForwarder(t *testing.T, obfuscate, overVLESS bool) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Forwarder: f.Addr().String(), ForwarderKey: "sha256:nope"}, ""); err == nil {
+	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Forwarder: f.Addr().String(), ForwarderKey: "nope"}, ""); err == nil {
 		t.Error("a forwarder with a bad key")
 	}
 	if _, err := pi.do(t, control.Header{Op: control.OpAway, Name: "hub", Port: freeUDP(t), Forwarder: f.Addr().String(), ForwarderKey: forward.Pin(cert.Leaf),
@@ -549,7 +549,7 @@ func TestAwayThroughRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range []*testService{pi, deck} {
-		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: "sha256:nope"}, ""); err == nil {
+		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: "nope"}, ""); err == nil {
 			t.Error("a relay with a bad key")
 		}
 		if _, err := s.do(t, control.Header{Op: control.OpAway, Name: "relay", Relay: r.Addr().String(), RelayKey: keys.Pin()}, ""); err == nil || !strings.Contains(err.Error(), "learns") {

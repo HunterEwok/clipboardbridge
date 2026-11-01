@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: f3e807bbde74 -->
+<!-- source: 5a17c9adbba6 -->
 # VPN रोकने वाले नेटवर्क
 
 घर से बाहर आपके डिवाइस समूह की अपनी WireGuard सुरंग से हब तक पहुँचते हैं। कुछ नेटवर्क WireGuard रोक देते हैं: होटल और दफ़्तर का Wi-Fi, कुछ मोबाइल ऑपरेटर, और वे पूरे देश जो VPN छानते हैं। Clipboard Bridge के पास इससे बचने के दो तरीके हैं। दोनों हब पर चालू किए जाते हैं, और डिवाइस उन्हें अगली बार घर पर हब से मिलने पर उठा लेते हैं।
@@ -31,7 +31,7 @@ sudo cbb global hub -obfuscate 203.0.113.7:8764
 फ़ॉरवर्डर के साथ `-obfuscate` इसी तरह जोड़ें:
 
 ```sh
-sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 हब समूह की सेटिंग्स एक बार, बेतरतीब ढंग से बनाता है, और जब तक `-obfuscate` रहता है तब तक उन्हें रखता है। इसके बाद हर लैपटॉप और फ़ोन को एक बार घर लाएँ, या घर पर ऐप खुला रखें, ताकि वह नई सेटिंग्स ले ले। लाइट सदस्य केवल सादा WireGuard बोलता है: अस्पष्टीकरण वाले समूह में वह केवल घर पर सिंक करता है।
@@ -51,7 +51,7 @@ VLESS आपके डिवाइस और फ़ॉरवर्डर के 
 2. **हब पर**:
 
    ```sh
-   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:... -vless
+   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key> -vless
    ```
 
    चाहें तो `-obfuscate` भी जोड़ें; तब दोनों लागू होते हैं।

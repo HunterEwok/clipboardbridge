@@ -358,7 +358,7 @@ func Relay(ctx context.Context, r *Report, inv *Inventory, devices []*Device, ti
 	}
 	last := met[len(met)-1]
 	r.Do("relay/P12/"+last.Name+"/wrong-key", func() error {
-		wrong := "sha256:" + strings.Repeat("A", 43)
+		wrong := strings.Repeat("A", 43) + "="
 		if _, err := Run(ctx, last, adminCmd(last)+" global relay "+rel.Address+" -key "+wrong+" -yes", ""); err != nil {
 			var re *RunError
 			if errors.As(err, &re) && strings.Contains(strings.ToLower(re.Output), "key") {

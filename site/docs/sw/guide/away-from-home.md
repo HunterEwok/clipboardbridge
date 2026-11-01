@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: b85d406ac1b5 -->
+<!-- source: 7ef91335d714 -->
 # Mbali na nyumbani
 
 Nyumbani vifaa vyako husawazisha vyenyewe. Ili kuendelea kusawazisha laptopu au simu inapokuwa mahali pengine, kompyuta moja nyumbani huwa **kitovu** cha kikundi, na vifaa vinavyosafiri hukifikia kupitia handaki lililosimbwa la kikundi chenyewe. Picha za kila hali ziko katika [Jinsi inavyofanya kazi](how-it-works.md#away-from-home-the-hub).
@@ -54,7 +54,7 @@ Anwani ya nyumbani kwako ikibadilika, kitovu huvijulisha vifaa wakati ujao vitak
 Nyuma ya carrier-grade NAT, kitovu hujisajili badala yake kwenye **kisambazaji** kilicho kwenye intaneti, kwa muunganisho wa kutoka nje, kwa hiyo hakuna kinachohitaji kufunguliwa nyumbani. Kisambazaji hupitisha tu pakiti zilizosimbwa na hakina funguo.
 
 ```sh
-sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 Anwani na ufunguo hutoka kwenye kisambazaji. Unaweza [kuendesha chako mwenyewe](../admin/self-hosting.md#a-forwarder) kwenye seva yoyote ndogo. Kisambazaji cha mradi kwenye `cbb.tools` bado hakijafunguliwa kwa wote; anwani na ufunguo wake vitakuwa hapa kitakapofunguliwa.

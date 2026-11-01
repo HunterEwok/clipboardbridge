@@ -26,7 +26,7 @@ func secretWindow(t *testing.T, confirm func(context.Context, Request) error) (*
 	secret := make([]byte, MinSecret)
 	rand.Read(secret)
 	clk := &clock{up: time.Hour}
-	w, err := Open(admin, "", Options{Secret: secret, Lifetime: 24 * time.Hour, NoCAKeys: true,
+	w, err := Open(admin, "", Options{Secret: secret, Lifetime: 24 * time.Hour,
 		Confirm: confirm, ConfirmWait: time.Minute,
 		Now: func() time.Time { return t0 }, Uptime: clk.uptime, AfterFunc: clk.afterFunc})
 	if err != nil {

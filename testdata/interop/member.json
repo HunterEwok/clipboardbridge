@@ -269,7 +269,9 @@
 					}
 				},
 				"os": "linux",
-				"media": true
+				"features": [
+					"media"
+				]
 			}
 		}
 	],

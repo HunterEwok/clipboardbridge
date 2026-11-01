@@ -113,7 +113,6 @@ object PairingJoiner {
         if (mine != j.device || !CertificateInfo(w.cert).publicKey.contentEquals(CertificateInfo(joinerCert).publicKey)) {
             throw Failure("the certificate is not for this phone")
         }
-        if (w.groupCAKey != null || w.phoneCA != null || w.phoneCAKey != null) throw Failure("the other phone sent CA keys")
         val adminCA = w.adminCA
         if (adminCA != null) {
             val key = info.adminKey

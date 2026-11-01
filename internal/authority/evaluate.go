@@ -1006,16 +1006,22 @@ func (ep *epoch) collect() {
 	}
 }
 
-// decideClaims looks at the claims under the current root and returns the
-// next root and the current root's cut when one takes effect.
-func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool) (*Hash, int64) {
-	delay := int64(DefaultDelay)
+// settings returns the current root's newest settings record that counts.
+func (ep *epoch) settings() *rec {
 	var settings *rec
 	for _, r := range ep.e.bySig[ep.cur] {
 		if r.Body.Type == TypeSettings && ep.rootRecord(r) && (settings == nil || r.Body.Seq > settings.Body.Seq) {
 			settings = r
 		}
 	}
+	return settings
+}
+
+// decideClaims looks at the claims under the current root and returns the
+// next root and the current root's cut when one takes effect.
+func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool) (*Hash, int64) {
+	delay := int64(DefaultDelay)
+	settings := ep.settings()
 	if settings != nil && settings.Body.TakeoverDelayMS != nil {
 		delay = *settings.Body.TakeoverDelayMS
 	}
@@ -1240,6 +1246,9 @@ type State struct {
 	// devices of the state with the role full or phone, in its order
 	// (docs/protocol.md, section 10, "The hubs table").
 	Hubs []string `json:"hubs,omitempty"`
+	// KeyLevel is the key level of the current root's newest settings
+	// record that counts; "" when it sets none, which means "hardware".
+	KeyLevel string `json:"key_level,omitempty"`
 	// Recovery is the admin key of the group's recovery key, from the
 	// newest recovery record of a root on the path, while it is neither
 	// revoked nor frozen (docs/records-v2.md, "The recovery key").
@@ -1355,6 +1364,9 @@ func (ep *epoch) state() *State {
 		return s.Conflicts[i].Records[0].String() < s.Conflicts[j].Records[0].String()
 	})
 	s.Hubs = ep.hubs(s.Devices)
+	if r := ep.settings(); r != nil {
+		s.KeyLevel = r.Body.KeyLevel
+	}
 	if r := ep.recovery; r != nil && ep.admins[*r.Body.Admin] == r && !ep.revoked[*r.Body.Admin] && !ep.frozen[*r.Body.Admin] {
 		k := *r.Body.Admin
 		s.Recovery = &k

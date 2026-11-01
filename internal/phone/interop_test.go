@@ -22,7 +22,7 @@ type joinQRVector struct {
 }
 
 func TestJoinQRInteropVectors(t *testing.T) {
-	full := JoinCode{Code: "246802", Addrs: []string{"192.168.1.20:8767", "[fd00::5]:8767"}, Fingerprint: "qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA"}
+	full := JoinCode{Code: "246802", Addrs: []string{"192.168.1.20:8767", "[fd00::5]:8767"}, Fingerprint: "qFnj7Uv+CE/WNnna2IEmMaLbkA6tHcKf0VijTRzekKA="}
 	texts := []string{
 		JoinQR(full),
 		JoinQR(JoinCode{Code: "012345"}),
@@ -32,6 +32,7 @@ func TestJoinQRInteropVectors(t *testing.T) {
 		"clipboardbridge://pair?code=123456",
 		"clipboardbridge-join:123456",
 		"https://join/?code=1",
+		"clipboardbridge://join?code=246802&fp=ab+c/d=",
 	}
 	var vs []joinQRVector
 	for _, text := range texts {
