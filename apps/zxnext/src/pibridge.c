@@ -18,7 +18,7 @@
 
 #include "link.h"
 
-#define VERSION "0.3.0"
+#define VERSION "0.3.1"
 // Rings for each direction: the UARTs' own buffers are small, so the Z80
 // takes in what arrives at once and passes it on as the other side has
 // room, one byte at a time, without waiting on either.
@@ -30,6 +30,13 @@ static uint16_t esp_in, esp_out, pi_in, pi_out;
 static char line[80];
 static uint8_t debug;
 static uint32_t to_pi, to_esp;
+
+// The ROM's frame counter, 50 a second while interrupts run.
+#define FRAMES (*(volatile uint8_t *)23672)
+// The ROM's scroll count: kept high, the screen scrolls on without asking
+// "scroll?", which would hold the bridge until a key is pressed.
+#define SCR_CT (*(volatile uint8_t *)23692)
+#define NO_SCROLL_PROMPT() (SCR_CT = 255)
 
 static void usage(void)
 {
@@ -45,6 +52,7 @@ static void usage(void)
 
 static int fail(const char *msg, const char *detail)
 {
+    NO_SCROLL_PROMPT();
     printf("pibridge: %s\n", msg);
     if (debug && detail && *detail) printf("  (%s)\n", detail);
     return 1;
@@ -61,15 +69,16 @@ static uint8_t esp_expect(const char *want, uint16_t seconds)
             return 1;
         }
         if (!line[0]) continue;
-        if (debug) printf("  esp: %s\n", line);
+        if (debug) {
+            NO_SCROLL_PROMPT();
+            printf("  esp: %s\n", line);
+        }
         if (strncmp(line, want, n) == 0) return 0;
         if (strcmp(line, "ALREADY CONNECTED") == 0) return 0; // CIPSTART, still open
         if (strcmp(line, "ERROR") == 0 || strcmp(line, "FAIL") == 0 || strncmp(line, "busy", 4) == 0) return 1;
     }
 }
 
-// The ROM's frame counter, 50 a second while interrupts run.
-#define FRAMES (*(volatile uint8_t *)23672)
 
 // Waits ticks frames; a cap on the rounds ends it if interrupts are off.
 static void wait_frames(uint8_t ticks)
@@ -93,7 +102,10 @@ static void esp_quiet(uint8_t ticks)
     while (left && --rounds) {
         if (link_ready()) {
             uint8_t c = link_get();
-            if (debug && c >= 32 && c < 127) putchar(c);
+            if (debug && c >= 32 && c < 127) {
+                NO_SCROLL_PROMPT();
+                putchar(c);
+            }
             left = ticks;
         } else if (FRAMES != last) {
             last = FRAMES;
@@ -257,6 +269,7 @@ static int run(int argc, char **argv)
         esp_hang_up();
         return fail("the Wi-Fi module did not start passthrough", line);
     }
+    NO_SCROLL_PROMPT();
     printf("Connected to %s:%u.\nSPACE stops.\n", argv[i], port);
 
     link_use(LINK_PI);
@@ -267,6 +280,7 @@ static int run(int argc, char **argv)
     if (paused) link_send(XON);
     esp_hang_up();
     link_use(LINK_PI);
+    NO_SCROLL_PROMPT();
     printf("Stopped. %lu bytes to the Pi,\n%lu from it.\n", to_pi, to_esp);
     printf("Ring to the ESP: up to %u of %u,\n%u pauses (XOFF).\n", fill_max, TO_ESP, pauses);
     if (over_pi || over_esp) printf("A receive buffer filled up:\nPi %u, ESP %u times;\nbytes may be lost.\n", over_pi, over_esp);
