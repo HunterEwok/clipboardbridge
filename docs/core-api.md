@@ -46,6 +46,11 @@ bytes, also bytes that are not a request. A change an older caller would misread
 
 The arguments of `evaluate` are a case of `testdata/interop/v2-records.json` as it is.
 
+`cbb version` of the lite member names the core it was built with in a second line,
+`core 0.6.0, abi 1, source <commit>`; the release builds pass the tag's commit in `CBB_SOURCE`,
+and other builds say `source unknown`. The full member and the apps show the same once they
+call the core.
+
 ## Error codes
 
 The numbers and names never change meaning; new codes are added at the end of their range.
