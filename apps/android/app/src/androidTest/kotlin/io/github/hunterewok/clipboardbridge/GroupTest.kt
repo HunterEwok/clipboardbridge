@@ -14,7 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -45,7 +45,9 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class GroupTest {
-    @get:Rule val compose = createComposeRule()
+    // The app's own activity: it shows the screens, keeps the group in the
+    // foreground and is the screen the prompts before signing need.
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @get:Rule val permissions: GrantPermissionRule =
         if (Build.VERSION.SDK_INT >= 33) GrantPermissionRule.grant(Manifest.permission.CAMERA, Manifest.permission.POST_NOTIFICATIONS)
@@ -59,11 +61,8 @@ class GroupTest {
     @Before
     fun show() {
         assumeTrue("the bench's phone suite passes the helper's address", Bench.address != null)
-        // The app's own model, which the tile, the widget and Share use too.
+        // The app's own model, which MainActivity, the tile, the widget and Share use.
         model = (context.applicationContext as ClipboardBridgeApp).model
-        // As MainActivity does while the app is open.
-        model.group.setForeground(true)
-        compose.setContent { Root(model) }
         compose.waitForIdle()
     }
 
