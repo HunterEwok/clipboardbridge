@@ -42,3 +42,26 @@ pub fn wire(data: &[u8]) {
     let _ = serde_json::from_slice::<crate::media::Manifest>(data).map(|m| m.validate());
     let _ = crate::wire::decode(data);
 }
+
+/// The core's entry point (docs/core-api.md): any bytes get one answer, a
+/// JSON object of this ABI with either `ok` or an `error` whose code is
+/// one of the listed ones, and the same request gets the same answer.
+pub fn api(data: &[u8]) {
+    let answer = crate::api::call(data);
+    let v: serde_json::Value = serde_json::from_slice(&answer).expect("the answer is not JSON");
+    let o = v.as_object().expect("the answer is not an object");
+    assert_eq!(o.get("abi").and_then(serde_json::Value::as_u64), Some(u64::from(crate::api::ABI)), "the answer's abi");
+    match (o.get("ok"), o.get("error")) {
+        (Some(_), None) => {}
+        (None, Some(e)) => {
+            let code = e.get("code").and_then(serde_json::Value::as_u64).expect("an error without a code");
+            assert!(matches!(code, 1..=4 | 10..=14), "an error with the unknown code {code}");
+            assert!(
+                e.get("name").and_then(serde_json::Value::as_str).is_some_and(|n| !n.is_empty()),
+                "an error without a name"
+            );
+        }
+        _ => panic!("an answer with both ok and error, or neither"),
+    }
+    assert_eq!(crate::api::call(data), answer, "the same request got another answer");
+}

@@ -8,10 +8,13 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"math"
 	"sort"
+	"strconv"
 
 	"github.com/HunterEwok/clipboardbridge/internal/strict"
 )
@@ -28,6 +31,11 @@ type Input struct {
 	// now.
 	NowMS     int64
 	FirstSeen map[Hash]int64
+	// TimeUnknown says the member does not know how long it has held its
+	// claims: its clock started again and it kept no time. No claim then
+	// takes effect by waiting (docs/records-v2.md, "Handing the group
+	// over").
+	TimeUnknown bool
 }
 
 // rec is a verified record with what the evaluation finds about it.
@@ -35,6 +43,7 @@ type rec struct {
 	*Signed
 	issuer Hash // the root that issued the admin CA; zero for a root's own record
 	label  label
+	why    string // why the labelling put it out
 }
 
 type label int
@@ -52,13 +61,47 @@ func Evaluate(input Input) (*State, error) {
 	if input.GroupCA == nil {
 		return nil, errors.New("authority: no group CA")
 	}
-	e := newEvaluation(input)
+	// The set a root's checkpoint prunes is evaluated as if the member had
+	// dropped what it leaves out; the checkpoint that counts is the newest
+	// that still counts there (docs/records-v2.md, "Checkpoints").
+	full := newEvaluation(input, nil)
+	var best *State
+	var bestKey [2]int64
+	var bestID Hash
+	for _, c := range full.checkpoints(KeyHashOf(input.GroupCA)) {
+		in := input
+		in.Records = prune(input.Records, input.Group, c)
+		e := newEvaluation(in, anchorsOf(&c.Body))
+		ep := e.run(in)
+		r := e.byID(c.ID)
+		if r == nil || !ep.rootRecord(r) {
+			continue
+		}
+		key := [2]int64{int64(ep.onPath[c.Body.Signer]), c.Body.Seq}
+		if best == nil || key[0] > bestKey[0] || key[0] == bestKey[0] && (key[1] > bestKey[1] || key[1] == bestKey[1] && c.ID.String() < bestID.String()) {
+			best, bestKey, bestID = ep.finish(in), key, c.ID
+			best.Checkpoint = &c.ID
+		}
+	}
+	if best != nil {
+		return best, nil
+	}
+	return full.run(input).finish(input), nil
+}
+
+// MaxCheckpoints is how many of a set's checkpoints the evaluation tries:
+// those of the highest seq, then the smallest ID.
+const MaxCheckpoints = 8
+
+// run turns the evaluation into its last epoch, with the claims of the
+// roots before the current one.
+func (e *evaluation) run(input Input) *epoch {
 	path, cuts := []Hash{KeyHashOf(input.GroupCA)}, map[Hash]int64{}
 	var ep *epoch
 	var earlier []Claim // the claims of the roots before the current one
 	for {
 		ep = e.epoch(path, cuts)
-		next, cut := ep.decideClaims(input.NowMS, input.FirstSeen)
+		next, cut := ep.decideClaims(input.NowMS, input.FirstSeen, input.TimeUnknown)
 		if next == nil {
 			break
 		}
@@ -67,18 +110,153 @@ func Evaluate(input Input) (*State, error) {
 		path = append(path, *next)
 	}
 	ep.claims = append(earlier, ep.claims...)
-	return ep.state(), nil
+	return ep
+}
+
+// finish builds the state of the last epoch.
+func (ep *epoch) finish(input Input) *State {
+	s := ep.state()
+	s.Newer = newer(input, s, ep.e.roots)
+	s.Ignored = ep.ignored(s.Newer)
+	return s
+}
+
+// checkpoints returns the checkpoints the evaluation tries: a root's own,
+// of a root of the group (the group CA, or the root of a claim that an
+// admin under such a root signed), at most MaxCheckpoints.
+func (e *evaluation) checkpoints(groupCA Hash) []*rec {
+	roots := map[Hash]bool{groupCA: true}
+	for grew := true; grew; {
+		grew = false
+		for _, rs := range e.bySig {
+			for _, r := range rs {
+				if r.Body.Type != TypeClaim || r.AdminCA == nil || !roots[r.issuer] {
+					continue
+				}
+				if c, err := x509.ParseCertificate(r.Body.Root); err == nil && !roots[KeyHashOf(c)] {
+					roots[KeyHashOf(c)], grew = true, true
+				}
+			}
+		}
+	}
+	var cs []*rec
+	for signer := range roots {
+		for _, r := range e.bySig[signer] {
+			if r.AdminCA == nil && r.Body.Type == TypeCheckpoint {
+				cs = append(cs, r)
+			}
+		}
+	}
+	sort.Slice(cs, func(i, j int) bool {
+		if cs[i].Body.Seq != cs[j].Body.Seq {
+			return cs[i].Body.Seq > cs[j].Body.Seq
+		}
+		return cs[i].ID.String() < cs[j].ID.String()
+	})
+	if len(cs) > MaxCheckpoints {
+		cs = cs[:MaxCheckpoints]
+	}
+	return cs
+}
+
+// prune leaves out of a set what checkpoint c drops: each record of this
+// group whose body reads, at or below its signer's head, that is neither a
+// head nor kept, whether or not its signature checks.
+func prune(recs []Record, group string, c *rec) []Record {
+	heads := map[Hash]Head{}
+	for _, h := range c.Body.Heads {
+		heads[h.Key] = h
+	}
+	anchors := anchorsOf(&c.Body)
+	var out []Record
+	for _, r := range recs {
+		if b, err := ParseBody(r.Body); err == nil && b.Group == group {
+			if h, ok := heads[b.Signer]; ok && b.Seq <= h.Seq && !anchors[r.ID()] {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// byID finds a verified record.
+func (e *evaluation) byID(id Hash) *rec {
+	for _, rs := range e.bySig {
+		for _, r := range rs {
+			if r.ID == id {
+				return r
+			}
+		}
+	}
+	return nil
+}
+
+// newer returns the IDs of the records of a later version for this group
+// that a current root or admin of s signed, sorted, at most MaxNewer: a
+// member keeps them and passes them on, never applies them, and tells its
+// user to update (docs/records-v2.md, "Records of a later version").
+func newer(input Input, s *State, roots map[Hash]*x509.Certificate) []Hash {
+	admins := map[Hash]bool{}
+	for _, d := range s.Devices {
+		if d.Admin != nil {
+			admins[*d.Admin] = true
+		}
+	}
+	var ids []Hash
+	for _, r := range input.Records {
+		if len(r.Body) > MaxBody || strict.CheckCanonical(r.Body, "v", "group", "signer") != nil {
+			continue
+		}
+		var b struct {
+			V      json.RawMessage `json:"v"`
+			Group  any             `json:"group"`
+			Signer Hash            `json:"signer"`
+		}
+		if json.Unmarshal(r.Body, &b) != nil || b.Group != input.Group {
+			continue
+		}
+		// The raw token: an integer, never a quoted one.
+		v, err := strconv.ParseInt(string(b.V), 10, 64)
+		if err != nil || v <= 2 || v > MaxSeq {
+			continue
+		}
+		var pub crypto.PublicKey
+		switch {
+		case len(r.Chain) == 0 && contains(s.Roots, b.Signer) && roots[b.Signer] != nil:
+			pub = roots[b.Signer].PublicKey
+		case len(r.Chain) == 1 && admins[b.Signer]:
+			if ca, err := x509.ParseCertificate(r.Chain[0]); err == nil && KeyHashOf(ca) == b.Signer {
+				pub = ca.PublicKey
+			}
+		}
+		ec, ok := pub.(*ecdsa.PublicKey)
+		digest := sha256.Sum256(r.Body)
+		if !ok || !ecdsa.VerifyASN1(ec, digest[:], r.Sig) {
+			continue
+		}
+		if id := r.ID(); !contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i].String() < ids[j].String() })
+	if len(ids) > MaxNewer {
+		ids = ids[:MaxNewer]
+	}
+	return ids
 }
 
 // evaluation holds the verified records of a set.
 type evaluation struct {
+	anchors map[Hash]bool              // the heads and keep of the checkpoint it prunes by, where a prev chain may end
+	failed  map[Hash]string            // why records left out before the epochs were, by ID
 	roots   map[Hash]*x509.Certificate // every root the group may have
 	bySig   map[Hash][]*rec            // records by signer
 	devices map[string][]*rec          // device records by device ID
 }
 
-func newEvaluation(input Input) *evaluation {
-	e := &evaluation{roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, devices: map[string][]*rec{}}
+func newEvaluation(input Input, anchors map[Hash]bool) *evaluation {
+	e := &evaluation{anchors: anchors, failed: map[Hash]string{}, roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, devices: map[string][]*rec{}}
 	// The new roots of claims are the only other roots a record may be
 	// signed under; a claim itself is signed by an admin CA.
 	for _, r := range input.Records {
@@ -102,13 +280,23 @@ func newEvaluation(input Input) *evaluation {
 	byID := map[Hash]*rec{}
 	for _, r := range input.Records {
 		s, err := Verify(r, rootKey)
-		if err != nil || s.Body.Group != input.Group {
+		switch {
+		case err != nil:
+			if _, perr := ParseBody(r.Body); perr != nil {
+				e.fail(r.ID(), WhyUnreadable)
+			} else {
+				e.fail(r.ID(), WhySignature)
+			}
+			continue
+		case s.Body.Group != input.Group:
+			e.fail(s.ID, WhyGroup)
 			continue
 		}
 		x := &rec{Signed: s}
 		if s.AdminCA != nil {
 			issuer, ok := e.issuerOf(s.AdminCA)
 			if !ok {
+				e.fail(s.ID, WhyIssuer)
 				continue
 			}
 			x.issuer = issuer
@@ -124,6 +312,15 @@ func newEvaluation(input Input) *evaluation {
 		}
 	}
 	return e
+}
+
+// fail notes why a record was left out; of two copies of one body left out
+// for different reasons, the reason first in byte order is kept, whatever
+// the order of the set.
+func (e *evaluation) fail(id Hash, why string) {
+	if old, ok := e.failed[id]; !ok || why < old {
+		e.failed[id] = why
+	}
 }
 
 // issuerOf finds the root that issued an admin CA.
@@ -209,6 +406,18 @@ func (ep *epoch) rootRecord(r *rec) bool {
 	return true
 }
 
+// anchorsOf returns the IDs a checkpoint names: its heads and keep.
+func anchorsOf(b *Body) map[Hash]bool {
+	a := map[Hash]bool{}
+	for _, h := range b.Heads {
+		a[h.ID] = true
+	}
+	for _, id := range b.Keep {
+		a[id] = true
+	}
+	return a
+}
+
 // voids returns the records the current root's resolve records name. A
 // resolve counts here when its own chain is whole, whatever forks it has,
 // so the root can end two histories of its own.
@@ -219,7 +428,7 @@ func (ep *epoch) voids() map[Hash]bool {
 		byID[r.ID] = r
 	}
 	for _, r := range ep.e.bySig[ep.cur] {
-		if r.AdminCA != nil || r.Body.Type != TypeResolve || !whole(r, byID) {
+		if r.AdminCA != nil || r.Body.Type != TypeResolve || !wholeTo(r, byID, ep.e.anchors) {
 			continue
 		}
 		for _, id := range r.Body.Records {
@@ -229,10 +438,10 @@ func (ep *epoch) voids() map[Hash]bool {
 	return v
 }
 
-// whole reports whether r's prev chain down to seq 1 is held, each step
-// one seq lower.
-func whole(r *rec, byID map[Hash]*rec) bool {
-	for steps := 0; r.Body.Seq > 1; steps++ {
+// wholeTo reports whether r's prev chain down to seq 1, or to a record
+// whose ID is one of anchors, is held, each step one seq lower.
+func wholeTo(r *rec, byID map[Hash]*rec, anchors map[Hash]bool) bool {
+	for steps := 0; r.Body.Seq > 1 && !anchors[r.ID]; steps++ {
 		p := byID[*r.Body.Prev]
 		if p == nil || p.Body.Seq != r.Body.Seq-1 || steps > MaxSeq {
 			return false
@@ -250,13 +459,14 @@ func (ep *epoch) chain(signer Hash, rs []*rec) {
 		byID[r.ID] = r
 		bySeq[r.Body.Seq] = append(bySeq[r.Body.Seq], r)
 	}
-	// A voided record with a sibling ends its branch.
+	// A voided record with a sibling ends its branch; the walk is only
+	// over whole chains, which end at seq 1 or at an anchor.
 	dead := func(r *rec) bool {
 		for {
 			if ep.voided[r.ID] && len(bySeq[r.Body.Seq]) > 1 {
 				return true
 			}
-			if r.Body.Seq == 1 {
+			if r.Body.Seq == 1 || ep.e.anchors[r.ID] {
 				return false
 			}
 			r = byID[*r.Body.Prev]
@@ -264,7 +474,7 @@ func (ep *epoch) chain(signer Hash, rs []*rec) {
 	}
 	live := map[int64][]*rec{}
 	for _, r := range rs {
-		if whole(r, byID) && !dead(r) {
+		if wholeTo(r, byID, ep.e.anchors) && !dead(r) {
 			live[r.Body.Seq] = append(live[r.Body.Seq], r)
 		}
 	}
@@ -425,7 +635,7 @@ func cutsOff(a, b *rec) bool {
 func (ep *epoch) label() {
 	for _, rs := range ep.e.bySig {
 		for _, r := range rs {
-			r.label = unlabelled
+			r.label, r.why = unlabelled, ""
 		}
 	}
 	var adminRecs, rootActs []*rec
@@ -441,7 +651,7 @@ func (ep *epoch) label() {
 				}
 			case r.AdminCA != nil && ep.counted[r.ID]:
 				if !ep.permitted(r) {
-					r.label = out
+					r.label, r.why = out, WhyPower
 				}
 				adminRecs = append(adminRecs, r)
 			}
@@ -457,12 +667,15 @@ func (ep *epoch) label() {
 	// A root's removal or freeze puts what it cuts off out for good, and
 	// a root's thaw puts out the admin freezes it names.
 	for _, b := range adminRecs {
+		if b.label == out {
+			continue
+		}
 		if b.Body.Type == TypeFreeze && thawedByRoot[b.ID] {
-			b.label = out
+			b.label, b.why = out, WhyCut
 		}
 		for _, a := range rootActs {
 			if cutsOff(a, b) {
-				b.label = out
+				b.label, b.why = out, WhyCut
 			}
 		}
 	}
@@ -488,7 +701,7 @@ func (ep *epoch) label() {
 			all := true
 			for _, a := range attackers[b] {
 				if a.label == in {
-					b.label, changed = out, true
+					b.label, b.why, changed = out, WhyRemoved, true
 					break
 				}
 				if a.label != out {
@@ -616,7 +829,7 @@ func (ep *epoch) collect() {
 
 // decideClaims looks at the claims under the current root and returns the
 // next root and the current root's cut when one takes effect.
-func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64) (*Hash, int64) {
+func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool) (*Hash, int64) {
 	delay := int64(DefaultDelay)
 	var settings *rec
 	for _, r := range ep.e.bySig[ep.cur] {
@@ -743,9 +956,11 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64) (*Hash, int64
 	if !ok || seen > now {
 		seen = now
 	}
-	if c.label != in || ep.rootFrozen(c.Body.Signer) || now-seen < delay {
+	waits := unknown && delay > 0
+	elapsed := subSat(now, seen)
+	if c.label != in || ep.rootFrozen(c.Body.Signer) || waits || elapsed < delay {
 		cl.State = "pending"
-		if left := delay - (now - seen); left > 0 {
+		if left := subSat(delay, elapsed); left > 0 && !unknown {
 			cl.LeftMS = left
 		}
 		ep.claims = append(ep.claims, cl)
@@ -827,6 +1042,15 @@ type State struct {
 	Stop        string     `json:"stop"`
 	NoSecretsTo []string   `json:"no_secrets_to,omitempty"`
 	NothingTo   []string   `json:"nothing_to,omitempty"`
+	// Newer lists records of a later version: the member keeps them and
+	// tells its user to update.
+	Newer []Hash `json:"newer,omitempty"`
+	// Ignored lists the records that do not count and why, so that the
+	// apps and the log can say what happened to a record.
+	Ignored []Ignored `json:"ignored,omitempty"`
+	// Checkpoint is the root's checkpoint that counts: a member may drop
+	// the records it leaves out (docs/records-v2.md, "Checkpoints").
+	Checkpoint *Hash `json:"checkpoint,omitempty"`
 }
 
 // Device is one device of the state.
@@ -852,6 +1076,12 @@ type Claim struct {
 	Root     Hash   `json:"root"`
 	State    string `json:"state"`
 	LeftMS   int64  `json:"left_ms,omitempty"`
+}
+
+// Ignored is a record of the set that does not count, with why.
+type Ignored struct {
+	Record Hash   `json:"record"`
+	Why    string `json:"why"`
 }
 
 // Conflict is a conflict of the state.
@@ -923,6 +1153,87 @@ func (ep *epoch) state() *State {
 	return s
 }
 
+// The reasons a record does not count (docs/records-v2.md, "The state").
+const (
+	WhyUnreadable = "unreadable" // its body is not a record of version 2
+	WhySignature  = "signature"  // its signature or chain does not check
+	WhyGroup      = "group"      // it is of another group
+	WhyIssuer     = "issuer"     // its admin CA is from no root of the group
+	WhyNotRoot    = "not_root"   // its signer is no root on the path
+	WhyHistory    = "history"    // its prev chain is broken, on a voided branch or at a second history
+	WhyCut        = "cut"        // a root's removal, freeze or thaw cut it off, or it is past its root's cut
+	WhyPower      = "power"      // its signer was no admin with the power it needs
+	WhyRemoved    = "removed"    // an admin's removal or freeze that counts cut it off
+	WhyUndecided  = "undecided"  // it is in a conflict between admins
+)
+
+// MaxIgnored is how many records a state lists in ignored.
+const MaxIgnored = 64
+
+// ignored lists the records of the set that do not count, with why,
+// sorted by ID, at most MaxIgnored; the records of a later version are
+// in newer instead.
+func (ep *epoch) ignored(newer []Hash) []Ignored {
+	why := map[Hash]string{}
+	for id, w := range ep.e.failed {
+		why[id] = w
+	}
+	for _, rs := range ep.e.bySig {
+		for _, r := range rs {
+			delete(why, r.ID)
+			if w := ep.whyNot(r); w != "" {
+				why[r.ID] = w
+			}
+		}
+	}
+	for _, id := range newer {
+		delete(why, id)
+	}
+	var out []Ignored
+	for id, w := range why {
+		out = append(out, Ignored{Record: id, Why: w})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Record.String() < out[j].Record.String() })
+	if len(out) > MaxIgnored {
+		out = out[:MaxIgnored]
+	}
+	return out
+}
+
+// whyNot says why a verified record does not count in this epoch, "" when
+// it counts.
+func (ep *epoch) whyNot(r *rec) string {
+	switch {
+	case ep.counts(r):
+		return ""
+	case r.Body.Type == TypeClaim && ep.tookEffect(r.ID):
+		// A claim that took effect counted under the root before.
+		return ""
+	case !ep.counted[r.ID]:
+		return WhyHistory
+	case r.AdminCA == nil:
+		if _, ok := ep.onPath[r.Body.Signer]; !ok {
+			return WhyNotRoot
+		}
+		return WhyCut
+	case r.label == undecided:
+		return WhyUndecided
+	case r.why != "":
+		return r.why
+	}
+	return WhyPower
+}
+
+// tookEffect reports whether claim id took effect on the path.
+func (ep *epoch) tookEffect(id Hash) bool {
+	for _, c := range ep.claims {
+		if c.Record == id && c.State == "effective" {
+			return true
+		}
+	}
+	return false
+}
+
 func sortHashes(hs []Hash) {
 	sort.Slice(hs, func(i, j int) bool { return hs[i].String() < hs[j].String() })
 }
@@ -983,4 +1294,17 @@ func (s *State) Equal(o *State) bool {
 	a, err1 := s.Encode()
 	b, err2 := o.Encode()
 	return err1 == nil && err2 == nil && bytes.Equal(a, b)
+}
+
+// subSat is a - b, held at the ends of int64 instead of wrapping: a
+// caller's times are any int64.
+func subSat(a, b int64) int64 {
+	d := a - b
+	if (b > 0 && d > a) || (b < 0 && d < a) {
+		if b > 0 {
+			return math.MinInt64
+		}
+		return math.MaxInt64
+	}
+	return d
 }

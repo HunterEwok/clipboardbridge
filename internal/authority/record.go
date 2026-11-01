@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -28,8 +29,19 @@ import (
 // MaxBody is the largest record body a member takes (8 KiB).
 const MaxBody = 8 << 10
 
+// MaxCheckpointBody is the largest body of a checkpoint (64 KiB), which
+// lists the live records of the whole group.
+const MaxCheckpointBody = 64 << 10
+
 // MaxSeq is the largest seq a signer gives a record.
 const MaxSeq = 1<<31 - 1
+
+// AlgES256 is the one signature algorithm of version 2: ECDSA P-256 with
+// SHA-256, DER.
+const AlgES256 = "es256"
+
+// MaxNewer is how many records of a later version a state lists.
+const MaxNewer = 16
 
 // MaxDelay is the longest takeover delay the root may set (7 days), and
 // DefaultDelay the delay without a settings record (72 hours), both in
@@ -41,13 +53,14 @@ const (
 
 // The record types.
 const (
-	TypeDevice   = "device"
-	TypeRevoke   = "revoke"
-	TypeFreeze   = "freeze"
-	TypeThaw     = "thaw"
-	TypeClaim    = "claim"
-	TypeResolve  = "resolve"
-	TypeSettings = "settings"
+	TypeDevice     = "device"
+	TypeRevoke     = "revoke"
+	TypeFreeze     = "freeze"
+	TypeThaw       = "thaw"
+	TypeClaim      = "claim"
+	TypeResolve    = "resolve"
+	TypeSettings   = "settings"
+	TypeCheckpoint = "checkpoint"
 )
 
 // The powers an admin's device record may give.
@@ -118,9 +131,18 @@ type Seen struct {
 	Seq int64 `json:"seq"`
 }
 
+// Head is one entry of a checkpoint's heads: a signer's newest record the
+// checkpoint covers.
+type Head struct {
+	Key Hash  `json:"key"`
+	Seq int64 `json:"seq"`
+	ID  Hash  `json:"id"`
+}
+
 // Body is a record's body (docs/records-v2.md, "The record").
 type Body struct {
 	V      int    `json:"v"`
+	Alg    string `json:"alg"`
 	Type   string `json:"type"`
 	Group  string `json:"group"`
 	Signer Hash   `json:"signer"`
@@ -149,21 +171,25 @@ type Body struct {
 	Root    []byte `json:"root,omitempty"`
 
 	TakeoverDelayMS *int64 `json:"takeover_delay_ms,omitempty"`
+
+	Heads []Head `json:"heads,omitempty"`
+	Keep  []Hash `json:"keep,omitempty"`
 }
 
 // fields lists, for each type, the fields beyond those every record has
 // that it may carry; needed lists those it must.
 var (
 	fields = map[string]map[string]bool{
-		TypeDevice:   set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof", "holds_root"),
-		TypeRevoke:   set("keys", "seen"),
-		TypeFreeze:   set("keys", "seen"),
-		TypeThaw:     set("records"),
-		TypeClaim:    set("root", "seen"),
-		TypeResolve:  set("records"),
-		TypeSettings: set("takeover_delay_ms"),
+		TypeDevice:     set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof", "holds_root"),
+		TypeRevoke:     set("keys", "seen"),
+		TypeFreeze:     set("keys", "seen"),
+		TypeThaw:       set("records"),
+		TypeClaim:      set("root", "seen"),
+		TypeResolve:    set("records"),
+		TypeSettings:   set("takeover_delay_ms"),
+		TypeCheckpoint: set("heads", "keep"),
 	}
-	common = []string{"v", "type", "group", "signer", "seq", "time_ms"}
+	common = []string{"v", "alg", "type", "group", "signer", "seq", "time_ms"}
 )
 
 func set(names ...string) map[string]bool {
@@ -199,6 +225,8 @@ func (b *Body) present() []string {
 	add(len(b.Records) > 0, "records")
 	add(len(b.Root) > 0, "root")
 	add(b.TakeoverDelayMS != nil, "takeover_delay_ms")
+	add(len(b.Heads) > 0, "heads")
+	add(len(b.Keep) > 0, "keep")
 	return names
 }
 
@@ -220,8 +248,8 @@ func (b *Body) Encode() ([]byte, error) {
 // its row (docs/records-v2.md, "Field rows").
 func ParseBody(data []byte) (Body, error) {
 	var b Body
-	if len(data) > MaxBody {
-		return b, fmt.Errorf("authority: a record body of %d bytes is over %d", len(data), MaxBody)
+	if len(data) > MaxCheckpointBody {
+		return b, fmt.Errorf("authority: a record body of %d bytes is over %d", len(data), MaxCheckpointBody)
 	}
 	if err := strict.CheckCanonical(data, common...); err != nil {
 		return b, fmt.Errorf("authority: %w", err)
@@ -233,6 +261,9 @@ func ParseBody(data []byte) (Body, error) {
 	}
 	if err := b.check(); err != nil {
 		return b, err
+	}
+	if max := b.maxBody(); len(data) > max {
+		return b, fmt.Errorf("authority: a %s record body of %d bytes is over %d", b.Type, len(data), max)
 	}
 	// Writing it again shows a field that is there but empty (form/empty),
 	// which decoding cannot tell from one left out, and any value Go reads
@@ -251,6 +282,9 @@ func ParseBody(data []byte) (Body, error) {
 func (b *Body) check() error {
 	if b.V != 2 {
 		return fmt.Errorf("authority: a record of version %d", b.V)
+	}
+	if b.Alg != AlgES256 {
+		return fmt.Errorf("authority: a record signed with %q", b.Alg)
 	}
 	allowed, ok := fields[b.Type]
 	if !ok {
@@ -295,8 +329,29 @@ func (b *Body) check() error {
 		if d := b.TakeoverDelayMS; d != nil && (*d < 0 || *d > MaxDelay) {
 			return fmt.Errorf("authority: a takeover delay of %d ms is not from 0 to %d", *d, MaxDelay)
 		}
+	case TypeCheckpoint:
+		if len(b.Heads) == 0 {
+			return errors.New("authority: a checkpoint needs heads")
+		}
+		for i, h := range b.Heads {
+			if h.Seq < 1 || h.Seq > MaxSeq {
+				return fmt.Errorf("authority: a head's seq %d is not from 1 to %d", h.Seq, MaxSeq)
+			}
+			if i > 0 && b.Heads[i-1].Key.String() >= h.Key.String() {
+				return errors.New("authority: heads is not sorted by key, each once")
+			}
+		}
+		return sortedHashes(b.Keep, "keep")
 	}
 	return nil
+}
+
+// maxBody is the largest body of b's type.
+func (b *Body) maxBody() int {
+	if b.Type == TypeCheckpoint {
+		return MaxCheckpointBody
+	}
+	return MaxBody
 }
 
 func (b *Body) checkDevice() error {
@@ -395,6 +450,8 @@ func (b *Body) Sort() {
 	}
 	byString(b.Keys)
 	byString(b.Records)
+	byString(b.Keep)
+	sort.Slice(b.Heads, func(i, j int) bool { return b.Heads[i].Key.String() < b.Heads[j].Key.String() })
 	sort.Slice(b.Seen, func(i, j int) bool { return b.Seen[i].Key.String() < b.Seen[j].Key.String() })
 }
 
@@ -473,14 +530,17 @@ func Sign(b Body, key crypto.Signer, adminCA *x509.Certificate) (Record, error) 
 	if adminCA != nil && KeyHashOf(adminCA) != signer {
 		return Record{}, errors.New("authority: the admin CA does not certify the signing key")
 	}
-	b.V, b.Signer = 2, signer
+	if pub, ok := key.Public().(*ecdsa.PublicKey); !ok || pub.Curve != elliptic.P256() {
+		return Record{}, errors.New("authority: version 2 signs only with a P-256 key")
+	}
+	b.V, b.Alg, b.Signer = 2, AlgES256, signer
 	b.Sort()
 	body, err := b.Encode()
 	if err != nil {
 		return Record{}, err
 	}
-	if len(body) > MaxBody {
-		return Record{}, fmt.Errorf("authority: a record body of %d bytes is over %d", len(body), MaxBody)
+	if max := b.maxBody(); len(body) > max {
+		return Record{}, fmt.Errorf("authority: a record body of %d bytes is over %d", len(body), max)
 	}
 	digest := sha256.Sum256(body)
 	sig, err := key.Sign(rand.Reader, digest[:], crypto.SHA256)

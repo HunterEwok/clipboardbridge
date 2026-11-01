@@ -193,6 +193,8 @@
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "четыре реализации одинаково читают изменённые тела и наборы записей, в CI и каждую ночь",
   "Group records, version 2": "Записи группы, версия 2",
   "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "следующий формат записей полномочий группы и одно правило, которое их вычисляет, для 0.6",
+  "The core's entry point": "Точка входа в ядро",
+  "the one call, bytes in and bytes out, through which the phones and Go use the Rust core's rules, and its error codes": "единственный вызов, байты на входе и байты на выходе, через который телефоны и Go пользуются правилами ядра на Rust, и его коды ошибок",
   "Security policy": "Политика безопасности",
   "Set up in three steps": "Настройка в три шага",
   "Settings and environment variables": "Настройки и переменные окружения",
