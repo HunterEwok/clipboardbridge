@@ -542,6 +542,8 @@ func All(ctx context.Context, r *Report, inv *Inventory, devices []*Device, time
 			Full(ctx, r, devices, timeout)
 		case "faults":
 			Faults(ctx, r, devices, timeout)
+		case "desktop":
+			Desktop(ctx, r, devices, timeout)
 		case "away":
 			Away(ctx, r, inv, devices, timeout, stopForwarder)
 		case "relay":

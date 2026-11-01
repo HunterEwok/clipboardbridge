@@ -83,6 +83,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   uninstall.sh ends them with its exit status and says so, or with `CBB_ERROR_DETAILS=1` shows
   every command (I25, Linux). The forge's invitation to a missing hub names a group, as
   invitations must now.
+- The bench has a `desktop` suite for the Macs and Windows PCs with their own clipboards: a
+  text the service writes late is not sent back, not even when a clipboard history offers it
+  again 10 s later, and `cbb copy` of the text already held is still a copy (Y24, Y25); a
+  password manager's mark keeps the text on the computer, also when put back without it
+  (Y31); a received secret carries the marks and is gone after its minute (Y32).
+  `setup-windows.ps1` registers a third task that runs the bench's scripts in the signed-in
+  session, and lets only that user, administrators and the system write to its folder.
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
