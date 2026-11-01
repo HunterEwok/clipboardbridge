@@ -109,6 +109,7 @@ var scenarios = []struct {
 	{"powers", TestPowers},
 	{"stranger's claim", TestStrangersClaim},
 	{"times at the ends", TestTimesAtTheEnds},
+	{"device seal", TestDeviceSeal},
 }
 
 // TestV2Vectors writes (with -update) and checks

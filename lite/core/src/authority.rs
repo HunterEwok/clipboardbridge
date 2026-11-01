@@ -21,7 +21,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::certs::{self, Cert, b64, sha256};
 use crate::error::{Error, Result};
-use crate::strict;
+use crate::{seal, strict};
 
 /// The largest record body a member takes (8 KiB).
 pub const MAX_BODY: usize = 8 << 10;
@@ -185,6 +185,9 @@ pub struct Body {
     pub proof: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub holds_root: bool,
+    /// The device's public key for sealed messages (`crate::seal`).
+    #[serde(with = "b64", default, skip_serializing_if = "Vec::is_empty")]
+    pub seal: Vec<u8>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keys: Vec<Hash>,
@@ -222,6 +225,7 @@ fn allowed(kind: &str) -> Option<&'static [&'static str]> {
             "kind",
             "proof",
             "holds_root",
+            "seal",
         ],
         TYPE_REVOKE | TYPE_FREEZE => &["keys", "seen"],
         TYPE_THAW | TYPE_RESOLVE => &["records"],
@@ -253,6 +257,7 @@ impl Body {
         add(!self.hardware.is_empty(), "kind");
         add(!self.proof.is_empty(), "proof");
         add(self.holds_root, "holds_root");
+        add(!self.seal.is_empty(), "seal");
         add(!self.keys.is_empty(), "keys");
         add(!self.seen.is_empty(), "seen");
         add(!self.records.is_empty(), "records");
@@ -402,6 +407,13 @@ impl Body {
         }
         if self.admin.is_none() && (!self.powers.is_empty() || !self.commands.is_empty()) {
             return Err(Error::msg("powers and commands come only with admin"));
+        }
+        if !self.seal.is_empty() && self.seal.len() != seal::PUBLIC_KEY_SIZE {
+            return Err(Error::msg(format!(
+                "a device record's seal is {} bytes, not {}",
+                self.seal.len(),
+                seal::PUBLIC_KEY_SIZE
+            )));
         }
         sorted_of(&self.powers, &POWERS, "powers")?;
         sorted_of(&self.commands, &COMMANDS, "commands")
@@ -690,6 +702,8 @@ pub struct Device {
     pub hardware: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub proof: String,
+    #[serde(with = "b64", skip_serializing_if = "Vec::is_empty")]
+    pub seal: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub admin: Option<Hash>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1781,6 +1795,7 @@ impl<'a> Epoch<'a> {
             store: n.store.clone(),
             hardware: n.hardware.clone(),
             proof: n.proof.clone(),
+            seal: n.seal.clone(),
             ..Device::default()
         };
         d.keys.sort();
