@@ -96,6 +96,12 @@ fn device_value(d: &Device, s: &Records) -> Value {
     }
     m.insert("key".into(), b64_value(&d.key));
     m.insert("store".into(), Value::from(d.store.as_str()));
+    if !d.kind.is_empty() {
+        m.insert("kind".into(), Value::from(d.kind.as_str()));
+    }
+    if !d.proof.is_empty() {
+        m.insert("proof".into(), Value::from(d.proof.as_str()));
+    }
     if d.admin {
         m.insert("admin".into(), Value::from(true));
     }

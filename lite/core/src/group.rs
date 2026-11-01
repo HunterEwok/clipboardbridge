@@ -59,6 +59,10 @@ pub struct Device {
     pub key: KeyHash,
     /// Where its keys live (store_of).
     pub store: String,
+    /// With a checked attestation: the kind of hardware and the hex
+    /// SHA-256 of the attestation's leaf; empty without one.
+    pub kind: String,
+    pub proof: String,
     /// An admin now: it has an admin key and is not frozen.
     pub admin: bool,
     /// Its admin key, whether or not it is frozen.
@@ -407,6 +411,8 @@ impl Records {
                     os: d.os.clone(),
                     key,
                     store: store_of(&d.store, &d.role).to_string(),
+                    kind: d.hardware.clone(),
+                    proof: d.proof.clone(),
                     // A frozen admin is no admin until the freeze ends.
                     admin: d.admin.is_some() && !d.frozen,
                     admin_key: d.admin.map(|a| a.0),

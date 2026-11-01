@@ -127,7 +127,7 @@ most the records records-v2.md allows. `group_view` answers:
 | Field | Meaning |
 |---|---|
 | `state` | the group's state, as `evaluate` gives it for the records the set keeps |
-| `devices` | `[{device, name, role, os, key, store, admin, admin_key, powers, commands, frozen, freezes, keys}]`: the devices list the apps show; `key` and `keys` base64; `freezes`, for a frozen admin, the IDs of the freezes a thaw names |
+| `devices` | `[{device, name, role, os, key, store, kind, proof, admin, admin_key, powers, commands, frozen, freezes, keys}]`: the devices list the apps show; `key` and `keys` base64; `freezes`, for a frozen admin, the IDs of the freezes a thaw names |
 | `path` | the roots' certificates on the path, the group CA first, base64 DER |
 | `root_member` | `{device, key}`: the device that holds the root key, when the set names one |
 | `hub_order` | the devices that may be hubs, in the order members try them |
