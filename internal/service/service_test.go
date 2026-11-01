@@ -1721,6 +1721,12 @@ func TestSecondTakeover(t *testing.T) {
 		id, err := group.Load(b.dir)
 		return err == nil && len(id.Roots) == 1 && id.AdminCA != nil && id.AdminCA.CheckSignatureFrom(ra.Root()) == nil && id.ServesPhone()
 	})
+	// c takes the claim from a or b once it connects to one of them, which
+	// it may not have done yet.
+	waitFor(t, "c follows a's root", func() bool {
+		cid, err := group.Load(c.dir)
+		return err == nil && len(cid.Roots) == 1
+	})
 	// The new root sets its own delay; the old root's counts no more.
 	noClaimWait(t, a, b, c)
 	if _, err := a.do(t, control.Header{Op: control.OpRename, Name: "c", NewName: "named by a"}, ""); err != nil {
@@ -1770,7 +1776,8 @@ func noClaimWait(t *testing.T, root *testService, members ...*testService) {
 }
 
 // holdsNoWait reports whether the records in dir hold a settings record
-// with a takeover delay of 0.
+// of the group's current root with a takeover delay of 0: an earlier
+// root's says nothing of the current root's delay.
 func holdsNoWait(dir string) bool {
 	id, err := group.Load(dir)
 	if err != nil {
@@ -1780,8 +1787,10 @@ func holdsNoWait(dir string) bool {
 	if err != nil {
 		return false
 	}
+	roots := recs.State().Roots
+	cur := roots[len(roots)-1]
 	for _, r := range recs.All() {
-		if b, err := authority.ParseBody(r.Body); err == nil && b.Type == group.RecordSettings && b.TakeoverDelayMS != nil && *b.TakeoverDelayMS == 0 {
+		if b, err := authority.ParseBody(r.Body); err == nil && b.Type == group.RecordSettings && b.Signer == cur && b.TakeoverDelayMS != nil && *b.TakeoverDelayMS == 0 {
 			return true
 		}
 	}
