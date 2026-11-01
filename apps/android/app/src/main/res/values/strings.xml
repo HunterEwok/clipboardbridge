@@ -282,6 +282,8 @@
     <string name="paste_on_title">Paste on %1$s</string>
     <string name="paste_on_body">It goes where %1$s\'s keyboard focus is, once its user turned remote paste on there.</string>
     <string name="paste_text">Text</string>
+    <string name="paste_empty_clipboard">Left empty, the phone\'s clipboard goes.</string>
+    <string name="paste_clipboard_empty">The clipboard holds no text.</string>
     <string name="paste_from_clipboard">From the clipboard</string>
     <string name="paste_type">Type it key by key</string>
     <string name="paste_enter">Press Enter after it</string>

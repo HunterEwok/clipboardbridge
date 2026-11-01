@@ -31,7 +31,7 @@ struct PasteView: View {
                         if let s = strings.first { text = s }
                     }
                 } footer: {
-                    Text("It goes where \(device.name)'s keyboard focus is, once its user turned remote paste on there.")
+                    Text("It goes where \(device.name)'s keyboard focus is, once its user turned remote paste on there. Left empty, Paste sends what the clipboard holds.")
                 }
                 // Why the computer did not take it, right under the text, where
                 // the keyboard does not hide it.
@@ -55,9 +55,15 @@ struct PasteView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     if sending {
                         ProgressView()
+                    } else if text.isEmpty {
+                        // The system's button reads the clipboard without its prompt,
+                        // so an empty field sends what was copied, in one tap.
+                        PasteButton(payloadType: String.self) { strings in
+                            guard let s = strings.first, !s.isEmpty else { return }
+                            Task { @MainActor in send(s) }
+                        }
                     } else {
-                        Button { send() } label: { Text("Paste") }
-                            .disabled(text.isEmpty)
+                        Button { send(text) } label: { Text("Paste") }
                     }
                 }
             }
@@ -65,7 +71,7 @@ struct PasteView: View {
         }
     }
 
-    private func send() {
+    private func send(_ text: String) {
         editing = false
         sending = true
         Task {

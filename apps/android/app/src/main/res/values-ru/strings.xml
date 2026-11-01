@@ -279,6 +279,8 @@
     <string name="paste_on_title">Вставить на %1$s</string>
     <string name="paste_on_body">Текст попадёт туда, где фокус клавиатуры устройства %1$s, если его пользователь включил там удалённую вставку.</string>
     <string name="paste_text">Текст</string>
+    <string name="paste_empty_clipboard">Если оставить пустым, уйдёт буфер обмена телефона.</string>
+    <string name="paste_clipboard_empty">В буфере обмена нет текста.</string>
     <string name="paste_from_clipboard">Из буфера обмена</string>
     <string name="paste_type">Набрать по клавишам</string>
     <string name="paste_enter">Нажать Enter после него</string>

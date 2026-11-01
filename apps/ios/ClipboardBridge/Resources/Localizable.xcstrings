@@ -1104,12 +1104,12 @@
         }
       }
     },
-    "It goes where %@'s keyboard focus is, once its user turned remote paste on there." : {
+    "It goes where %@'s keyboard focus is, once its user turned remote paste on there. Left empty, Paste sends what the clipboard holds." : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Текст попадёт туда, где фокус клавиатуры устройства %@, если его пользователь включил там удалённую вставку."
+            "value" : "Текст попадёт туда, где фокус клавиатуры устройства %@, если его пользователь включил там удалённую вставку. Если поле пустое, «Вставить» отправит то, что в буфере обмена."
           }
         }
       }
