@@ -17,7 +17,7 @@ import java.security.spec.ECGenParameterSpec
 import java.util.Base64
 
 /**
- * The watch's admin key (docs/protocol.md, section 10, rule 8): a P-256 key
+ * The watch's admin key (docs/protocol.md, section 10, "Watches"): a P-256 key
  * in the watch's Keystore, in StrongBox where the watch has one and else in
  * the TEE, usable only while the watch is unlocked, which the root phone
  * certifies as an admin CA with the role watch. The admin CA it gave sits in

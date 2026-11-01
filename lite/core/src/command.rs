@@ -84,7 +84,7 @@ pub const MAX_ACTION_NAME: usize = 32;
 /// Whether name may name a quick action, as Go's ValidActionName: 1 to
 /// MAX_ACTION_NAME of a-z, 0-9 and -, starting with a letter.
 /// Whether a watch's admin key may sign a command of type `kind`, as Go's
-/// WatchCommand (docs/protocol.md, section 10, rule 8): one that turns
+/// WatchCommand (docs/protocol.md, section 10, "Watches"): one that turns
 /// remote paste, the quick actions or sync away from home off, or that runs
 /// a quick action.
 pub fn watch_command(kind: &str) -> bool {

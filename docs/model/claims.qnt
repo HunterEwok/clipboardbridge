@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 HunterEwok
 //
-// A model of handing the group over in records v:2 (docs/records-v2.md, "Handing the group
+// A model of handing the group over in records v:2 (docs/protocol.md, section 10, "Handing the group
 // over"), in Quint (https://quint-lang.org). It is not the code: it states the rules for
 // claims as the specification words them and lets the simulator try every way a few devices
 // can sign, sync and wait, checking the promises the specification makes about them.

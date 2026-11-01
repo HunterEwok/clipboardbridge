@@ -25,7 +25,7 @@ import (
 
 // heads keeps, for each signer of the tests, the record it signed last
 // and the group of it, so that the records a test signs one after another
-// form the chains of version 2 (docs/records-v2.md, "Chains and numbers").
+// form the chains of version 2 (docs/protocol.md, section 10, "Chains and numbers").
 var heads = struct {
 	sync.Mutex
 	m     map[KeyHash]authority.Head
@@ -162,7 +162,7 @@ func checkV2Cases(t *testing.T, prefixes ...string) {
 }
 
 // computerPowers are the powers the root gives an admin computer, takeover
-// among them when the root is a computer (docs/records-v2.md, "Who signs
+// among them when the root is a computer (docs/protocol.md, section 10, "Who signs
 // what").
 func computerPowers(takeover bool) []string {
 	p := []string{authority.PowerAdmit, authority.PowerFreeze, authority.PowerHub, authority.PowerRemove, authority.PowerRenew}

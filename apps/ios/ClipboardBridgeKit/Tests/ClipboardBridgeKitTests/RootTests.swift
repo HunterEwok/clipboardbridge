@@ -4,7 +4,7 @@
 import Foundation
 import XCTest
 
-/// Handing the group over (docs/records-v2.md, "Handing the group over"):
+/// Handing the group over (docs/protocol.md, section 10, "Handing the group over"):
 /// the root phone is lost, and admin phone B claims the group for a new
 /// root, which takes effect after the delay.
 final class RootTests: XCTestCase {

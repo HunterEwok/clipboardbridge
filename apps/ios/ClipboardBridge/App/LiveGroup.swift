@@ -520,7 +520,7 @@ final class LiveGroup: GroupController {
     }
 
     /// Unfreezes an admin computer that another admin froze
-    /// (docs/protocol.md, section 10, rule 4): a thaw record signed with this
+    /// (docs/protocol.md, section 10, "Removals and freezes keep what the author saw"): a thaw record signed with this
     /// phone's root or admin key, after Face ID, sent to every connected
     /// computer.
     func unfreeze(_ id: String) async throws {
@@ -635,7 +635,7 @@ final class LiveGroup: GroupController {
     }
 
     /// Makes the watch's key an admin key with the role watch (docs/protocol.md,
-    /// section 10, rule 8): the root key, after Face ID, issues its admin CA
+    /// section 10, "Watches"): the root key, after Face ID, issues its admin CA
     /// and signs its device record, which every member gets.
     func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission {
         guard state?.isRoot == true else { throw PhoneGroup.Failure.notRoot }
@@ -654,7 +654,7 @@ final class LiveGroup: GroupController {
         state?.watchActions(for: id).map(\.rawValue) ?? []
     }
 
-    /// The body the watch signs (docs/protocol.md, section 10, rule 8): any
+    /// The body the watch signs (docs/protocol.md, section 10, "Watches"): any
     /// phone of the group builds it, since what counts is the watch's
     /// signature.
     func watchBody(_ ask: WatchState.Ask) throws -> Data {
@@ -704,7 +704,7 @@ final class LiveGroup: GroupController {
 
     /// Removes the phone that holds the group's root, when it is lost: this
     /// admin phone makes a new root key in the Secure Enclave, behind Face
-    /// ID, and claims the group for it (docs/records-v2.md, "Handing the
+    /// ID, and claims the group for it (docs/protocol.md, section 10, "Handing the
     /// group over"). The claim waits the group's delay, in which the root,
     /// if it is still in use, cancels it; finishTakeOverIfDue then makes
     /// this phone the root.

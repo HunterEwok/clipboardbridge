@@ -415,7 +415,7 @@ func (s *Service) findDevice(target string) (control.Device, error) {
 // root, and replaces the iPhone CA, which the lost root held.
 // setTakeoverDelay signs, on the group's root, a settings record with how
 // long an admin's claim waits on each member before it takes effect: a
-// duration from 0 to 7 days (docs/records-v2.md, "Handing the group
+// duration from 0 to 7 days (docs/protocol.md, section 10, "Handing the group
 // over").
 func (s *Service) setTakeoverDelay(value string) error {
 	d, err := time.ParseDuration(strings.TrimSpace(value))
@@ -440,7 +440,7 @@ func (s *Service) setTakeoverDelay(value string) error {
 
 // setHubs signs, on the group's root or an admin with the power hub, the
 // table of the group's main hubs: the devices targets name, in the order
-// they serve, before the hubs the records give (docs/records-v2.md, "The
+// they serve, before the hubs the records give (docs/protocol.md, section 10, "The
 // hubs table").
 func (s *Service) setHubs(targets []string) error {
 	if len(targets) == 0 || len(targets) > authority.MaxHubs {
@@ -589,7 +589,7 @@ func (s *Service) finishTakeoverLocked(roots []*x509.Certificate) (bool, error) 
 }
 
 // afterTakeover signs, on the admin whose claim made it the group's root,
-// the records a new root starts with (docs/records-v2.md, "Handing the
+// the records a new root starts with (docs/protocol.md, section 10, "Handing the
 // group over"): its own device that holds the root, the admins it keeps
 // under the new root, and a removal of the old root's device, the
 // shortcut's tokens and the old iPhone CA (oldPhoneCA); a new iPhone CA

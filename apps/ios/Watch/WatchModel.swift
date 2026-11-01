@@ -33,7 +33,7 @@ final class WatchModel: NSObject, ObservableObject {
         case refused(String)
     }
 
-    /// Runs an emergency action (docs/protocol.md, section 10, rule 8): the
+    /// Runs an emergency action (docs/protocol.md, section 10, "Watches"): the
     /// phone builds the body, the watch checks that it says what was asked,
     /// checks that it is on the wrist, signs with its admin key, and the
     /// phone brings the result into the group.

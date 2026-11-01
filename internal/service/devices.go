@@ -291,7 +291,7 @@ func (s *Service) refusedAdminCA(ca *x509.Certificate) error {
 // own key, or its admin key under its admin CA. A device record that makes
 // an admin gives it a computer admin's powers unless body names them, and
 // the root's record of its own device says that it holds the root
-// (docs/records-v2.md, "Who signs what").
+// (docs/protocol.md, section 10, "Who signs what").
 func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.Record, error) {
 	ca, chain := id.Signer()
 	if ca == nil {
@@ -721,7 +721,7 @@ func (s *Service) rename(target, name string) (string, error) {
 		return rec.Name, nil
 	}
 	// A device record that names an admin key, or of a phone or a watch,
-	// counts only from a root's own key (docs/records-v2.md, "Who signs
+	// counts only from a root's own key (docs/protocol.md, section 10, "Who signs
 	// what"), and so does the root's own device's.
 	s.recMu.Lock()
 	rootDevice := s.records.RootDevice()

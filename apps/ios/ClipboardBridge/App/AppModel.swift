@@ -717,7 +717,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Makes the paired Apple Watch an admin with a key of its own, for the
-    /// emergency actions (docs/protocol.md, section 10, rule 8): the watch,
+    /// emergency actions (docs/protocol.md, section 10, "Watches"): the watch,
     /// whose app is open, makes the key, and the root signs after Face ID.
     func addWatch() async {
         do {

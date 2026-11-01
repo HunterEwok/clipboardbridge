@@ -270,8 +270,7 @@ func TestStrictVectors(t *testing.T) {
 
 // A record whose body is not in the canonical form is refused though its
 // signature is good: the members that read JSON more loosely would count
-// it, the others would not (docs/records-v2.md, "Canonical form of signed
-// bodies").
+// it, the others would not (docs/protocol.md, Conventions, "Signed bodies").
 func TestRecordsStrictBody(t *testing.T) {
 	ca, err := NewGroupCA(time.Now())
 	if err != nil {

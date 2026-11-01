@@ -627,6 +627,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The protocol's section 10 now specifies the group records of version 2 (docs/protocol.md,
+  from "Records" to "The state", and the records' canonical form in Conventions, "Signed
+  bodies"), in place of version 1's rules; docs/records-v2.md keeps why the records changed
+  and how the implementations are tested.
 - Both phone apps link the Rust core, the group's rules every member shares: the Swift and
   Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
   bindings, and building the Android app, F-Droid's build included, needs the Rust of

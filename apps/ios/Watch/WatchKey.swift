@@ -5,7 +5,7 @@ import Foundation
 import LocalAuthentication
 import Security
 
-/// The watch's admin key (docs/protocol.md, section 10, rule 8): a P-256
+/// The watch's admin key (docs/protocol.md, section 10, "Watches"): a P-256
 /// key in the watch's Secure Enclave, usable only while the watch is
 /// unlocked, which the root phone certifies as an admin CA with the role
 /// watch. The key's blob, which only this Secure Enclave can use, sits in

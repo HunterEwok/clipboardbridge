@@ -115,7 +115,7 @@ func randomWalk(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 		live = slices.DeleteFunc(live, func(x *walker) bool { return x == w })
 		spares = append(spares, w.d)
 		// Removing the admin that froze one ends its freezes
-		// (docs/protocol.md, section 10, rule 4); a lost root's stay
+		// (docs/protocol.md, section 10, "Removals and freezes keep what the author saw"); a lost root's stay
 		// after a takeover, until the new root unfreezes.
 		for _, x := range live {
 			if x.frozenBy == w && w.mark != "root" {

@@ -250,7 +250,7 @@ func TestLosingAPhone(t *testing.T) {
 		t.Errorf("devices %q, want computer phone B via B", got)
 	}
 	// A revocation that A signs after it held its own removal does not
-	// count (docs/records-v2.md, "Which admin records count"), and nothing
+	// count (docs/protocol.md, section 10, "Which admin records count"), and nothing
 	// stops: A was removed before it signed.
 	mustAdd(t, s, revokeRecord(t, root, pg.a, aChain, []KeyHash{adminB}))
 	if s.Revoked(adminB) || s.Stop() != "none" {

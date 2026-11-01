@@ -558,7 +558,7 @@ fn go_credentials() {
     assert_eq!(serde_json::to_value(&hubs).unwrap(), v["hubs"]);
 }
 
-/// What a watch's admin key may do (docs/protocol.md, section 10, rule 8),
+/// What a watch's admin key may do (docs/protocol.md, section 10, "Watches"),
 /// as Go's TestGoWatchVectors writes it: in a phone's group it freezes an
 /// admin computer and removes an ordinary device, and nothing more; an
 /// admin computer freezes it; in a group whose root is a computer it does

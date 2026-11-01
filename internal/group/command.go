@@ -44,7 +44,7 @@ const (
 )
 
 // WatchCommand reports whether a watch's admin key may sign a command of
-// type t (docs/protocol.md, section 10, rule 8): one that turns remote
+// type t (docs/protocol.md, section 10, "Watches"): one that turns remote
 // paste, the quick actions or sync away from home off, or that runs a
 // quick action, which the receiver's user allows for each kind of signer.
 func WatchCommand(t string) bool {

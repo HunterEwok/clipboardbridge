@@ -758,7 +758,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /**
      * Unfreezes an admin computer that another admin froze
-     * (docs/protocol.md, section 10, rule 4): a thaw record signed with this
+     * (docs/protocol.md, section 10, "Removals and freezes keep what the author saw"): a thaw record signed with this
      * phone's root or admin key, sent to every connected computer.
      */
     suspend fun unfreeze(id: String) {
@@ -1091,7 +1091,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /**
      * Makes the watch's key an admin key with the role watch (docs/protocol.md,
-     * section 10, rule 8): the root key, after the fingerprint, the face or
+     * section 10, "Watches"): the root key, after the fingerprint, the face or
      * the screen lock, issues its admin CA and signs its device record, which
      * every member gets. Returns what the watch keeps.
      */
@@ -1109,7 +1109,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     fun watchActions(id: String): List<String> = synchronized(lock) { state?.watchActions(id).orEmpty().map { it.key } }
 
     /**
-     * The body the watch signs (docs/protocol.md, section 10, rule 8): any
+     * The body the watch signs (docs/protocol.md, section 10, "Watches"): any
      * phone of the group builds it, since what counts is the watch's
      * signature.
      */
@@ -1144,7 +1144,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /**
      * Removes the phone that holds the group's root, when it is lost: this
      * admin phone makes a new root key and claims the group for it
-     * (docs/records-v2.md, "Handing the group over"). The claim waits the
+     * (docs/protocol.md, section 10, "Handing the group over"). The claim waits the
      * group's delay, in which the root, if it is still in use, cancels it;
      * [finishTakeOverIfDue] then makes this phone the root.
      */

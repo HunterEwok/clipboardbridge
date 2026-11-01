@@ -15,7 +15,7 @@ public enum Records {
 
     /// A record body before the set fills in its group, seq, prev and seen
     /// (RecordSet.sign); the fields depend on its type
-    /// (docs/records-v2.md, "Record types").
+    /// (docs/protocol.md, section 10, "Types").
     public struct Body: Encodable, Equatable, Sendable {
         public var v = Records.version
         public var alg = Records.alg
@@ -92,7 +92,7 @@ public enum Records {
         }
     }
 
-    /// The powers an admin may have (docs/records-v2.md, "Who signs what"):
+    /// The powers an admin may have (docs/protocol.md, section 10, "Who signs what"):
     /// what the apps give an admin phone.
     public static let powers = ["admit", "freeze", "hub", "remove", "remove-admins", "renew", "takeover", "thaw"]
     /// The commands an admin may sign.
@@ -243,7 +243,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
     }
 
     /// A claim of the state: an admin's handover of the group to its new
-    /// root (docs/records-v2.md, "Handing the group over").
+    /// root (docs/protocol.md, section 10, "Handing the group over").
     public struct Claim: Decodable, Equatable, Sendable {
         public var record: Data
         public var claimant: Data
@@ -253,12 +253,12 @@ public struct RecordSet: Codable, Equatable, Sendable {
         public var left_ms: Int64?
     }
 
-    /// The parts of the group's state (docs/records-v2.md, "The state")
+    /// The parts of the group's state (docs/protocol.md, section 10, "The state")
     /// the phones show.
     public struct State: Decodable, Equatable, Sendable {
         public var root_device: String?
         public var roots: [Data] = []
-        /// "none", or why the group stops (docs/records-v2.md, "Stopping the exchange").
+        /// "none", or why the group stops (docs/protocol.md, section 10, "Stopping the exchange").
         public var stop: String = "none"
         public var claims: [Claim]?
         /// The keys the records revoke.

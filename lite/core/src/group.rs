@@ -196,7 +196,7 @@ impl Records {
             Ok(sr) => sr,
             Err(e) => {
                 // A record of a later version is kept and passed on, never
-                // applied (docs/records-v2.md, "Records of a later version").
+                // applied (docs/protocol.md, section 10, "Records of a later version").
                 let Some(signer) = self.later_version(r) else {
                     return Err(e);
                 };
@@ -314,7 +314,7 @@ impl Records {
         self.recs.values().filter_map(|r| Body::parse(&r.body).ok().map(|b| (r.id(), b)))
     }
 
-    /// What the records say (docs/records-v2.md, "The state").
+    /// What the records say (docs/protocol.md, section 10, "The state").
     pub fn state(&self) -> State {
         let now = (self.now)();
         if let Some((st, at)) = &*self.st.borrow()
@@ -337,7 +337,7 @@ impl Records {
     }
 
     /// How far the records stop the exchange: "", "secrets" or "full"
-    /// (docs/records-v2.md, "Stopping the exchange").
+    /// (docs/protocol.md, section 10, "Stopping the exchange").
     pub fn stop(&self) -> String {
         self.state().stop
     }
@@ -441,7 +441,7 @@ impl Records {
 
     /// Why a member's chain (leaf first, then the certificates it came
     /// with), already verified to a trusted root, is not taken; None when
-    /// it is (docs/records-v2.md, "Certificates"). See Refusal::NotListed.
+    /// it is (docs/protocol.md, section 10, "Certificates"). See Refusal::NotListed.
     pub fn refused(&self, chain: &[Cert]) -> Option<Refusal> {
         if let Some(why) = self.refused_chain(chain) {
             return Some(Refusal::Refused(why));
@@ -702,7 +702,7 @@ impl Records {
     /// Takes, for each claim the set holds, the time in ts when it is
     /// earlier than the set's own and not in the future: a new member takes
     /// the times of the member that admitted it from the Welcome
-    /// (docs/records-v2.md, "Handing the group over").
+    /// (docs/protocol.md, section 10, "Handing the group over").
     pub fn take_claim_times(&mut self, ts: &[ClaimTime]) {
         let now = (self.now)();
         for t in ts {
@@ -794,7 +794,7 @@ impl Records {
     /// next root took effect. It gives the claimant's device and admin
     /// key. Such a peer is refused, but its connections carry records, so
     /// that the old root, if it is still in use, can cancel the claim
-    /// (docs/records-v2.md, "Handing the group over").
+    /// (docs/protocol.md, section 10, "Handing the group over").
     pub fn taken_over(&self, chain: &[Cert]) -> Option<(String, KeyHash)> {
         let first = chain.first()?;
         let st = self.state();

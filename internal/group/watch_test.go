@@ -77,7 +77,7 @@ var (
 )
 
 // TestGoWatchVectors checks what a watch's admin key may do: the powers and
-// commands the root's record gives it (docs/records-v2.md, "Who signs
+// commands the root's record gives it (docs/protocol.md, section 10, "Who signs
 // what"). In a phone's group the watch freezes an admin computer and
 // removes an ordinary device, but neither removes an admin, admits a
 // device, certifies one, is a hub, nor signs more than the commands that

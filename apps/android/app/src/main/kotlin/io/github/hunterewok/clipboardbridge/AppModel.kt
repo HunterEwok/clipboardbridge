@@ -668,7 +668,7 @@ class AppModel(private val app: Context) {
 
     /**
      * Makes the connected Wear OS watch an admin with a key of its own, for
-     * the emergency actions (docs/protocol.md, section 10, rule 8): the
+     * the emergency actions (docs/protocol.md, section 10, "Watches"): the
      * watch makes the key, and the root signs after the user confirms.
      */
     suspend fun addWatch() {

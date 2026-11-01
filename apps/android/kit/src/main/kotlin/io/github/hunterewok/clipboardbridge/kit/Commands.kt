@@ -233,7 +233,7 @@ object Commands {
         id: String = newID(),
     ): Member.Record = signed("away-off", to, group, by, now, signer, adminCA, id)
 
-    /** The commands a watch's admin key may sign (docs/protocol.md, section 10, rule 8), as Go's WatchCommand. */
+    /** The commands a watch's admin key may sign (docs/protocol.md, section 10, "Watches"), as Go's WatchCommand. */
     val WATCH_TYPES = setOf("paste-off", "actions-off", "away-off", "action")
 
     private fun signed(

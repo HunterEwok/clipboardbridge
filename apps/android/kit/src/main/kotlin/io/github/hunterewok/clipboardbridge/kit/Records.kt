@@ -99,7 +99,7 @@ object Records {
         }
     }
 
-    /** The powers an admin may have (docs/records-v2.md, "Who signs what"): what the apps give an admin phone. */
+    /** The powers an admin may have (docs/protocol.md, section 10, "Who signs what"): what the apps give an admin phone. */
     val POWERS = listOf("admit", "freeze", "hub", "remove", "remove-admins", "renew", "takeover", "thaw")
 
     /** The commands an admin may sign. */
@@ -265,7 +265,7 @@ class RecordSet {
         }
     }
 
-    /** A claim of the state: an admin's handover of the group to its new root (docs/records-v2.md, "Handing the group over"). */
+    /** A claim of the state: an admin's handover of the group to its new root (docs/protocol.md, section 10, "Handing the group over"). */
     class Claim(
         val record: ByteArray,
         val claimant: ByteArray,
@@ -281,11 +281,11 @@ class RecordSet {
         override fun hashCode(): Int = record.contentHashCode()
     }
 
-    /** The parts of the group's state (docs/records-v2.md, "The state") the phones show. */
+    /** The parts of the group's state (docs/protocol.md, section 10, "The state") the phones show. */
     class State(
         val rootDevice: String? = null,
         val roots: List<ByteArray> = emptyList(),
-        /** "none", or why the group stops (docs/records-v2.md, "Stopping the exchange"). */
+        /** "none", or why the group stops (docs/protocol.md, section 10, "Stopping the exchange"). */
         val stop: String = "none",
         val claims: List<Claim> = emptyList(),
         /** The keys the records revoke. */

@@ -39,7 +39,7 @@ const (
 	MaxPerSigner = 1024
 )
 
-// Record types (docs/records-v2.md, "Types").
+// Record types (docs/protocol.md, section 10, "Types").
 const (
 	RecordDevice     = authority.TypeDevice
 	RecordRevoke     = authority.TypeRevoke
@@ -150,7 +150,7 @@ func KeyHashOf(cert *x509.Certificate) KeyHash { return sha256.Sum256(cert.RawSu
 // PhoneKeyHash returns the key hash that names an iPhone's token.
 func PhoneKeyHash(phoneID []byte) KeyHash { return sha256.Sum256(phoneID) }
 
-// A RecordBody is what a record says (docs/records-v2.md, "The record").
+// A RecordBody is what a record says (docs/protocol.md, section 10, "Records").
 type RecordBody = authority.Body
 
 // A Record is a signed record body: the body's exact bytes, an ECDSA
@@ -240,7 +240,7 @@ func (s *Records) Add(r Record) (bool, error) {
 		}
 		// A record of a later version is kept and passed on, never
 		// applied; the state lists it when its signer may raise the
-		// signal (docs/records-v2.md, "Records of a later version").
+		// signal (docs/protocol.md, section 10, "Records of a later version").
 		if s.bySigner[signer] >= MaxPerSigner || len(s.recs) >= MaxRecords {
 			return false, errors.New("group: too many records")
 		}
@@ -398,7 +398,7 @@ type parsed struct {
 	r  Record
 }
 
-// State returns what the records say (docs/records-v2.md, "The state"),
+// State returns what the records say (docs/protocol.md, section 10, "The state"),
 // from the Rust core when the build links it.
 func (s *Records) State() *authority.State {
 	now := s.now()
@@ -422,7 +422,7 @@ func (s *Records) State() *authority.State {
 }
 
 // Stop returns how far the records stop the exchange: "", "secrets" or
-// "full" (docs/records-v2.md, "Stopping the exchange").
+// "full" (docs/protocol.md, section 10, "Stopping the exchange").
 func (s *Records) Stop() string { return s.State().Stop }
 
 // path returns the roots on the path as certificates, the group CA first.
@@ -565,7 +565,7 @@ func (s *Records) adminDevice(k KeyHash) (authority.Device, bool) {
 }
 
 // Refused returns why a member's chain is not taken, nil when it is
-// (docs/records-v2.md, "Certificates"): its key must be a listed device's
+// (docs/protocol.md, section 10, "Certificates"): its key must be a listed device's
 // that is not revoked nor frozen, and its issuer a root on the path or the
 // admin CA, under one, of an admin that may admit or renew, not frozen.
 // A chain that passes all but the first rule, as a device whose record has
@@ -625,7 +625,7 @@ func (s *Records) refusedChain(chain []*x509.Certificate) error {
 }
 
 // RefusedAdminCA returns why an admin CA is not taken, nil when it is
-// (docs/records-v2.md, "Certificates"): it is under a root on the path,
+// (docs/protocol.md, section 10, "Certificates"): it is under a root on the path,
 // its key is not revoked, and a device record that counts names it as an
 // admin key; one whose record has not reached this member yet is refused
 // with ErrNotListed.
@@ -816,7 +816,7 @@ func (s *Records) FreezesOf(admin KeyHash) []KeyHash {
 // current root, which certified it. It returns the device and admin key
 // of the claimant. Such a peer is refused, but its connections carry
 // records (ErrRecordsOnly), so that the old root, if it is still in use,
-// can cancel the claim (docs/records-v2.md, "Handing the group over").
+// can cancel the claim (docs/protocol.md, section 10, "Handing the group over").
 func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool) {
 	if len(chain) == 0 {
 		return "", KeyHash{}, false
@@ -927,7 +927,7 @@ func (s *Records) ClaimTimes() []ClaimTime {
 // it is earlier than the set's own and not in the future: a new member
 // takes the times of the member that admitted it from the Welcome, so a
 // claim that took effect there takes effect on the new member too
-// (docs/records-v2.md, "Handing the group over").
+// (docs/protocol.md, section 10, "Handing the group over").
 func (s *Records) TakeClaimTimes(ts []ClaimTime) {
 	now := s.now().UnixMilli()
 	for _, t := range ts {
