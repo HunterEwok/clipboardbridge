@@ -310,6 +310,15 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     project has no translation for it. One list of the languages serves the site, the apps and
     the command line; Arabic and Hebrew lay the screens out right to left; a native speaker
     reads the new translations before a release.
+- **50.** **Planned for 0.7.** A LuCI page on OpenWrt, `luci-app-clipboardbridge`, in the
+    project's own apk feed: the group's devices and their state, adding a device with its
+    QR code, sync away from home and the hub, the network zones; the same sections in the
+    same order as the apps, in LuCI's own look. A JavaScript view with a small rpcd backend
+    that asks the service over its control socket, with an ACL that allows only that. Later,
+    after 1.0, when the protocol keeps backward compatibility: the official OpenWrt feeds,
+    a package for `openwrt/packages` built from source with OpenWrt's Go or Rust package
+    rules (likely the lite member, since the full `cbb` is too large for routers with 16 MB
+    of flash) and the page for `openwrt/luci`, with a maintainer for each.
 
 ## Devices that are hard to type into
 
