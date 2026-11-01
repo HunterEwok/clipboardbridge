@@ -168,7 +168,7 @@ class GroupTest {
         val pc = idOf(Bench.PC)
         // The line of clipboardbridge.conf that starts the helper, and a client attached on a terminal.
         Bench.run(Bench.PC, "tmux new-session -d -s cbb -x 120 -y 30 && tmux run-shell -b 'cbb paste-helper tmux >/tmp/cbb-helper.log 2>&1 || true'")
-        Bench.run(Bench.PC, "cbb paste-receive on -console")
+        Bench.run(Bench.PC, "cbb paste-receive on -console -enter")
         Bench.start(Bench.PC, "TERM=xterm sh -c 'sleep infinity | script -qfc \"tmux attach -t cbb\" /dev/null'")
         until(10, "a tmux client on ${Bench.PC}") { Bench.run(Bench.PC, "tmux list-clients").isNotBlank() }
         val pane = { Bench.run(Bench.PC, "tmux capture-pane -p -J -t cbb") }
@@ -250,6 +250,8 @@ class GroupTest {
         val widgets = AppWidgetManager.getInstance(context).getInstalledProvidersForPackage(context.packageName, null)
         assertTrue("no home-screen widget: $widgets", widgets.any { it.provider.className == SendWidget::class.java.name })
         val text = "cbb-bench phone A12 from the tile ${System.currentTimeMillis()}"
+        // Settles what earlier tests left, so the send screen finds the group connected.
+        runBlocking { model.sync() }
         setClip(text)
         // What the widget's and the tile's PendingIntent start.
         context.startActivity(SendActivity.intent(context))
@@ -264,9 +266,15 @@ class GroupTest {
         val sent = File(dir, "o11-$stamp.txt").apply { writeText("cbb-bench phone O11 from the phone $stamp\n") }
         val note = runBlocking { model.sendShared(listOf(Uri.fromFile(sent))) }
         assertEquals("Share says ${model.message}", R.string.files_sent, note.text)
-        until(60, "${Bench.PC} saves the phone's file") {
-            runCatching { Bench.run(Bench.PC, "rm -rf /tmp/o11 && cbb paste -o /tmp/o11 >/dev/null && cat /tmp/o11/${sent.name}") }
-                .getOrDefault("").contains("from the phone $stamp")
+        var saved = ""
+        try {
+            until(60, "${Bench.PC} saves the phone's file") {
+                saved = runCatching { Bench.run(Bench.PC, "rm -rf /tmp/o11 && cbb paste -o /tmp/o11 2>&1; find /tmp/o11 -type f -exec cat {} +") }
+                    .getOrElse { it.toString() }
+                saved.contains("from the phone $stamp")
+            }
+        } catch (e: AssertionError) {
+            throw AssertionError("${e.message}; cbb paste -o and the files give:\n$saved")
         }
         val back = "o11-back-$stamp.txt"
         Bench.run(Bench.PC, "mkdir -p /tmp/o11src && printf 'cbb-bench phone O11 from the computer $stamp' >/tmp/o11src/$back && cbb copy /tmp/o11src/$back")
@@ -317,7 +325,7 @@ class GroupTest {
         runBlocking { model.setHub(true) }
         assertEquals("the hub without a forwarder: ${model.hubNote}", HubOnPhone.Status.HOME_ONLY, hubNow().status)
         try {
-            runBlocking { model.setForwarder(fwd, "sha256:" + "A".repeat(43)) }
+            runBlocking { model.setForwarder(fwd, java.util.Base64.getEncoder().encodeToString(ByteArray(32))) }
             until(60, "a wrong key refused with the reason; the app says ${model.hub}") {
                 hubNow().let { it.status == HubOnPhone.Status.FAILED && it.error != null }
             }
@@ -365,6 +373,8 @@ class GroupTest {
     fun c2_awayThroughHub() {
         val (hub, udp) = Bench.addHub()
         admit(hub)
+        // The button shows once the computer's hello offered its admin key.
+        until(60, "$hub offers its admin key") { model.group.devices.any { it.name == hub && it.canMakeAdmin } }
         runBlocking { model.makeAdmin(idOf(hub)) }
         assertEquals("making it an admin says ${model.message}", R.string.made_admin, model.message?.text)
         Bench.run(hub, "cbb global on", stdin = "yes\n")
