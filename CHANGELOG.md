@@ -10,6 +10,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - `cbb version` of the lite member names the Rust core it was built with: its version, the
   ABI of its entry point and, in a release, the commit it was built from.
+- The nightly `cargo fuzz` run covers the Rust core's entry point (`api`), starting from
+  requests for each operation built from the interop vectors.
 - The remote invitation is read the same way by Go and the Rust core (`cbb_core::invite`),
   checked on shared vectors (`testdata/interop/invites.json`). Its JSON must now be in the
   strict form of signed bodies with exactly the fields of docs/protocol.md section 12. A

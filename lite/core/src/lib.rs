@@ -40,15 +40,13 @@
 extern crate alloc;
 
 pub mod api;
-// The rules of records v:2 get these checks with their entry point, and the
-// records of v:1 go with v:1 (docs/records-v2.md).
-#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::expect_used)]
 pub mod authority;
 pub mod certs;
 pub mod clip;
 pub mod credential;
 pub mod error;
 #[cfg(feature = "fuzzing")]
+#[allow(clippy::expect_used, clippy::panic, reason = "a fuzz target reports a broken promise by panicking")]
 pub mod fuzzing;
 pub mod hlc;
 pub mod identity;
