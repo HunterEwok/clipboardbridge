@@ -36,12 +36,25 @@ type feed struct {
 }
 
 // newFeed builds release-sign and makes the root and release keys.
-func newFeed(ctx context.Context) (*feed, error) {
+// remove deletes the feed's folder with its builds; each feed holds
+// close to 1 GiB.
+func (fd *feed) remove() {
+	if fd != nil {
+		os.RemoveAll(fd.dir)
+	}
+}
+
+func newFeed(ctx context.Context) (fd *feed, err error) {
 	dir, err := os.MkdirTemp("", "cbbbench-feed")
 	if err != nil {
 		return nil, err
 	}
-	fd := &feed{dir: dir, rs: filepath.Join(dir, "release-sign"), roots: filepath.Join(dir, "roots.pem"), seq: 1}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dir)
+		}
+	}()
+	fd = &feed{dir: dir, rs: filepath.Join(dir, "release-sign"), roots: filepath.Join(dir, "roots.pem"), seq: 1}
 	if out, err := exec.CommandContext(ctx, "go", "build", "-o", fd.rs, "./tools/release-sign").CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("run the bench at the repository's top: building tools/release-sign: %v: %s", err, out)
 	}
