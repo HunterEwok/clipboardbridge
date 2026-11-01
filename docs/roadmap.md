@@ -455,7 +455,13 @@ One pull request each, smaller ones together:
 The TV variant is part of the one APK of the phone app. For Apple TV the spike with pyatv is
 done (2026-11-01, Apple TV 4K of the second generation, tvOS 27.2): the Companion protocol
 pairs with a PIN shown on the TV and then sets the whole text of the focused field at once,
-with no key presses, so the Companion protocol in Go comes next. The Apple TV accepts a new
+with no key presses, so the Companion protocol in Go comes next. The Bluetooth keyboard of a
+Linux computer typed on the same Apple TV too (a Steam Deck, 2026-11-01), with two fixes to
+make: the TV lists the computer twice under one name (its classic Bluetooth and the
+keyboard over Bluetooth LE, the one with a battery), so the keyboard needs a name of its own;
+and forgetting either entry on the TV forgets both, while the computer keeps its key and
+then fails every connection ("PIN or Key Missing"), so the keyboard drops a bond its host
+lost and becomes visible again. The Apple TV accepts a new
 remote only while Settings, AirPlay and HomeKit, Allow Access is "Everyone on the Same
 Network" (or "Everyone"); with "Only People Sharing This Home" it refuses every pairing, so
 the app's steps and the user guide say to switch it before pairing. A keyboard types with
