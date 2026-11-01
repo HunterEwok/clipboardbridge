@@ -17,9 +17,31 @@
 //! custom backend. Without the std feature the locks are spin locks.
 
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
+// The core reads what peers send and runs inside the phones' apps and the
+// Go service, so a panic there is a crash or a hang. It has no unsafe code,
+// and outside its tests nothing may panic: no unwrap or expect, no indexing
+// that can fail and no arithmetic that can overflow. The few places that
+// cannot fail say why where they allow it.
+#![forbid(unsafe_code)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
 
 extern crate alloc;
 
+// The rules of records v:2 get these checks with their entry point, and the
+// records of v:1 go with v:1 (docs/records-v2.md).
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::expect_used)]
 pub mod authority;
 pub mod certs;
 pub mod clip;
@@ -32,12 +54,17 @@ pub mod identity;
 pub mod keyboard;
 pub mod media;
 pub mod pair;
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::expect_used)]
 pub mod records;
 pub mod release;
 pub mod store;
 pub mod strict;
 pub mod sync;
 pub mod third_party {
+    // Copied code, kept close to its source: its field arithmetic wraps on
+    // purpose (u128 limbs, reduced modulo p), and its indexes and unwraps
+    // are on fixed-size arrays.
+    #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::expect_used)]
     pub mod cpace;
 }
 #[cfg(feature = "tls")]

@@ -204,7 +204,8 @@ impl Joiner {
         let code = normalize_code(code)?;
         let member_cert = Cert::parse(member_der).wrap("the member's certificate")?;
         let ci = channel_id(member_der, &self.cert);
-        let ad = serde_json::to_vec(&Info { name: &self.name, os: "linux", role: "lite" }).unwrap();
+        let ad = serde_json::to_vec(&Info { name: &self.name, os: "linux", role: "lite" })
+            .context("cannot encode the joiner's info")?;
         let (st, msg) = cpace::start(&cpace::Config {
             role: cpace::Role::Initiator,
             password: code.as_bytes(),
@@ -348,13 +349,14 @@ impl Exchange<'_> {
 /// The joiner's last frame: ok once it stored its identity (the member
 /// admitted the device when it sent the Welcome, whether or not it hears
 /// this), refused otherwise.
+#[allow(clippy::expect_used, reason = "a frame of a flag or a short word always encodes and fits")]
 pub fn done(ok: bool) -> Vec<u8> {
     let f = if ok {
         Frame { ok: true, ..Default::default() }
     } else {
         Frame { error: "refused".into(), ..Default::default() }
     };
-    frame(&f).unwrap()
+    frame(&f).expect("a small frame encodes")
 }
 
 fn frame(f: &Frame) -> Result<Vec<u8>> {

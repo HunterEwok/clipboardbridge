@@ -199,7 +199,7 @@ fn decode<'a, T: Deserialize<'a>>(body: &'a [u8], kind: &str) -> Result<T> {
 fn lifetime(time_ms: i64, expires_ms: i64) -> Result<()> {
     // A time before 1970 is no signing time; from it the difference cannot
     // leave the range of i64.
-    if time_ms < 0 || expires_ms <= time_ms || expires_ms - time_ms > MAX_LIFETIME_MS {
+    if time_ms < 0 || expires_ms <= time_ms || expires_ms.saturating_sub(time_ms) > MAX_LIFETIME_MS {
         return Err(Error::msg("the file's lifetime is out of range"));
     }
     Ok(())
@@ -213,7 +213,7 @@ fn is_channel(s: &str) -> bool {
     let b = s.as_bytes();
     !b.is_empty()
         && b.len() <= 32
-        && b[0].is_ascii_lowercase()
+        && b.first().is_some_and(u8::is_ascii_lowercase)
         && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
 }
 
@@ -221,7 +221,7 @@ fn name_ok(s: &str, max: usize, slash: bool) -> bool {
     let b = s.as_bytes();
     !b.is_empty()
         && b.len() <= max
-        && (b[0].is_ascii_alphanumeric() || b[0] == b'_')
+        && b.first().is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
         && b.iter().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(c) || (slash && *c == b'/'))
 }
 
@@ -385,7 +385,7 @@ pub fn check(
     if c.seq < at {
         return Err(Error::msg(format!("{name}.json is older than one already seen")).answer());
     }
-    if c.seq - at > MAX_SEQ_STEP {
+    if c.seq.saturating_sub(at) > MAX_SEQ_STEP {
         return Err(Error::msg(format!("{name}.json is too far ahead of the one already seen")));
     }
     rel.verify(&spkis).map_err(|e| e.context("release.json is not valid"))?;
