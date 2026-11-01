@@ -15,6 +15,7 @@
 // Android it writes the foreground of the adaptive icon, the light clipboard
 // on a transparent 432 by 432 canvas inside the launcher's safe zone; the
 // fill is the icon's background colour in res/values/ic_launcher.xml.
+// The single-colour glyph of the menu bar and the tray is in tray.go.
 //
 //	go run ./tools/icon          rewrite the icons
 //	go run ./tools/icon -check   fail if they are out of date
@@ -29,6 +30,7 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"path/filepath"
 )
 
 const (
@@ -268,19 +270,34 @@ func main() {
 			fmt.Fprintf(os.Stderr, "icon: %s: %v\n", icon.drawing, err)
 			os.Exit(1)
 		}
-		for name, out := range outputs(icon, drawing) {
-			if *check {
-				cur, err := os.ReadFile(name)
-				if err != nil || !bytes.Equal(cur, out) {
-					fmt.Fprintf(os.Stderr, "icon: %s is out of date; run go run ./tools/icon\n", name)
-					os.Exit(1)
-				}
-				continue
-			}
-			if err := os.WriteFile(name, out, 0o644); err != nil {
-				fmt.Fprintln(os.Stderr, "icon:", err)
+		write(outputs(icon, drawing), *check)
+	}
+	tray, err := trayOutputs()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "icon:", err)
+		os.Exit(1)
+	}
+	write(tray, *check)
+}
+
+// write writes each file, or with check fails if one differs.
+func write(files map[string][]byte, check bool) {
+	for name, out := range files {
+		if check {
+			cur, err := os.ReadFile(name)
+			if err != nil || !bytes.Equal(cur, out) {
+				fmt.Fprintf(os.Stderr, "icon: %s is out of date; run go run ./tools/icon\n", name)
 				os.Exit(1)
 			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, "icon:", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(name, out, 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "icon:", err)
+			os.Exit(1)
 		}
 	}
 }
