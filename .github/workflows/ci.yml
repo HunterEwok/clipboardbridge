@@ -474,8 +474,9 @@ jobs:
             sh packaging/freebsd/firewall.sh open 8764
             sh packaging/freebsd/firewall.sh hub-open 51820
             ipfw list
-            ipfw list | grep 'allow tcp' | grep -q '192.168.0.0/16 to me 8764' || { echo "ipfw has no rule for the member port" >&2; exit 1; }
-            ipfw list | grep 'allow udp' | grep -q 'to me 51820' || { echo "ipfw has no rule for the hub's port" >&2; exit 1; }
+            # ipfw shows "allow tcp ... in ip4" as "allow ip4 ... proto tcp in".
+            ipfw list | grep -qE 'allow (tcp|ip4) from 192\.168\.0\.0/16 to me 8764( proto tcp)? in' || { echo "ipfw has no rule for the member port" >&2; exit 1; }
+            ipfw list | grep -qE 'allow (udp|ip) from any to me 51820( proto udp)? in' || { echo "ipfw has no rule for the hub's port" >&2; exit 1; }
             sh packaging/freebsd/firewall.sh hub-close
             sh packaging/freebsd/firewall.sh close
             if ipfw list | grep -qE 'to me (8764|51820)'; then echo "ipfw kept the rules" >&2; ipfw list; exit 1; fi
