@@ -193,4 +193,58 @@ func captures(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		delete(seen, canary)
 		return leaks("member connections at home", seen)
 	})
+	failClosed(ctx, r, a, c, words)
+}
+
+// failClosed (S9): with the hub's WireGuard port blocked on the way, the
+// away client, given a copy, sends for two minutes nothing to anyone but
+// the hub and the forwarder, and nothing of the group in the clear. The
+// router drops the blocked packets before it forwards them, so the client
+// counts what it sends itself.
+func failClosed(ctx context.Context, r *Report, a *awayGroup, c *Device, words []string) {
+	r.Do("fleet/S9-fail-closed", func() error {
+		id, _, err := statusIDs(ctx, c)
+		if err != nil {
+			return err
+		}
+		words := append(append([]string{}, words...), id)
+		if err := countStrings(ctx, c, "cbbleak3", "", []string{"OUTPUT"}, append(words, canary)); err != nil {
+			return err
+		}
+		before, err := outElsewhere(ctx, c)
+		if err != nil {
+			return err
+		}
+		if err := a.in.block(ctx, hubPublic, "udp"); err != nil {
+			return err
+		}
+		defer a.in.unblock(ctx, hubPublic, "udp")
+		if err := Copy(ctx, c, "cbb-bench "+a.run+" fail closed"); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Minute):
+		}
+		if _, err := Run(ctx, c, "bash -c 'echo "+canary+" > /dev/udp/"+hubPublic+"/51820'", ""); err != nil {
+			return err
+		}
+		seen, err := stringsSeen(ctx, c, "cbbleak3", append(words, canary))
+		if err != nil {
+			return err
+		}
+		if seen[canary] == 0 {
+			return fmt.Errorf("the away client did not count the canary sent in the clear; the counters see nothing")
+		}
+		delete(seen, canary)
+		if err := leaks("with the tunnel broken, the away client sent packets that", seen); err != nil {
+			return err
+		}
+		after, err := outElsewhere(ctx, c)
+		if err == nil && after > before {
+			err = fmt.Errorf("with the tunnel broken, the away client sent %d packets to neither the hub nor the forwarder", after-before)
+		}
+		return err
+	})
 }
