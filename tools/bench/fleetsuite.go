@@ -68,6 +68,7 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"W4-away", func() { awayHub(ctx, r, f, timeout) }},
 		{"W18-obfuscation", func() { obfuscation(ctx, r, f, timeout) }},
 		{"W17-lite-away", func() { liteAway(ctx, r, f, timeout) }},
+		{"S1-captures", func() { captures(ctx, r, f, timeout) }},
 		{"W33-two-groups", func() { twoGroupsAway(ctx, r, f, timeout) }},
 		{"W36-relay", func() { relayAway(ctx, r, f, timeout) }},
 		{"W38-relay-limits", func() { relayLimits(ctx, r, f, timeout) }},
