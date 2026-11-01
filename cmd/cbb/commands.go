@@ -260,6 +260,9 @@ func writeStatus(w io.Writer, st *control.Status, devs []control.Device, now tim
 	} else if c := certLine(st.CertEndsMS, now); c != "" {
 		fmt.Fprintln(w, c)
 	}
+	for _, l := range stopLines(st) {
+		fmt.Fprintln(w, l)
+	}
 	if st.Mode != "" {
 		fmt.Fprintln(w, modeLine(st.Mode))
 	}

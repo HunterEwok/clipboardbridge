@@ -58,6 +58,15 @@ they look, so both apps are built to the same plan.
    group). Share takes an image or files too, up to 50 MB together: the extension stays
    until a computer fetched them from the phone, at most a minute.
 
+   When the group's records show a likely thief, a card above the button says so
+   (`GroupAlerts` in the kits, from the core's state; docs/protocol.md, section 10,
+   "Stopping the exchange"): what is stopped (all but the records, or the secrets), why (two
+   admins acting against each other, two claims or a disputed one, a key that signed two
+   histories), a claim to take the group over with the time left, and a newer version of
+   the records that this app cannot read. On the group's root the card offers the decision
+   under Face ID or the fingerprint: remove the device of a claim or one of the two admins,
+   or void both histories; on any other device it says that the root decides.
+
    **Images and files** (docs/design.md, "Images and files"): the button sends an image on
    the clipboard as PNG or JPEG (HEIC and other formats are converted) and fetches a
    computer's image whole before it writes it, an image by its hash: the same image twice is
@@ -282,6 +291,8 @@ keep syncing without it. It speaks the service's control socket (`Control`, the 
   switches), a device's details in a pane beside them (the summary rows of the phones,
   with its device ID and when it was last seen), and "Send the clipboard" and "Fetch" at the
   bottom. "+" gives the commands that add a device.
+- **Alerts**: the phones' card (Home, above) under the group's line, from `cbb status`;
+  on the root its buttons run `cbb revoke` or `cbb resolve` as the administrator.
 - **The menu bar item**: how many devices are online, send, fetch, the window, Settings.
 - **Settings**: the colour and the appearance of the phones (`Theme.swift` and `Tokens.swift`
   of the iPhone app, shared), this Mac's sync mode (`cbb mode`), whether the app may press keys for remote paste, and error details (on in debug builds, off in release ones, and
@@ -315,6 +326,7 @@ service and its clipboard agent keep syncing without it.
 - **The window** (`frontend/`, plain HTML, CSS and JavaScript, no build step): the group in a
   line with the away-from-home switch, the devices as tiles, a list or orbits around this
   computer, a device's details beside them, and "Send the clipboard" and "Fetch".
+- **Alerts**: the Mac app's card above the devices, with the same buttons on the root.
 - **The tray item**: how many devices are online, send, fetch, the window, Quit. Closing the
   window keeps the tray item; starting the app again opens the window.
 - **Settings**: the ten colours (`frontend/tokens.js`, which `go run ./tools/tokens` writes

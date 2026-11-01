@@ -20,7 +20,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/strict"
 )
 
-// Input is what the evaluation takes (docs/records-v2.md, "The state").
+// Input is what the evaluation takes (docs/protocol.md, section 10, "The state").
 type Input struct {
 	// GroupCA is the group's first root; its tag is Group.
 	GroupCA *x509.Certificate
@@ -34,7 +34,7 @@ type Input struct {
 	FirstSeen map[Hash]int64
 	// TimeUnknown says the member does not know how long it has held its
 	// claims: its clock started again and it kept no time. No claim then
-	// takes effect by waiting (docs/records-v2.md, "Handing the group
+	// takes effect by waiting (docs/protocol.md, section 10, "Handing the group
 	// over").
 	TimeUnknown bool
 }
@@ -65,7 +65,7 @@ func Evaluate(input Input) (*State, error) {
 	}
 	// The set a root's checkpoint prunes is evaluated as if the member had
 	// dropped what it leaves out; the checkpoint that counts is the newest
-	// that still counts there (docs/records-v2.md, "Checkpoints").
+	// that still counts there (docs/protocol.md, section 10, "Checkpoints").
 	full := newEvaluation(input, nil)
 	var best *State
 	var bestKey [2]int64
@@ -199,7 +199,7 @@ func (e *evaluation) byID(id Hash) *rec {
 // newer returns the IDs of the records of a later version for this group
 // that a current root or admin of s signed, sorted, at most MaxNewer: a
 // member keeps them and passes them on, never applies them, and tells its
-// user to update (docs/records-v2.md, "Records of a later version").
+// user to update (docs/protocol.md, section 10, "Records of a later version").
 func newer(input Input, s *State, roots map[Hash]*x509.Certificate) []Hash {
 	admins := map[Hash]bool{}
 	for _, d := range s.Devices {
@@ -324,7 +324,7 @@ func newEvaluation(input Input, anchors map[Hash]bool) *evaluation {
 	return e
 }
 
-// The limits on a record set (docs/records-v2.md, "Limits"). Records over
+// The limits on a record set (docs/protocol.md, section 10, "Limits"). Records over
 // them count for nothing, with the reason WhyLimit; the set is never
 // refused, so that no admin can stop the group by filling it.
 const (
@@ -745,7 +745,7 @@ func (ep *epoch) rootDevice() *rec {
 	return best
 }
 
-// permitted reports whether an admin may sign r (docs/records-v2.md, "Who
+// permitted reports whether an admin may sign r (docs/protocol.md, section 10, "Who
 // signs what").
 func (ep *epoch) permitted(r *rec) bool {
 	a := r.Body.Signer
@@ -809,7 +809,7 @@ func cutsOff(a, b *rec) bool {
 }
 
 // label gives every admin record its label: the grounded labelling of the
-// attacks of removals, freezes and thaws (docs/records-v2.md, "Which admin
+// attacks of removals, freezes and thaws (docs/protocol.md, section 10, "Which admin
 // records count").
 func (ep *epoch) label() {
 	for _, rs := range ep.e.bySig {
@@ -938,7 +938,7 @@ func (ep *epoch) conflictsOf(undec []*rec, attackers map[*rec][]*rec) {
 		byRoot[find(r)] = append(byRoot[find(r)], r)
 	}
 	for _, rs := range byRoot {
-		c := Conflict{Kind: "admins"}
+		c := Conflict{Kind: ConflictAdmins}
 		signers := map[Hash]bool{}
 		for _, r := range rs {
 			c.Records = append(c.Records, r.ID)
@@ -993,7 +993,7 @@ func (ep *epoch) collect() {
 		}
 	}
 	for signer := range ep.forked {
-		c := Conflict{Kind: "two_histories", Signers: []Hash{signer}}
+		c := Conflict{Kind: ConflictTwoHistories, Signers: []Hash{signer}}
 		for _, r := range ep.e.bySig[signer] {
 			if r.Body.Seq == ep.forked[signer] {
 				c.Records = append(c.Records, r.ID)
@@ -1102,7 +1102,7 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 	}
 	live = first
 	if len(live) > 1 {
-		c := Conflict{Kind: "claims"}
+		c := Conflict{Kind: ConflictClaims}
 		for _, r := range live {
 			ep.claims = append(ep.claims, Claim{Record: r.ID, Claimant: r.Body.Signer, Root: claimRoot(r), State: "competing"})
 			c.Records = append(c.Records, r.ID)
@@ -1120,7 +1120,7 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 	if ds := disputes[c]; len(ds) > 0 {
 		cl.State = "disputed"
 		ep.claims = append(ep.claims, cl)
-		conflict := Conflict{Kind: "claims", Records: []Hash{c.ID}, Signers: []Hash{c.Body.Signer}}
+		conflict := Conflict{Kind: ConflictClaims, Records: []Hash{c.ID}, Signers: []Hash{c.Body.Signer}}
 		for _, r := range ds {
 			conflict.Records = append(conflict.Records, r.ID)
 			if !contains(conflict.Signers, r.Body.Signer) {
@@ -1216,7 +1216,7 @@ func claimRoot(r *rec) Hash {
 	return KeyHashOf(c)
 }
 
-// State is the group's state (docs/records-v2.md, "The state").
+// State is the group's state (docs/protocol.md, section 10, "The state").
 type State struct {
 	Roots       []Hash     `json:"roots"`
 	RootDevice  string     `json:"root_device,omitempty"`
@@ -1234,17 +1234,26 @@ type State struct {
 	// apps and the log can say what happened to a record.
 	Ignored []Ignored `json:"ignored,omitempty"`
 	// Checkpoint is the root's checkpoint that counts: a member may drop
-	// the records it leaves out (docs/records-v2.md, "Checkpoints").
+	// the records it leaves out (docs/protocol.md, section 10, "Checkpoints").
 	Checkpoint *Hash `json:"checkpoint,omitempty"`
 	// Hubs is the user's main hubs from the hubs record that counts, the
 	// devices of the state with the role full or phone, in its order
-	// (docs/records-v2.md, "The hubs table").
+	// (docs/protocol.md, section 10, "The hubs table").
 	Hubs []string `json:"hubs,omitempty"`
 	// Recovery is the admin key of the group's recovery key, from the
 	// newest recovery record of a root on the path, while it is neither
 	// revoked nor frozen (docs/records-v2.md, "The recovery key").
 	Recovery *Hash `json:"recovery,omitempty"`
 }
+
+// The values of State.Stop (docs/protocol.md, section 10, "Stopping the
+// exchange"): nothing stops, no member sends a secret, or every member
+// exchanges records only.
+const (
+	StopNone    = "none"
+	StopSecrets = "secrets"
+	StopFull    = "full"
+)
 
 // Device is one device of the state.
 type Device struct {
@@ -1278,6 +1287,13 @@ type Ignored struct {
 	Why    string `json:"why"`
 }
 
+// The kinds of a Conflict (docs/protocol.md, section 10, "The state").
+const (
+	ConflictAdmins       = "admins"
+	ConflictClaims       = "claims"
+	ConflictTwoHistories = "two_histories"
+)
+
 // Conflict is a conflict of the state.
 type Conflict struct {
 	Kind    string `json:"kind"`
@@ -1287,7 +1303,7 @@ type Conflict struct {
 
 // state builds the State of the last epoch.
 func (ep *epoch) state() *State {
-	s := &State{Roots: ep.path, Stop: "none"}
+	s := &State{Roots: ep.path, Stop: StopNone}
 	if d := ep.rootDevice(); d != nil && !ep.revoked[*d.Body.Key] {
 		s.RootDevice = d.Body.Device
 	}
@@ -1345,9 +1361,9 @@ func (ep *epoch) state() *State {
 	}
 	switch {
 	case ep.stopFull:
-		s.Stop = "full"
+		s.Stop = StopFull
 	case forkedAdmin:
-		s.Stop = "secrets"
+		s.Stop = StopSecrets
 	}
 	return s
 }
@@ -1398,7 +1414,7 @@ func (ep *epoch) newerHubs(a, b *rec) bool {
 	return a.Body.Seq > b.Body.Seq
 }
 
-// The reasons a record does not count (docs/records-v2.md, "The state").
+// The reasons a record does not count (docs/protocol.md, section 10, "The state").
 const (
 	WhyUnreadable = "unreadable" // its body is not a record of version 2
 	WhySignature  = "signature"  // its signature or chain does not check

@@ -64,6 +64,8 @@ public enum ServerCredentials {
         /// Reads and checks a credential's body: its size, the strict form
         /// of signed bodies, then its fields.
         static func parse(_ data: Data) throws -> Body {
+            // The core decides whether the body is taken (parse_body).
+            if let why = Core.bodyRefusal("credential", data) { throw Refused("the credential is not valid: \(why)") }
             guard data.count <= maxBody else { throw Refused("the credential is too large") }
             do {
                 try Strict.check(data, required: ["v", "type", "group", "version", "expires_ms"])

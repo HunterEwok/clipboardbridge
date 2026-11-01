@@ -209,6 +209,10 @@ final class MacModel: ObservableObject {
     /// which -allow-file-key consents to.
     func makeAdmin(_ id: String) async { await admin(["admin", "-allow-file-key", id], done: String(localized: "It is an admin now.")) }
     func freeze(_ id: String) async { await admin(["freeze", id], done: String(localized: "Frozen.")) }
+    /// On the group's root: voids both histories of every key that signed two.
+    func resolve() async {
+        await admin(["resolve"], done: String(localized: "Both histories are void. The device signs its records again by itself."))
+    }
     func unfreeze(_ id: String) async { await admin(["unfreeze", id], done: String(localized: "Unfrozen.")) }
 
     /// Sets the sync mode: this Mac's with id nil, or on an admin another

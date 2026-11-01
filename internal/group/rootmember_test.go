@@ -22,10 +22,8 @@ func rootOf(s *Records) (DeviceID, string) {
 
 // TestGoRootMemberVectors checks the root's own device: the device of the
 // root's newest record that says it holds the root, whether it is a phone
-// or a computer, the same in every order of the records. The records of
-// version 1 that go-root-member.json keeps for the phone kits are refused.
+// or a computer, the same in every order of the records.
 func TestGoRootMemberVectors(t *testing.T) {
-	checkV1Refused(t, "go-root-member.json")
 	type story struct {
 		root *CA
 		a, b *x509.Certificate

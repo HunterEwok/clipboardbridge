@@ -401,7 +401,7 @@ struct ColorSwatches: View {
 
 extension SettingsView {
     /// The root phone makes its paired watch an admin, for the emergency
-    /// actions (docs/protocol.md, section 10, rule 8).
+    /// actions (docs/protocol.md, section 10, "Watches").
     @ViewBuilder var watchSection: some View {
         let watches = model.devices.filter { $0.role == "watch" }
         Section {

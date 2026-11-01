@@ -351,10 +351,8 @@ type badSet struct {
 // TestGoCredentialVectors checks a phone group's records in v:2, the lists
 // its credentials must hold, a period with its server credentials, its
 // hubs' and members' credentials, and sets a server refuses (docs/protocol.md,
-// section 18); the records of testdata/interop/go-credentials.json are v:1
-// and refused.
+// section 18).
 func TestGoCredentialVectors(t *testing.T) {
-	checkV1Refused(t, "go-credentials.json")
 	var v credentialVectors
 	{
 		cg := newCredentialGroup(t)

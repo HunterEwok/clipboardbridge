@@ -130,7 +130,7 @@ class WearModel(private val context: Context, private val scope: CoroutineScope)
     class Refused(val why: String) : Exception(why)
 
     /**
-     * Runs an emergency action (docs/protocol.md, section 10, rule 8): the
+     * Runs an emergency action (docs/protocol.md, section 10, "Watches"): the
      * phone builds the body, the watch checks that it says what was asked,
      * signs it with its admin key, which works only while the watch is
      * unlocked, and the phone brings the result into the group.

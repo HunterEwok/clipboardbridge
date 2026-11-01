@@ -15,7 +15,7 @@ public enum Records {
 
     /// A record body before the set fills in its group, seq, prev and seen
     /// (RecordSet.sign); the fields depend on its type
-    /// (docs/records-v2.md, "Record types").
+    /// (docs/protocol.md, section 10, "Types").
     public struct Body: Encodable, Equatable, Sendable {
         public var v = Records.version
         public var alg = Records.alg
@@ -92,7 +92,7 @@ public enum Records {
         }
     }
 
-    /// The powers an admin may have (docs/records-v2.md, "Who signs what"):
+    /// The powers an admin may have (docs/protocol.md, section 10, "Who signs what"):
     /// what the apps give an admin phone.
     public static let powers = ["admit", "freeze", "hub", "remove", "remove-admins", "renew", "takeover", "thaw"]
     /// The commands an admin may sign.
@@ -243,7 +243,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
     }
 
     /// A claim of the state: an admin's handover of the group to its new
-    /// root (docs/records-v2.md, "Handing the group over").
+    /// root (docs/protocol.md, section 10, "Handing the group over").
     public struct Claim: Decodable, Equatable, Sendable {
         public var record: Data
         public var claimant: Data
@@ -253,16 +253,30 @@ public struct RecordSet: Codable, Equatable, Sendable {
         public var left_ms: Int64?
     }
 
-    /// The parts of the group's state (docs/records-v2.md, "The state")
+    /// The parts of the group's state (docs/protocol.md, section 10, "The state")
     /// the phones show.
     public struct State: Decodable, Equatable, Sendable {
         public var root_device: String?
         public var roots: [Data] = []
-        /// "none", or why the group stops (docs/records-v2.md, "Stopping the exchange").
+        /// "none", or why the group stops (docs/protocol.md, section 10, "Stopping the exchange").
         public var stop: String = "none"
         public var claims: [Claim]?
         /// The keys the records revoke.
         public var revoked: [Data]?
+        /// The conflicts that stop the group until its root decides.
+        public var conflicts: [Conflict]?
+        /// The devices that get no secrets, and those that get nothing.
+        public var no_secrets_to: [String]?
+        public var nothing_to: [String]?
+        /// The records of a later version the set keeps.
+        public var newer: [Data]?
+    }
+
+    /// A conflict of the state: kind is admins, claims or two_histories.
+    public struct Conflict: Decodable, Equatable, Sendable {
+        public var kind: String
+        public var records: [Data]
+        public var signers: [Data]
     }
 
     /// When the set first held a claim, which a Welcome passes on.
@@ -409,20 +423,24 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// The root's own device that a claim took the group over from;
         /// its connection carries records only, so that it may cancel the claim.
         case takenOver(String)
+        /// The state stops the exchange with the device (docs/protocol.md,
+        /// section 10, "Stopping the exchange"); its connection carries
+        /// records only, so that the root's decision reaches every member.
+        case stopped(String)
         case refused(String)
 
         /// Why it is not ok, nil when it is.
         public var why: String? {
             switch self {
             case .ok: nil
-            case let .notListed(w), let .takenOver(w), let .refused(w): w
+            case let .notListed(w), let .takenOver(w), let .stopped(w), let .refused(w): w
             }
         }
 
         /// Whether the connection carries records only.
         public var recordsOnly: Bool {
             switch self {
-            case .notListed, .takenOver: true
+            case .notListed, .takenOver, .stopped: true
             default: false
             }
         }
@@ -435,6 +453,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         case "ok": .ok
         case "not_listed": .notListed(v.why ?? "")
         case "taken_over": .takenOver(v.why ?? "")
+        case "stopped": .stopped(v.why ?? "")
         default: .refused(v.why ?? "refused")
         }
     }
@@ -451,8 +470,33 @@ public struct RecordSet: Codable, Equatable, Sendable {
         }
     }
 
-    /// Why the set refuses a member's chain, nil when it takes it.
-    public func refused(chain: [Data]) -> String? { verdict(chain: chain).why }
+    /// Why the set refuses a member's chain, nil when it takes it; a chain
+    /// the state only stops the exchange with is taken, for records only
+    /// (stopped(chain:)).
+    public func refused(chain: [Data]) -> String? {
+        let v = verdict(chain: chain)
+        if case .stopped = v { return nil }
+        return v.why
+    }
+
+    /// Whether the state stops the exchange with this chain's device: its
+    /// connection carries records only (docs/protocol.md, section 10,
+    /// "Stopping the exchange").
+    public func stopped(chain: [Data]) -> Bool {
+        if case .stopped = verdict(chain: chain) { return true }
+        return false
+    }
+
+    /// Whether this member sends device no secret: while the state stops
+    /// secrets or everything, or names device among those that get no
+    /// secrets or nothing. Such a device gets the mark of a secret, never
+    /// its text. A nil device is checked against the stop alone.
+    public func noSecrets(to device: String?) -> Bool {
+        let st = view.state
+        guard st.stop == "none" else { return true }
+        guard let device else { return false }
+        return (st.no_secrets_to ?? []).contains(device) || (st.nothing_to ?? []).contains(device)
+    }
 
     /// Whether the set takes an admin CA.
     public func verdict(adminCA: Data) -> Verdict {

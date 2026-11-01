@@ -94,7 +94,7 @@ class RecordsTest {
      * core gives each case's state, the same as Go, the lite member and the
      * Swift kit. Answers how many cases ran.
      */
-    private fun v2Cases(prefixes: List<String>? = null): Int {
+    private fun v2Cases(prefixes: List<String>? = null, check: ((String, RecordSet) -> Unit)? = null): Int {
         val cases = Interop.read("v2-records.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
         var n = 0
         for (c in cases) {
@@ -110,6 +110,7 @@ class RecordsTest {
             set.takeClaimTimes(RecordSet.ClaimTime.list(c["first_seen"] as? JsonArray))
             val want = RecordSet.State.of(Json.parseToJsonElement(c.str("state")).jsonObject)
             assertEquals(want, set.view.state, name)
+            check?.invoke(name, set)
             n++
         }
         assertTrue(n > 0, "no case of $prefixes")
@@ -119,6 +120,29 @@ class RecordsTest {
     @Test
     fun v2Vectors() {
         assertTrue(v2Cases() > 10)
+    }
+
+    /** The alerts say each case's stop, conflicts and claims that wait or stop the group, with the records a resolve names and the devices involved. */
+    @Test
+    fun alerts() {
+        val kinds = mutableSetOf<GroupAlert.Kind>()
+        v2Cases { name, set ->
+            val st = set.view.state
+            val alerts = set.alerts
+            kinds += alerts.map { it.kind }
+            assertEquals(st.stop == "full", alerts.any { it.kind == GroupAlert.Kind.STOPPED }, name)
+            assertEquals(st.stop == "secrets", alerts.any { it.kind == GroupAlert.Kind.SECRETS_STOPPED }, name)
+            for (c in st.conflicts) {
+                val a = alerts.firstOrNull { a ->
+                    a.kind in setOf(GroupAlert.Kind.TWO_HISTORIES, GroupAlert.Kind.ADMINS, GroupAlert.Kind.CLAIMS) &&
+                        a.records.size == c.records.size && a.records.zip(c.records).all { (x, y) -> x.contentEquals(y) }
+                }
+                assertTrue(a != null, "$name: ${c.kind}")
+                if (c.kind == "two_histories") assertTrue(a.names.isNotEmpty(), "$name: who signed two histories")
+            }
+            assertEquals(st.claims.count { it.state == "pending" }, alerts.count { it.kind == GroupAlert.Kind.CLAIM_PENDING }, name)
+        }
+        assertTrue(kinds.containsAll(listOf(GroupAlert.Kind.STOPPED, GroupAlert.Kind.TWO_HISTORIES, GroupAlert.Kind.CLAIM_PENDING)), "$kinds")
     }
 
     // The cases of Go's records of version 1 had these tests; each now runs

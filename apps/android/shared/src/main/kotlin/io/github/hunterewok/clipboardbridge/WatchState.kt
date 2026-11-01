@@ -56,7 +56,7 @@ data class WatchState(
             return out
         }
 
-    /** The watch's ask that the phone build the body of an emergency action (docs/protocol.md, section 10, rule 8). */
+    /** The watch's ask that the phone build the body of an emergency action (docs/protocol.md, section 10, "Watches"). */
     data class Ask(val action: String, val device: String, val name: String?, val watch: String) {
         fun encode(): ByteArray = JSONObject()
             .put("action", action).put("device", device).put("name", name ?: JSONObject.NULL).put("watch", watch)
@@ -129,7 +129,7 @@ data class WatchState(
 
     /**
      * The watch's answer to the root phone's CERTIFY_PATH (docs/protocol.md,
-     * section 10, rule 8): the key it made, under the device ID it picked,
+     * section 10, "Watches"): the key it made, under the device ID it picked,
      * or why it made none (refused, NOT_PROTECTED or another reason).
      */
     data class KeyRequest(val device: String = "", val name: String = "", val key: ByteArray = ByteArray(0), val refused: String? = null) {

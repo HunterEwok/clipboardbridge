@@ -1784,7 +1784,7 @@ func TestSecondTakeover(t *testing.T) {
 
 // noClaimWait has root, the group's current root, set the takeover delay
 // to 0, and waits for members to hold that record, so a claim takes effect
-// at once (docs/records-v2.md, "Handing the group over").
+// at once (docs/protocol.md, section 10, "Handing the group over").
 func noClaimWait(t *testing.T, root *testService, members ...*testService) {
 	t.Helper()
 	if _, err := root.do(t, control.Header{Op: control.OpDelay, Value: "0s"}, ""); err != nil {

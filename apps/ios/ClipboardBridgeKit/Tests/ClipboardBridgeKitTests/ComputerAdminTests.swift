@@ -120,7 +120,7 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertNil(g.computerAdminCA(for: adminKey.publicKeyDER))
     }
 
-    /// The root makes a watch an admin (section 10, rule 8): its record
+    /// The root makes a watch an admin (section 10, "Watches"): its record
     /// names the admin CA as key and admin, it may freeze but admits
     /// nobody, and removing it takes it out of the list.
     func testAddWatch() throws {
@@ -164,7 +164,7 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertTrue(g.records.revoked.contains(key))
     }
 
-    /// The watch's emergency actions (section 10, rule 8): the phone builds
+    /// The watch's emergency actions (section 10, "Watches"): the phone builds
     /// the body, the watch signs it, and what it signed counts as the rules
     /// say.
     func testWatchActions() throws {

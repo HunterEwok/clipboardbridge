@@ -32,6 +32,12 @@ public protocol RecordStore: AnyObject, Sendable {
     /// Whether the peer with this verified chain may be the group's hub, as
     /// RecordSet.mayHost.
     func mayHost(_ device: String, chain: [Data]) -> Bool
+    /// Whether the state stops the exchange with the peer of this chain, as
+    /// RecordSet.stopped: its connection carries records only.
+    func stopped(chain: [Data]) -> Bool
+    /// Whether this member sends the device no secret, as
+    /// RecordSet.noSecrets.
+    func noSecrets(to device: String?) -> Bool
 }
 
 /// Keeps the group's server credentials for a node (docs/protocol.md,
@@ -47,6 +53,8 @@ public protocol CredentialKeeper: AnyObject, Sendable {
 public extension RecordStore {
     func refused(chain: [Data]) -> String? { nil }
     func mayHost(_ device: String, chain: [Data]) -> Bool { true }
+    func stopped(chain: [Data]) -> Bool { false }
+    func noSecrets(to device: String?) -> Bool { false }
 }
 
 /// The phone as a member: its sync engine and its connections to the Linux
@@ -299,7 +307,7 @@ public actor MemberNode {
     @discardableResult
     public func send(text: String, kind: Member.Kind, via: Member.Via = .phone, media: Media.Manifest? = nil) -> Member.Event {
         let e = engine.local(text: text, kind: kind, via: via, media: media)
-        for c in conns.values { c.enqueue(.event(e)) }
+        for c in conns.values { forward(e, to: c) }
         return e
     }
 
@@ -310,7 +318,12 @@ public actor MemberNode {
         let c = Conn(transport: t, peer: peer)
         let id = ObjectIdentifier(c)
         conns[id] = c
+        // While the records stop the exchange with the peer, the
+        // connection carries records only, so that the root's decision
+        // reaches it (docs/protocol.md, section 10, "Stopping the exchange").
+        c.recordsOnly = records?.stopped(chain: t.peerChain) ?? false
         var hello = engine.hello(name: name)
+        if c.recordsOnly { hello.current = nil }
         hello.os = os
         hello.device = device
         hello.records = records?.digest
@@ -344,6 +357,12 @@ public actor MemberNode {
                 guard case let .hello(peerRole, h) = m else { throw Failure.noHello }
                 first = false
                 if let why = records?.refused(chain: t.peerChain) { throw Failure.refused(why) }
+                if c.recordsOnly {
+                    if let store = records, let mine = store.digest, mine != h.records {
+                        for rs in Member.Record.chunks(store.all) { c.enqueue(.records(rs)) }
+                    }
+                    continue
+                }
                 c.adminKey = h.adminKey
                 c.keyStore = h.keyStore
                 c.actions = h.actions
@@ -369,6 +388,14 @@ public actor MemberNode {
                     c.enqueue(.hubs(share))
                 }
                 if let all = credentials?.all, !all.isEmpty { c.enqueue(.credentials(all)) }
+                continue
+            }
+            if c.recordsOnly {
+                if case let .records(rs) = m, let store = records, !rs.isEmpty, !store.add(rs).isEmpty {
+                    dropRefused()
+                } else if case .bye = m {
+                    return
+                }
                 continue
             }
             switch m {
@@ -660,7 +687,9 @@ public actor MemberNode {
     /// device just removed.
     private func dropRefused() {
         guard let store = records else { return }
-        for c in conns.values where store.refused(chain: c.transport.peerChain) != nil { c.goodbye() }
+        for c in conns.values where store.refused(chain: c.transport.peerChain) != nil || store.stopped(chain: c.transport.peerChain) != c.recordsOnly {
+            c.goodbye()
+        }
     }
 
     /// Sends server credentials signed on this phone to every connected
@@ -678,9 +707,22 @@ public actor MemberNode {
         }
     }
 
+    /// Sends an event on c: none on a connection that carries records only,
+    /// and the mark of a secret, never its text, to a peer the records stop
+    /// secrets to (docs/protocol.md, section 10, "Stopping the exchange").
+    private func forward(_ e: Member.Event, to c: Conn) {
+        guard !c.recordsOnly else { return }
+        var e = e
+        if e.kind == .secret, let store = records {
+            let leaf = c.transport.peerChain.first.flatMap { try? CertificateInfo(der: $0).commonName }
+            if store.noSecrets(to: c.peer ?? leaf) { e.text = "" }
+        }
+        c.enqueue(.event(e))
+    }
+
     private func apply(_ r: SyncEngine.Result, from: ObjectIdentifier) {
         if let e = r.forward {
-            for (id, c) in conns where id != from { c.enqueue(.event(e)) }
+            for (id, c) in conns where id != from { forward(e, to: c) }
         }
         if r.changed, let cur = engine.currentEvent { onChange(cur) }
     }
@@ -773,6 +815,13 @@ public actor MemberNode {
             set { lock.withLock { _keyStore = newValue } }
         }
         private var _keyStore: String?
+        /// Whether the records stop the exchange with the peer, which then
+        /// carries records only.
+        var recordsOnly: Bool {
+            get { lock.withLock { _recordsOnly } }
+            set { lock.withLock { _recordsOnly = newValue } }
+        }
+        private var _recordsOnly = false
         /// The quick actions the peer's hello says are on.
         var actions: [String] {
             get { lock.withLock { _actions } }

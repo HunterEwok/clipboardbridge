@@ -384,4 +384,21 @@
     <string name="search_devices">Поиск устройств</string>
     <string name="no_devices_match">Подходящих устройств нет.</string>
     <string name="error_arrangement">Плитки остались как были: такое изменение не подходит.</string>
+    <string name="reason_resolve">Разрешить конфликт в группе</string>
+    <string name="claim_cancelled">Заявка отменена. Остальные устройства узнают об этом, как только подключатся.</string>
+    <string name="histories_voided">Обе истории отменены. Устройство само подпишет свои записи заново.</string>
+    <string name="alert_stopped">Группа остановлена: устройства обмениваются только записями, без буфера обмена, пока корень группы не решит.</string>
+    <string name="alert_secrets_stopped">Группа не пересылает секреты, пока её корень не решит.</string>
+    <string name="alert_two_histories">%1$s: две истории, подписанные одним ключом. Так бывает при краже ключа или после восстановления из резервной копии.</string>
+    <string name="alert_admins">Админы удалили или заморозили друг друга, не зная об этом: %1$s. Корень удаляет одного из них.</string>
+    <string name="alert_claims">Две заявки на передачу группы: %1$s.</string>
+    <string name="alert_claim_pending">%1$s хочет забрать группу у корня.</string>
+    <string name="alert_claim_pending_left">%1$s хочет забрать группу у корня: это произойдёт через %2$s.</string>
+    <string name="alert_claim_stopped">%1$s хочет забрать группу, и группа остановлена, пока корень не решит.</string>
+    <string name="alert_newer">В группе есть записи более новой версии (%1$d): обновите приложение, чтобы их прочитать.</string>
+    <string name="alert_unknown_devices">устройства, неизвестные здесь</string>
+    <string name="alert_root_decides">Решает корень группы.</string>
+    <string name="void_both_histories">Отменить обе истории</string>
+    <string name="cancel_claim">Отменить заявку</string>
+    <string name="remove_device">Удалить %1$s</string>
 </resources>

@@ -42,6 +42,7 @@ const (
 	OpRename      = "rename"         // client → service: give the device Name names the name NewName
 	OpFreeze      = "freeze"         // client → service: freeze the admin computer Name names
 	OpThaw        = "thaw"           // client → service: on the root, unfreeze the admin computer Name names
+	OpResolve     = "resolve"        // client → service: on the root, void both histories of every key that signed two; Name answers whose
 	OpAway        = "away"           // client → service: Name "on", "off", "hub", "move" (to Device) or "relay": sync away from home
 	OpHolder      = "holder"         // client → service: Name "auto", "first", "fallback" or "never": the holder setting
 	OpMode        = "mode"           // client → service: Name "own", "shared", "receive" or "send": the sync mode
@@ -198,6 +199,31 @@ type Release struct {
 	Release release.File `json:"release"`
 }
 
+// Claim is a claim to take the group over (docs/protocol.md, section 10,
+// "Handing the group over"), for cbb status and the apps.
+type Claim struct {
+	// By names the admin that claims the group: its device's name, or its
+	// key hash when no device record names it.
+	By string `json:"by"`
+	// State is pending, competing or disputed.
+	State string `json:"state"`
+	// LeftMS is how long a pending claim still waits on this member, 0
+	// while it does not know.
+	LeftMS int64 `json:"left_ms,omitempty"`
+}
+
+// Conflict is a conflict of the group's records, for cbb status and the
+// apps.
+type Conflict struct {
+	// Kind is admins (admins that removed or froze each other without
+	// seeing it), claims (two claims) or two_histories (a key that signed
+	// two histories).
+	Kind string `json:"kind"`
+	// Devices name the devices of the signers involved, or their key
+	// hashes when no device record names them.
+	Devices []string `json:"devices"`
+}
+
 // Status describes the service for cbb status.
 type Status struct {
 	Device string `json:"device"`
@@ -213,6 +239,20 @@ type Status struct {
 	// device, the group's root computer, while it was away; removing that
 	// admin here undoes it. Removed is false then.
 	TakenOverBy string `json:"taken_over_by,omitempty"`
+	// Stop says how far the group's records stop the exchange: "secrets"
+	// (no member sends a secret) or "full" (the members exchange records
+	// only), empty when nothing stops; Claims and Conflicts say why
+	// (docs/protocol.md, section 10, "Stopping the exchange").
+	Stop string `json:"stop,omitempty"`
+	// Claims are the claims to take the group over that wait or stop the
+	// group: pending, competing or disputed.
+	Claims []Claim `json:"claims,omitempty"`
+	// Conflicts are the conflicts that stop the group until its root
+	// decides.
+	Conflicts []Conflict `json:"conflicts,omitempty"`
+	// Newer is how many records of a later version this member keeps: an
+	// update of Clipboard Bridge reads them.
+	Newer int `json:"newer,omitempty"`
 	// CertEndsMS is when this device's member certificate ends, in Unix
 	// milliseconds: the members refuse it afterwards, unless an admin
 	// renews it before.

@@ -30,6 +30,13 @@ protocol GroupController: AnyObject {
     func makeAdmin(_ id: String) async throws
     /// Unfreezes an admin computer that another admin froze.
     func unfreeze(_ id: String) async throws
+    /// Whether this phone holds the group's root.
+    var isRoot: Bool { get }
+    /// What the group's records stop and what ends it (GroupAlert).
+    var alerts: [GroupAlert] { get }
+    /// Voids the records ids as the group's root, after Face ID: ends a
+    /// conflict or cancels a claim.
+    func resolve(_ ids: [Data]) async throws
     /// Makes the key the paired watch made an admin key with the role
     /// watch; only the root phone does. Returns what the watch keeps.
     func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission
@@ -90,6 +97,9 @@ extension GroupController {
     /// A stand-in tag for the tests' and previews' groups.
     var groupTag: String? { hasGroup ? "group" : nil }
     func unfreeze(_ id: String) async throws {}
+    var isRoot: Bool { false }
+    var alerts: [GroupAlert] { [] }
+    func resolve(_ ids: [Data]) async throws {}
     func addWatch(_ request: WatchState.KeyRequest) async throws -> WatchState.Admission { throw PhoneGroup.Failure.notRoot }
     func watchActions(for id: String) -> [String] { [] }
     func watchBody(_ ask: WatchState.Ask) throws -> Data { throw PhoneGroup.Failure.notAWatch }
@@ -184,6 +194,10 @@ final class AppModel: ObservableObject {
     /// The QR code this phone shows while it waits to join a group.
     @Published private(set) var joinCode: JoinCode?
     @Published private(set) var isAdmin = true
+    /// Whether this phone holds the group's root, which ends conflicts.
+    @Published private(set) var isRoot = false
+    /// What the group's records stop and what ends it.
+    @Published private(set) var alerts: [GroupAlert] = []
     /// The one-time note on the Start screen that this phone is ready.
     @Published private(set) var welcome = false
 
@@ -429,6 +443,8 @@ final class AppModel: ObservableObject {
         await group.refresh()
         computers = group.computers
         devices = group.devices
+        isRoot = group.isRoot
+        alerts = group.alerts
         await refreshAway()
         await refreshHub()
         await refreshRelay()
@@ -655,6 +671,24 @@ final class AppModel: ObservableObject {
         devices = group.devices
     }
 
+    /// Ends a conflict or cancels a claim as the group's root: voids the
+    /// alert's records.
+    func resolve(_ alert: GroupAlert) async {
+        do {
+            try await group.resolve(alert.records)
+            switch alert.kind {
+            case .claimPending, .claimStopped, .claims:
+                message = String(localized: "The claim is cancelled. The other devices hear of it as soon as they connect.", bundle: .app)
+            default:
+                message = String(localized: "Both histories are void. The device signs its records again by itself.", bundle: .app)
+            }
+        } catch {
+            message = Self.describe(error)
+        }
+        devices = group.devices
+        alerts = group.alerts
+    }
+
     /// Unfreezes an admin computer that another admin froze.
     func unfreeze(_ id: String) async {
         do {
@@ -717,7 +751,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Makes the paired Apple Watch an admin with a key of its own, for the
-    /// emergency actions (docs/protocol.md, section 10, rule 8): the watch,
+    /// emergency actions (docs/protocol.md, section 10, "Watches"): the watch,
     /// whose app is open, makes the key, and the root signs after Face ID.
     func addWatch() async {
         do {

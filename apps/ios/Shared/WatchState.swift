@@ -58,7 +58,7 @@ struct WatchState: Codable, Equatable {
     static let awayKey = "away"
 
     /// The root phone's ask that the watch make its admin key (docs/protocol.md,
-    /// section 10, rule 8); the watch answers with requestKey, a KeyRequest,
+    /// section 10, "Watches"); the watch answers with requestKey, a KeyRequest,
     /// or refusedKey, why it made none.
     static let certifyKey = "certify", requestKey = "request", refusedKey = "refused"
     /// The root's answer once it certified the key: an Admission.
@@ -77,7 +77,7 @@ struct WatchState: Codable, Equatable {
     }
 
     /// The watch's ask that the phone build the body of an emergency action
-    /// (docs/protocol.md, section 10, rule 8); the phone answers with bodyKey
+    /// (docs/protocol.md, section 10, "Watches"); the phone answers with bodyKey
     /// or refusedKey.
     static let askKey = "ask", bodyKey = "body"
     /// What the watch signed, which the phone brings into the group; it
