@@ -461,7 +461,7 @@ jobs:
             test "$(sh packaging/freebsd/firewall.sh kind)" = pfsense
             sh packaging/freebsd/firewall.sh commands 8764 | grep -q 'Firewall > Rules'
             sh packaging/freebsd/firewall.sh hub-commands 51820 | grep -q 'port 51820'
-            if sh packaging/freebsd/firewall.sh open 8764; then echo "open changed pfSense's rules" >&2; exit 1; fi
+            sh packaging/freebsd/firewall.sh open 8764 2>&1 | grep -q 'nothing was added' || { echo "open changed pfSense's rules" >&2; exit 1; }
             rm -f /etc/platform
             # ipfw, with pf off; it lets everything else in, as this VM's
             # SSH needs.
