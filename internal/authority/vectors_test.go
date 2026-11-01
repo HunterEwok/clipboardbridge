@@ -104,6 +104,8 @@ var scenarios = []struct {
 	{"freeze and thaw", TestFreezeAndThaw},
 	{"freezes crossed", TestFreezesCross},
 	{"powers", TestPowers},
+	{"stranger's claim", TestStrangersClaim},
+	{"times at the ends", TestTimesAtTheEnds},
 }
 
 // TestV2Vectors writes (with -update) and checks

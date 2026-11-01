@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"math"
 	"sort"
 	"strconv"
 
@@ -96,15 +97,14 @@ func newer(input Input, s *State, roots map[Hash]*x509.Certificate) []Hash {
 			continue
 		}
 		var b struct {
-			V      json.Number `json:"v"`
-			Group  any         `json:"group"`
-			Signer Hash        `json:"signer"`
+			V      json.RawMessage `json:"v"`
+			Group  any             `json:"group"`
+			Signer Hash            `json:"signer"`
 		}
-		dec := json.NewDecoder(bytes.NewReader(r.Body))
-		dec.UseNumber()
-		if dec.Decode(&b) != nil || b.Group != input.Group {
+		if json.Unmarshal(r.Body, &b) != nil || b.Group != input.Group {
 			continue
 		}
+		// The raw token: an integer, never a quoted one.
 		v, err := strconv.ParseInt(string(b.V), 10, 64)
 		if err != nil || v <= 2 || v > MaxSeq {
 			continue
@@ -808,9 +808,10 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 		seen = now
 	}
 	waits := unknown && delay > 0
-	if c.label != in || ep.rootFrozen(c.Body.Signer) || waits || now-seen < delay {
+	elapsed := subSat(now, seen)
+	if c.label != in || ep.rootFrozen(c.Body.Signer) || waits || elapsed < delay {
 		cl.State = "pending"
-		if left := delay - (now - seen); left > 0 && !unknown {
+		if left := subSat(delay, elapsed); left > 0 && !unknown {
 			cl.LeftMS = left
 		}
 		ep.claims = append(ep.claims, cl)
@@ -1051,4 +1052,17 @@ func (s *State) Equal(o *State) bool {
 	a, err1 := s.Encode()
 	b, err2 := o.Encode()
 	return err1 == nil && err2 == nil && bytes.Equal(a, b)
+}
+
+// subSat is a - b, held at the ends of int64 instead of wrapping: a
+// caller's times are any int64.
+func subSat(a, b int64) int64 {
+	d := a - b
+	if (b > 0 && d > a) || (b < 0 && d < a) {
+		if b > 0 {
+			return math.MinInt64
+		}
+		return math.MaxInt64
+	}
+	return d
 }

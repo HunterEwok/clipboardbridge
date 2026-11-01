@@ -247,6 +247,10 @@ impl Body {
         let v = serde_json::to_value(self).map_err(|_| Error::msg("a record body does not encode"))?;
         let mut out = Vec::new();
         strict::write_canonical(&mut out, &v);
+        // Never bytes to sign that every receiver refuses for their size.
+        if out.len() > MAX_BODY {
+            return Err(Error::msg(format!("a record body of {} bytes is over {MAX_BODY}", out.len())));
+        }
         Ok(out)
     }
 
@@ -644,15 +648,12 @@ pub fn evaluate(input: &Input) -> State {
     evaluate_seqs(input).0
 }
 
-/// evaluate, and the highest seq of each signer among the records that
-/// verify, which a member saves to notice a record set rolled back.
+/// evaluate, and for each signer of the group the highest seq whose chain
+/// is held whole down to seq 1, which a member saves to notice a record
+/// set rolled back (see Evaluation::seqs).
 pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
     let e = Evaluation::new(input);
-    let mut seqs = BTreeMap::new();
-    for r in &e.recs {
-        let s = seqs.entry(r.b().signer).or_insert(0);
-        *s = r.b().seq.max(*s);
-    }
+    let seqs = e.seqs(key_hash_of(input.group_ca));
     let mut path = vec![key_hash_of(input.group_ca)];
     let mut cuts = BTreeMap::new();
     let mut earlier = Vec::new();
@@ -786,6 +787,57 @@ impl Evaluation {
         e
     }
 
+    /// The highest seq of each signer whose prev chain is held whole down
+    /// to seq 1. Only the group's signers count: the group CA, the root of
+    /// a claim that one of the group's admins signed, and the admins under
+    /// those roots; a root named in a claim nobody of the group signed
+    /// could come and go with records that never counted. A whole chain,
+    /// not the highest seq held, so that a record missing from the middle
+    /// of a chain lowers it.
+    fn seqs(&self, group_ca: Hash) -> BTreeMap<Hash, i64> {
+        let mut roots = BTreeSet::from([group_ca]);
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for r in &self.recs {
+                if r.b().kind == TYPE_CLAIM && r.issuer.is_some_and(|h| roots.contains(&h)) {
+                    grew |= roots.insert(claim_root(r.b()));
+                }
+            }
+        }
+        let mut seqs = BTreeMap::new();
+        for (signer, rs) in &self.by_sig {
+            let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.recs[i].s.id, i)).collect();
+            for &i in rs {
+                let r = &self.recs[i];
+                let ours = match r.issuer {
+                    Some(h) => roots.contains(&h),
+                    None => !r.admin() && roots.contains(signer),
+                };
+                if ours && self.whole(i, &by_id) {
+                    let s = seqs.entry(*signer).or_insert(0);
+                    *s = r.b().seq.max(*s);
+                }
+            }
+        }
+        seqs
+    }
+
+    /// Reports whether i's prev chain down to seq 1 is held, each step one
+    /// seq lower.
+    fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>) -> bool {
+        let mut steps = 0;
+        while self.recs[i].b().seq > 1 {
+            let Some(&p) = self.recs[i].b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
+            if self.recs[p].b().seq != self.recs[i].b().seq - 1 || steps > MAX_SEQ {
+                return false;
+            }
+            i = p;
+            steps += 1;
+        }
+        true
+    }
+
     /// Finds the root that issued an admin CA.
     fn issuer_of(&self, c: &Cert) -> Option<Hash> {
         if !c.is_ca || c.path_len != Some(0) || !c.cert_sign || !c.p256 {
@@ -896,17 +948,8 @@ impl<'a> Epoch<'a> {
 
     /// Reports whether i's prev chain down to seq 1 is held, each step one
     /// seq lower.
-    fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>) -> bool {
-        let mut steps = 0;
-        while self.r(i).b().seq > 1 {
-            let Some(&p) = self.r(i).b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
-            if self.r(p).b().seq != self.r(i).b().seq - 1 || steps > MAX_SEQ {
-                return false;
-            }
-            i = p;
-            steps += 1;
-        }
-        true
+    fn whole(&self, i: usize, by_id: &BTreeMap<Hash, usize>) -> bool {
+        self.e.whole(i, by_id)
     }
 
     /// Finds which of one signer's records count: whole chains, not on a
@@ -1362,8 +1405,10 @@ impl<'a> Epoch<'a> {
         let mut cl = self.claim(c, "pending");
         let seen = first_seen.get(&r.s.id).copied().filter(|&s| s <= now).unwrap_or(now);
         let waits = unknown && delay > 0;
-        if self.label[c] != Label::In || self.root_frozen(&r.b().signer) || waits || now - seen < delay {
-            cl.left_ms = if unknown { 0 } else { (delay - (now - seen)).max(0) };
+        // Saturating: a caller's times are any i64.
+        let elapsed = now.saturating_sub(seen);
+        if self.label[c] != Label::In || self.root_frozen(&r.b().signer) || waits || elapsed < delay {
+            cl.left_ms = if unknown { 0 } else { delay.saturating_sub(elapsed).max(0) };
             self.claims.push(cl);
             self.pending = Some(r.b().signer);
             return None;

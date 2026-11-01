@@ -366,7 +366,9 @@ what ends it. A user who has lost the root sets the group up again.
 
 The function takes the group CA certificate, the record set, the current time on the
 member's clock or that the member does not know the time, and, for each claim's record ID,
-the time the member first held it, and returns the state as one canonical JSON object:
+the time the member first held it (a time after the current one counts as the current one;
+the time since and the time left are held at the ends of a 64-bit integer, never wrapped),
+and returns the state as one canonical JSON object:
 
 | Field | Type | Meaning |
 |-------|------|---------|
