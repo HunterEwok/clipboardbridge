@@ -62,8 +62,9 @@ var automated = map[string][]string{
 	"Y24": {"desktop"}, "Y25": {"desktop"}, "Y31": {"desktop"}, "Y32": {"desktop"},
 	"T3": {"desktop"}, "T5": {"desktop"}, "T11": {"desktop"}, "T12": {"desktop"},
 	"I21": {"desktop"}, "M2": {"desktop"}, "H2": {"desktop"}, "H3": {"desktop"}, "O13": {"desktop"},
-	// CI's tests of the apps' windows.
-	"A5": {"ci"}, "A8": {"ci"}, "A9": {"ci"}, "A15": {"ci"}, "A16": {"ci"}, "U12": {"ci"},
+	// CI's tests of the apps' windows: the tray app in a headless browser,
+	// XCUITest of the iPhone app and the Mac app, the Android app on Robolectric.
+	"A2": {"ci"}, "A4": {"ci"}, "A5": {"ci"}, "A8": {"ci"}, "A9": {"ci"}, "A14": {"ci"}, "A15": {"ci"}, "A16": {"ci"}, "U12": {"ci"},
 	// The time-scaled build.
 	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
 	"Y13": {"time"}, "W39": {"time"}, "W12": {"time"}, "K5": {"time"},

@@ -127,7 +127,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   progress in `cbb status` (O13).
 - CI runs the tray app's window in a headless Chrome or Edge against its real Go side: the
   colours and layouts, collections, Russian, error details and the admin actions (A5, A8,
-  A9, A15, A16, U12); the bench's coverage counts such CI tests as `ci`.
+  A9, A15, A16, U12); the bench's coverage counts such CI tests as `ci`. XCUITest drives
+  the iPhone app's screens before a group on the simulator and the Mac app's window with no
+  service, and Robolectric the Android app's screens (A2, A4, A14).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
