@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/seal"
 )
@@ -48,6 +49,23 @@ func TestSealKeysRecorded(t *testing.T) {
 			return n == 2
 		})
 	}
+	// A command for the deck is sealed to its key, and the deck opens it.
+	var deckID string
+	for _, d := range pi.devices(t) {
+		if d.Name == "deck" {
+			deckID = d.ID
+		}
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpMode, Device: deckID, Name: "receive"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if deck.status(t).Mode != "receive" {
+		t.Error("the deck did not take the sealed mode command")
+	}
+	if !deck.logged("opened a sealed mode command") {
+		t.Error("the mode command was not sealed")
+	}
+
 	// The secret stays: loading it again gives the same key.
 	again, err := group.LoadSealSecret(deck.dir)
 	if err != nil {

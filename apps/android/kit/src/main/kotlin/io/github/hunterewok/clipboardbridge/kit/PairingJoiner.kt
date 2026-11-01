@@ -94,7 +94,10 @@ object PairingJoiner {
         if (!later.all { runCatching { GroupCertificates.checkRoot(it) }.isSuccess }) throw Failure("a later root is not a phone's root")
         // The roots are only those the records lead to: an admin could otherwise name a root of its own, and
         // every certificate from it would pass here for good, whatever the group's root removes.
-        val path = RecordSet().apply { addAll(w.records.orEmpty(), w.groupCA) }.roots
+        val path = RecordSet().apply {
+            addAll(w.records.orEmpty(), w.groupCA)
+            takeClaimTimes(w.claimTimes.orEmpty())
+        }.roots
         if (path.size != later.size || path.zip(later).any { (a, b) -> !a.contentEquals(b) }) {
             throw Failure("the other phone's roots are not the ones the group's records lead to")
         }

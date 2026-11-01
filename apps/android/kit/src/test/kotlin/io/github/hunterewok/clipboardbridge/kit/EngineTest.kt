@@ -125,7 +125,7 @@ class EngineTest {
         val g = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, Instant.now())
         val pc = SyncEngine.newID()
         val cert = GroupCertificates.member(pc, SoftwareSigner().publicKeyDER, g.groupCA, rootKey, Instant.now())
-        g.record(pc, "pi", "linux", Records.keyHashOfCert(cert), rootKey, Instant.now())
+        g.record(pc, "pi", "full", Records.keyHashOfCert(cert), rootKey, Instant.now())
         val phoneStore = Store(g.groupCA, g.records)
         val peerStore = Store(g.groupCA, RecordSet())
         val phone = MemberNode(SyncEngine(g.device, HybridClock()), "Pixel", records = phoneStore)

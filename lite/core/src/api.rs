@@ -3,7 +3,7 @@
 
 //! The core's one entry point (docs/core-api.md): a request in bytes, an
 //! answer in bytes. Every program that uses the core's rules (the phones
-//! through UniFFI, Go through cgo or wasm) calls `call` and nothing else,
+//! through its C functions, Go through cgo or wasm) calls `call` and nothing else,
 //! so the bindings stay one function wide and the request's ABI version
 //! says which shape of request and answer both sides speak.
 //!
@@ -12,6 +12,8 @@
 //! "name": "...", "message": "...", "details": "..."}}`, where code and name
 //! are stable and listed in Code. `call` never panics on any input and
 //! always answers.
+
+mod group;
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -71,6 +73,9 @@ pub enum Code {
     /// The saved state cannot be read, is of another version or group, or
     /// its check with the member's secret does not match.
     Saved = 14,
+    /// A command is refused: its signer, its target, its time or its
+    /// limits.
+    Command = 15,
 }
 
 impl Code {
@@ -86,6 +91,7 @@ impl Code {
             Code::Strict => "strict",
             Code::Rollback => "rollback",
             Code::Saved => "saved",
+            Code::Command => "command",
         }
     }
 }
@@ -168,7 +174,9 @@ fn dispatch(op: &str, args: Value) -> Result<Vec<u8>, Refusal> {
         "check_body" => check_body(serde_json::from_value(args).map_err(bad_args)?),
         "canonicalize" => canonicalize(serde_json::from_value(args).map_err(bad_args)?),
         "check_member" => check_member(serde_json::from_value(args).map_err(bad_args)?),
-        _ => Err(refuse(Code::Op, Error::msg(alloc::format!("The core has no call named {op:?}.")))),
+        "read_invite" => read_invite(serde_json::from_value(args).map_err(bad_args)?),
+        _ => group::dispatch(op, &args)
+            .unwrap_or_else(|| Err(refuse(Code::Op, Error::msg(alloc::format!("The core has no call named {op:?}."))))),
     }
 }
 
@@ -427,6 +435,24 @@ fn check_member(a: MemberArgs) -> Result<Vec<u8>, Refusal> {
     Ok(json(serde_json::json!({ "device": dev.as_str(), "used": used })))
 }
 
+/// The arguments of `read_invite`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InviteArgs {
+    text: String,
+}
+
+/// `read_invite`: a remote invitation's text read and checked (docs/protocol.md,
+/// section 12): `{"invitation"}` when it is taken, `{"refused": {"reason",
+/// "message"}}` with its stable reason and a sentence for the user when it
+/// is not. The caller checks the expiry against its clock.
+fn read_invite(a: InviteArgs) -> Result<Vec<u8>, Refusal> {
+    Ok(json(match crate::invite::parse(&a.text) {
+        Ok(inv) => serde_json::json!({ "invitation": inv.to_json() }),
+        Err(r) => serde_json::json!({ "refused": { "reason": r.name(), "message": r.message() } }),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,6 +486,26 @@ mod tests {
             let want = alloc::format!("{{\"abi\":{ABI},\"ok\":{}}}", c["state"].as_str().unwrap());
             assert_eq!(String::from_utf8(out).unwrap(), want, "{}", c["name"]);
         }
+    }
+
+    /// read_invite answers each text of testdata/interop/invites.json as
+    /// the file says: the invitation, or the reason it is refused.
+    #[test]
+    fn reads_invitations() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/invites.json");
+        let v: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for c in v["valid"].as_array().unwrap() {
+            let got = ask("read_invite", serde_json::json!({"text": c["text"]}));
+            let mut want = c.clone();
+            want.as_object_mut().unwrap().retain(|k, _| k != "name" && k != "text");
+            assert_eq!(got["ok"]["invitation"], want, "{}", c["name"]);
+        }
+        for c in v["refused"].as_array().unwrap() {
+            let got = ask("read_invite", serde_json::json!({"text": c["text"]}));
+            assert_eq!(got["ok"]["refused"]["reason"], c["reason"], "{}", c["name"]);
+            assert!(!got["ok"]["refused"]["message"].as_str().unwrap().is_empty());
+        }
+        assert_eq!(code(&ask("read_invite", serde_json::json!({}))), Code::Request as u64);
     }
 
     /// A body built in any order comes back canonical and checks; the
@@ -560,11 +606,15 @@ mod tests {
             Code::Strict,
             Code::Rollback,
             Code::Saved,
+            Code::Command,
         ]
         .iter()
         .map(|c| c.name())
         .collect();
-        assert_eq!(names, ["request", "abi", "op", "too_large", "body", "cert", "strict", "rollback", "saved"]);
+        assert_eq!(
+            names,
+            ["request", "abi", "op", "too_large", "body", "cert", "strict", "rollback", "saved", "command"]
+        );
     }
 
     /// evaluate_saved gives evaluate's state and a saved state that the

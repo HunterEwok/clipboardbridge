@@ -218,6 +218,7 @@ final class LiveGroup: GroupController {
         actions = await node?.actions ?? [:]
         offers = await node?.offeredAdminKeys ?? [:]
         keyStores = await node?.keyStores ?? [:]
+        await finishTakeOverIfDue()
     }
 
     // MARK: Keys
@@ -703,8 +704,10 @@ final class LiveGroup: GroupController {
 
     /// Removes the phone that holds the group's root, when it is lost: this
     /// admin phone makes a new root key in the Secure Enclave, behind Face
-    /// ID, and takes the group over (docs/protocol.md, section 10, "Handing
-    /// the group over"). From then on it signs with that key.
+    /// ID, and claims the group for it (docs/records-v2.md, "Handing the
+    /// group over"). The claim waits the group's delay, in which the root,
+    /// if it is still in use, cancels it; finishTakeOverIfDue then makes
+    /// this phone the root.
     private func takeOver(from id: String) async throws {
         let reason = String(localized: "Take the group over from the lost phone", bundle: .app)
         let admin = try await signer(label: Self.adminLabel, reason: reason)
@@ -714,18 +717,46 @@ final class LiveGroup: GroupController {
         _ = try KeychainIdentity.makeKey(label: Self.caLabel, secureEnclave: se, userPresence: se)
         let root = try await signer(label: Self.caLabel, reason: reason)
         guard var g = state else { return }
-        let rs = try g.takeOver(from: id, adminSigner: admin, rootSigner: root, now: Date())
+        let newRoot = try GroupCertificates.groupCA(signer: root, now: Date(), pathLength: 1)
+        let r = try g.takeOver(from: id, adminSigner: admin, newRoot: newRoot, now: Date())
         try g.save(to: file)
         state = g
         groupChanged()
-        await node?.sendRecords(rs)
-        await node?.close(peer: id)
-        // The lost phone was the hub: this phone is the hub now
-        // (docs/design.md, "Losing the phone").
-        if await away?.hub == id {
-            try await setPhoneHub(true)
-        } else {
-            await restartSync()
+        await node?.sendRecords([r])
+    }
+
+    /// Makes this phone the group's root once its claim took effect: it
+    /// signs, with the new root key, what a new root starts with, and
+    /// becomes the hub when the lost phone was (docs/design.md, "Losing the
+    /// phone"). A claim that was cancelled is dropped.
+    private func finishTakeOverIfDue() async {
+        guard var g = state, g.claim != nil else { return }
+        g.records.refresh()
+        g.adoptRoots()
+        let lost = g.claimedFrom
+        if g.currentRoot != g.claim {
+            guard g.dropEndedClaim() else { return }
+            keysLog.notice("the claim to take the group over ended; this phone stays an admin")
+            try? g.save(to: file)
+            state = g
+            return
+        }
+        do {
+            let root = try await signer(label: Self.caLabel, reason: String(localized: "Take the group over from the lost phone", bundle: .app))
+            guard var g = state else { return }
+            let rs = try g.finishTakeOver(rootSigner: root, now: Date())
+            try g.save(to: file)
+            state = g
+            groupChanged()
+            await node?.sendRecords(rs)
+            if let lost { await node?.close(peer: lost) }
+            if let lost, await away?.hub == lost {
+                try await setPhoneHub(true)
+            } else {
+                await restartSync()
+            }
+        } catch {
+            keysLog.error("finishing the takeover: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -782,6 +813,7 @@ final class LiveGroup: GroupController {
         guard var g = state else { return }
         let roots = g.roots
         g.add(set.records)
+        g.records.takeClaimTimes(set.claimTimes)
         guard g != state else { return }
         try? g.save(to: file)
         state = g

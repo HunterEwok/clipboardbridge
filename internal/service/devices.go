@@ -99,12 +99,12 @@ func (s *Service) settleRecords(fresh []group.Record) {
 			continue
 		}
 		// A freeze refuses devices as a revocation does; a resolve or a
-		// checkpoint may undo either, and a claim, a resolve or a settings
-		// record may change the root.
+		// checkpoint may undo either, and a claim, a resolve, a settings or
+		// a recovery record may change the root.
 		switch b.Type {
 		case group.RecordRevoke, group.RecordFreeze, group.RecordThaw:
 			revoked = true
-		case group.RecordClaim, group.RecordResolve, group.RecordSettings, group.RecordCheckpoint:
+		case group.RecordClaim, group.RecordResolve, group.RecordSettings, group.RecordCheckpoint, group.RecordRecovery:
 			revoked, rooted = true, true
 		}
 	}
@@ -881,6 +881,20 @@ func (s *Service) deviceRecord(dev group.DeviceID) *group.Device {
 		}
 	}
 	return nil
+}
+
+// signCommand signs body for its receiver with ca, sealing its orders to
+// the receiver's key when the receiver's record has one, so that only the
+// receiver reads them (docs/protocol.md, section 15, "Sealed commands").
+func (s *Service) signCommand(body group.CommandBody, ca *group.CA, chain []*x509.Certificate) (group.Record, error) {
+	if d := s.deviceRecord(body.To); d != nil && len(d.Seal) > 0 {
+		sealed, err := group.SealCommand(body, d.Seal)
+		if err != nil {
+			return group.Record{}, err
+		}
+		body = sealed
+	}
+	return group.SignCommand(body, ca.Key, chain...)
 }
 
 // loadSealSecretLocked loads this device's secret for sealed messages,

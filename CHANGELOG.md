@@ -8,6 +8,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- A recovery key for a group whose phones are all lost (docs/records-v2.md, "The recovery
+  key"): the root names an offline admin key in a `recovery` record, and that key may only
+  claim the group, waiting the delay the root set for admins and cancelled the same ways. The
+  state names it in `recovery`; Go and the Rust core agree on shared vectors. The apps make
+  the key later.
+- The core's entry point reads a remote invitation (`read_invite`, docs/core-api.md): the
+  invitation, or the stable reason it is refused, for the phones to use later.
+- Sealed commands: a computer seals a command's orders (a paste's text, a hub's keys, a mode
+  or an action) to the receiver's key when its device record has one, so that the members
+  in between see only who sent it to whom; the receiver opens them with its own secret
+  (`v` `2`, docs/protocol.md, section 15, "Sealed commands"), in Go and the Rust core, on
+  shared vectors (`testdata/interop/go-sealed-commands.json`). The lite member keeps a key
+  too (`seal.json`), offers it in its hello and opens the commands sealed to it.
 - Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
   and offers it in its hello; a root computer puts it in the device records, the first step
   to commands sealed for their receiver (docs/protocol.md, section 15).
@@ -19,6 +32,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The Rust core evaluates a record set at the limit with about a third of the memory it took
   (1.7 MB instead of 4.7 MB for 1033 records on a 64-bit computer), for the ESP32, and a test
   holds the peak to eight times the records' size.
+- The Rust core's entry point answers for a member's record set (`group_add`, `group_view`,
+  `group_command` and the other `group_` calls, docs/core-api.md, "The record set"), so the
+  phones keep the records file and ask the core instead of applying the group's rules
+  themselves.
 - The Rust core's entry point checks a peer's member certificates (`check_member`, docs/core-api.md),
   for the TLS verify callbacks of the computers and the phones, and gives the same answer as Go's
   crypto/tls on shared vectors (`testdata/interop/member-chains.json`). The lite member now takes
@@ -633,6 +650,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `/Library/Logs/clipboardbridge/service.log` and `~/Library/Logs/clipboardbridge/agent.log`,
   each line after the time, each moved to `.1` at 1 MiB, so a log no longer grows without
   end; the agent's log is new.
+- Both phone apps link the Rust core, the group's rules every member shares: the Swift and
+  Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
+  bindings, and building the Android app, F-Droid's build included, needs the Rust of
+  `cbb.rust` in `apps/android/gradle.properties` with cargo-ndk.
 - The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
   member: each record names its signer and follows that signer's previous one, the Rust
   core decides what a set says, and the old records are refused. A group of an earlier
@@ -641,6 +662,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   admitting member counted from the Welcome, and `cbb upgrade` is gone. A device whose
   record has not reached a member yet gets a connection that carries records only, until
   the records let it in.
+- The iPhone and Android apps keep their group's records of version 2 and ask the Rust core
+  what they say (`group_add`, `group_view`, `group_command`), instead of applying the group's
+  rules in Swift and Kotlin. Taking a group over is a claim that waits as long as the root
+  decided: the app finishes it by itself once the wait is over, with Face ID or the
+  fingerprint, and the root's phone may cancel it or change the wait. A new member takes the waits counted so far from the Welcome.
 - Remote paste on Linux and FreeBSD takes nothing where the device cannot tell whether its
   session is locked (no logind, `loginctl` failing or saying nothing): earlier it pasted
   there. The device's user may allow pastes without that check with
