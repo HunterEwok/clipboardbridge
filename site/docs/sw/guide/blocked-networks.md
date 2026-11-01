@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: f3e807bbde74 -->
+<!-- source: 5a17c9adbba6 -->
 # Mitandao inayozuia VPN
 
 Ukiwa mbali na nyumbani, vifaa vyako hufikia kitovu kupitia handaki la WireGuard la kikundi chenyewe. Baadhi ya mitandao huzuia WireGuard: Wi-Fi ya hoteli na ofisi, baadhi ya waendeshaji wa simu, na nchi nzima zinazochuja VPN. Clipboard Bridge ina njia mbili za kukwepa hilo. Zote mbili huwashwa kwenye kitovu, na vifaa huzipokea wakati ujao vitakapokutana na kitovu nyumbani.
@@ -31,7 +31,7 @@ sudo cbb global hub -obfuscate 203.0.113.7:8764
 Ukiwa na kisambazaji, ongeza `-obfuscate` vivyo hivyo:
 
 ```sh
-sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 Kitovu hutengeneza mipangilio ya kikundi mara moja, kwa nasibu, na kuihifadhi maadamu `-obfuscate` ipo. Walete laptopu na simu zote nyumbani mara moja baadaye, au acha programu wazi nyumbani, ili zichukue mipangilio mipya. Mwanachama mwepesi huzungumza WireGuard ya kawaida tu: katika kikundi chenye ufichaji husawazisha nyumbani tu.
@@ -51,7 +51,7 @@ VLESS hufanya kazi kati ya vifaa vyako na kisambazaji. REALITY hufanya kisambaza
 2. **Kwenye kitovu**:
 
    ```sh
-   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:... -vless
+   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key> -vless
    ```
 
    Ongeza `-obfuscate` pia ukipenda; zote mbili basi zinatumika.

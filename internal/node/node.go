@@ -153,7 +153,7 @@ type Config struct {
 	TunnelPSK []byte
 
 	// OnTunnelKey, if set, is called with the tunnel key and preshared
-	// key (nil from a member before several hubs) a peer's hello offered
+	// key a peer's hello offered
 	// and the certificate chain the peer presented. On a hub it admits the
 	// key and returns the offers to send the peer: its own, then those of
 	// the group's other hubs it passes on; on other members it returns
@@ -258,7 +258,7 @@ type Peer struct {
 	Mode string
 	// KeyStore is where its hello says its keys live: group.StoreFile or
 	// group.StoreHardware or group.StoreRootless; "" when it says none of
-	// them, as before 0.6.
+	// them.
 	KeyStore string
 	// Actions are the quick actions its hello says are on.
 	Actions []string
@@ -813,7 +813,9 @@ func (n *Node) offerRecords(c *conn, digest string) {
 // and sends the peer the offers it returns, then what this hub shares with
 // the peer, if anything.
 func (n *Node) offerTunnel(c *conn, key, psk []byte) {
-	if n.cfg.OnTunnelKey != nil && len(key) > 0 {
+	// A tunnel key comes with the sender's preshared key; one without it
+	// is not offered.
+	if n.cfg.OnTunnelKey != nil && len(key) > 0 && len(psk) == 32 {
 		for _, o := range n.cfg.OnTunnelKey(c.id, c.peerChain, key, psk) {
 			c.enqueue(outgoing{tunnel: &o})
 		}
@@ -1440,7 +1442,9 @@ func (c *conn) message(o outgoing) (*message, error) {
 		if c.n.cfg.Actions != nil {
 			out.Actions = c.n.cfg.Actions()
 		}
-		out.Media = c.n.cfg.Content != nil
+		if c.n.cfg.Content != nil {
+			out.Features = []string{FeatureMedia}
+		}
 		if d := c.n.cfg.Device.Clean(); !d.IsZero() {
 			out.Device = &d
 		}
@@ -1656,7 +1660,7 @@ func (c *conn) reader() error {
 					c.peerActions = append(c.peerActions, a)
 				}
 			}
-			c.peerMedia = extra.Media
+			c.peerMedia = slices.Contains(extra.Features[:min(len(extra.Features), maxFeatures)], FeatureMedia)
 			c.peerMode = ""
 			if _, err := clip.ParseMode(extra.Mode); err == nil {
 				c.peerMode = extra.Mode

@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: b85d406ac1b5 -->
+<!-- source: 7ef91335d714 -->
 # Вне дома
 
 Дома ваши устройства синхронизируются сами. Чтобы синхронизация продолжалась, когда ноутбук
@@ -84,7 +84,7 @@ cbb global
 зашифрованные пакеты и не хранит ключей.
 
 ```sh
-sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 Адрес и ключ дают вам у форвардера. Можно [запустить собственный](../admin/self-hosting.md#a-forwarder)

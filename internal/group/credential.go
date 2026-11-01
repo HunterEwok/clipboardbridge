@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -114,15 +115,16 @@ func (b *CredentialBody) Expires() time.Time { return time.UnixMilli(b.ExpiresMS
 // carries.
 func (b *CredentialBody) KeyHash() KeyHash { return sha256.Sum256(b.Key) }
 
-// Pseudonym returns the name of a server key at the relay: its hash in
-// hex.
-func Pseudonym(k KeyHash) string { return hex.EncodeToString(k[:]) }
+// Pseudonym is how the relay knows a device that registered with its
+// server credential: the fingerprint of its server key, its key hash in
+// standard base64 (docs/protocol.md, Conventions, "Fingerprints").
+func Pseudonym(k KeyHash) string { return k.String() }
 
 // ParsePseudonym returns the key hash a pseudonym names.
 func ParsePseudonym(s string) (KeyHash, bool) {
 	var k KeyHash
-	b, err := hex.DecodeString(s)
-	if err != nil || len(b) != len(k) || s != hex.EncodeToString(b) {
+	b, err := base64.StdEncoding.Strict().DecodeString(s)
+	if err != nil || len(b) != len(k) || base64.StdEncoding.EncodeToString(b) != s {
 		return KeyHash{}, false
 	}
 	copy(k[:], b)

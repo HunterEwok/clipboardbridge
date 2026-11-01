@@ -237,7 +237,7 @@ func TestHubBadArguments(t *testing.T) {
 	}
 	defer h.Close()
 	phone := newRootPhone(t)
-	pin := "sha256:" + strings.Repeat("A", 43)
+	pin := strings.Repeat("A", 43) + "="
 	for name, call := range map[string]func() error{
 		"bad endpoint": func() error { return h.Register("cbb.tools:8764", pin, phone.chain, keySigner{phone.key}, "", "") },
 		"bad pin":      func() error { return h.Register("127.0.0.1:1", "pin", phone.chain, keySigner{phone.key}, "", "") },

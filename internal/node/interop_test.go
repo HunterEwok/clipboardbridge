@@ -125,7 +125,7 @@ func TestMemberInteropVectors(t *testing.T) {
 		// Images and files (frames 16 to 18).
 		event(files),
 		event(image),
-		hello(Full, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &image}, OS: group.OSLinux, Media: true}),
+		hello(Full, helloOut{Hello: clip.Hello{Wall: 1761024000500, Current: &image}, OS: group.OSLinux, Features: []string{FeatureMedia}}),
 	}}
 
 	for _, s := range []string{"1761024000000.3", "1.0", "0.0", "253402300799999.4294967295", "253402300800000.0",

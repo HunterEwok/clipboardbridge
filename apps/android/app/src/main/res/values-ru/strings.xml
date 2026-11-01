@@ -139,7 +139,7 @@
     <string name="hub_add_home">Это моя домашняя сеть</string>
     <string name="hub_forwarder">Форвардер</string>
     <string name="hub_forwarder_address">Адрес, например 198.51.100.9:8764</string>
-    <string name="hub_forwarder_key">Ключ, sha256:…</string>
+    <string name="hub_forwarder_key">Ключ, 44 символа</string>
     <string name="hub_forwarder_save">Сохранить форвардер</string>
     <string name="hub_bad_forwarder">Укажите адрес форвардера с портом и его ключ, как их выводит cbb forward, или оставьте оба поля пустыми.</string>
     <string name="hub_background">Хаб работает и в фоне (расходует батарею)</string>
@@ -268,7 +268,7 @@
     <string name="relay_with">На релее, устройств группы там: %1$d.</string>
     <string name="relay_failed">Релей не принимает этот телефон. Проверьте его адрес и ключ.</string>
     <string name="relay_address">Адрес релея, например 198.51.100.9:8764</string>
-    <string name="relay_key">Ключ релея, sha256:…</string>
+    <string name="relay_key">Ключ релея, 44 символа</string>
     <string name="relay_meet">Встречаться на этом релее</string>
     <string name="relay_leave">Покинуть релей</string>
     <string name="relay_bad">Укажите адрес релея с портом и его ключ, как их выводит cbb relay, или оставьте оба поля пустыми.</string>

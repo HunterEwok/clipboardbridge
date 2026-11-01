@@ -518,7 +518,7 @@ func awayHub(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 
 	// W31: a wrong key pinned for the forwarder.
 	r.Do("fleet/W31-wrong-key", func() error {
-		wrong := "sha256:" + strings.Repeat("A", 43)
+		wrong := strings.Repeat("A", 43) + "="
 		if _, err := Run(ctx, hub, a.hubCmd(hubPublic2, wrong), ""); err != nil {
 			var re *RunError
 			if errors.As(err, &re) && strings.Contains(strings.ToLower(re.Output), "key") {

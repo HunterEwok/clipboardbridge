@@ -11,7 +11,6 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
@@ -270,7 +270,7 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 	if err != nil {
 		return nil, err
 	}
-	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, maxClaim))
+	enc, dec := frame.NewEncoder(tc, maxClaim), frame.NewDecoder(io.LimitReader(tc, maxClaim), maxClaim)
 	if err := enc.Encode(challenge{E: eph.PublicKey().Bytes(), Roots: cred && !r.cfg.Open}); err != nil {
 		return nil, err
 	}

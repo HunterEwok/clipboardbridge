@@ -13,7 +13,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,13 +22,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/vless"
 )
 
 // Protocol is the ALPN protocol of a hub's registration.
-const Protocol = "clipboardbridge-forward/1"
+const Protocol = "clipboardbridge-forward/2"
 
 // The labels of the keys the registration takes from TLS: the one the hub
 // proves its WireGuard key under, and the one its hellos carry a MAC of.
@@ -229,7 +229,7 @@ func (f *Forwarder) serveRegistration(raw net.Conn) {
 		f.mu.Unlock()
 		f.memory.left(r.tag)
 	}()
-	enc := json.NewEncoder(r.conn)
+	enc := frame.NewEncoder(r.conn, maxClaim)
 	gone := make(chan struct{})
 	go func() {
 		// The hub sends nothing more; reading tells when it goes.
@@ -270,7 +270,7 @@ func (f *Forwarder) register(raw net.Conn) (*reg, error) {
 	if err != nil {
 		return nil, err
 	}
-	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, maxClaim))
+	enc, dec := frame.NewEncoder(tc, maxClaim), frame.NewDecoder(io.LimitReader(tc, maxClaim), maxClaim)
 	if err := enc.Encode(challenge{E: eph.PublicKey().Bytes()}); err != nil {
 		return nil, err
 	}

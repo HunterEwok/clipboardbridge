@@ -79,7 +79,7 @@ func (in *Invitation) String() string {
 	if err != nil {
 		panic(err) // it has nothing that cannot be marshaled
 	}
-	return prefix + base64.RawURLEncoding.EncodeToString(data)
+	return prefix + base64.StdEncoding.EncodeToString(data)
 }
 
 // Reason names why Parse refused a text, the same in Go and in the Rust
@@ -89,7 +89,7 @@ type Reason string
 // The reasons Parse gives.
 const (
 	NotInvitation  Reason = "not_invitation" // not the invitation's prefix
-	Damaged        Reason = "damaged"        // not base64url, not strict JSON, a field missing, unknown or of another type
+	Damaged        Reason = "damaged"        // not standard base64, not strict JSON, a field missing, unknown or of another type
 	Version        Reason = "version"        // a v other than 1
 	BadGroup       Reason = "group"          // g is not a group tag
 	BadHub         Reason = "hub"            // h is not a device ID
@@ -156,7 +156,7 @@ func Parse(text string) (*Invitation, error) {
 		return nil, refuse(NotInvitation, "this is not a clipboardbridge invitation")
 	}
 	// Go's decoder skips line breaks; the text has none.
-	data, err := base64.RawURLEncoding.Strict().DecodeString(enc)
+	data, err := base64.StdEncoding.Strict().DecodeString(enc)
 	if err != nil || strings.ContainsAny(enc, "\r\n") {
 		return nil, refuse(Damaged, "the invitation is damaged")
 	}

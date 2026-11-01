@@ -263,18 +263,18 @@ roles = ["away"]
 [forwarder]
 ssh = "a@relay"
 address = "relay.example.net:8764"
-key = "sha256:AAAA"
+key = "AAAA"
 service = "cbb-forward"
 
 [relay]
 address = "relay.example.net:8765"
-key = "sha256:BBBB"
+key = "BBBB"
 `), 0o600)
 	inv, err := LoadInventory(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inv.Forwarder.Address != "relay.example.net:8764" || inv.Forwarder.Service != "cbb-forward" || inv.Relay.Key != "sha256:BBBB" {
+	if inv.Forwarder.Address != "relay.example.net:8764" || inv.Forwarder.Service != "cbb-forward" || inv.Relay.Key != "BBBB" {
 		t.Fatalf("servers: %+v %+v", inv.Forwarder, inv.Relay)
 	}
 	ds, _ := inv.Select("")

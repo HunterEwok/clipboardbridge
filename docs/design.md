@@ -490,7 +490,7 @@ sync away from home, the admins, and remote paste.
   never earlier than the CA's start, so a Raspberry Pi that boots with a clock years behind
   real time still accepts them; expired certificates are rejected. The root and the admins
   admit new devices. TLS 1.3 only, with the ALPN protocol
-  `clipboardbridge/1`; a client checks that the server's certificate names the device it found in
+  `clipboardbridge/2`; a client checks that the server's certificate names the device it found in
   discovery.
 - **iPhone CA**: ECDSA P-256, valid 20 years, path length 0, with critical name constraints
   that permit only the DNS name `clipboardbridge.local` and names below it (and URI and e-mail
@@ -513,7 +513,7 @@ sync away from home, the admins, and remote paste.
   the user runs `cbb pair -code` and types the code (it is read from the terminal or standard input, never
   from the command line, where other users of the machine could read it). The new device
   connects to the member's port with
-  the ALPN protocol `clipboardbridge-pair/1` and presents a self-signed certificate for the key
+  the ALPN protocol `clipboardbridge-pair/2` and presents a self-signed certificate for the key
   it will keep. The two run the CPace password-authenticated key exchange
   (CPACE-X25519-SHA512) with the code, bound to the TLS session by an exporter and to both
   certificates, and confirm the key, the new device first. An attacker gets one guess per

@@ -5,12 +5,16 @@ package pair
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/cryptotest"
 )
 
 var update = flag.Bool("update", false, "rewrite the interop test vectors")
@@ -26,7 +30,18 @@ type interopVectors struct {
 }
 
 func TestInteropVectors(t *testing.T) {
-	member, joiner := []byte("member certificate DER"), []byte("joiner certificate DER")
+	// A fixed random source makes the same joiner certificate each time:
+	// its key's fingerprint is what a join QR code carries.
+	cryptotest.SetGlobalRandom(t, 1)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joiner, err := (&Joiner{ID: "00112233445566778899aabbccddeeff", Key: key}).cert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := []byte("member certificate DER")
 	info, _ := json.Marshal(Info{Name: "laptop", OS: "linux"})
 	mad, _ := json.Marshal(memberAD{Device: "0123456789abcdef0123456789abcdef", Group: "0011223344556677"})
 	frames := []*frame{

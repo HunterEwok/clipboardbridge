@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use core::net::SocketAddr;
 
 use base64::Engine;
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::STANDARD;
 use serde_json::{Map, Value};
 
 use crate::strict;
@@ -31,7 +31,7 @@ pub const MAX_ENDPOINTS: usize = 8;
 pub enum Reason {
     /// Not the invitation's prefix.
     NotInvitation,
-    /// Not base64url, not strict JSON, a field missing, unknown or of another type.
+    /// Not standard base64, not strict JSON, a field missing, unknown or of another type.
     Damaged,
     /// A `v` other than 1.
     Version,
@@ -147,7 +147,7 @@ const REQUIRED: [&str; 9] = ["v", "g", "h", "hk", "ep", "k", "psk", "s", "exp"];
 pub fn parse(text: &str) -> Result<Invitation, Reason> {
     let text = text.trim_matches([' ', '\t', '\r', '\n']);
     let enc = text.strip_prefix(PREFIX).ok_or(Reason::NotInvitation)?;
-    let data = URL_SAFE_NO_PAD.decode(enc).map_err(|_| Reason::Damaged)?;
+    let data = STANDARD.decode(enc).map_err(|_| Reason::Damaged)?;
     strict::check(&data, &["v"]).map_err(|_| Reason::Damaged)?;
     let obj: Map<String, Value> = serde_json::from_slice(&data).map_err(|_| Reason::Damaged)?;
     let version = obj.get("v").and_then(Value::as_i64).ok_or(Reason::Damaged)?;

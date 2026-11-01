@@ -210,7 +210,7 @@ struct SettingsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.numbersAndPunctuation)
-                TextField(text: $forwarderKey) { Text("Forwarder key, sha256:…") }
+                TextField(text: $forwarderKey) { Text("Forwarder key, 44 characters") }
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(.body, design: .monospaced))
@@ -307,7 +307,7 @@ extension SettingsView {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.numbersAndPunctuation)
-            TextField(text: $relayKey) { Text("Relay key, sha256:…") }
+            TextField(text: $relayKey) { Text("Relay key, 44 characters") }
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.system(.body, design: .monospaced))

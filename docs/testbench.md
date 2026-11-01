@@ -399,13 +399,13 @@ roles = ["away"]       # away only: it joins by invitation in the away suite
 
 [forwarder]
 address = "relay.example.net:8764"
-key = "sha256:..."     # cbb forward -show-key on the server
+key = "<key>"     # cbb forward -show-key on the server
 ssh = "user@relay.example.net"  # for F7 only, which stops it
 service = "cbb-forward"
 
 [relay]
 address = "relay.example.net:8765"
-key = "sha256:..."     # cbb relay -show-key on the server
+key = "<key>"     # cbb relay -show-key on the server
 ```
 
 On the Mac the bench user runs two programs as root without a password: `cbb`, and the

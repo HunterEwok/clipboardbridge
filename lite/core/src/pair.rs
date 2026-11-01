@@ -27,8 +27,8 @@ use crate::third_party::cpace;
 use crate::wire;
 
 /// The TLS exporter label that binds the exchange to the connection.
-pub const EXPORTER_LABEL: &[u8] = b"EXPERIMENTAL-clipboardbridge-pair-v1";
-const CHANNEL_PREFIX: &[u8] = b"clipboardbridge pair v1\x00";
+pub const EXPORTER_LABEL: &[u8] = b"EXPERIMENTAL-clipboardbridge-pair-v2";
+const CHANNEL_PREFIX: &[u8] = b"clipboardbridge pair v2\x00";
 /// The largest frame of the exchange.
 pub const MAX_FRAME: usize = 64 << 10;
 /// How many wrong codes a listening join takes.
@@ -174,7 +174,7 @@ impl Joiner {
 
     /// The fingerprint of the joiner's certificate that the QR code carries.
     pub fn fingerprint(&self) -> String {
-        certs::qr_fingerprint(&self.cert)
+        certs::fingerprint(&self.cert)
     }
 
     /// Starts the exchange on a TLS connection whose handshake is done:
@@ -451,11 +451,11 @@ mod tests {
         let text = join_qr(
             "246802",
             &["192.168.1.20:8767".into(), "[fd00::5]:8767".into()],
-            "qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA",
+            "qFnj7Uv+CE/WNnna2IEmMaLbkA6tHcKf0VijTRzekKA=",
         );
         assert_eq!(
             text,
-            "clipboardbridge://join?code=246802&addr=192.168.1.20%3A8767&addr=%5Bfd00%3A%3A5%5D%3A8767&fp=qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA"
+            "clipboardbridge://join?code=246802&addr=192.168.1.20%3A8767&addr=%5Bfd00%3A%3A5%5D%3A8767&fp=qFnj7Uv%2BCE%2FWNnna2IEmMaLbkA6tHcKf0VijTRzekKA%3D"
         );
     }
 
@@ -465,6 +465,6 @@ mod tests {
         let c = Cert::parse(&j.cert).unwrap();
         assert_eq!(c.common_name.as_deref(), Some(j.id.as_str()));
         assert!(c.p256);
-        assert_eq!(j.fingerprint().len(), 43);
+        assert_eq!(j.fingerprint().len(), 44);
     }
 }

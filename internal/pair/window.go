@@ -311,7 +311,7 @@ func clientTLSVerifiedByFingerprint(admin *group.Identity, fp string) *tls.Confi
 			if cs.NegotiatedProtocol != Protocol {
 				return errors.New("pair: the device does not offer pairing")
 			}
-			if len(cs.PeerCertificates) != 1 || CertFingerprint(cs.PeerCertificates[0].Raw) != fp {
+			if len(cs.PeerCertificates) != 1 || group.KeyHashOf(cs.PeerCertificates[0]).String() != fp {
 				return errors.New("pair: the device is not the one in the QR code")
 			}
 			id, err := joinerID(cs)
@@ -489,7 +489,7 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 		return nil, true, ErrWrongCode
 	}
 	if w.confirm != nil {
-		r := Request{Device: joiner, Info: info, Fingerprint: CertFingerprint(cs.PeerCertificates[0].Raw)}
+		r := Request{Device: joiner, Info: info, Fingerprint: group.KeyHashOf(cs.PeerCertificates[0]).String()}
 		if err := w.confirm(ctx, r); err != nil {
 			if ctx.Err() != nil {
 				return nil, true, ctx.Err()

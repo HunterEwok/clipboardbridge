@@ -118,7 +118,7 @@ fn pairing() {
     let v = vectors("pairing.json");
     let (member, joiner) = (bytes(&v["member_cert"]), bytes(&v["joiner_cert"]));
     assert_eq!(certs::hex(&crate::pair::channel_id(&member, &joiner)), v["channel_id"].as_str().unwrap());
-    assert_eq!(certs::qr_fingerprint(&joiner), v["fingerprint"].as_str().unwrap());
+    assert_eq!(certs::fingerprint(&joiner), v["fingerprint"].as_str().unwrap());
     let frames = v["frames"].as_array().unwrap();
     // The joiner's first frame, as a lite member writes it, differs only in
     // its role; the member's frames decode.

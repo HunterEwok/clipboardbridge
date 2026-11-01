@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: f3e807bbde74 -->
+<!-- source: 5a17c9adbba6 -->
 # רשתות שחוסמות VPN
 
 מחוץ לבית המכשירים שלכם מגיעים אל הרכזת דרך מנהרת ה-WireGuard של הקבוצה עצמה. יש רשתות שחוסמות את WireGuard: ה-Wi-Fi של מלונות ומשרדים, חלק ממפעילי הסלולר, ומדינות שלמות שמסננות VPN. ל-Clipboard Bridge יש שתי דרכים לעקוף זאת. שתיהן מופעלות ברכזת, והמכשירים קולטים אותן בפעם הבאה שהם פוגשים את הרכזת בבית.
@@ -31,7 +31,7 @@ sudo cbb global hub -obfuscate 203.0.113.7:8764
 עם מעביר, הוסיפו `-obfuscate` באותה דרך:
 
 ```sh
-sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 הרכזת יוצרת את הגדרות הקבוצה פעם אחת, באקראי, ושומרת אותן כל עוד `-obfuscate` נשאר. אחר כך הביאו כל מחשב נייד וטלפון הביתה פעם אחת, או השאירו את האפליקציה פתוחה בבית, כדי שיקלטו את ההגדרות החדשות. החבר הקל מדבר רק WireGuard רגיל: בקבוצה עם ערפול הוא מסתנכרן רק בבית.
@@ -51,7 +51,7 @@ VLESS פועל בין המכשירים שלכם למעביר. REALITY גורם �
 2. **ברכזת**:
 
    ```sh
-   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:... -vless
+   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key> -vless
    ```
 
    הוסיפו גם `-obfuscate` אם תרצו; אז שניהם חלים.

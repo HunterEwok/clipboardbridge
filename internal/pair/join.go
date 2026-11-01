@@ -8,11 +8,9 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -105,11 +103,16 @@ func (j *Joiner) Fingerprint() (string, error) {
 	return CertFingerprint(der), nil
 }
 
-// CertFingerprint returns the fingerprint of a certificate in the form a
-// join QR code carries: SHA-256 over the DER, in base64url without padding.
+// CertFingerprint returns the fingerprint of a certificate's key, the one
+// form of docs/protocol.md (Conventions, "Fingerprints"): SHA-256 over its
+// SubjectPublicKeyInfo in standard base64, as a record's key hash. It is
+// "" for bytes that are no certificate.
 func CertFingerprint(der []byte) string {
-	sum := sha256.Sum256(der)
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
+		return ""
+	}
+	return group.KeyHashOf(c).String()
 }
 
 // Join runs the joining side of a pairing over conn, a connection the
