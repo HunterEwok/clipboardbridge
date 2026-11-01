@@ -276,9 +276,10 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
     ))?;
     let joiner = pair::Joiner::new(&name)?;
     let state = g.state.clone();
-    let save = move |id: &identity::Identity, rs: &[records::Record]| {
-        let mut set = records::Records::new(&id.group_ca);
+    let save = move |id: &identity::Identity, rs: &[records::Record], ts: &[records::ClaimTime]| {
+        let mut set = records::new(&id.group_ca);
         let _ = set.add_all(rs);
+        set.take_claim_times(ts);
         records::Stored::save(&set, &state)?;
         id.save(&state)?;
         service::new_device_mode(&state)

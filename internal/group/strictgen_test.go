@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
 // The generator of testdata/interop/strict-generated.json: from the tables
@@ -848,9 +850,10 @@ func TestStrictGenerated(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range v.Records {
-		_, err := parseRecordBody(c.Full())
-		if (err == nil) != c.Valid {
-			t.Errorf("record %q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
+		// Records of version 1, valid or not, are refused: version 2
+		// reads only its own canonical bodies (docs/records-v2.md).
+		if _, err := authority.ParseBody(c.Full()); err == nil {
+			t.Errorf("record %q of version 1 taken", c.Name)
 		}
 	}
 	for _, c := range v.Commands {
@@ -879,9 +882,9 @@ func TestStrictMutants(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, c := range v.Records {
-			_, err := parseRecordBody(c.Full())
-			if (err == nil) != c.Valid {
-				t.Errorf("record %q (%s): valid %v, got %v", c.Name, c.Rule, c.Valid, err)
+			// Records of version 1 are refused, whatever the mutation.
+			if _, err := authority.ParseBody(c.Full()); err == nil {
+				t.Errorf("record %q of version 1 taken", c.Name)
 			}
 			n++
 		}

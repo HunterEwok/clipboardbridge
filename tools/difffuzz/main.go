@@ -51,7 +51,8 @@ import (
 
 // The fields of a verdict, per kind; every implementation writes these.
 var fields = map[string][]string{
-	"record":     {"type", "group", "time_ms", "by", "device", "name", "role", "os", "store", "key", "admin", "keys", "keep", "root", "records"},
+	"record": {"type", "group", "signer", "seq", "prev", "time_ms", "device", "name", "role", "os", "store", "key", "admin", "powers",
+		"commands", "holds_root", "keys", "root", "records"},
 	"command":    {"type", "group", "by", "to", "id", "time_ms", "expires_ms", "mode", "enter", "kind", "text", "action"},
 	"credential": {"type", "group", "version", "expires_ms", "tag", "key", "hubs", "admins", "members"},
 }

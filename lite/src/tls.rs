@@ -15,7 +15,7 @@ use cbb_core::tls::rustls::time_provider::TimeProvider;
 pub use cbb_core::tls::*;
 
 use crate::error::{Context, Result};
-use crate::records::Records;
+use crate::records::{Records, Refusal};
 
 #[derive(Debug)]
 struct SystemClock;
@@ -34,7 +34,12 @@ pub fn clock() -> Clock {
 /// The records' judgement of a member chain, under their lock.
 pub fn refused(records: &Arc<Mutex<Records>>) -> Refused {
     let records = records.clone();
-    Arc::new(move |chain| records.lock().unwrap().refused(chain).map(String::from))
+    // A chain no counting device record names yet passes here: its
+    // connection carries records only (Node::run).
+    Arc::new(move |chain| match records.lock().unwrap().refused(chain) {
+        Some(Refusal::Refused(why)) => Some(why.to_string()),
+        Some(Refusal::NotListed) | None => None,
+    })
 }
 
 /// Sends what the session queued.

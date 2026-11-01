@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/strict"
 )
 
@@ -30,36 +31,39 @@ func fuzzSeeds(f *testing.F, section string) {
 	}
 }
 
-// FuzzRecordBody reads record bodies as they come from other members: a
-// body it takes is in the strict form, within the size limit, and reads
-// the same again.
+// FuzzRecordBody reads record bodies as they come from other members
+// (docs/records-v2.md, "Canonical form of signed bodies"): a body it takes
+// is within the size limit, and encoding what it read gives the same bytes.
 func FuzzRecordBody(f *testing.F) {
 	fuzzSeeds(f, "records")
+	data, err := os.ReadFile("../../testdata/interop/v2-records.json")
+	if err != nil {
+		f.Fatal(err)
+	}
+	var v struct {
+		Cases []v2Case `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		f.Fatal(err)
+	}
+	for _, c := range v.Cases {
+		for _, r := range c.Records {
+			f.Add(r.Body)
+		}
+	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		b, err := parseRecordBody(data)
+		b, err := authority.ParseBody(data)
 		if err != nil {
 			return
 		}
-		if len(data) > maxRecordBody {
+		if len(data) > authority.MaxCheckpointBody || b.Type != RecordCheckpoint && len(data) > authority.MaxBody {
 			t.Fatalf("took a body of %d bytes", len(data))
 		}
-		if err := strict.Check(data, "v", "type", "group", "time_ms"); err != nil {
-			t.Fatalf("took a body not in the strict form: %v", err)
-		}
-		again, err := parseRecordBody(bytes.Clone(data))
-		if err != nil {
-			t.Fatalf("took a body once only: %v", err)
-		}
-		if !recordBodiesEqual(b, again) {
-			t.Fatal("read a body two ways")
+		again, err := b.Encode()
+		if err != nil || !bytes.Equal(again, data) {
+			t.Fatalf("took a body that is not in its canonical form: %v", err)
 		}
 	})
-}
-
-func recordBodiesEqual(a, b RecordBody) bool {
-	x, _ := json.Marshal(a)
-	y, _ := json.Marshal(b)
-	return bytes.Equal(x, y)
 }
 
 // FuzzCommand reads command bodies as a member receives them.

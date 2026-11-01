@@ -7,9 +7,6 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/x509"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -53,8 +50,7 @@ func newCredentialGroup(t *testing.T) credentialGroup {
 	}
 	rootDev := DeviceID(certs["root"].Subject.CommonName)
 	rk := cg.hashes["root"]
-	own, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 1, By: rootDev,
-		Device: rootDev, Name: "root phone", Role: RolePhone, Key: &rk}, pg.root.Key)
+	own, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 1, Device: string(rootDev), Name: "root phone", Role: RolePhone, Key: &rk, HoldsRoot: true}, pg.root.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +64,7 @@ func newCredentialGroup(t *testing.T) credentialGroup {
 		computerAdminRecord(t, pg, certs["demoted"], "demoted pc", KeyHashOf(gone.Cert)),
 		deviceRecord(t, g, pg.root, nil, certs["plain"], "plain pc", 1),
 		deviceRecord(t, g, pg.root, nil, certs["removed"], "removed pc", 1),
-		revokeRecord(t, g, pg.root, nil, []KeyHash{KeyHashOf(gone.Cert), cg.hashes["removed"]}, nil),
+		revokeRecord(t, g, pg.root, nil, []KeyHash{KeyHashOf(gone.Cert), cg.hashes["removed"]}),
 	}
 	return cg
 }
@@ -352,14 +348,15 @@ type badSet struct {
 	Set  []Credential `json:"set"`
 }
 
-// TestGoCredentialVectors writes (with -update) and checks
-// testdata/interop/go-credentials.json: a phone group's records, the lists
+// TestGoCredentialVectors checks a phone group's records in v:2, the lists
 // its credentials must hold, a period with its server credentials, its
-// hubs' and members' credentials, and sets a server refuses, for the other
-// languages to agree with (docs/protocol.md, section 18).
+// hubs' and members' credentials, and sets a server refuses (docs/protocol.md,
+// section 18); the records of testdata/interop/go-credentials.json are v:1
+// and refused.
 func TestGoCredentialVectors(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "interop", "go-credentials.json")
-	if *update {
+	checkV1Refused(t, "go-credentials.json")
+	var v credentialVectors
+	{
 		cg := newCredentialGroup(t)
 		s := cg.set(t)
 		l := s.CredentialLists()
@@ -372,7 +369,7 @@ func TestGoCredentialVectors(t *testing.T) {
 		byPlain, _ := SignMembers(p.b, creds.ServerKeys(l.Members), 1003, skeys["plain"])
 		stranger := newPeriod(t, cg, newRoot(t), 1000, t0)
 		strangerHubs, _ := SignHubs(stranger.b, nil, nil, 1, stranger.key)
-		v := credentialVectors{GroupCA: cg.pg.root.Cert.Raw, Records: cg.records, Lists: l,
+		v = credentialVectors{GroupCA: cg.pg.root.Cert.Raw, Records: cg.records, Lists: l,
 			Period: p.c, Servers: srv, Hubs: hubs, Members: members, NowMS: t0.Add(time.Hour).UnixMilli(),
 			Pseudonym: Pseudonym(creds.ServerKeys(l.Hubs)[0]),
 			Bad: []badSet{
@@ -381,21 +378,6 @@ func TestGoCredentialVectors(t *testing.T) {
 				{"a period of another period", []Credential{hubs, stranger.c}},
 				{"no hubs' credential", []Credential{members}},
 			}}
-		data, err := json.MarshalIndent(v, "", "\t")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v credentialVectors
-	if err := json.Unmarshal(data, &v); err != nil {
-		t.Fatal(err)
 	}
 	ca, err := x509.ParseCertificate(v.GroupCA)
 	if err != nil {

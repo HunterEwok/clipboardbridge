@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 )
 
 // testCA makes a CA as a phone does: a root with path length 1 when parent
@@ -79,36 +81,35 @@ func memberIn(t *testing.T, first, issuer *group.CA, roots ...*x509.Certificate)
 func sign(t *testing.T, first *x509.Certificate, body group.RecordBody, key crypto.Signer, chain ...*x509.Certificate) group.Record {
 	t.Helper()
 	body.Group, body.TimeMS = group.Tag(first), time.Now().UnixMilli()
-	r, err := group.SignRecord(body, key, chain...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := grouptest.Sign(t, body, key, chain...)
 	return r
 }
 
 // TestRootHandover checks computers in a phone group whose root phone was
-// lost and whose admin phone B handed the group to a new root: one holds
-// the records when it starts, one gets them from it, and both talk to a
-// computer the new root admitted.
+// lost and whose admin phone B claimed the group for a new root, under a
+// root's settings without a waiting time: one holds the records when it
+// starts, one gets them from it, and both talk to a computer the new root
+// admitted.
 func TestRootHandover(t *testing.T) {
 	old, newRoot := testCA(t, nil), testCA(t, nil)
 	adminB := testCA(t, old)
 	holderDir, holder := memberIn(t, old, old)
 	laterDir, later := memberIn(t, old, old)
-	newDir, _ := memberIn(t, old, newRoot, newRoot.Cert)
+	newDir, admitted := memberIn(t, old, newRoot, newRoot.Cert)
 
 	g := old.Cert
-	hk, lk, bk := group.KeyHashOf(holder.Cert), group.KeyHashOf(later.Cert), group.KeyHashOf(adminB.Cert)
-	lost := group.KeyHash{1}
+	hk, lk, bk, nk := group.KeyHashOf(holder.Cert), group.KeyHashOf(later.Cert), group.KeyHashOf(adminB.Cert), group.KeyHashOf(admitted.Cert)
+	noWait := int64(0)
 	recs := group.NewRecords(g)
 	if _, errs := recs.AddAll([]group.Record{
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: holder.ID, Name: "holder", Role: group.RoleFull, Key: &hk}, old.Key),
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: later.ID, Name: "later", Role: group.RoleFull, Key: &lk}, old.Key),
-		// The lost root recorded B as an admin phone, which may hand the group over.
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: group.NewDeviceID(), Name: "phone B", Role: group.RolePhone, Key: &group.KeyHash{2}, Admin: &bk}, old.Key),
-		sign(t, g, group.RecordBody{Type: group.RecordRoot, Root: newRoot.Cert.Raw}, adminB.Key, adminB.Cert),
-		sign(t, g, group.RecordBody{Type: group.RecordRevoke, Keys: []group.KeyHash{group.KeyHashOf(old.Cert), lost},
-			Keep: []group.KeyHash{hk, lk, bk}}, newRoot.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordSettings, TakeoverDelayMS: &noWait}, old.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(holder.ID), Name: "holder", Role: group.RoleFull, Key: &hk}, old.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(later.ID), Name: "later", Role: group.RoleFull, Key: &lk}, old.Key),
+		// The lost root recorded B as an admin phone, which may claim the group.
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(group.NewDeviceID()), Name: "phone B", Role: group.RolePhone, Key: &group.KeyHash{2}, Admin: &bk,
+			Powers: authority.Powers, Commands: authority.Commands}, old.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordClaim, Root: newRoot.Cert.Raw}, adminB.Key, adminB.Cert),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(admitted.ID), Name: "new", Role: group.RoleFull, Key: &nk}, newRoot.Key),
 	}); len(errs) > 0 {
 		t.Fatal(errs)
 	}

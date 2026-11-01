@@ -4,7 +4,7 @@
 //! The lite member's verdicts on a corpus of tools/difffuzz
 //! (docs/differential.md): one line per case, which the comparison checks
 //! against the other implementations' lines. A child of `records`, so that
-//! it reads a record body's fields. It runs on the corpus that
+//! it reads a command's fields; records are of version 2 (`crate::group`). It runs on the corpus that
 //! CBB_VERDICTS names and writes to CBB_VERDICTS_OUT; without them, on a
 //! corpus of its own.
 
@@ -14,8 +14,10 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 
-use super::{Body, Command, Record, Records};
+use super::Command;
+use crate::authority::{Hash, Record};
 use crate::certs::{Cert, KeyHash, sha256};
+use crate::group::Records;
 
 fn hex(b: &[u8]) -> String {
     b.iter().fold(String::new(), |mut s, x| {
@@ -52,25 +54,33 @@ fn verdict(c: &Value) -> String {
     let kind = c["kind"].as_str().unwrap();
     let body = bytes(&c["body"]);
     match kind {
-        "record" => match Body::parse(&body) {
+        "record" => match crate::authority::Body::parse(&body) {
             Err(_) => "refused".into(),
-            Ok(b) => taken(&[
-                ("type", hex(b.kind.as_bytes())),
-                ("group", hex(b.group.as_bytes())),
-                ("time_ms", b.time_ms.to_string()),
-                ("by", hex(b.by.as_bytes())),
-                ("device", hex(b.device.as_bytes())),
-                ("name", hex(b.name.as_bytes())),
-                ("role", hex(b.role.as_bytes())),
-                ("os", hex(b.os.as_bytes())),
-                ("store", hex(b.store.as_bytes())),
-                ("key", opt(&b.key)),
-                ("admin", opt(&b.admin)),
-                ("keys", hashes(&b.keys)),
-                ("keep", hashes(&b.keep)),
-                ("root", hex(&b.root)),
-                ("records", hashes(&b.records)),
-            ]),
+            Ok(b) => {
+                let h = |k: &Option<Hash>| k.map(|k| hex(&k.0)).unwrap_or_default();
+                let l = |ks: &[Hash]| ks.iter().map(|k| hex(&k.0)).collect::<Vec<_>>().join(".");
+                taken(&[
+                    ("type", hex(b.kind.as_bytes())),
+                    ("group", hex(b.group.as_bytes())),
+                    ("signer", hex(&b.signer.0)),
+                    ("seq", b.seq.to_string()),
+                    ("prev", h(&b.prev)),
+                    ("time_ms", b.time_ms.to_string()),
+                    ("device", hex(b.device.as_bytes())),
+                    ("name", hex(b.name.as_bytes())),
+                    ("role", hex(b.role.as_bytes())),
+                    ("os", hex(b.os.as_bytes())),
+                    ("store", hex(b.store.as_bytes())),
+                    ("key", h(&b.key)),
+                    ("admin", h(&b.admin)),
+                    ("powers", b.powers.join(".")),
+                    ("commands", b.commands.join(".")),
+                    ("holds_root", bit(b.holds_root).into()),
+                    ("keys", l(&b.keys)),
+                    ("root", hex(&b.root)),
+                    ("records", l(&b.records)),
+                ])
+            }
         },
         "command" => match Command::parse(&body) {
             Err(_) => "refused".into(),

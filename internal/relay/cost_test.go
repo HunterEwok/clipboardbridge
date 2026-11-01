@@ -5,16 +5,16 @@ package relay
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -226,36 +226,56 @@ func TestAllowance(t *testing.T) {
 	}
 }
 
-// deviceRecords returns n records of the group ca, each for a device with a
-// key of its own.
+// listedDevices holds the device each record of deviceRecords lists, by
+// the record's ID, and whether a test registered it already.
+var listedDevices = struct {
+	sync.Mutex
+	dev  map[[32]byte]device
+	used map[[32]byte]bool
+}{dev: map[[32]byte]device{}, used: map[[32]byte]bool{}}
+
+// deviceRecords returns n records of the group ca, each for a new device
+// of it with a key of its own (listedDevice returns it).
 func deviceRecords(t *testing.T, ca *group.CA, n int) []group.Record {
 	t.Helper()
 	tag := group.Tag(ca.Cert)
 	var recs []group.Record
 	for range n {
-		k, err := group.NewKey()
-		if err != nil {
-			t.Fatal(err)
-		}
-		der, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-		kh := group.KeyHash(sha256.Sum256(der))
-		rec, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: time.Now().UnixMilli(),
-			Device: group.NewDeviceID(), Name: "device", Role: group.RoleFull, Key: &kh}, ca.Key)
-		if err != nil {
-			t.Fatal(err)
-		}
+		d := newDevice(t, ca)
+		kh := group.KeyHashOf(d.cert.Leaf)
+		rec := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: time.Now().UnixMilli(),
+			Device: d.id, Name: "device", Role: group.RoleFull, Key: &kh}, ca.Key)
+		listedDevices.Lock()
+		listedDevices.dev[rec.ID()] = d
+		listedDevices.Unlock()
 		recs = append(recs, rec)
 	}
 	return recs
 }
 
-// registerWith registers a new device of ca with recs, and keeps it.
+// listedDevice returns a device that one of recs, from deviceRecords,
+// lists and that no test registered yet, or a new device of ca when there
+// is none: in records v:2 a member registers only when a device record
+// names its key.
+func listedDevice(t *testing.T, ca *group.CA, recs []group.Record) device {
+	t.Helper()
+	listedDevices.Lock()
+	defer listedDevices.Unlock()
+	for _, r := range recs {
+		id := r.ID()
+		if d, ok := listedDevices.dev[id]; ok && !listedDevices.used[id] {
+			listedDevices.used[id] = true
+			return d
+		}
+	}
+	return newDevice(t, ca)
+}
+
+// registerWith registers a device of ca that recs list with recs, and
+// keeps it.
 func registerWith(t *testing.T, link Link, ca *group.CA, recs []group.Record) error {
 	t.Helper()
-	d := newDevice(t, ca)
+	d := listedDevice(t, ca, recs)
 	tc, _, _, err := register(context.Background(), MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert },
 		Records: func() []group.Record { return recs }})
 	if err == nil {
@@ -278,7 +298,7 @@ func TestRecordsVerifiedOnce(t *testing.T) {
 	r.now = func() time.Time { return stopped }
 	r.mu.Unlock()
 	ca := newGroup(t)
-	recs := deviceRecords(t, ca, group.MaxPerAdmin)
+	recs := deviceRecords(t, ca, group.MaxPerSigner)
 	if err := registerWith(t, link, ca, recs); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +328,7 @@ func TestRecordsVerifiedOnce(t *testing.T) {
 	}
 	// New records of a group of its own are what the allowance is for.
 	other := newGroup(t)
-	if err := registerWith(t, link, other, deviceRecords(t, other, group.MaxPerAdmin)); err == nil || !strings.Contains(err.Error(), "try again later") {
+	if err := registerWith(t, link, other, deviceRecords(t, other, group.MaxPerSigner)); err == nil || !strings.Contains(err.Error(), "try again later") {
 		t.Errorf("1024 new records from one address after 1024 others: %v", err)
 	}
 	// Records that do not verify are not kept.
@@ -325,7 +345,7 @@ func TestRecordsVerifiedOnce(t *testing.T) {
 // An open relay keeps at most so many bytes of records for a group, and in
 // all, and gives a group's records up when its last device goes.
 func TestRecordBytesBounded(t *testing.T) {
-	one := recordSize(deviceRecords(t, newGroup(t), 1)[0])
+	one := recordSize(deviceRecords(t, newGroup(t), 2)[1]) // with prev, as all but a group's first
 	r, link := startWith(t, Config{Open: true, Limits: Limits{PerAddress: 100, PerNetwork: 100, GroupRecordBytes: 40 * one, RecordBytes: 70 * one}})
 	a, b, c := newGroup(t), newGroup(t), newGroup(t)
 	if err := registerWith(t, link, a, deviceRecords(t, a, 30)); err != nil {

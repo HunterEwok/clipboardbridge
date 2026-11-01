@@ -318,12 +318,6 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
-	case control.OpUpgrade:
-		if err := s.upgrade(); err != nil {
-			fail(c, err)
-			return
-		}
-		reply(c, control.Header{Done: true}, nil)
 	case control.OpTakeover:
 		name, err := s.takeOver(m.Name)
 		if err != nil {
@@ -338,6 +332,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpDelay:
+		if err := s.setTakeoverDelay(m.Value); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
 	case control.OpRename:
 		name, err := s.rename(m.Name, m.NewName)
 		if err != nil {
@@ -539,7 +539,7 @@ func (s *Service) openWindow(code string) (*pair.Window, *group.Identity, func()
 		end()
 		return nil, nil, nil, s.errNotAdmitter()
 	}
-	opened, err := pair.Open(id, code, pair.Options{Now: benchtime.Now, Records: s.pathRecords, Taken: s.idTaken})
+	opened, err := pair.Open(id, code, pair.Options{Now: benchtime.Now, Records: s.pathRecords, ClaimTimes: s.claimTimes, Taken: s.idTaken})
 	if err != nil {
 		end()
 		return nil, nil, nil, err
@@ -766,6 +766,7 @@ func (s *Service) saveJoined(j *pair.Joiner) func(*group.Identity) error {
 	return func(id *group.Identity) error {
 		recs := group.NewRecords(id.GroupCA.Cert)
 		recs.AddAll(j.Records)
+		recs.TakeClaimTimes(j.ClaimTimes)
 		if err := recs.Save(s.cfg.StateDir); err != nil {
 			return err
 		}
@@ -782,6 +783,17 @@ func (s *Service) pathRecords() []group.Record {
 		return nil
 	}
 	return s.records.PathRecords()
+}
+
+// claimTimes returns when this member first held each claim, for the
+// Welcome.
+func (s *Service) claimTimes() []group.ClaimTime {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return nil
+	}
+	return s.records.ClaimTimes()
 }
 
 // dialMember joins at the address the user gave, or at the one member that

@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
@@ -1377,6 +1378,32 @@ func TestListenPreferring(t *testing.T) {
 	}
 }
 
+// listBox adds to the records in dir, of the stopped member whose identity
+// is admin, its record of the device dev with the member key key.
+func listBox(t *testing.T, dir string, admin *group.Identity, dev group.DeviceID, key group.KeyHash) {
+	t.Helper()
+	recs, err := group.LoadRecords(dir, admin.GroupCA.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, chain := admin.Signer()
+	var adminCA *x509.Certificate
+	if len(chain) > 0 {
+		adminCA = chain[0]
+	}
+	r, err := recs.Sign(group.RecordBody{Type: group.RecordDevice, TimeMS: time.Now().UnixMilli(), Device: string(dev), Name: "box",
+		Role: group.RoleFull, OS: group.OSLinux, Key: &key}, ca.Key, adminCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recs.Add(r); err != nil {
+		t.Fatal(err)
+	}
+	if err := recs.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLinuxMemberWithoutCAKeys(t *testing.T) {
 	// A Linux member without the CA keys, as in a group whose root is the
 	// phone, connects and syncs, but never holds clipboardbridge.local, even
@@ -1409,6 +1436,11 @@ func TestLinuxMemberWithoutCAKeys(t *testing.T) {
 	if err := id.Save(dir); err != nil {
 		t.Fatal(err)
 	}
+	// In records v:2 a member is taken only when a device record names its
+	// key: the root records the box, as it does every device it admits.
+	pi.stop()
+	listBox(t, pi.dir, admin, devID, group.KeyHashOf(cert))
+	pi = restartService(t, &h, pi)
 	box := startIn(t, &h, &testService{name: "box", dir: dir, os: group.OSLinux})
 	waitFor(t, "connected", func() bool { return len(box.status(t).Peers) == 1 })
 	if _, err := box.do(t, control.Header{Op: control.OpCopy}, "from the box"); err != nil {
@@ -1585,6 +1617,7 @@ func TestTakeover(t *testing.T) {
 	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "b"}, ""); err == nil {
 		t.Error("an admin took the group over from a device that is not its root")
 	}
+	noClaimWait(t, pi, a, b, c)
 	pi.stop()
 	if _, err := a.do(t, control.Header{Op: control.OpRevoke, Name: "pi"}, ""); err == nil || !strings.Contains(err.Error(), "cbb takeover") {
 		t.Errorf("revoking the root: %v", err)
@@ -1678,6 +1711,7 @@ func TestSecondTakeover(t *testing.T) {
 		id, err := group.Load(b.dir)
 		return err == nil && id.ServesPhone()
 	})
+	noClaimWait(t, pi, a, b, c)
 	pi.stop()
 	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
 		t.Fatal(err)
@@ -1687,6 +1721,14 @@ func TestSecondTakeover(t *testing.T) {
 		id, err := group.Load(b.dir)
 		return err == nil && len(id.Roots) == 1 && id.AdminCA != nil && id.AdminCA.CheckSignatureFrom(ra.Root()) == nil && id.ServesPhone()
 	})
+	// c takes the claim from a or b once it connects to one of them, which
+	// it may not have done yet.
+	waitFor(t, "c follows a's root", func() bool {
+		cid, err := group.Load(c.dir)
+		return err == nil && len(cid.Roots) == 1
+	})
+	// The new root sets its own delay; the old root's counts no more.
+	noClaimWait(t, a, b, c)
 	if _, err := a.do(t, control.Header{Op: control.OpRename, Name: "c", NewName: "named by a"}, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -1720,6 +1762,41 @@ func TestSecondTakeover(t *testing.T) {
 	waitFor(t, "b has it", func() bool { return b.paste(t) == "after the second takeover" })
 }
 
+// noClaimWait has root, the group's current root, set the takeover delay
+// to 0, and waits for members to hold that record, so a claim takes effect
+// at once (docs/records-v2.md, "Handing the group over").
+func noClaimWait(t *testing.T, root *testService, members ...*testService) {
+	t.Helper()
+	if _, err := root.do(t, control.Header{Op: control.OpDelay, Value: "0s"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range members {
+		waitFor(t, m.name+" holds the takeover delay", func() bool { return holdsNoWait(m.dir) })
+	}
+}
+
+// holdsNoWait reports whether the records in dir hold a settings record
+// of the group's current root with a takeover delay of 0: an earlier
+// root's says nothing of the current root's delay.
+func holdsNoWait(dir string) bool {
+	id, err := group.Load(dir)
+	if err != nil {
+		return false
+	}
+	recs, err := group.LoadRecords(dir, id.GroupCA.Cert)
+	if err != nil {
+		return false
+	}
+	roots := recs.State().Roots
+	cur := roots[len(roots)-1]
+	for _, r := range recs.All() {
+		if b, err := authority.ParseBody(r.Body); err == nil && b.Type == group.RecordSettings && b.Signer == cur && b.TakeoverDelayMS != nil && *b.TakeoverDelayMS == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func TestUnfrozenAfterTakeover(t *testing.T) {
 	// The lost root froze b, and its freeze stays after a takes over; a
 	// unfreezes b, which gets an admin CA from a's root and can take the
@@ -1751,6 +1828,7 @@ func TestUnfrozenAfterTakeover(t *testing.T) {
 		st := b.status(t)
 		return st.Frozen && !st.Removed
 	})
+	noClaimWait(t, pi, a) // b, frozen, is refused
 	pi.stop()
 	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
 		t.Fatal(err)
@@ -1763,6 +1841,7 @@ func TestUnfrozenAfterTakeover(t *testing.T) {
 		id, err := group.Load(b.dir)
 		return err == nil && id.AdminCA != nil && id.AdminCA.CheckSignatureFrom(ra.Root()) == nil
 	})
+	noClaimWait(t, a, b)
 	a.stop()
 	if _, err := b.do(t, control.Header{Op: control.OpTakeover, Name: "a"}, ""); err != nil {
 		t.Fatal(err)
@@ -1781,6 +1860,7 @@ func TestAwayDuringTakeover(t *testing.T) {
 	pairWith(t, pi, a)
 	pairWith(t, pi, c)
 	makeAdmin(t, pi, a)
+	noClaimWait(t, pi, a, c)
 	c.stop()
 	pi.stop()
 	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
@@ -1808,6 +1888,7 @@ func TestTakeoverUndone(t *testing.T) {
 	pairWith(t, pi, a)
 	pairWith(t, pi, b)
 	makeAdmin(t, pi, a)
+	noClaimWait(t, pi, a, b)
 	old, _ := group.Load(pi.dir)
 	pi.stop()
 	if _, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil {
@@ -1896,58 +1977,22 @@ func startLegacy(t *testing.T, h *hub, names ...string) []*testService {
 	return out
 }
 
-// TestUpgrade checks cbb upgrade: the member that runs it becomes the root
-// of the legacy group with a new iPhone CA, the others delete the old keys
-// when the records reach them, one that was off is marked until it comes
-// back and cannot be removed until then, and the group keeps syncing.
+// TestUpgrade checks that cbb upgrade is gone with records v:2, which
+// have no legacy groups: the service refuses the operation and changes
+// nothing (docs/records-v2.md, "What else changes with it").
 func TestUpgrade(t *testing.T) {
 	var h hub
-	ss := startLegacy(t, &h, "pi", "a", "b")
-	pi, a, b := ss[0], ss[1], ss[2]
-	for _, s := range ss {
-		waitFor(t, s.name+" meets the others", func() bool { return len(s.status(t).Peers) == 2 })
-	}
-	old, _ := group.Load(pi.dir)
-	waitFor(t, "the devices are listed", func() bool { return len(pi.devices(t)) == 3 })
-	b.stop()
-	if _, err := pi.do(t, control.Header{Op: control.OpUpgrade}, ""); err != nil {
+	ss := startLegacy(t, &h, "pi")
+	pi := ss[0]
+	before, err := os.ReadFile(filepath.Join(pi.dir, "identity.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := group.Load(pi.dir)
-	if !id.IsRoot() || id.Legacy() || id.GroupCA.Key != nil || len(id.Roots) != 1 || !id.ServesPhone() || id.PhoneCA.Cert.Equal(old.PhoneCA.Cert) {
-		t.Fatal("the upgrading member is not the root with a new iPhone CA")
+	if _, err := pi.do(t, control.Header{Op: "upgrade"}, ""); err == nil {
+		t.Error("the service took cbb upgrade")
 	}
-	if _, err := pi.do(t, control.Header{Op: control.OpUpgrade}, ""); err == nil {
-		t.Error("upgraded twice")
-	}
-	waitFor(t, "a deletes the old keys", func() bool {
-		id, err := group.Load(a.dir)
-		return err == nil && len(id.Roots) == 1 && id.GroupCA.Key == nil && !id.ServesPhone() && id.AdminKey != nil
-	})
-	marks := func() map[string]bool {
-		out := map[string]bool{}
-		for _, d := range pi.devices(t) {
-			out[d.Name] = d.OldKeys
-		}
-		return out
-	}
-	waitFor(t, "only b is marked", func() bool { m := marks(); return !m["a"] && m["b"] && !m["pi"] })
-	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "b"}, ""); err == nil || !strings.Contains(err.Error(), "old CA keys") {
-		t.Errorf("revoking b, which may hold the old keys: %v", err)
-	}
-	if _, err := pi.do(t, control.Header{Op: control.OpCopy}, "after the upgrade"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "a has it", func() bool { return a.paste(t) == "after the upgrade" })
-	makeAdmin(t, pi, a)
-
-	b = restartService(t, &h, b)
-	waitFor(t, "b deletes the old keys", func() bool { return !marks()["b"] })
-	if id, _ := group.Load(b.dir); id.GroupCA.Key != nil || id.ServesPhone() {
-		t.Error("b kept the old keys")
-	}
-	if _, err := pi.do(t, control.Header{Op: control.OpRevoke, Name: "b"}, ""); err != nil {
-		t.Errorf("revoking b after it deleted the old keys: %v", err)
+	if after, err := os.ReadFile(filepath.Join(pi.dir, "identity.json")); err != nil || !bytes.Equal(after, before) {
+		t.Errorf("a refused upgrade changed the identity: %v", err)
 	}
 }
 

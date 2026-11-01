@@ -362,7 +362,7 @@ func TestWriteAway(t *testing.T) {
 func TestTakeover(t *testing.T) {
 	fakeService(t, control.Message{Header: control.Header{Name: "pi", Done: true}})
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"takeover", "pi"}, strings.NewReader(""), &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "root now, and pi is removed") {
+	if code := run([]string{"takeover", "pi"}, strings.NewReader(""), &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "Claimed the group from pi") {
 		t.Errorf("takeover: %d, %q, %q", code, stdout.String(), stderr.String())
 	}
 	if code := run([]string{"takeover"}, strings.NewReader(""), &stdout, &stderr); code != 2 {

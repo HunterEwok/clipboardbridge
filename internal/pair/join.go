@@ -41,6 +41,9 @@ type Joiner struct {
 	// keeps them with its records, so the roots it trusts are those the
 	// records name.
 	Records []group.Record
+	// ClaimTimes are when the set first held each claim of Records, the
+	// admitting member's times where they are earlier (Welcome.ClaimTimes).
+	ClaimTimes []group.ClaimTime
 
 	certOnce sync.Once
 	certDER  []byte // the self-signed certificate for Key, made once
@@ -286,6 +289,7 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 	// would pass here for good, whatever the group's root removes.
 	recs := group.NewRecords(id.GroupCA.Cert)
 	recs.AddAll(w.Records)
+	recs.TakeClaimTimes(w.ClaimTimes)
 	id.Roots = recs.Roots()
 	if len(id.Roots) != len(w.Roots) {
 		return nil, errors.New("pair: the member's roots are not the ones the group's records lead to")
@@ -295,7 +299,7 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 			return nil, errors.New("pair: the member's roots are not the ones the group's records lead to")
 		}
 	}
-	j.Records = recs.All()
+	j.Records, j.ClaimTimes = recs.All(), recs.ClaimTimes()
 	// An admin phone issues with its admin CA, under one of the group's
 	// roots.
 	issuers := id.Trusted()

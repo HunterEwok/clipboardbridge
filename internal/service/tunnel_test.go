@@ -24,6 +24,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/relay"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
@@ -707,11 +708,8 @@ func TestHubWait(t *testing.T) {
 			t.Fatal(err)
 		}
 		k := group.KeyHashOf(leaf)
-		r, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: group.Tag(ca.Cert), TimeMS: now.UnixMilli(),
-			By: phone, Device: d.id, Name: d.role, Role: d.role, Key: &k}, ca.Key)
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: group.Tag(ca.Cert), TimeMS: now.UnixMilli(),
+			Device: string(d.id), Name: d.role, Role: d.role, Key: &k}, ca.Key)
 		if ok, err := s.records.Add(r); !ok || err != nil {
 			t.Fatalf("adding the record of the %s: %v", d.role, err)
 		}

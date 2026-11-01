@@ -5,13 +5,12 @@ package group
 
 import (
 	"crypto/x509"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
 // watchRecord is the root's record of a watch whose admin CA is w: the
@@ -20,8 +19,8 @@ func watchRecord(t *testing.T, root *CA, w *CA, name string) Record {
 	t.Helper()
 	key := KeyHashOf(w.Cert)
 	dev := DeviceID(strings.TrimPrefix(w.Cert.Subject.CommonName, "clipboardbridge admin "))
-	r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(root.Cert), TimeMS: 1, By: dev,
-		Device: dev, Name: name, Role: RoleWatch, OS: OSWatchOS, Key: &key, Admin: &key, Store: StoreHardware}, root.Key)
+	r, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(root.Cert), TimeMS: nextTime(), Device: string(dev), Name: name, Role: RoleWatch, OS: OSWatchOS, Key: &key, Admin: &key,
+		Powers: []string{authority.PowerFreeze, authority.PowerRemove}, Commands: []string{CommandAction, CommandActionsOff, CommandAwayOff, CommandPasteOff}, Store: StoreHardware}, root.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,40 +76,31 @@ var (
 	}
 )
 
-// TestGoWatchVectors writes (with -update) and checks
-// testdata/interop/go-watch.json: what a watch's admin key may do
-// (docs/protocol.md, section 10, rule 8), for the phone kits and the lite
-// member to agree with. In a phone's group the watch freezes an admin
-// computer and removes an ordinary device, but neither removes an admin,
-// admits a device, certifies one, is a hub, nor signs more than the
-// commands that turn things off and run quick actions; an admin computer
-// freezes it, and an admin computer does not remove it. In a group whose
-// root is a computer, a watch does not take the group over.
+// TestGoWatchVectors checks what a watch's admin key may do: the powers and
+// commands the root's record gives it (docs/records-v2.md, "Who signs
+// what"). In a phone's group the watch freezes an admin computer and
+// removes an ordinary device, but neither removes an admin, admits a
+// device, certifies one, is a hub, nor signs more than the commands that
+// turn things off and run quick actions; an admin computer freezes it, and
+// an admin computer does not remove it. In a group whose root is a
+// computer, a watch does not take the group over. The records of version 1
+// that go-watch.json keeps for the phone kits are refused.
 func TestGoWatchVectors(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "interop", "go-watch.json")
-	if *update {
-		var v watchVectors
-		for _, name := range []string{"phone root", "frozen watch", "computer root"} {
-			v.Cases = append(v.Cases, makeWatchCase(t, name))
-		}
-		data, err := json.MarshalIndent(v, "", "\t")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkV1Refused(t, "go-watch.json")
 	var v watchVectors
-	if err := json.Unmarshal(data, &v); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"phone root", "frozen watch", "computer root"} {
+		v.Cases = append(v.Cases, makeWatchCase(t, name))
 	}
-	if len(v.Cases) != 3 {
-		t.Fatalf("the file has %d cases", len(v.Cases))
+	for _, c := range v.Cases {
+		for _, cmd := range c.Commands {
+			body, err := parseCommandBody(cmd.Command.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cmd.OK != (WatchCommand(body.Type) || cmd.Name == "away-off from the root") {
+				t.Errorf("%s: %s: ok %v", c.Name, cmd.Name, cmd.OK)
+			}
+		}
 	}
 	for _, c := range v.Cases {
 		ca, err := x509.ParseCertificate(c.GroupCA)
@@ -121,7 +111,7 @@ func TestGoWatchVectors(t *testing.T) {
 		rs := slices.Clone(c.Records)
 		slices.Reverse(rs)
 		if _, errs := s.AddAll(rs); len(errs) != c.Dropped {
-			t.Errorf("%s: %d records left out, the file says %d: %v", c.Name, len(errs), c.Dropped, errs)
+			t.Errorf("%s: %d records left out, in order %d: %v", c.Name, len(errs), c.Dropped, errs)
 		}
 		if s.Digest() != c.Digest {
 			t.Errorf("%s: the digest differs", c.Name)
@@ -221,13 +211,13 @@ func makeWatchCase(t *testing.T, name string) watchCase {
 	case "phone root":
 		all = append(all,
 			// It freezes an admin computer and removes an ordinary device.
-			freezeRecord(t, g, w, wChain, []KeyHash{pc1Key}, nil),
-			revokeRecord(t, g, w, wChain, []KeyHash{KeyHashOf(laptop)}, nil),
+			freezeRecord(t, g, w, wChain, []KeyHash{pc1Key}),
+			revokeRecord(t, g, w, wChain, []KeyHash{KeyHashOf(laptop)}),
 			// It removes no admin, admits nobody and thaws nothing.
-			revokeRecord(t, g, w, wChain, []KeyHash{pc2Key}, nil),
+			revokeRecord(t, g, w, wChain, []KeyHash{pc2Key}),
 			deviceRecord(t, g, w, wChain, tv, "tv", 3),
 			// An admin computer does not remove it.
-			revokeRecord(t, g, pc2, pc2Chain, []KeyHash{wKey}, nil),
+			revokeRecord(t, g, pc2, pc2Chain, []KeyHash{wKey}),
 		)
 		c.Chains = append(c.Chains, rootChain{Name: "a device the watch certified", Chain: [][]byte{tv.Raw, w.Cert.Raw}},
 			rootChain{Name: "the tablet", Chain: [][]byte{tablet.Raw}})
@@ -266,25 +256,26 @@ func makeWatchCase(t *testing.T, name string) watchCase {
 		c.Commands = append(c.Commands, commandVector{Name: "away-off from the root", Command: cmd(pg.root, nil, CommandAwayOff), OK: true})
 	case "frozen watch":
 		// An admin computer freezes the watch, keeping what it did before.
-		before := revokeRecord(t, g, w, wChain, []KeyHash{KeyHashOf(laptop)}, nil)
-		freeze := freezeRecord(t, g, pc2, pc2Chain, []KeyHash{wKey}, []KeyHash{before.ID()})
+		before := revokeRecord(t, g, w, wChain, []KeyHash{KeyHashOf(laptop)})
+		freeze := freezeRecord(t, g, pc2, pc2Chain, []KeyHash{wKey})
 		all = append(all, before, freeze,
 			// What the watch removes once it is frozen does not count, nor
 			// does an admin computer's thaw of it.
-			revokeRecord(t, g, w, wChain, []KeyHash{KeyHashOf(tablet)}, nil),
+			revokeRecord(t, g, w, wChain, []KeyHash{KeyHashOf(tablet)}),
 			thawRecord(t, g, pc1, []*x509.Certificate{pc1.Cert}, []KeyHash{freeze.ID()}),
 		)
 	case "computer root":
-		// The watch hands the group to a root of its own; nothing signed
-		// under that root enters the set.
+		// The watch claims the group for a root of its own; nothing signed
+		// under that root counts.
 		next := newRoot(t)
 		all = append(all,
-			rootRecord(t, g, w, wChain, next.Cert),
-			revokeRecord(t, g, next, nil, []KeyHash{KeyHashOf(g), KeyHashOf(holder)}, []KeyHash{KeyHashOf(laptop), pc1Key, pc2Key, wKey}),
+			claimRecord(t, g, w, wChain, next.Cert),
+			revokeRecord(t, g, next, nil, []KeyHash{KeyHashOf(holder), KeyHashOf(laptop)}),
 		)
 	}
 	s := NewRecords(g)
 	_, errs := s.AddAll(all)
+	s.SetClock(afterDelay)
 	c.Records, c.Dropped, c.Digest = all, len(errs), s.Digest()
 	c.Devices, c.Hubs = watchDevices(s), s.HubOrder()
 	if c.Hubs == nil {

@@ -5,7 +5,9 @@
 
 use std::path::Path;
 
-pub use cbb_core::records::*;
+pub use cbb_core::authority::Record;
+pub use cbb_core::group::*;
+pub use cbb_core::records::{Command, valid_name, valid_os};
 
 use crate::certs::Cert;
 use crate::error::{Error, Result, Wrap};
@@ -32,9 +34,16 @@ impl Stored for Records {
         let path = dir.join(FILE_NAME);
         let data = match std::fs::read(&path) {
             Ok(d) => d,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Records::new(group_ca)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(new(group_ca)),
             Err(e) => return Err(Error::with(format!("cannot read {}", path.display()), e)),
         };
-        Records::from_file(&data, group_ca).wrap(format!("{} is damaged", path.display()))
+        Records::from_file_with(&data, group_ca, crate::uptime::wall_ms).wrap(format!("{} is damaged", path.display()))
     }
+}
+
+/// An empty set for the group of group_ca on the wall clock.
+pub fn new(group_ca: &Cert) -> Records {
+    let mut s = Records::new(group_ca);
+    s.set_clock(crate::uptime::wall_ms);
+    s
 }

@@ -4,9 +4,7 @@
 package io.github.hunterewok.clipboardbridge.kit
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
@@ -40,14 +38,9 @@ class VerdictTest {
             }
         }
         return when (kind) {
-            "record" -> Records.Body.decode(body)?.let { b ->
-                taken(
-                    "type" to hex(b.type), "group" to hex(b.group), "time_ms" to b.timeMS.toString(), "by" to hex(b.by),
-                    "device" to hex(b.device), "name" to hex(b.name), "role" to hex(b.role), "os" to hex(b.os),
-                    "store" to hex(b.store), "key" to hex(b.key), "admin" to hex(b.admin), "keys" to hashes(b.keys),
-                    "keep" to hashes(b.keep), "root" to hex(b.root), "records" to hashes(b.records),
-                )
-            } ?: "refused"
+            // The phones read records v2 only through the Rust core (docs/core-api.md), which the comparison reads as
+            // rust: the kit's own reader of version 1 has no verdict on them.
+            "record", "set" -> "skip"
             "command" -> refused {
                 val b = Commands.parse(body)
                 taken(
@@ -76,27 +69,8 @@ class VerdictTest {
                 }
                 "taken"
             }
-            "set" -> set(c)
             else -> error("unknown kind $kind")
         }
-    }
-
-    private fun set(c: JsonObject): String {
-        val set = RecordSet()
-        val records = (c["records"] as? JsonArray).orEmpty().map { Member.Record.fromJson(it.jsonObject) }
-        // The kits refuse legacy groups (docs/protocol.md, section 2): a group CA of path length 0 that a root record
-        // hands to a root, as cbb upgrade does.
-        val legacy = runCatching { ParsedCertificate(b64(c.str("ca"))).pathLength == 0 }.getOrDefault(false)
-        if (legacy && records.any { Records.Body.decode(it.body)?.type == "root" }) return "skip"
-        val fresh = set.addAll(records, b64(c.str("ca")))
-        val roots = set.roots.joinToString(".") { hex(sha256(it)) }
-        val devices = set.devices.joinToString(".") {
-            listOf(hex(it.id), hex(it.name), hex(it.role), hex(it.store), bit(it.admin), hex(it.adminKey), bit(it.frozen)).joinToString(":")
-        }
-        val keys = (c["keys"] as? JsonArray).orEmpty().map { b64(it.jsonPrimitive.content) }
-        val revoked = keys.joinToString("") { bit(set.isRevoked(it)) }
-        val frozen = keys.joinToString("") { bit(set.isFrozen(it)) }
-        return "set taken=${fresh.size} roots=$roots devices=$devices revoked=$revoked frozen=$frozen digest=${set.digest ?: ""}"
     }
 
     @Test
@@ -108,7 +82,7 @@ class VerdictTest {
         if (input != null) {
             File(System.getenv("CBB_VERDICTS_OUT")).writeText(lines)
         } else {
-            assertEquals("refused\nrefused\n", lines)
+            assertEquals("skip\nrefused\n", lines)
         }
     }
 }

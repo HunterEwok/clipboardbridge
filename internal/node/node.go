@@ -248,9 +248,6 @@ type Peer struct {
 	AdminKey []byte
 	// Chain is the certificate chain its handshake verified, leaf first.
 	Chain []*x509.Certificate
-	// OldKeys tells that its hello says it holds the group CA key of a
-	// legacy group.
-	OldKeys bool
 	// Mode is the sync mode its hello reports; "" when it reports none.
 	Mode string
 	// KeyStore is where its hello says its keys live: group.StoreFile or
@@ -397,7 +394,7 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	}
 	if n.cfg.Allow != nil {
 		if err := n.cfg.Allow(id, chain); errors.Is(err, group.ErrRecordsOnly) {
-			return n.recordsOnly(ctx, tc, id, chain)
+			return n.recordsOnly(ctx, tc, id, chain, err)
 		}
 	}
 	c := &conn{n: n, id: id, tc: tc, lowerDialed: dialed == (n.identity().ID < id), peerCert: chain[0], peerChain: chain, out: make(chan outgoing, queueLen),
@@ -484,15 +481,17 @@ func linger(raw net.Conn) {
 // last records came.
 const recordsQuiet = 5 * time.Second
 
-// recordsOnly runs a connection with a root that an admin took the group
-// over from (group.ErrRecordsOnly): the two exchange records and nothing
-// else, so that the old root, if it is still in use, learns of the
-// takeover and its removal of that admin reaches the group (docs/protocol.md,
-// section 10, "Handing the group over"). The connection ends once the
-// records let the peer in again, when it would connect anew as a member,
-// or when no records came for recordsQuiet. This member sends no clipboard,
-// credentials or anything else on it, and takes nothing but records.
-func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID, chain []*x509.Certificate) error {
+// recordsOnly runs a connection that carries records only
+// (group.ErrRecordsOnly, why says which): with a root that an admin took
+// the group over from, so that the old root, if it is still in use, learns
+// of the takeover and its cancel reaches the group (docs/records-v2.md,
+// "Handing the group over"), or with a member that no device record here
+// names yet (group.ErrNotListed), so that the records reach whichever of
+// the two lacks them. The connection ends once the records let the peer
+// in, when it would connect anew as a member, or when no records came for
+// recordsQuiet. This member sends no clipboard, credentials or anything
+// else on it, and takes nothing but records.
+func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID, chain []*x509.Certificate, why error) error {
 	stop := context.AfterFunc(ctx, func() { tc.NetConn().Close() })
 	defer stop()
 	st := n.cfg.Records
@@ -516,7 +515,7 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 	if err := write(&message{Type: typeHello, Role: n.cfg.Role, Hello: data}); err != nil {
 		return err
 	}
-	n.cfg.Logf("node: %s is a root the group was taken over from; exchanging records only", id)
+	n.cfg.Logf("node: %s: %v; exchanging records only", id, why)
 	for first := true; ; first = false {
 		tc.SetReadDeadline(time.Now().Add(recordsQuiet))
 		m, err := readMessage(tc, n.cfg.Timeout)
@@ -551,7 +550,7 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 				st.Settle(fresh)
 			}
 			if n.cfg.Allow(id, chain) == nil {
-				n.cfg.Logf("node: %s undid the takeover; it connects again as a member", id)
+				n.cfg.Logf("node: the records let %s in; it connects again as a member", id)
 				return nil
 			}
 		}
@@ -690,11 +689,11 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, oldKeys, device, mode, store, acts, media := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
+			adminKey, device, mode, store, acts, media := c.peerAdminKey, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), Chain: c.peerChain, AdminKey: adminKey,
-				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
+				Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -1231,7 +1230,6 @@ type conn struct {
 	// the iPhone CA that the peer's hello names.
 	peerAdminKey []byte
 	peerPhoneCA  []byte
-	peerOldKeys  bool     // the peer's hello says it holds a legacy group CA key
 	peerMode     string   // the sync mode its hello reports; "" when none or unknown
 	peerKeyStore string   // where its hello says its keys live; "" when it says neither
 	peerActions  []string // the quick actions its hello says are on
@@ -1408,7 +1406,6 @@ func (c *conn) message(o outgoing) (*message, error) {
 			h := group.KeyHashOf(id.PhoneCA.Cert)
 			out.PhoneCA = h[:]
 		}
-		out.OldKeys = id.Legacy() && id.GroupCA.Key != nil
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
@@ -1593,7 +1590,7 @@ func (c *conn) reader() error {
 			if extra.Device != nil {
 				c.peerDevice = extra.Device.Clean()
 			}
-			c.peerAdminKey, c.peerPhoneCA, c.peerOldKeys = extra.AdminKey, extra.PhoneCA, extra.OldKeys
+			c.peerAdminKey, c.peerPhoneCA = extra.AdminKey, extra.PhoneCA
 			c.peerKeyStore = ""
 			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware || extra.KeyStore == group.StoreRootless {
 				c.peerKeyStore = extra.KeyStore

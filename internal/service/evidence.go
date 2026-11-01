@@ -142,8 +142,8 @@ func (s *Service) recordEvidence(peer group.DeviceID, cert *x509.Certificate, re
 	case rec.Store == res.Store && rec.Kind == res.Kind:
 		return nil
 	}
-	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: rec.ID, Name: rec.Name, Role: rec.Role,
-		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Store: res.Store, Kind: res.Kind, Proof: proof})
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(rec.ID), Name: rec.Name, Role: rec.Role,
+		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Powers: rec.Powers, Commands: rec.Commands, Store: res.Store, Kind: res.Kind, Proof: proof, Seal: rec.Seal})
 	if err != nil {
 		return fmt.Errorf("recording what its attestation proves: %w", err)
 	}

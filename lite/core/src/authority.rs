@@ -464,7 +464,7 @@ pub struct Record {
     pub body: Vec<u8>,
     #[serde(with = "b64")]
     pub sig: Vec<u8>,
-    #[serde(with = "b64::list", default)]
+    #[serde(with = "b64::list", default, skip_serializing_if = "Vec::is_empty")]
     pub chain: Vec<Vec<u8>>,
 }
 

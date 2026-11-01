@@ -31,6 +31,9 @@ type Options struct {
 	// roots (group.Records.PathRecords), for the Welcome; a group that was
 	// handed over needs them, or the new device refuses the Welcome.
 	Records func() []group.Record
+	// ClaimTimes, when set, returns when the admin first held each claim
+	// of the records (group.Records.ClaimTimes), for the Welcome.
+	ClaimTimes func() []group.ClaimTime
 	// Taken, when set, reports whether a device ID is in the group already:
 	// a device record names it or a member with it is connected. Such a
 	// joiner is refused before the exchange, since a device picks its own
@@ -62,6 +65,7 @@ type Window struct {
 	code     []byte // the password: the six digits, or a secret
 	noCAKeys bool
 	records  func() []group.Record
+	claims   func() []group.ClaimTime
 	taken    func(group.DeviceID) bool
 	confirm  func(context.Context, Request) error
 	wait     time.Duration // how long confirm may take
@@ -131,7 +135,7 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if opt.AfterFunc == nil {
 		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 	}
-	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, taken: opt.Taken, confirm: opt.Confirm, wait: opt.ConfirmWait,
+	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, claims: opt.ClaimTimes, taken: opt.Taken, confirm: opt.Confirm, wait: opt.ConfirmWait,
 		now: opt.Now, uptime: opt.Uptime, expires: opt.Uptime() + lifetime, done: make(chan struct{})}
 	stop := opt.AfterFunc(lifetime, w.expire)
 	w.mu.Lock()
@@ -535,6 +539,10 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 	return res, true, nil
 }
 
+// welcomeRoom is what a Welcome leaves in its frame for the frame's other
+// fields and the CA keys that may follow.
+const welcomeRoom = 4 << 10
+
 func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	wel := &Welcome{Cert: cert.Raw, GroupCA: w.admin.GroupCA.Cert.Raw}
 	// An admin that is not the root issues from its admin CA.
@@ -544,8 +552,21 @@ func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	for _, r := range w.admin.Roots {
 		wel.Roots = append(wel.Roots, r.Raw)
 	}
-	if len(wel.Roots) > 0 && w.records != nil {
+	// The group's records let the new device take its peers at once: in
+	// records v:2 a member is taken only when a device record names it.
+	// A group handed over needs them, or the new device refuses the
+	// Welcome; any other leaves them out when they do not fit in a frame,
+	// and the new device gets them over records-only connections.
+	if w.records != nil {
 		wel.Records = w.records()
+		if w.claims != nil {
+			wel.ClaimTimes = w.claims()
+		}
+		if len(wel.Roots) == 0 {
+			if data, err := json.Marshal(wel); err != nil || len(data) > maxFrame-welcomeRoom {
+				wel.Records, wel.ClaimTimes = nil, nil
+			}
+		}
 	}
 	if !keys {
 		return wel, nil

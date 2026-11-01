@@ -5,6 +5,8 @@
 
 package core
 
+const how = "not linked"
+
 const linked = false
 
 func abi() (int, error) { return 0, ErrUnavailable }

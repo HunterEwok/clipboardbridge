@@ -11,10 +11,10 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::authority::Record;
 use crate::certs::b64;
 use crate::clip::{Event, Hello};
 use crate::error::{Context, Error, Result};
-use crate::records::Record;
 
 /// The largest frame.
 pub const MAX_FRAME: usize = 7 << 20;

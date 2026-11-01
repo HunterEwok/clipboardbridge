@@ -74,6 +74,12 @@ type Identity struct {
 	// them and take the root record (docs/protocol.md, section 10). Nil
 	// elsewhere.
 	PrevCert, PrevIssuer *x509.Certificate
+	// Claim is the new root, with its key, of a claim this admin signed
+	// to take the group over that has not taken effect yet: when the
+	// records make it the current root, TakenOver makes this device the
+	// root with it (docs/records-v2.md, "Handing the group over"). Nil
+	// elsewhere.
+	Claim *CA
 }
 
 // Create creates a new group on this device, its root: a device ID, a key,
@@ -245,6 +251,7 @@ func (id *Identity) TakenOver(root *CA, roots []*x509.Certificate, now time.Time
 	next.Roots, next.RootKey = roots, root.Key
 	next.AdminKey, next.AdminCA = nil, nil
 	next.PrevCert, next.PrevIssuer = id.Cert, id.Issuer
+	next.Claim = nil
 	var err error
 	if next.Cert, err = root.IssueMember(id.ID, PublicKey(id.Key), now); err != nil {
 		return nil, err
@@ -272,6 +279,18 @@ func (id *Identity) Upgraded(root *CA, roots []*x509.Certificate, phoneCA CA, no
 	next.Roots, next.RootKey = roots, root.Key
 	next.GroupCA.Key, next.PhoneCA, next.Phone = nil, nil, nil
 	return next.WithPhoneCA(phoneCA, now)
+}
+
+// WithClaim returns the identity of an admin that signed a claim to take
+// the group over with the new root ca (Claim); nil ca drops it, as after
+// the claim was cancelled.
+func (id *Identity) WithClaim(ca *CA) (*Identity, error) {
+	next := *id
+	next.Claim = ca
+	if err := next.Check(); err != nil {
+		return nil, err
+	}
+	return &next, nil
 }
 
 // WithRoots returns the identity trusting roots, the roots the records lead
@@ -349,6 +368,14 @@ func (id *Identity) Check() error {
 	}
 	if id.RootKey != nil && (len(id.Roots) == 0 || !SameKey(id.RootKey, id.Root().PublicKey)) {
 		return errors.New("group: the root key is not the key of the group's current root")
+	}
+	if id.Claim != nil {
+		if id.AdminCA == nil || id.Claim.Key == nil || !SameKey(id.Claim.Key, id.Claim.Cert.PublicKey) {
+			return errors.New("group: only an admin holds a claim's new root, with its key")
+		}
+		if err := checkRoot(id.Claim.Cert); err != nil {
+			return err
+		}
 	}
 	issuers := id.Trusted()
 	if id.Issuer != nil {
@@ -634,6 +661,8 @@ type identityFile struct {
 	AdminCA    []byte   `json:"admin_ca,omitempty"`
 	PrevCert   []byte   `json:"prev_cert,omitempty"`
 	PrevIssuer []byte   `json:"prev_issuer,omitempty"`
+	Claim      []byte   `json:"claim,omitempty"`
+	ClaimKey   []byte   `json:"claim_key,omitempty"`
 	// KeyTPM and AdminKeyTPM stand for Key and AdminKey when those live
 	// in the TPM: the blob that only this machine's TPM loads.
 	KeyTPM      *tpmkey.Blob `json:"key_tpm,omitempty"`
@@ -700,6 +729,12 @@ func (id *Identity) Save(dir string) error {
 	}
 	if id.PrevIssuer != nil {
 		f.PrevIssuer = id.PrevIssuer.Raw
+	}
+	if id.Claim != nil {
+		f.Claim = id.Claim.Cert.Raw
+		if f.ClaimKey, err = x509.MarshalPKCS8PrivateKey(id.Claim.Key); err != nil {
+			return err
+		}
 	}
 	data, err := json.MarshalIndent(f, "", "\t")
 	if err != nil {
@@ -800,6 +835,13 @@ func parseIdentity(data []byte) (*Identity, error) {
 		if id.PrevIssuer, err = x509.ParseCertificate(f.PrevIssuer); err != nil {
 			return nil, err
 		}
+	}
+	if f.Claim != nil || f.ClaimKey != nil {
+		claim, err := parseCA(f.Claim, f.ClaimKey)
+		if err != nil {
+			return nil, err
+		}
+		id.Claim = &claim
 	}
 	if err := id.Check(); err != nil {
 		return nil, err

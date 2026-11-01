@@ -80,12 +80,14 @@ func (s *Service) certRenewed(der, issuer []byte) error {
 		return err
 	}
 	// A certificate the records refuse, as from a removed admin, would
-	// cut this member off.
+	// cut this member off. Its own device record may come after it, as
+	// right after joining: the key is this member's, so that refuses
+	// nothing.
 	chain := []*x509.Certificate{next.Cert}
 	if next.Issuer != nil {
 		chain = append(chain, next.Issuer)
 	}
-	if err := s.allow(next.ID, chain); err != nil {
+	if err := s.allow(next.ID, chain); err != nil && !errors.Is(err, group.ErrNotListed) {
 		return err
 	}
 	if s.issuerRemoved(next) {
@@ -177,7 +179,7 @@ func (s *Service) becomeAdmin(der []byte) error {
 	}
 	// An admin CA the records refuse, as from a root that handed the
 	// group over, would make records nobody takes.
-	if err := s.allow(next.ID, []*x509.Certificate{next.AdminCA}); err != nil {
+	if err := s.refusedAdminCA(next.AdminCA); err != nil {
 		s.pendingAdminCA = der
 		return err
 	}

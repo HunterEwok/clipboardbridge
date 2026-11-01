@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -105,6 +107,28 @@ func seeds(dir string) ([]Case, error) {
 	for _, f := range mutants {
 		if err := read(filepath.Base(f), map[string]string{"records": "record"}); err != nil {
 			return nil, err
+		}
+	}
+	// The bodies of records v2, which the others read, from the cases of
+	// the state's vectors, when the directory has them.
+	data, err := os.ReadFile(filepath.Join(dir, "v2-records.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var v2 struct {
+		Cases []struct {
+			Records []Record `json:"records"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &v2); err != nil {
+		return nil, fmt.Errorf("v2-records.json: %w", err)
+	}
+	for _, c := range v2.Cases {
+		for _, r := range c.Records {
+			out = append(out, Case{Kind: "record", Body: r.Body})
 		}
 	}
 	return out, nil

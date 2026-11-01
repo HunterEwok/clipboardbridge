@@ -234,10 +234,14 @@ type Welcome struct {
 	// Records are the records that lead to Roots (group.PathRecords), by
 	// which the new device checks that Roots are the group's and not ones
 	// the admitting admin made up; absent with Roots.
-	Records    []group.Record `json:"records,omitempty"`
-	GroupCAKey []byte         `json:"group_ca_key,omitempty"`
-	PhoneCA    []byte         `json:"phone_ca,omitempty"`
-	PhoneCAKey []byte         `json:"phone_ca_key,omitempty"`
+	Records []group.Record `json:"records,omitempty"`
+	// ClaimTimes are when the admitting member first held each claim of
+	// Records, which the new device takes (group.Records.TakeClaimTimes);
+	// absent when there is no claim.
+	ClaimTimes []group.ClaimTime `json:"claim_times,omitempty"`
+	GroupCAKey []byte            `json:"group_ca_key,omitempty"`
+	PhoneCA    []byte            `json:"phone_ca,omitempty"`
+	PhoneCAKey []byte            `json:"phone_ca_key,omitempty"`
 }
 
 // frame is every message of the exchange; each uses some of the fields.
