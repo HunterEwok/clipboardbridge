@@ -600,6 +600,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
+  member: each record names its signer and follows that signer's previous one, the Rust
+  core decides what a set says, and the old records are refused. A group of an earlier
+  version is not carried over: set it up again. The root decides how long a claim to the
+  group waits, 72 hours by default (`cbb takeover-delay`), a new member takes the waits its
+  admitting member counted from the Welcome, and `cbb upgrade` is gone. A device whose
+  record has not reached a member yet gets a connection that carries records only, until
+  the records let it in.
 - Remote paste on Linux and FreeBSD takes nothing where the device cannot tell whether its
   session is locked (no logind, `loginctl` failing or saying nothing): earlier it pasted
   there. The device's user may allow pastes without that check with
