@@ -327,6 +327,7 @@ func relayAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 	home, m2, m3 := g.members[0], g.members[1], g.members[2]
 	var rel *Device
 	var key string
+	var relIn *internet
 	if r.Do(p+"setup", func() error {
 		var nets []string
 		for range 3 {
@@ -340,9 +341,15 @@ func relayAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 		if err != nil {
 			return err
 		}
-		if rel, key, err = startRelay(ctx, f, nets[2], "-group "+g.tag); err != nil {
+		// The relay logs the most with CBB_DEBUG=1, which only adds
+		// counts; a restart keeps it.
+		f.serverEnv = []string{"CBB_DEBUG=1"}
+		rel, key, err = startRelay(ctx, f, nets[2], "-group "+g.tag)
+		f.serverEnv = nil
+		if err != nil {
 			return err
 		}
+		relIn = in
 		if err := in.publish(ctx, relayPublic, rel); err != nil {
 			return err
 		}
@@ -443,6 +450,24 @@ func relayAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) 
 			err = fmt.Errorf("%s got the removed device's copy", m2.Name)
 		}
 		return err
+	})
+	r.Do("fleet/S18-relay-keeps-nothing", func() error {
+		words := []string{g.run, g.tag}
+		for _, d := range g.members {
+			id, _, err := statusIDs(ctx, d)
+			if err != nil {
+				return err
+			}
+			ip, err := fleetIP(ctx, d)
+			if err != nil {
+				return err
+			}
+			words = append(words, id, ip)
+		}
+		for _, ip := range relIn.ips {
+			words = append(words, ip)
+		}
+		return serverKeepsNothing(ctx, rel, relayState, []string{"relay.pem"}, words)
 	})
 }
 

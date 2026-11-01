@@ -67,6 +67,20 @@ All notable changes to clipboardbridge are documented in this file. The format f
   old `cbb-lite` (I26), the hub's addresses allowed only while a join by invitation runs
   (G15), the invitation file as a secret (S7), a removed client reaching no one (S6) and the
   lite member's options (H5).
+- The bench's fleet runs the lite member as a client of the hub's tunnel: plain WireGuard
+  away from home, and an obfuscated hub's offer refused, so it stays at home (W17); and
+  members beside avahi-daemon, which keeps working, ignoring another group's member (D1);
+  and what the wire shows: nothing of the group in the clear on the internet's router while
+  an away client syncs, and at home only TLS 1.3 with no copied text in the clear (S1, S2), and
+  nothing sent anywhere but to the servers once the tunnel breaks (S9); and the forwarder and the relay, with
+  `CBB_DEBUG=1`, keeping only their keys, state and log, none of which names the group, a device,
+  an address or a copy (S18, but for `systemd-analyze`); and the away client's
+  `max-copy-away`, a file within it arriving through the hub and one over it staying at home (O10). The fleet also checks that a
+  text sent as a secret stays one when sent again without the mark, and that the sender
+  remembers 4096 secrets (Y34); and that a failed step of install.sh or
+  uninstall.sh ends them with its exit status and says so, or with `CBB_ERROR_DETAILS=1` shows
+  every command (I25, Linux). The forge's invitation to a missing hub names a group, as
+  invitations must now.
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built

@@ -42,6 +42,9 @@ type Fleet struct {
 	extra         []string // the run's other networks
 	mu            sync.Mutex
 	n, nets       int
+	// serverEnv is the environment of the forwarders and relays started
+	// from then on.
+	serverEnv []string
 }
 
 // NewFleet makes the run's network; members come with Add. cbb is a static
@@ -132,7 +135,7 @@ func (f *Fleet) AddWith(ctx context.Context, net string, run []string, env ...st
 // addServer starts a container on the network net that runs cmd instead
 // of the service, such as a forwarder or the stand-in for the internet.
 func (f *Fleet) addServer(ctx context.Context, net string, run []string, cmd string) (*Device, error) {
-	return f.container(ctx, net, run, nil, cmd)
+	return f.container(ctx, net, run, f.serverEnv, cmd)
 }
 
 // container starts a container of the fleet's image that runs cmd with sh.
