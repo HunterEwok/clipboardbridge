@@ -1800,13 +1800,16 @@ says how far:
 
 | Cause | `stop` | Effect |
 |-------|--------|--------|
-| two claims under one root; a disputed claim; a conflict between admins; a root that signed two histories | `full` | every member stops sync, events, media, commands and admissions with every peer; it keeps exchanging records and credentials only, so the root's decision reaches it |
-| an admin that signed two histories | `secrets` | no member sends a secret event (`kind` `secret`) or a `secret` paste to anyone; the devices that admin alone admitted get nothing |
-| a pending claim | none | the claimant's devices get no secrets |
+| two claims under one root; a disputed claim; a conflict between admins; a root that signed two histories | `full` | every member stops sync, events, media, commands and admissions with every peer; its connections carry records only ("Records only" in the exchange), so the root's decision reaches it |
+| an admin that signed two histories | `secrets` | no member sends a secret event's text (`kind` `secret`; it sends the event's mark) or takes a `secret` paste; the devices that admin alone admitted get nothing: their connections carry records only |
+| a pending claim | none | the claimant's devices get no secret's text and take no `secret` paste |
 
 A member applies it as soon as it holds the records, and lifts it as soon as it holds the
-root's records that end it. `cbb status` and the apps show the cause, the devices involved and
-what ends it. A user who has lost the root sets the group up again.
+root's records that end it: the check of a peer's certificate ("Certificates") lets a
+connection carry records only while the stop holds, and the member connects again as a member
+once it ends. `cbb status` and the apps show the cause, the devices involved and what ends it
+(in Go `control.Status`'s `stop`, `claims`, `conflicts` and `newer`). A user who has lost the
+root sets the group up again.
 
 ### The state
 
@@ -1877,14 +1880,16 @@ beyond) and check the same bytes.
   Invalid records are logged and dropped; the connection stays.
 - **Records only.** A peer whose certificate passes every rule of "Certificates" but the one
   on its `device` record (a device whose record has not reached this member yet, a new member
-  that holds no records yet, or a root's own device during a claim) gets a connection that
+  that holds no records yet, or a root's own device during a claim), and any peer while the
+  state stops the exchange with it ("Stopping the exchange"), gets a connection that
   carries records only: each side sends its hello with no current event and nothing but its
   records digest, sends its records when the digests differ, takes `records` from the peer,
   and sends and takes nothing else (no events, credentials, commands, tunnel keys, hubs or
   iPhone CA). It closes the connection once the records let the peer in, and the side that
-  dialed connects again at once as a member, or when no records came for 5 seconds. Only
-  full members keep such a connection; the lite member and the phones refuse the peer and
-  take the records from the others.
+  dialed connects again at once as a member, or when no records came for 5 seconds. Every
+  member keeps such a connection while the state stops the exchange with the peer, so that
+  the root's decision reaches it; for the other cases only full members keep it, and the
+  lite member and the phones refuse the peer and take the records from the others.
 - After adding records that refuse a certificate a member first queues the new records for
   its peers, then closes every connection whose peer certificate is now refused
   ("Certificates"), after what is queued for it and a `bye`, and the TLS check refuses it from

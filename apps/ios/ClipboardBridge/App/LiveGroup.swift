@@ -1451,6 +1451,8 @@ final class LiveGroup: GroupController {
         func isPhone(_ device: String) -> Bool { lock.withLock { set.devices.first { $0.id == device }?.role == "phone" } }
 
         func refused(chain: [Data]) -> String? { lock.withLock { set.refused(chain: chain) } }
+        func stopped(chain: [Data]) -> Bool { lock.withLock { set.stopped(chain: chain) } }
+        func noSecrets(to device: String?) -> Bool { lock.withLock { set.noSecrets(to: device) } }
     }
 
     /// Passes what the browser finds to the dialer, with the computers it

@@ -415,14 +415,14 @@ func (s *Records) State() *authority.State {
 	if err != nil {
 		// The evaluation refuses only a broken input, such as a group CA
 		// it cannot read: nothing counts then, and the group stops.
-		st = &authority.State{Roots: []KeyHash{KeyHashOf(s.groupCA)}, Stop: "full"}
+		st = &authority.State{Roots: []KeyHash{KeyHashOf(s.groupCA)}, Stop: authority.StopFull}
 	}
 	s.st, s.at = st, now
 	return st
 }
 
-// Stop returns how far the records stop the exchange: "", "secrets" or
-// "full" (docs/protocol.md, section 10, "Stopping the exchange").
+// Stop returns how far the records stop the exchange: "none", "secrets"
+// or "full" (docs/protocol.md, section 10, "Stopping the exchange").
 func (s *Records) Stop() string { return s.State().Stop }
 
 // path returns the roots on the path as certificates, the group CA first.
@@ -572,6 +572,10 @@ func (s *Records) adminDevice(k KeyHash) (authority.Device, bool) {
 // not reached this member yet or a new member that holds no records yet,
 // is refused with ErrNotListed, which lets records through
 // (ErrRecordsOnly), so that the records reach the member that lacks them.
+//
+// A chain that passes every rule while the state stops the exchange with
+// its device (Stopped) is refused with ErrStopped, which lets records
+// through too, so that the root's decision reaches every member.
 func (s *Records) Refused(chain []*x509.Certificate) error {
 	if err := s.refusedChain(chain); err != nil {
 		return err
@@ -579,7 +583,29 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 	if !s.listed(KeyHashOf(chain[0])) {
 		return ErrNotListed
 	}
+	if dev, err := DeviceOf(chain[0]); err == nil && s.Stopped(dev) {
+		return ErrStopped
+	}
 	return nil
+}
+
+// Stopped reports whether the state stops the exchange with dev: the
+// whole group stops (stop full), or dev is a device that gets nothing
+// (docs/protocol.md, section 10, "Stopping the exchange"). A connection
+// with it carries records only.
+func (s *Records) Stopped(dev DeviceID) bool {
+	st := s.State()
+	return st.Stop == authority.StopFull || slices.Contains(st.NothingTo, string(dev))
+}
+
+// NoSecretsTo reports whether this member sends dev no secret: while the
+// state stops secrets or everything, or names dev among the devices that
+// get no secrets or nothing (docs/protocol.md, section 10, "Stopping the
+// exchange"). Such a device gets the mark of a secret, never its text, and
+// no secret paste.
+func (s *Records) NoSecretsTo(dev DeviceID) bool {
+	st := s.State()
+	return st.Stop != authority.StopNone || slices.Contains(st.NoSecretsTo, string(dev)) || slices.Contains(st.NothingTo, string(dev))
 }
 
 // refusedChain is Refused without the rule that a device record names the
@@ -655,6 +681,20 @@ func (notListed) Error() string {
 }
 
 func (notListed) Is(target error) bool { return target == ErrRecordsOnly }
+
+// ErrStopped is what Refused returns for a chain it takes while the state
+// stops the exchange with its device (Records.Stopped); errors.Is(ErrStopped,
+// ErrRecordsOnly) holds, so the connection carries records only until the
+// root's records end the stop.
+var ErrStopped error = stopped{}
+
+type stopped struct{}
+
+func (stopped) Error() string {
+	return "group: the group's records stop the exchange until its root decides; the connection carries records only"
+}
+
+func (stopped) Is(target error) bool { return target == ErrRecordsOnly }
 
 // signedByAny reports whether one of roots signed c.
 func signedByAny(c *x509.Certificate, roots []*x509.Certificate) bool {
@@ -1015,3 +1055,23 @@ func (s *Records) AuthorityRecords() []Record { return s.All() }
 // that the Welcome's roots are the group's: all of them, since it evaluates
 // the set as every member does.
 func (s *Records) PathRecords() []Record { return s.All() }
+
+// SignerName names the device of a signer's key for the user: the device
+// whose newest root record names it as its admin key, the root's own
+// device for a root key on the path, or the key hash when neither does.
+func (s *Records) SignerName(k KeyHash) string {
+	st := s.State()
+	for _, d := range st.Devices {
+		if d.Admin != nil && *d.Admin == k {
+			return d.Name
+		}
+	}
+	if slices.Contains(st.Roots, k) {
+		for _, d := range st.Devices {
+			if d.Device == st.RootDevice {
+				return d.Name
+			}
+		}
+	}
+	return k.String()
+}

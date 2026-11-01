@@ -94,12 +94,17 @@ pub enum Refusal {
     NotListed,
     /// It is refused, for the reason given.
     Refused(&'static str),
+    /// The chain passes every rule, but the state stops the exchange with
+    /// its device (Records::stopped). Its connection carries records only,
+    /// so that the root's decision reaches every member.
+    Stopped,
 }
 
 impl Refusal {
     pub fn why(&self) -> &'static str {
         match self {
             Refusal::NotListed => "no device record that counts names the device's key",
+            Refusal::Stopped => "the group's records stop the exchange until its root decides",
             Refusal::Refused(why) => why,
         }
     }
@@ -336,7 +341,7 @@ impl Records {
         st
     }
 
-    /// How far the records stop the exchange: "", "secrets" or "full"
+    /// How far the records stop the exchange: "none", "secrets" or "full"
     /// (docs/protocol.md, section 10, "Stopping the exchange").
     pub fn stop(&self) -> String {
         self.state().stop
@@ -449,7 +454,27 @@ impl Records {
         if !chain.first().is_some_and(|c| self.listed(&c.key_hash())) {
             return Some(Refusal::NotListed);
         }
+        if chain.first().and_then(|c| certs::device_of(c).ok()).is_some_and(|d| self.stopped(d.as_str())) {
+            return Some(Refusal::Stopped);
+        }
         None
+    }
+
+    /// Whether the state stops the exchange with dev: the whole group stops
+    /// (stop full), or dev gets nothing (docs/protocol.md, section 10,
+    /// "Stopping the exchange"). A connection with it carries records only.
+    pub fn stopped(&self, dev: &str) -> bool {
+        let st = self.state();
+        st.stop == authority::STOP_FULL || st.nothing_to.iter().any(|d| d == dev)
+    }
+
+    /// Whether this member sends dev no secret: while the state stops
+    /// secrets or everything, or names dev among the devices that get no
+    /// secrets or nothing. Such a device gets the mark of a secret, never
+    /// its text, and no secret paste.
+    pub fn no_secrets_to(&self, dev: &str) -> bool {
+        let st = self.state();
+        st.stop != authority::STOP_NONE || st.no_secrets_to.iter().chain(&st.nothing_to).any(|d| d == dev)
     }
 
     /// refused without the rule that a device record names the key.

@@ -133,6 +133,11 @@ type Config struct {
 	// asks it again for the running connections.
 	Allow func(group.DeviceID, []*x509.Certificate) error
 
+	// NoSecrets, if set, reports whether this member sends a peer no
+	// secret: the peer then gets the mark of a secret event, never its text
+	// (docs/protocol.md, section 10, "Stopping the exchange").
+	NoSecrets func(group.DeviceID) bool
+
 	// Records, if set, keeps the group's signed records.
 	Records RecordStore
 	// Credentials, if set, keeps the group's server credentials, which go
@@ -1509,6 +1514,9 @@ func (c *conn) message(o outgoing) (*message, error) {
 	default:
 		ev := *o.event
 		ev.Age = addAge(ev.Age, c.n.cfg.Uptime()-o.queued)
+		if ev.Kind == clip.Secret && c.n.cfg.NoSecrets != nil && c.n.cfg.NoSecrets(c.id) {
+			ev.Text = "" // the mark of the secret
+		}
 		data, err := encode(ev)
 		if err != nil {
 			return nil, err

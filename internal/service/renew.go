@@ -87,7 +87,7 @@ func (s *Service) certRenewed(der, issuer []byte) error {
 	if next.Issuer != nil {
 		chain = append(chain, next.Issuer)
 	}
-	if err := s.allow(next.ID, chain); err != nil && !errors.Is(err, group.ErrNotListed) {
+	if err := s.allow(next.ID, chain); err != nil && !errors.Is(err, group.ErrNotListed) && !errors.Is(err, group.ErrStopped) {
 		return err
 	}
 	if s.issuerRemoved(next) {

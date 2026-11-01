@@ -120,6 +120,32 @@ class EngineTest {
     }
 
     @Test
+    fun noSecretsSendsTheMark() {
+        // While the records stop secrets to a peer, it gets the mark of a
+        // secret, never its text (docs/protocol.md, section 10, "Stopping the exchange").
+        val noSecrets = object : RecordStore {
+            override val digest: String? = null
+            override val all: List<Member.Record> = emptyList()
+            override fun add(records: List<Member.Record>): List<Member.Record> = emptyList()
+            override fun noSecrets(device: String?): Boolean = true
+        }
+        val (pa, pb) = Pipe.pair()
+        val changes = Collections.synchronizedList(mutableListOf<String>())
+        val a = MemberNode(SyncEngine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HybridClock()), "Pixel", records = noSecrets)
+        val b = MemberNode(SyncEngine("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", HybridClock()), "pi", Member.Role.FULL, onChange = { changes.add(it.text) })
+        val ta = Background { a.serve(pa) }
+        val tb = Background { b.serve(pb) }
+        a.send("plain", Member.Kind.TEXT)
+        waitUntil { "plain" in changes }
+        a.send("hunter2", Member.Kind.SECRET)
+        waitUntil { "" in changes }
+        assertFalse("hunter2" in changes)
+        a.closeAll()
+        ta.join()
+        tb.join()
+    }
+
+    @Test
     fun nodesExchangeRecords() {
         val rootKey = SoftwareSigner()
         val g = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, Instant.now())

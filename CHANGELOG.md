@@ -8,6 +8,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The computers apply the group's stop when its records show a likely thief (docs/protocol.md,
+  section 10, "Stopping the exchange"): while two admins act against each other, two claims
+  or a disputed claim wait, or a key signed two histories, their connections carry records
+  only, or no secret leaves them, until the group's root decides. `cbb status` says what
+  stops, why, and what ends it, and shows the claims to take the group over with the time
+  left.
 - Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
   and offers it in its hello; a root computer puts it in the device records, the first step
   to commands sealed for their receiver (docs/protocol.md, section 15).

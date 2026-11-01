@@ -1224,6 +1224,15 @@ type State struct {
 	Hubs []string `json:"hubs,omitempty"`
 }
 
+// The values of State.Stop (docs/protocol.md, section 10, "Stopping the
+// exchange"): nothing stops, no member sends a secret, or every member
+// exchanges records only.
+const (
+	StopNone    = "none"
+	StopSecrets = "secrets"
+	StopFull    = "full"
+)
+
 // Device is one device of the state.
 type Device struct {
 	Device   string   `json:"device"`
@@ -1265,7 +1274,7 @@ type Conflict struct {
 
 // state builds the State of the last epoch.
 func (ep *epoch) state() *State {
-	s := &State{Roots: ep.path, Stop: "none"}
+	s := &State{Roots: ep.path, Stop: StopNone}
 	if d := ep.rootDevice(); d != nil && !ep.revoked[*d.Body.Key] {
 		s.RootDevice = d.Body.Device
 	}
@@ -1319,9 +1328,9 @@ func (ep *epoch) state() *State {
 	s.Hubs = ep.hubs(s.Devices)
 	switch {
 	case ep.stopFull:
-		s.Stop = "full"
+		s.Stop = StopFull
 	case forkedAdmin:
-		s.Stop = "secrets"
+		s.Stop = StopSecrets
 	}
 	return s
 }

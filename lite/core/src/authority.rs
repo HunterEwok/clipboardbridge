@@ -71,6 +71,13 @@ pub const POWERS: [&str; 8] =
 /// Every command type an admin may be given, sorted.
 pub const COMMANDS: [&str; 7] = ["action", "actions-off", "away-off", "hub", "mode", "paste", "paste-off"];
 
+/// The values of State::stop (docs/protocol.md, section 10, "Stopping the
+/// exchange"): nothing stops, no member sends a secret, or every member
+/// exchanges records only.
+pub const STOP_NONE: &str = "none";
+pub const STOP_SECRETS: &str = "secrets";
+pub const STOP_FULL: &str = "full";
+
 const ROLES: [&str; 5] = ["full", "phone", "lite", "watch", "shortcut"];
 const OSES: [&str; 8] = ["linux", "windows", "macos", "ios", "android", "watchos", "wearos", "none"];
 
@@ -1912,7 +1919,7 @@ impl<'a> Epoch<'a> {
 
     /// Builds the state of the last epoch.
     fn state(&self) -> State {
-        let mut s = State { roots: self.path.clone(), stop: "none".into(), ..State::default() };
+        let mut s = State { roots: self.path.clone(), stop: STOP_NONE.into(), ..State::default() };
         if let Some(d) = self.root_device() {
             if !self.r(d).b().key.is_some_and(|k| self.revoked.contains(&k)) {
                 s.root_device = self.r(d).b().device.clone();
@@ -1951,9 +1958,9 @@ impl<'a> Epoch<'a> {
         s.conflicts.sort_by(|a, b| a.records.first().cmp(&b.records.first()));
         s.hubs = self.hubs(&s.devices);
         if self.stop_full {
-            s.stop = "full".into();
+            s.stop = STOP_FULL.into();
         } else if forked_admin {
-            s.stop = "secrets".into();
+            s.stop = STOP_SECRETS.into();
         }
         s
     }

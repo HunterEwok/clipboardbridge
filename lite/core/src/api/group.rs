@@ -144,6 +144,10 @@ fn verdict(v: Option<Verdict>, taken: Option<(String, KeyHash)>) -> Vec<u8> {
             m.insert("verdict".into(), Value::from("not_listed"));
             m.insert("why".into(), Value::from(Verdict::NotListed.why()));
         }
+        Some(Verdict::Stopped) => {
+            m.insert("verdict".into(), Value::from("stopped"));
+            m.insert("why".into(), Value::from(Verdict::Stopped.why()));
+        }
         Some(Verdict::Refused(why)) => {
             m.insert("verdict".into(), Value::from("refused"));
             m.insert("why".into(), Value::from(why));

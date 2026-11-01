@@ -1329,3 +1329,33 @@ func TestRecordsOnlyLetIn(t *testing.T) {
 		t.Fatalf("the connection ended with %v, want ErrLetIn", err)
 	}
 }
+
+// TestNoSecretsSendsTheMark checks that a member sends a peer that the
+// records stop secrets to (Config.NoSecrets) the mark of a secret, never
+// its text, and other copies as they are (docs/protocol.md, section 10,
+// "Stopping the exchange").
+func TestNoSecretsSendsTheMark(t *testing.T) {
+	var stopped atomic.Bool
+	stopped.Store(true)
+	mac := newMember(t, Full, func(_ *clip.Config, nc *Config) {
+		nc.NoSecrets = func(group.DeviceID) bool { return stopped.Load() }
+	})
+	pi := newMember(t, Full)
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	if _, err := mac.Copied("hunter2", clip.Secret, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	noWrite(t, pi, "hunter2", 300*time.Millisecond)
+	if _, err := mac.Copied("plain text", clip.Text, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	waitWrite(t, pi, "plain text")
+	stopped.Store(false)
+	if _, err := mac.Copied("otp 123456", clip.Secret, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	if w := waitWrite(t, pi, "otp 123456"); w.Kind != clip.Secret {
+		t.Errorf("a secret was written as %v", w.Kind)
+	}
+}

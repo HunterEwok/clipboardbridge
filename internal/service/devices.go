@@ -212,6 +212,8 @@ func (s *Service) afterRevocation() {
 	s.dropRevokedPhoneCA()
 	if id != nil {
 		switch err := s.allow(id.ID, ownChain(id)); {
+		case errors.Is(err, group.ErrStopped):
+			s.logf("cbb: the group's records stop the exchange until its root decides (cbb status says why); members exchange records only")
 		case errors.Is(err, group.ErrRecordsOnly):
 			s.logf("cbb: %s took the group over from this computer, its root; if this computer is not lost, cbb revoke %s undoes it", s.takenOverBy(id), s.takenOverBy(id))
 		case err != nil && s.frozen(id):
@@ -899,4 +901,12 @@ func (s *Service) loadSealSecretLocked() {
 		}
 	}
 	s.logf("cbb: the key for sealed commands: %v; commands come unsealed", err)
+}
+
+// noSecretsTo reports whether this member sends dev no secret, as the
+// records say (group.Records.NoSecretsTo); false while it holds no records.
+func (s *Service) noSecretsTo(dev group.DeviceID) bool {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	return s.records != nil && s.records.NoSecretsTo(dev)
 }

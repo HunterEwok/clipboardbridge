@@ -1420,6 +1420,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }
 
         override fun refused(chain: List<ByteArray>): String? = synchronized(lock) { state?.records?.refused(chain) }
+        override fun stopped(chain: List<ByteArray>): Boolean = synchronized(lock) { state?.records?.stopped(chain) ?: false }
+        override fun noSecrets(device: String?): Boolean = synchronized(lock) { state?.records?.noSecrets(device) ?: false }
 
         override fun mayHost(device: String, chain: List<ByteArray>): Boolean =
             synchronized(lock) { state?.records?.mayHost(device, chain) == true }

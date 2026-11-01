@@ -114,6 +114,11 @@ pub struct Status {
     /// This device's quick actions, the presets in their order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<Action>,
+    /// How far the group's records stop the exchange: "secrets" or "full",
+    /// empty when nothing stops (docs/protocol.md, section 10, "Stopping
+    /// the exchange").
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub stop: String,
 }
 
 /// A quick action as the device's user set it, with the names of the Go

@@ -792,3 +792,55 @@ fn media_names() {
         }
     }
 }
+
+/// The stop of the exchange (docs/protocol.md, section 10, "Stopping the
+/// exchange") on the cases of v2-records.json, as Go's TestStopExchange: a
+/// full stop stops every device and every secret, a stop of secrets every
+/// secret but no connection, and the devices the state names get nothing
+/// or no secrets.
+#[test]
+fn stop_exchange() {
+    let v = vectors("v2-records.json");
+    let mut seen = std::collections::BTreeSet::new();
+    for case in v["cases"].as_array().unwrap() {
+        if case["time_unknown"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let want: Value = serde_json::from_str(case["state"].as_str().unwrap()).unwrap();
+        let mut s = crate::group::Records::new(&cert(&case["group_ca"]));
+        let now = case["now_ms"].as_i64().unwrap();
+        s.set_tag(case["group"].as_str().unwrap());
+        s.set_clock(move || now);
+        let _ = s.add_all(&records(&case["records"]));
+        if let Some(times) = case.get("first_seen") {
+            s.take_claim_times(&serde_json::from_value::<Vec<crate::group::ClaimTime>>(times.clone()).unwrap());
+        }
+        let stop = want["stop"].as_str().unwrap();
+        if s.stop() != stop {
+            continue; // a record the set itself leaves out; v2_cases covers it
+        }
+        seen.insert(stop.to_string());
+        let list = |k: &str| -> Vec<String> {
+            want[k].as_array().map(|a| a.iter().map(|d| d.as_str().unwrap().to_string()).collect()).unwrap_or_default()
+        };
+        let (nothing, no_secrets) = (list("nothing_to"), list("no_secrets_to"));
+        let mut devs = vec!["00000000000000000000000000000000".to_string()];
+        devs.extend(nothing.iter().chain(&no_secrets).cloned());
+        devs.extend(
+            want["devices"].as_array().into_iter().flatten().map(|d| d["device"].as_str().unwrap().to_string()),
+        );
+        for d in &devs {
+            let n = nothing.contains(d);
+            assert_eq!(s.stopped(d), stop == "full" || n, "{}: stopped({d})", case["name"]);
+            assert_eq!(
+                s.no_secrets_to(d),
+                stop != "none" || n || no_secrets.contains(d),
+                "{}: no_secrets_to({d})",
+                case["name"]
+            );
+        }
+    }
+    for stop in ["none", "secrets", "full"] {
+        assert!(seen.contains(stop), "no case with stop {stop}");
+    }
+}
