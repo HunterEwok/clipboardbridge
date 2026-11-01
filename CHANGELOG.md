@@ -8,6 +8,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The Rust core's entry point checks a peer's member certificates (`check_member`, docs/core-api.md),
+  for the TLS verify callbacks of the computers and the phones, and gives the same answer as Go's
+  crypto/tls on shared vectors (`testdata/interop/member-chains.json`). The lite member now takes
+  a peer's admin CA wherever the peer puts it in its chain, as Go does.
 - Limits on a group's record set, the same in Go and the Rust core (docs/records-v2.md,
   "Limits"): 1024 records, 1 MiB, 256 devices, 64 admin keys and 16 roots on the path.
   Records past a limit count for nothing, with the reason `limit`; the set is never refused,
