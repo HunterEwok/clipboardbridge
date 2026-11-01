@@ -23,7 +23,7 @@ struct SettingsView: View {
     /// Android's build number shows its developer options.
     @State private var versionTaps = 0
     @AppStorage("ShowErrorDetails") private var errorDetails = AppModel.showsErrorDetails
-    @AppStorage("ShowErrorDetailsSwitch") private var detailsSwitch = false
+    @AppStorage("ShowErrorDetailsSwitch") private var detailsSwitch = UserDefaults.standard.bool(forKey: "ShowErrorDetailsSwitch")
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""

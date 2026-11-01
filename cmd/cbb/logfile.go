@@ -14,21 +14,27 @@ import (
 // started again, so a log keeps at most twice this much.
 const maxLog = 1 << 20
 
-// A logFile is a log on Windows, where no system service keeps the output
-// of the service and the agent. Every line starts with the time.
+// A logFile is the log of the service and the agent where the system does
+// not rotate their output: on Windows, which keeps none, and on a Mac, where
+// launchd only appends to a file. Every line starts with the time.
 type logFile struct {
-	mu   sync.Mutex
-	path string
-	f    *os.File
-	size int64
-	now  func() time.Time
+	mu     sync.Mutex
+	path   string
+	f      *os.File
+	size   int64
+	now    func() time.Time
+	opened func(*os.File) // called with each file opened, as stderr's new home
 }
 
-func openLog(path string) (*logFile, error) {
+func openLog(path string) (*logFile, error) { return openLogThen(path, nil) }
+
+// openLogThen opens the log and calls opened with its file, and again
+// after each move to ".1".
+func openLogThen(path string, opened func(*os.File)) (*logFile, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	l := &logFile{path: path, now: time.Now}
+	l := &logFile{path: path, now: time.Now, opened: opened}
 	if err := l.open(); err != nil {
 		return nil, err
 	}
@@ -46,6 +52,9 @@ func (l *logFile) open() error {
 		return err
 	}
 	l.f, l.size = f, st.Size()
+	if l.opened != nil {
+		l.opened(f)
+	}
 	return nil
 }
 

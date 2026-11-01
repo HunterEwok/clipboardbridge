@@ -57,6 +57,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	scenarioList := fs.String("scenario", "", "fleet, time: comma-separated scenarios to run instead of all, such as T2-tmux or K6-clock")
 	docs := fs.String("docs", "docs", "coverage, all: the directory with testbench-catalogue.md and testbench-functions.md")
 	fs.DurationVar(&fuzzFor, "fuzz-for", fuzzFor, "fleet: how long the fuzzing case (S20) sends each kind of frame; a release's full run takes 1h")
+	fs.BoolVar(&disruptive, "disruptive", false, "desktop: also lock, put to sleep and restart the computers (Q3, I18, H7, H8); only on the owner's word")
+	fs.DurationVar(&soakFor, "soak-for", 0, "fleet: how long the soak (E10) runs, 24h for a release; 0 leaves it out")
 	coverDir := fs.String("coverdir", "", "fleet, time, all: with a cbb built with -cover, the directory where every container writes its coverage (docs/testbench.md, \"Code coverage\")")
 	if fs.Parse(args) != nil {
 		return 2

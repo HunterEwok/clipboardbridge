@@ -13,6 +13,10 @@ import (
 // administrator after the system asks: pkexec on Linux, the UAC prompt on
 // Windows (admin_linux.go, admin_windows.go).
 
+// adminRun runs cbb as the administrator; the window's tests put a stand-in
+// here.
+var adminRun = runAdmin
+
 // errCancelled is a prompt the user closed: nothing changed, and the
 // window says nothing.
 var errCancelled = errors.New("cancelled")

@@ -268,6 +268,10 @@ is not built yet (roadmap item 10); the design:
   and trusts only the group CA, in its own configuration; the system keychain is not changed.
 - Installing needs administrator rights once. The Mac app (`apps/macos`) adds a window and
   a menu bar item over the control socket, and is the Mac's remote paste target.
+- Logs: `/Library/Logs/clipboardbridge/service.log` and
+  `~/Library/Logs/clipboardbridge/agent.log`, written by the service and the agent as on
+  Windows, each line after the time, each moved to `.1` at 1 MiB; a crash lands in the
+  same file.
 
 ### Windows
 
