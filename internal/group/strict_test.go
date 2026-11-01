@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
 // A strictVector is a body and whether every member takes it: the
@@ -251,9 +253,10 @@ func TestStrictVectors(t *testing.T) {
 		t.Fatal("no vectors")
 	}
 	for _, c := range v.Records {
-		_, err := parseRecordBody(c.Body)
-		if (err == nil) != c.Valid {
-			t.Errorf("record %q: valid %v, got %v", c.Name, c.Valid, err)
+		// Records of version 1, valid or not, are refused: version 2
+		// reads only its own canonical bodies (docs/records-v2.md).
+		if _, err := authority.ParseBody(c.Body); err == nil {
+			t.Errorf("record %q of version 1 taken", c.Name)
 		}
 	}
 	for _, c := range v.Commands {
@@ -265,40 +268,49 @@ func TestStrictVectors(t *testing.T) {
 	// The manifests are in internal/clip, whose test reads them.
 }
 
-// A record whose body breaks the strict form is refused though its
+// A record whose body is not in the canonical form is refused though its
 // signature is good: the members that read JSON more loosely would count
-// it, the others would not.
+// it, the others would not (docs/records-v2.md, "Canonical form of signed
+// bodies").
 func TestRecordsStrictBody(t *testing.T) {
 	ca, err := NewGroupCA(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	tag := Tag(ca.Cert)
+	good, err := signRecord(RecordBody{Type: RecordRevoke, Group: tag, TimeMS: 1, Keys: []KeyHash{{1}}}, ca.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(good.Body)
 	sign := func(body string) Record {
 		sum := sha256.Sum256([]byte(body))
 		sig, err := ca.Key.Sign(rand.Reader, sum[:], nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return Record{Body: []byte(body), Sig: sig}
+		return Record{Body: []byte(body), Sig: sig, Chain: [][]byte{}}
 	}
-	revoke := `"keys":["` + vecHash + `"]`
-	for _, body := range []string{
-		`{"v":1,"type":"device","group":"` + tag + `","time_ms":1,"type":"revoke",` + revoke + `}`,
-		`{"V":1,"TYPE":"revoke","GROUP":"` + tag + `","TIME_MS":1,` + revoke + `}`,
-		`{"v":1,"type":"revoke","group":"` + tag + `",` + revoke + `}`,
-		`{"v":1,"type":"revoke","group":"` + tag + `","time_ms":1,"by":"\ud800",` + revoke + `}`,
-		"{\"v\":1,\"type\":\"revoke\",\"group\":\"" + tag + "\",\"time_ms\":1,\"by\":\"\xff\"," + revoke + "}",
-		// -0 is 0 for Go and a float for the lite member's reader.
-		`{"v":1,"type":"revoke","group":"` + tag + `","time_ms":-0,` + revoke + `}`,
+	for _, bad := range []string{
+		strings.Replace(body, `"type":"revoke"`, `"type":"device","type":"revoke"`, 1),
+		strings.Replace(body, `"type":`, `"TYPE":`, 1),
+		strings.Replace(body, `"time_ms":1`, `"time_ms":-0`, 1),
+		strings.Replace(body, `"time_ms":1`, `"time_ms":1.0`, 1),
+		strings.Replace(body, `"group":"`+tag+`"`, `"group":"\u0041`+tag[1:]+`"`, 1),
+		strings.Replace(body, `{`, `{ `, 1),
+		strings.Replace(body, `}`, `,"unknown":1}`, 1),
+		strings.Replace(body, `"time_ms":1,`, ``, 1),
 	} {
+		if bad == body {
+			t.Fatalf("a mutation of %s changed nothing", body)
+		}
 		s := NewRecords(ca.Cert)
-		if ok, err := s.Add(sign(body)); err == nil || ok {
-			t.Errorf("%q taken", body)
+		if ok, err := s.Add(sign(bad)); err == nil || ok {
+			t.Errorf("%q taken", bad)
 		}
 	}
 	s := NewRecords(ca.Cert)
-	if ok, err := s.Add(sign(`{"v":1,"type":"revoke","group":"` + tag + `","time_ms":1,` + revoke + `}`)); err != nil || !ok {
-		t.Fatalf("a strict record refused: %v", err)
+	if ok, err := s.Add(sign(body)); err != nil || !ok {
+		t.Fatalf("a canonical record refused: %v", err)
 	}
 }

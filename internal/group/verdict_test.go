@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 )
 
@@ -57,30 +58,31 @@ func TestVerdicts(t *testing.T) {
 	}
 }
 
-// writeVerdictCorpus writes a corpus of one valid record, one refused, a
-// record set and a release file.
+// writeVerdictCorpus writes a corpus of one valid record of version 2, one
+// of version 1, which is refused, a record set and a release file.
 func writeVerdictCorpus(t *testing.T) string {
 	v := readStrictGenerated(t)
-	var valid, invalid []byte
+	var invalid []byte
 	for _, c := range v.Records {
-		if c.Valid && valid == nil {
-			valid = c.Full()
-		}
-		if !c.Valid && invalid == nil {
+		if invalid == nil {
 			invalid = c.Full()
 		}
 	}
-	data, err := os.ReadFile("../../testdata/interop/go-removed-admin.json")
+	data, err := os.ReadFile("../../testdata/interop/v2-records.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var set struct {
-		GroupCA []byte   `json:"group_ca"`
-		Records []Record `json:"records"`
+	var f struct {
+		Cases []v2Case `json:"cases"`
 	}
-	if err := json.Unmarshal(data, &set); err != nil {
+	if err := json.Unmarshal(data, &f); err != nil {
 		t.Fatal(err)
 	}
+	set := struct {
+		GroupCA []byte
+		Records []Record
+	}{f.Cases[0].GroupCA, f.Cases[0].Records}
+	valid := set.Records[0].Body
 	lines := []any{
 		map[string]any{"kind": "record", "body": valid},
 		map[string]any{"kind": "record", "body": invalid},
@@ -128,15 +130,16 @@ func goVerdict(line []byte) (string, error) {
 	}
 	switch c.Kind {
 	case "record":
-		b, err := parseRecordBody(c.Body)
+		b, err := authority.ParseBody(c.Body)
 		if err != nil {
 			return "refused", nil
 		}
 		return verdictLine(
-			"type", vStr(b.Type), "group", vStr(b.Group), "time_ms", vInt(b.TimeMS), "by", vStr(string(b.By)),
-			"device", vStr(string(b.Device)), "name", vStr(b.Name), "role", vStr(b.Role), "os", vStr(b.OS),
-			"store", vStr(b.Store), "key", vHashPtr(b.Key), "admin", vHashPtr(b.Admin), "keys", vHashes(b.Keys),
-			"keep", vHashes(b.Keep), "root", hex.EncodeToString(b.Root), "records", vHashes(b.Records)), nil
+			"type", vStr(b.Type), "group", vStr(b.Group), "signer", vHashPtr(&b.Signer), "seq", vInt(b.Seq), "prev", vHashPtr(b.Prev),
+			"time_ms", vInt(b.TimeMS), "device", vStr(b.Device), "name", vStr(b.Name), "role", vStr(b.Role), "os", vStr(b.OS),
+			"store", vStr(b.Store), "key", vHashPtr(b.Key), "admin", vHashPtr(b.Admin), "powers", strings.Join(b.Powers, "."),
+			"commands", strings.Join(b.Commands, "."), "holds_root", vBool(b.HoldsRoot), "keys", vHashes(b.Keys),
+			"root", hex.EncodeToString(b.Root), "records", vHashes(b.Records)), nil
 	case "command":
 		b, err := parseCommandBody(c.Body)
 		if err != nil {

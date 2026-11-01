@@ -7,9 +7,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	mrand "math/rand/v2"
-	"slices"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
 // adminIdentity is a member of a phone's group whose certificate an admin
@@ -166,25 +167,35 @@ func TestRenewalFromAnotherAdmin(t *testing.T) {
 }
 
 // TestRefusedChecksTheRealIssuer checks that a member certificate from a
-// revoked admin CA stays refused whatever other certificates come with
-// it: the issuer checked is the one that signed the leaf, not the second
+// frozen admin CA stays refused whatever other certificates come with it:
+// the issuer checked is the one that signed the leaf, not the second
 // certificate presented.
 func TestRefusedChecksTheRealIssuer(t *testing.T) {
 	pg := newPhoneGroup(t)
-	recs := NewRecords(pg.root.Cert)
-	mustAdd(t, recs, revokeRecord(t, pg.root.Cert, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}, nil))
-	fromA, fromB := member(t, pg.a), member(t, pg.b)
+	g := pg.root.Cert
+	recs := NewRecords(g)
+	fromA, fromB, fromRoot := member(t, pg.a), member(t, pg.b), member(t, pg.root)
+	for _, r := range []Record{
+		computerAdminRecord(t, pg, member(t, pg.a), "pc a", KeyHashOf(pg.a.Cert)),
+		adminRecord(t, g, pg.root, nil, member(t, pg.b), "phone b", KeyHashOf(pg.b.Cert)),
+		deviceRecord(t, g, pg.a, []*x509.Certificate{pg.a.Cert}, fromA, "from a", 1),
+		deviceRecord(t, g, pg.b, []*x509.Certificate{pg.b.Cert}, fromB, "from b", 1),
+		deviceRecord(t, g, pg.root, nil, fromRoot, "from root", 1),
+		freezeRecord(t, g, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}),
+	} {
+		mustAdd(t, recs, r)
+	}
 	for _, c := range []struct {
 		name  string
 		chain []*x509.Certificate
 		ok    bool
 	}{
-		{"revoked issuer", []*x509.Certificate{fromA, pg.a.Cert}, false},
-		{"revoked issuer behind another admin CA", []*x509.Certificate{fromA, pg.b.Cert, pg.a.Cert}, false},
+		{"frozen issuer", []*x509.Certificate{fromA, pg.a.Cert}, false},
+		{"frozen issuer behind another admin CA", []*x509.Certificate{fromA, pg.b.Cert, pg.a.Cert}, false},
 		{"issuer missing", []*x509.Certificate{fromA, pg.b.Cert}, false},
 		{"standing issuer", []*x509.Certificate{fromB, pg.b.Cert}, true},
 		{"standing issuer behind another CA", []*x509.Certificate{fromB, pg.a.Cert, pg.b.Cert}, true},
-		{"from the root, with extras", []*x509.Certificate{member(t, pg.root), pg.a.Cert}, true},
+		{"from the root, with extras", []*x509.Certificate{fromRoot, pg.a.Cert}, true},
 	} {
 		if err := recs.Refused(c.chain); (err == nil) != c.ok {
 			t.Errorf("%s: Refused = %v", c.name, err)
@@ -199,7 +210,15 @@ func TestAllowSeesTheVerifiedChain(t *testing.T) {
 	pg := newPhoneGroup(t)
 	server := adminIdentity(t, pg, nil)
 	client := adminIdentity(t, pg, pg.a)
-	recs := NewRecords(pg.root.Cert)
+	g := pg.root.Cert
+	recs := NewRecords(g)
+	for _, r := range []Record{
+		computerAdminRecord(t, pg, member(t, pg.a), "pc a", KeyHashOf(pg.a.Cert)),
+		deviceRecord(t, g, pg.root, nil, server.Cert, "server", 1),
+		deviceRecord(t, g, pg.a, []*x509.Certificate{pg.a.Cert}, client.Cert, "client", 1),
+	} {
+		mustAdd(t, recs, r)
+	}
 	var seen []*x509.Certificate
 	at := TLSOptions{Now: func() time.Time { return t0 }, Allow: func(_ DeviceID, c []*x509.Certificate) error {
 		seen = c
@@ -213,19 +232,28 @@ func TestAllowSeesTheVerifiedChain(t *testing.T) {
 	if len(seen) != 2 || !seen[0].Equal(client.Cert) || !seen[1].Equal(pg.a.Cert) {
 		t.Fatalf("Allow got %d certificates; want the leaf and its admin CA", len(seen))
 	}
-	mustAdd(t, recs, revokeRecord(t, pg.root.Cert, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}, nil))
+	mustAdd(t, recs, freezeRecord(t, g, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}))
 	if _, _, _, serr := handshake(t, cfg, server.ServerTLS(at)); serr == nil {
-		t.Error("the server accepted a certificate from a revoked admin CA")
+		t.Error("the server accepted a certificate from a frozen admin CA")
 	}
 }
 
 // computerAdminRecord is the root's record of a computer whose admin CA is
-// admin: its key sits in a file, so it has less power than an admin phone.
+// admin: its key sits in a file, so it has less power than an admin phone,
+// and in a phone's group no takeover.
 func computerAdminRecord(t *testing.T, pg phoneGroup, cert *x509.Certificate, name string, admin KeyHash) Record {
 	t.Helper()
+	return adminComputer(t, pg.root, cert, name, admin, false)
+}
+
+// adminComputer is the record of an admin computer that root signs, with
+// the power to take the group over when takeover is set.
+func adminComputer(t *testing.T, root *CA, cert *x509.Certificate, name string, admin KeyHash, takeover bool) Record {
+	t.Helper()
 	key := KeyHashOf(cert)
-	r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(pg.root.Cert), TimeMS: 1,
-		Device: DeviceID(cert.Subject.CommonName), Name: name, Role: RoleFull, OS: OSLinux, Key: &key, Admin: &admin}, pg.root.Key)
+	r, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(root.Cert), TimeMS: nextTime(),
+		Device: string(DeviceID(cert.Subject.CommonName)), Name: name, Role: RoleFull, OS: OSLinux, Key: &key, Admin: &admin,
+		Powers: computerPowers(takeover), Commands: authority.Commands}, root.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,8 +261,8 @@ func computerAdminRecord(t *testing.T, pg phoneGroup, cert *x509.Certificate, na
 }
 
 // TestAdminPowers checks what a computer's admin CA may do: admit and
-// remove devices, but neither remove the root or another admin nor hand
-// the group over; and that nothing it signs counts once it is removed.
+// remove devices, but neither remove the root or another admin nor take
+// the group over; and that nothing it signs after its removal counts.
 func TestAdminPowers(t *testing.T) {
 	pg := newPhoneGroup(t)
 	g := pg.root.Cert
@@ -253,38 +281,37 @@ func TestAdminPowers(t *testing.T) {
 	}
 
 	// The computer admin removes neither the admin phone nor the root, nor
-	// hands the group over; a record that tries counts for nothing.
-	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil))
-	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{rootKey}, nil))
+	// takes the group over; a record that tries counts for nothing.
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{phoneKey, KeyHashOf(laptop)}))
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{rootKey}))
 	own := newRoot(t)
-	mustAdd(t, s, rootRecord(t, g, pc, pcChain, own.Cert))
-	// The root it named is never known: the set takes nothing signed under
-	// it, and refuses certificates from it.
-	if _, err := s.Add(revokeRecord(t, g, own, nil, []KeyHash{phoneKey, KeyHashOf(laptop)}, nil)); err == nil {
-		t.Error("the set took a record signed by a root a computer admin named")
-	}
+	mustAdd(t, s, claimRecord(t, g, pc, pcChain, own.Cert))
+	s.SetClock(afterDelay)
+	// The root it named never becomes the group's: what it signs counts
+	// for nothing, and certificates from it are refused.
+	mustAdd(t, s, revokeRecord(t, g, own, nil, []KeyHash{phoneKey, KeyHashOf(laptop)}))
 	if err := s.Refused([]*x509.Certificate{member(t, own)}); err == nil {
 		t.Error("a certificate from a root a computer admin named is not refused")
 	}
 	// Nor does the admin phone remove the root.
-	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{rootKey}, nil))
+	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{rootKey}))
 	if s.Revoked(phoneKey) || s.Revoked(rootKey) || s.Revoked(KeyHashOf(laptop)) {
 		t.Error("a computer admin removed an admin or the root")
 	}
 	if len(s.Roots()) != 0 {
-		t.Error("a computer admin handed the group over")
+		t.Error("a computer admin of a phone's group took it over")
 	}
 	// It does remove an ordinary device.
-	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(tv)}, nil))
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(tv)}))
 	if !s.Revoked(KeyHashOf(tv)) {
 		t.Error("a computer admin cannot remove a device")
 	}
 
-	// The admin phone removes the computer admin, keeping the laptop and
-	// carrying over the tv's removal. From then on nothing the computer
-	// admin signs counts.
-	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{pcKey, KeyHashOf(tv)}, []KeyHash{KeyHashOf(laptop)}))
-	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(laptop)}, nil))
+	// The admin phone removes the computer admin; what it signed before
+	// stays, the laptop and the tv's removal. From then on nothing the
+	// computer admin signs counts.
+	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{pcKey}))
+	mustAdd(t, s, revokeRecord(t, g, pc, pcChain, []KeyHash{KeyHashOf(laptop)}))
 	if !s.Revoked(pcKey) || !s.Revoked(KeyHashOf(tv)) {
 		t.Error("the admin phone did not remove the computer admin")
 	}
@@ -295,13 +322,14 @@ func TestAdminPowers(t *testing.T) {
 		t.Errorf("the kept laptop is refused: %v", err)
 	}
 
-	// Each admin CA signs at most MaxPerAdmin records.
+	// The set keeps at most MaxPerSigner records of one signer.
 	s2 := NewRecords(g)
-	for i := range MaxPerAdmin {
-		mustAdd(t, s2, deviceRecord(t, g, pc, pcChain, laptop, "laptop", int64(i+1)))
+	pc3 := adminCA(t, pg.root)
+	for i := range MaxPerSigner {
+		mustAdd(t, s2, deviceRecord(t, g, pc3, []*x509.Certificate{pc3.Cert}, laptop, "laptop", int64(i+1)))
 	}
-	if _, err := s2.Add(deviceRecord(t, g, pc, pcChain, laptop, "laptop", MaxPerAdmin+1)); err == nil {
-		t.Error("an admin CA signed more than MaxPerAdmin records")
+	if _, err := s2.Add(deviceRecord(t, g, pc3, []*x509.Certificate{pc3.Cert}, laptop, "laptop", MaxPerSigner+1)); err == nil {
+		t.Error("the set took more than MaxPerSigner records of one signer")
 	}
 	mustAdd(t, s2, deviceRecord(t, g, phone, phoneChain, laptop, "laptop", 1))
 }
@@ -310,18 +338,18 @@ func TestAdminPowers(t *testing.T) {
 func ownRecord(t *testing.T, root *CA, cert *x509.Certificate, name, r string) Record {
 	t.Helper()
 	key, dev := KeyHashOf(cert), DeviceID(cert.Subject.CommonName)
-	rec, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(root.Cert), TimeMS: 1, By: dev,
-		Device: dev, Name: name, Role: r, Key: &key}, root.Key)
+	rec, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(root.Cert), TimeMS: nextTime(), Device: string(dev), Name: name, Role: r, Key: &key, HoldsRoot: true}, root.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return rec
 }
 
-// TestComputerTakeover checks that an admin computer hands over a group
-// whose root is a computer, as cbb takeover does, that a root still there
-// undoes it by removing that admin, and that in a phone's group the same
-// records count for nothing.
+// TestComputerTakeover checks that an admin computer that its root
+// computer gave the power claims the group, as cbb takeover does, that the
+// claim takes effect after its delay, that a root still there undoes it by
+// removing that admin, and that in a phone's group an admin computer's
+// claim counts for nothing.
 func TestComputerTakeover(t *testing.T) {
 	for _, rootRole := range []string{RoleFull, RolePhone} {
 		pg := newPhoneGroup(t)
@@ -332,25 +360,29 @@ func TestComputerTakeover(t *testing.T) {
 		s := NewRecords(g)
 		for _, r := range []Record{
 			ownRecord(t, pg.root, holder, "root", rootRole),
-			computerAdminRecord(t, pg, pcCert, "pc", pcKey),
+			adminComputer(t, pg.root, pcCert, "pc", pcKey, rootRole == RoleFull),
 			deviceRecord(t, g, pg.root, nil, laptop, "laptop", 2),
-			rootRecord(t, g, pc, pcChain, next.Cert),
+			claimRecord(t, g, pc, pcChain, next.Cert),
 		} {
 			mustAdd(t, s, r)
 		}
-		_, err := s.Add(revokeRecord(t, g, next, nil, []KeyHash{rootKey, KeyHashOf(holder)}, []KeyHash{KeyHashOf(laptop), pcKey}))
-		took := len(s.Roots()) == 1 && s.Revoked(rootKey) && s.Revoked(KeyHashOf(holder))
+		if len(s.Roots()) != 0 {
+			t.Fatal("a claim took effect before its delay")
+		}
+		s.SetClock(afterDelay)
+		mustAdd(t, s, revokeRecord(t, g, next, nil, []KeyHash{KeyHashOf(holder)}))
+		took := len(s.Roots()) == 1 && s.Revoked(KeyHashOf(holder))
 		if rootRole == RolePhone {
-			if took || len(s.Roots()) != 0 || err == nil {
+			if took || len(s.Roots()) != 0 {
 				t.Error("a computer admin took a phone's group over")
 			}
 			continue
 		}
-		if err != nil {
-			t.Fatal(err)
-		}
 		if !took {
 			t.Fatal("the admin computer did not take the group over from a lost root computer")
+		}
+		if s.Revoked(rootKey) {
+			t.Error("a claim revoked the old root's key")
 		}
 		if err := s.Refused([]*x509.Certificate{laptop}); err != nil {
 			t.Errorf("the kept laptop is refused: %v", err)
@@ -362,24 +394,10 @@ func TestComputerTakeover(t *testing.T) {
 		if _, _, ok := s.TakenOver([]*x509.Certificate{laptop}); ok {
 			t.Error("a member the old root admitted is seen as the old root")
 		}
-		// Another admin computer freezes it: the takeover stops counting
-		// until the root's own key thaws the freeze.
-		pc2 := adminCA(t, pg.root)
-		pc2Key := KeyHashOf(pc2.Cert)
-		mustAdd(t, s, computerAdminRecord(t, pg, member(t, pc2), "pc2", pc2Key))
-		freeze := freezeRecord(t, g, pc2, []*x509.Certificate{pc2.Cert}, []KeyHash{pcKey}, nil)
-		mustAdd(t, s, freeze)
-		if len(s.Roots()) != 0 || s.Revoked(rootKey) {
-			t.Error("a frozen admin computer took the group over")
-		}
-		mustAdd(t, s, thawRecord(t, g, pg.root, nil, []KeyHash{freeze.ID()}))
-		if len(s.Roots()) != 1 {
-			t.Error("the takeover does not count after the root's thaw")
-		}
-		// The old root is still there and removes the admin: the takeover
-		// no longer counts.
-		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{pcKey}, nil))
-		if len(s.Roots()) != 0 || s.Revoked(rootKey) || !s.Revoked(pcKey) {
+		// The old root is still there and removes the admin: the claim is
+		// cancelled, and the group is the old root's again.
+		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{pcKey}))
+		if len(s.Roots()) != 0 || !s.Revoked(pcKey) {
 			t.Error("the old root did not undo the takeover by removing the admin")
 		}
 		if _, _, ok := s.TakenOver([]*x509.Certificate{holder}); ok || s.Refused([]*x509.Certificate{holder}) != nil {
@@ -390,65 +408,49 @@ func TestComputerTakeover(t *testing.T) {
 
 // TestStayingTakeover checks that a takeover keeps a device that a removed
 // admin admitted: its certificate holds through the removed admin's CA,
-// which must stay under the old root, so Staying names that CA's key too.
+// which stays under the old root on the path.
 func TestStayingTakeover(t *testing.T) {
 	pg := newPhoneGroup(t)
 	g, pc, pc2 := pg.root.Cert, pg.a, pg.b
-	pcKey, pc2Key, rootKey := KeyHashOf(pc.Cert), KeyHashOf(pc2.Cert), KeyHashOf(g)
+	pcKey, pc2Key := KeyHashOf(pc.Cert), KeyHashOf(pc2.Cert)
 	holder, pcCert, pc2Cert, laptop := member(t, pg.root), member(t, pc), member(t, pc2), member(t, pc2)
 	laptopChain := []*x509.Certificate{laptop, pc2.Cert}
-	base := []Record{
+	s := NewRecords(g)
+	for _, r := range []Record{
 		ownRecord(t, pg.root, holder, "root", RoleFull),
-		computerAdminRecord(t, pg, pcCert, "pc", pcKey),
-		computerAdminRecord(t, pg, pc2Cert, "pc2", pc2Key),
+		adminComputer(t, pg.root, pcCert, "pc", pcKey, true),
+		adminComputer(t, pg.root, pc2Cert, "pc2", pc2Key, true),
 		deviceRecord(t, g, pc2, []*x509.Certificate{pc2.Cert}, laptop, "laptop", 2),
-	}
-	next := newRoot(t)
-	for _, c := range []struct {
-		name  string
-		keep  func(*Records) []KeyHash
-		taken bool
-	}{
-		{"listed only", func(s *Records) []KeyHash {
-			return slices.DeleteFunc(s.Staying(rootKey), func(k KeyHash) bool { return k == pc2Key })
-		}, false},
-		{"staying", func(s *Records) []KeyHash { return s.Staying(rootKey) }, true},
+		// The root removes pc2; the laptop it admitted stays.
+		revokeRecord(t, g, pg.root, nil, []KeyHash{pc2Key, KeyHashOf(pc2Cert)}),
 	} {
-		s := NewRecords(g)
-		for _, r := range base {
-			mustAdd(t, s, r)
-		}
-		// The root removes pc2 and keeps the laptop it admitted.
-		removed := []KeyHash{pc2Key, KeyHashOf(pc2Cert)}
-		keep := slices.DeleteFunc(s.Staying(pc2Key), func(k KeyHash) bool { return slices.Contains(removed, k) })
-		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, removed, keep))
-		if err := s.Refused(laptopChain); err != nil {
-			t.Fatalf("%s: the laptop is refused once pc2 is removed: %v", c.name, err)
-		}
-		// pc takes the group over from the lost root.
-		mustAdd(t, s, rootRecord(t, g, pc, []*x509.Certificate{pc.Cert}, next.Cert))
-		lost := []KeyHash{rootKey, KeyHashOf(holder)}
-		keep = append(slices.DeleteFunc(c.keep(s), func(k KeyHash) bool { return slices.Contains(lost, k) }), pcKey)
-		mustAdd(t, s, revokeRecord(t, g, next, nil, lost, keep))
-		if len(s.Roots()) != 1 {
-			t.Fatalf("%s: the takeover does not count", c.name)
-		}
-		if err := s.Refused(laptopChain); (err == nil) != c.taken {
-			t.Errorf("%s: the laptop after the takeover refused: %v, want taken %v", c.name, err, c.taken)
-		}
-		if s.Refused([]*x509.Certificate{member(t, pc2), pc2.Cert}) == nil {
-			t.Errorf("%s: a certificate of the removed admin for a key no record lists is taken", c.name)
-		}
+		mustAdd(t, s, r)
+	}
+	if err := s.Refused(laptopChain); err != nil {
+		t.Fatalf("the laptop is refused once pc2 is removed: %v", err)
+	}
+	// pc takes the group over from the lost root.
+	next := newRoot(t)
+	mustAdd(t, s, claimRecord(t, g, pc, []*x509.Certificate{pc.Cert}, next.Cert))
+	s.SetClock(afterDelay)
+	mustAdd(t, s, revokeRecord(t, g, next, nil, []KeyHash{KeyHashOf(holder)}))
+	if len(s.Roots()) != 1 {
+		t.Fatal("the takeover does not count")
+	}
+	if err := s.Refused(laptopChain); err != nil {
+		t.Errorf("the laptop after the takeover is refused: %v", err)
+	}
+	if s.Refused([]*x509.Certificate{member(t, pc2), pc2.Cert}) == nil {
+		t.Error("a certificate of the removed admin for a key no record lists is taken")
 	}
 }
 
-// recordTime gives each freeze and thaw record of a test its own time, so
-// two signers' records with the same content still differ.
+// recordTime gives each record of a test its own time.
 var recordTime = t0.UnixMilli()
 
-func freezeRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, keys, records []KeyHash) Record {
+func freezeRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, keys []KeyHash) Record {
 	t.Helper()
-	r, err := SignRecord(RecordBody{Type: RecordFreeze, Group: Tag(root), TimeMS: nextTime(), Keys: keys, Records: records}, signer.Key, chain...)
+	r, err := signRecord(RecordBody{Type: RecordFreeze, Group: Tag(root), TimeMS: nextTime(), Keys: keys}, signer.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +459,7 @@ func freezeRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x50
 
 func thawRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, freezes []KeyHash) Record {
 	t.Helper()
-	r, err := SignRecord(RecordBody{Type: RecordThaw, Group: Tag(root), TimeMS: nextTime(), Records: freezes}, signer.Key, chain...)
+	r, err := signRecord(RecordBody{Type: RecordThaw, Group: Tag(root), TimeMS: nextTime(), Records: freezes}, signer.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,16 +467,18 @@ func thawRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.
 }
 
 func nextTime() int64 {
+	heads.Lock()
+	defer heads.Unlock()
 	recordTime++
 	return recordTime
 }
 
 // TestFreeze checks that an admin computer freezes another one: what the
-// frozen admin signed before keeps counting and nothing later does, its own
-// device is refused, it cannot freeze the root or an admin phone, two
-// admins that freeze each other both stay frozen, and the root or an admin
-// phone ends a freeze. The result does not depend on the order of the
-// records.
+// frozen admin signed before the freeze saw it keeps counting and nothing
+// later does, its own device is refused, nobody freezes the root or an
+// admin phone, a frozen admin's freeze back counts for nothing, and an
+// admin phone or the root ends a freeze. The result does not depend on the
+// order of the records.
 func TestFreeze(t *testing.T) {
 	pg := newPhoneGroup(t)
 	g := pg.root.Cert
@@ -482,24 +486,24 @@ func TestFreeze(t *testing.T) {
 	pc1Chain, pc2Chain, phoneChain := []*x509.Certificate{pc1.Cert}, []*x509.Certificate{pc2.Cert}, []*x509.Certificate{phone.Cert}
 	pc1Key, pc2Key, phoneKey, rootKey := KeyHashOf(pc1.Cert), KeyHashOf(pc2.Cert), KeyHashOf(phone.Cert), KeyHashOf(g)
 	m1, m2, laptop, tv := member(t, pc1), member(t, pc2), member(t, pc1), member(t, pc1)
-	before := deviceRecord(t, g, pc1, pc1Chain, laptop, "laptop", 2)
-	freeze1 := freezeRecord(t, g, pc2, pc2Chain, []KeyHash{pc1Key}, []KeyHash{before.ID()})
-	freeze2 := freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key}, nil)
 	all := []Record{
 		computerAdminRecord(t, pg, m1, "pc1", pc1Key),
 		computerAdminRecord(t, pg, m2, "pc2", pc2Key),
 		adminRecord(t, g, pg.root, nil, member(t, phone), "phone", phoneKey),
-		before,
-		freeze1,
+		deviceRecord(t, g, pc1, pc1Chain, laptop, "laptop", 2),
+	}
+	freeze1 := freezeRecord(t, g, pc2, pc2Chain, []KeyHash{pc1Key})
+	all = append(all, freeze1,
 		// After the freeze: neither the tv nor removing the laptop counts.
 		deviceRecord(t, g, pc1, pc1Chain, tv, "tv", 3),
-		revokeRecord(t, g, pc1, pc1Chain, []KeyHash{KeyHashOf(laptop)}, nil),
+		revokeRecord(t, g, pc1, pc1Chain, []KeyHash{KeyHashOf(laptop)}),
 		// Nobody freezes the root or an admin phone.
-		freezeRecord(t, g, pc1, pc1Chain, []KeyHash{phoneKey}, nil),
-		freezeRecord(t, g, pc1, pc1Chain, []KeyHash{rootKey}, nil),
-		freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key, phoneKey}, nil),
-	}
-	check := func(s *Records, pc2Frozen bool) {
+		freezeRecord(t, g, pc2, pc2Chain, []KeyHash{phoneKey}),
+		freezeRecord(t, g, pc2, pc2Chain, []KeyHash{rootKey}),
+	)
+	// The frozen admin freezes back, having seen the freeze.
+	freeze2 := freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key})
+	check := func(s *Records) {
 		t.Helper()
 		if !s.Frozen(pc1Key) || !s.Frozen(KeyHashOf(m1)) {
 			t.Fatal("the freeze does not count")
@@ -507,8 +511,8 @@ func TestFreeze(t *testing.T) {
 		if s.Frozen(phoneKey) || s.Frozen(rootKey) {
 			t.Error("an admin computer froze the root or an admin phone")
 		}
-		if s.Frozen(pc2Key) != pc2Frozen || s.Frozen(KeyHashOf(m2)) != pc2Frozen {
-			t.Errorf("pc2 frozen %v, want %v", s.Frozen(pc2Key), pc2Frozen)
+		if s.Frozen(pc2Key) || s.Frozen(KeyHashOf(m2)) {
+			t.Error("a frozen admin's freeze counts")
 		}
 		if got := names(s.Devices()); got != "laptop pc1 pc2 phone" {
 			t.Errorf("devices %q, want laptop pc1 pc2 phone", got)
@@ -518,8 +522,10 @@ func TestFreeze(t *testing.T) {
 				t.Errorf("pc1 is listed as frozen %v, admin %v", d.Frozen, d.Admin)
 			}
 		}
-		if err := s.Refused([]*x509.Certificate{laptop, pc1.Cert}); err != nil {
-			t.Errorf("the laptop it admitted before is refused: %v", err)
+		// The laptop stays listed, but a certificate from a frozen
+		// issuer is refused while the freeze lasts.
+		if s.Refused([]*x509.Certificate{laptop, pc1.Cert}) == nil {
+			t.Error("a certificate from the frozen admin is taken")
 		}
 		if s.Refused([]*x509.Certificate{tv, pc1.Cert}) == nil {
 			t.Error("a device a frozen admin certified later is taken")
@@ -533,28 +539,38 @@ func TestFreeze(t *testing.T) {
 		for _, i := range mrand.Perm(len(all)) {
 			mustAdd(t, s, all[i])
 		}
-		check(s, false)
-		// The frozen admin freezes back: both stay frozen.
+		check(s)
 		mustAdd(t, s, freeze2)
-		check(s, true)
-		// An admin computer does not end a freeze; the admin phone does.
-		mustAdd(t, s, thawRecord(t, g, pc2, pc2Chain, []KeyHash{freeze2.ID()}))
-		check(s, true)
-		mustAdd(t, s, thawRecord(t, g, phone, phoneChain, s.FreezesOf(pc2Key)))
-		check(s, false)
-		// Removing the frozen admin carries what it signed before, and its
-		// freezes stop counting with it.
-		mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{pc1Key, KeyHashOf(m1)}, s.Admitted(pc1Key)))
-		mustAdd(t, s, freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key}, []KeyHash{freeze2.ID()}))
-		if s.Frozen(pc2Key) || !s.Revoked(pc1Key) {
-			t.Error("a removed admin's freeze counts")
-		}
-		if err := s.Refused([]*x509.Certificate{laptop, pc1.Cert}); err != nil {
-			t.Errorf("the laptop is refused after its admin's removal: %v", err)
-		}
+		check(s)
+	}
+	// An admin computer does not end a freeze; the admin phone does, and
+	// the frozen admin's records count again, removing the laptop among
+	// them.
+	s := NewRecords(g)
+	for _, r := range all {
+		mustAdd(t, s, r)
+	}
+	mustAdd(t, s, thawRecord(t, g, pc2, pc2Chain, []KeyHash{freeze1.ID()}))
+	check(s)
+	mustAdd(t, s, thawRecord(t, g, phone, phoneChain, s.FreezesOf(pc1Key)))
+	if s.Frozen(pc1Key) {
+		t.Error("the admin phone's thaw does not count")
+	}
+	if got := names(s.Devices()); got != "pc1 pc2 phone tv" {
+		t.Errorf("devices after the thaw %q, want pc1 pc2 phone tv", got)
+	}
+	// Removing the admin keeps what it signed before, and its later freeze
+	// counts for nothing.
+	mustAdd(t, s, revokeRecord(t, g, phone, phoneChain, []KeyHash{pc1Key, KeyHashOf(m1)}))
+	mustAdd(t, s, freezeRecord(t, g, pc1, pc1Chain, []KeyHash{pc2Key}))
+	if s.Frozen(pc2Key) || !s.Revoked(pc1Key) {
+		t.Error("a removed admin's freeze counts")
+	}
+	if err := s.Refused([]*x509.Certificate{tv, pc1.Cert}); err != nil {
+		t.Errorf("the tv is refused after its admin's removal: %v", err)
 	}
 	// The root's own thaw ends a freeze too.
-	s := NewRecords(g)
+	s = NewRecords(g)
 	for _, r := range all {
 		mustAdd(t, s, r)
 	}
@@ -562,17 +578,12 @@ func TestFreeze(t *testing.T) {
 	if s.Frozen(pc1Key) {
 		t.Error("the root's thaw does not count")
 	}
-	// Its records count again, removing the laptop among them.
-	if got := names(s.Devices()); got != "pc1 pc2 phone tv" {
-		t.Errorf("devices after the thaw %q, want pc1 pc2 phone tv", got)
-	}
 }
 
 // TestStaying checks that removing an admin keeps a device it only renewed:
 // the root admitted the laptop and the admin renewed its certificate, which
-// stays valid with the keys Staying returns, and not with only the devices
-// the admin admitted; a certificate the admin issued for a key no record
-// lists stays refused.
+// stays valid since the admin's record gave it renew; a certificate the
+// admin issued for a key no record lists stays refused.
 func TestStaying(t *testing.T) {
 	pg := newPhoneGroup(t)
 	g := pg.root.Cert
@@ -592,33 +603,21 @@ func TestStaying(t *testing.T) {
 		t.Fatal(err)
 	}
 	stranger := member(t, pc1)
-	base := []Record{
+	s := NewRecords(g)
+	for _, r := range []Record{
 		computerAdminRecord(t, pg, m1, "pc1", pc1Key),
 		deviceRecord(t, g, pg.root, nil, laptop, "laptop", 2),
-	}
-	removed := []KeyHash{pc1Key, KeyHashOf(m1)}
-	for _, c := range []struct {
-		name  string
-		keep  func(*Records) []KeyHash
-		taken bool
-	}{
-		{"admitted", func(s *Records) []KeyHash { return s.Admitted(pc1Key) }, false},
-		{"staying", func(s *Records) []KeyHash { return s.Staying(pc1Key) }, true},
+		revokeRecord(t, g, pg.root, nil, []KeyHash{pc1Key, KeyHashOf(m1)}),
 	} {
-		s := NewRecords(g)
-		for _, r := range base {
-			mustAdd(t, s, r)
-		}
-		keep := slices.DeleteFunc(c.keep(s), func(k KeyHash) bool { return slices.Contains(removed, k) })
-		mustAdd(t, s, revokeRecord(t, g, pg.root, nil, removed, keep))
-		if err := s.Refused([]*x509.Certificate{renewed, pc1.Cert}); (err == nil) != c.taken {
-			t.Errorf("%s: the laptop's renewed certificate refused: %v, want taken %v", c.name, err, c.taken)
-		}
-		if s.Refused([]*x509.Certificate{stranger, pc1.Cert}) == nil {
-			t.Errorf("%s: a certificate of the removed admin for a key no record lists is taken", c.name)
-		}
-		if got := names(s.Devices()); got != "laptop" {
-			t.Errorf("%s: devices %q, want laptop", c.name, got)
-		}
+		mustAdd(t, s, r)
+	}
+	if err := s.Refused([]*x509.Certificate{renewed, pc1.Cert}); err != nil {
+		t.Errorf("the laptop's renewed certificate is refused: %v", err)
+	}
+	if s.Refused([]*x509.Certificate{stranger, pc1.Cert}) == nil {
+		t.Error("a certificate of the removed admin for a key no record lists is taken")
+	}
+	if got := names(s.Devices()); got != "laptop" {
+		t.Errorf("devices %q, want laptop", got)
 	}
 }

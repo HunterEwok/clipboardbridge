@@ -269,17 +269,25 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 	if err != nil {
 		return body, err
 	}
+	path := s.path()
+	if signer == anchor && anchor != KeyHashOf(path[len(path)-1]) {
+		return body, errors.New("group: the command's signer is not the group's current root")
+	}
 	dev, _, ok := s.signerDevice(signer, anchor)
 	if signer != anchor {
-		if !ok || s.Revoked(signer) || s.Frozen(signer) {
+		if !ok || !dev.Admin || s.Revoked(signer) || s.Frozen(signer) {
 			return body, errors.New("group: the command's signer is not an admin of the group")
 		}
 		if !slices.Contains(dev.Commands, body.Type) {
 			return body, fmt.Errorf("group: the command's signer may not sign %s commands", body.Type)
 		}
 	}
-	if !ok || dev.ID != body.By {
+	// by names the signer's device whenever the records show it, and
+	// otherwise no device the records show.
+	if ok && dev.ID != body.By {
 		return body, errors.New("group: a command's by is not the device of its signer")
+	} else if !ok && s.listedDevice(body.By) {
+		return body, errors.New("group: a command's by names a device that does not hold its signer's key")
 	}
 	ms := now.UnixMilli()
 	switch {
@@ -376,6 +384,16 @@ func (s *Records) signerOf(r Record) (signer, anchor KeyHash, err error) {
 }
 
 // signerDevice is CommandSigner for the key signer under the root anchor.
+// listedDevice reports whether the devices list shows the device id.
+func (s *Records) listedDevice(id DeviceID) bool {
+	for _, d := range s.Devices() {
+		if d.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Records) signerDevice(signer, anchor KeyHash) (dev Device, root, ok bool) {
 	var id DeviceID
 	if signer == anchor {

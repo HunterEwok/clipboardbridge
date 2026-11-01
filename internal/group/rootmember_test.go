@@ -5,23 +5,8 @@ package group
 
 import (
 	"crypto/x509"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-type rootMemberCase struct {
-	Name       string   `json:"name"`
-	Records    []Record `json:"records"`
-	RootDevice DeviceID `json:"root_device"`
-	RootRole   string   `json:"root_role"`
-}
-
-type rootMemberVectors struct {
-	GroupCA []byte           `json:"group_ca"`
-	Cases   []rootMemberCase `json:"cases"`
-}
 
 // rootOf returns the root's own device and the role the devices list
 // gives it, as a member that asks whether the root is a computer reads it.
@@ -35,108 +20,49 @@ func rootOf(s *Records) (DeviceID, string) {
 	return root, ""
 }
 
-// TestGoRootMemberVectors writes (with -update) and checks
-// testdata/interop/go-root-member.json: the root's own device when the
-// root signed two own device records at the same time, the one with the
-// greater record ID, and whether it is a phone or a computer, the same in
-// every order of the records, for the phone kits and the lite member to
-// agree with.
+// TestGoRootMemberVectors checks the root's own device: the device of the
+// root's newest record that says it holds the root, whether it is a phone
+// or a computer, the same in every order of the records. The records of
+// version 1 that go-root-member.json keeps for the phone kits are refused.
 func TestGoRootMemberVectors(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "interop", "go-root-member.json")
-	var v rootMemberVectors
-	if *update {
-		// New keys until the computer wins both ties, so the file holds a
-		// computer root of each role's spelling.
-		for try := 0; ; try++ {
-			if try == 64 {
-				t.Fatal("the computer never won the ties")
-			}
-			if v = makeRootMemberVectors(t); v.Cases[1].RootRole == RoleFull && v.Cases[3].RootRole == RoleFull {
-				break
-			}
-		}
-		data, err := json.MarshalIndent(v, "", "\t")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	checkV1Refused(t, "go-root-member.json")
+	type story struct {
+		root *CA
+		a, b *x509.Certificate
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	newStory := func() story {
+		root := newRoot(t)
+		return story{root, member(t, root), member(t, root)}
 	}
-	v = rootMemberVectors{}
-	if err := json.Unmarshal(data, &v); err != nil {
-		t.Fatal(err)
-	}
-	ca, err := x509.ParseCertificate(v.GroupCA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(v.Cases) < 4 {
-		t.Fatalf("%d cases", len(v.Cases))
-	}
-	roles := map[string]bool{}
-	for _, c := range v.Cases {
-		if c.RootDevice == "" || c.RootRole == "" {
-			t.Errorf("%s: no root in the file", c.Name)
-		}
-		roles[c.RootRole] = true
-		permute(len(c.Records), func(order []int) {
-			s := NewRecords(ca)
-			recs := make([]Record, len(order))
-			for i, k := range order {
-				recs[i] = c.Records[k]
-			}
-			if _, errs := s.AddAll(recs); len(errs) != 0 {
-				t.Fatal(errs)
-			}
-			if dev, role := rootOf(s); dev != c.RootDevice || role != c.RootRole {
-				t.Errorf("%s, order %v: the root is %s, %s; the file has %s, %s", c.Name, order, dev, role, c.RootDevice, c.RootRole)
-			}
-		})
-	}
-	if !roles[RoleFull] || !roles[RolePhone] {
-		t.Errorf("the cases' roots are %v, want a phone and a computer among them", roles)
-	}
-}
-
-// makeRootMemberVectors makes the cases of go-root-member.json with new
-// keys: two own device records of the root at the same time, and a plain
-// computer.
-func makeRootMemberVectors(t *testing.T) rootMemberVectors {
-	root := newRoot(t)
-	g := root.Cert
-	own := func(name, role string, dev DeviceID, cert *x509.Certificate) Record {
+	own := func(st story, name, role string, cert *x509.Certificate) Record {
 		key := KeyHashOf(cert)
-		r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 5, By: dev,
-			Device: dev, Name: name, Role: role, Key: &key}, root.Key)
+		r, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(st.root.Cert), TimeMS: nextTime(), Device: cert.Subject.CommonName, Name: name, Role: role, Key: &key, HoldsRoot: true}, st.root.Key)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return r
 	}
-	a, b := member(t, root), member(t, root)
-	devA, devB := DeviceID(a.Subject.CommonName), DeviceID(b.Subject.CommonName)
-	plain := deviceRecord(t, g, root, nil, member(t, root), "plain pc", 1)
-	v := rootMemberVectors{GroupCA: g.Raw}
+	s1, s2, s3 := newStory(), newStory(), newStory()
+	dev := func(c *x509.Certificate) DeviceID { return DeviceID(c.Subject.CommonName) }
 	for _, c := range []struct {
 		name string
+		st   story
 		recs []Record
+		dev  DeviceID
+		role string
 	}{
-		{"two phones at the same time", []Record{own("phone a", RolePhone, devA, a), own("phone b", RolePhone, devB, b), plain}},
-		{"a phone and a computer at the same time", []Record{own("phone a", RolePhone, devA, a), own("pc b", RoleFull, devB, b), plain}},
-		{"one device as a phone and as a computer at the same time", []Record{own("as a phone", RolePhone, devA, a), own("as a pc", RoleFull, devA, a), plain}},
-		{"a computer of an earlier role and a phone at the same time", []Record{own("pc a", roleLinux, devA, a), own("phone b", RolePhone, devB, b), plain}},
+		{"a phone, then a computer", s1, []Record{own(s1, "phone a", RolePhone, s1.a), own(s1, "pc b", RoleFull, s1.b), deviceRecord(t, s1.root.Cert, s1.root, nil, member(t, s1.root), "plain pc", 1)}, dev(s1.b), RoleFull},
+		{"a computer, then a phone", s2, []Record{own(s2, "pc a", RoleFull, s2.a), own(s2, "phone b", RolePhone, s2.b)}, dev(s2.b), RolePhone},
+		{"one device as a phone, then as a computer", s3, []Record{own(s3, "as a phone", RolePhone, s3.a), own(s3, "as a pc", RoleFull, s3.a)}, dev(s3.a), RoleFull},
 	} {
-		s := NewRecords(g)
-		if _, errs := s.AddAll(c.recs); len(errs) != 0 {
-			t.Fatal(errs)
-		}
-		dev, role := rootOf(s)
-		v.Cases = append(v.Cases, rootMemberCase{Name: c.name, Records: c.recs, RootDevice: dev, RootRole: role})
+		permute(len(c.recs), func(order []int) {
+			s := NewRecords(c.st.root.Cert)
+			for _, k := range order {
+				mustAdd(t, s, c.recs[k])
+			}
+			if dev, role := rootOf(s); dev != c.dev || role != c.role {
+				t.Errorf("%s, order %v: the root is %s, %s; want %s, %s", c.name, order, dev, role, c.dev, c.role)
+			}
+		})
 	}
-	return v
 }

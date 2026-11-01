@@ -6,6 +6,7 @@ package group
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -18,11 +19,13 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/atomicfile"
 	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/core"
+	"github.com/HunterEwok/clipboardbridge/internal/strict"
 )
 
 // RecordsFileName is the name of the records file in the state directory.
@@ -230,15 +233,37 @@ func (s *Records) Add(r Record) (bool, error) {
 		return nil
 	})
 	if err != nil {
-		return false, fmt.Errorf("group: %w", err)
+		signer, ok := s.laterVersion(r)
+		if !ok {
+			return false, fmt.Errorf("group: %w", err)
+		}
+		// A record of a later version is kept and passed on, never
+		// applied; the state lists it when its signer may raise the
+		// signal (docs/records-v2.md, "Records of a later version").
+		if s.bySigner[signer] >= MaxPerSigner || len(s.recs) >= MaxRecords {
+			return false, errors.New("group: too many records")
+		}
+		if r.Chain == nil {
+			r.Chain = [][]byte{}
+		}
+		s.recs[held{r.ID(), string(r.Sig)}] = r
+		s.bySigner[signer]++
+		s.st = nil
+		return true, nil
 	}
 	if sr.Body.Group != s.tag {
 		return false, errors.New("group: a record of another group")
 	}
+	if sr.AdminCA != nil && !s.underRoot(sr.AdminCA) {
+		return false, errors.New("group: a record's admin CA is from no root of the group")
+	}
 	if s.bySigner[sr.Body.Signer] >= MaxPerSigner {
 		return false, errors.New("group: too many records from one signer")
 	}
-	if len(s.recs) >= MaxRecords {
+	// Past MaxRecords the set still takes up to MaxPerSigner records of a
+	// root's own key on the path, so that admins that fill it leave room
+	// for the root to remove them.
+	if n := len(s.recs); n >= MaxRecords && (n >= MaxRecords+MaxPerSigner || len(r.Chain) > 0 || !s.onPath(sr.Body.Signer)) {
 		return false, errors.New("group: too many records")
 	}
 	if r.Chain == nil {
@@ -256,6 +281,57 @@ func (s *Records) Add(r Record) (bool, error) {
 	}
 	s.st = nil
 	return true, nil
+}
+
+// underRoot reports whether the admin CA ca is signed by a root the set
+// knows: the group CA or the new root of a claim in it.
+func (s *Records) underRoot(ca *x509.Certificate) bool {
+	for _, root := range s.roots {
+		if ca.CheckSignatureFrom(root) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// laterVersion reports whether r is a record of a later version that a
+// member keeps: a canonical body of at most MaxBody bytes, v from 3 to
+// 2^31-1, this group's tag, and a signature that verifies with a root the
+// set knows (no chain) or with its admin CA. Whether its signer may raise
+// the signal is for the evaluation. It returns the signer.
+func (s *Records) laterVersion(r Record) (KeyHash, bool) {
+	if len(r.Body) > authority.MaxBody || strict.CheckCanonical(r.Body, "v", "group", "signer") != nil {
+		return KeyHash{}, false
+	}
+	var b struct {
+		V      json.RawMessage `json:"v"`
+		Group  any             `json:"group"`
+		Signer KeyHash         `json:"signer"`
+	}
+	if json.Unmarshal(r.Body, &b) != nil || b.Group != s.tag {
+		return KeyHash{}, false
+	}
+	v, err := strconv.ParseInt(string(b.V), 10, 64)
+	if err != nil || v <= 2 || v > authority.MaxSeq {
+		return KeyHash{}, false
+	}
+	var pub crypto.PublicKey
+	switch len(r.Chain) {
+	case 0:
+		if c := s.roots[b.Signer]; c != nil {
+			pub = c.PublicKey
+		}
+	case 1:
+		if ca, err := x509.ParseCertificate(r.Chain[0]); err == nil && KeyHashOf(ca) == b.Signer && s.underRoot(ca) {
+			pub = ca.PublicKey
+		}
+	}
+	ec, ok := pub.(*ecdsa.PublicKey)
+	digest := sha256.Sum256(r.Body)
+	if !ok || !ecdsa.VerifyASN1(ec, digest[:], r.Sig) {
+		return KeyHash{}, false
+	}
+	return b.Signer, true
 }
 
 // AddAll adds the valid records among rs and returns those that were new,
@@ -362,6 +438,11 @@ func (s *Records) path() []*x509.Certificate {
 	return out
 }
 
+// onPath reports whether k is the key of a root on the path.
+func (s *Records) onPath(k KeyHash) bool {
+	return slices.Contains(s.State().Roots, k)
+}
+
 // Roots returns the roots that took the group over from the group CA, in
 // order; the last is the current root. It is empty in a group that was
 // never handed over.
@@ -438,8 +519,9 @@ func (s *Records) Devices() []Device {
 		dev := Device{ID: DeviceID(d.Device), Name: d.Name, Role: d.Role, OS: d.OS, Store: StoreOf(d.Store, d.Role), Kind: d.Kind, Proof: d.Proof,
 			Seal: d.Seal, Keys: d.Keys, Powers: d.Powers, Commands: d.Commands, Frozen: d.Frozen}
 		if d.Admin != nil {
+			// A frozen admin is no admin until the freeze ends.
 			a := *d.Admin
-			dev.Admin, dev.AdminKey = true, &a
+			dev.Admin, dev.AdminKey = !d.Frozen, &a
 		}
 		if p, ok := newest[d.Device]; ok {
 			dev.Since = time.UnixMilli(p.b.TimeMS)
@@ -659,20 +741,11 @@ func (s *Records) Known(dev DeviceID) bool {
 }
 
 // FreezesOf returns the IDs of the freeze records that name the admin key
-// admin and that no thaw record names: what a thaw of that admin ends.
+// admin: what a thaw of that admin names.
 func (s *Records) FreezesOf(admin KeyHash) []KeyHash {
-	ps := s.bodies()
-	thawed := map[KeyHash]bool{}
-	for _, p := range ps {
-		if p.b.Type == RecordThaw {
-			for _, id := range p.b.Records {
-				thawed[id] = true
-			}
-		}
-	}
 	var out []KeyHash
-	for _, p := range ps {
-		if p.b.Type == RecordFreeze && slices.Contains(p.b.Keys, admin) && !thawed[p.id] && !slices.Contains(out, p.id) {
+	for _, p := range s.bodies() {
+		if p.b.Type == RecordFreeze && slices.Contains(p.b.Keys, admin) && !slices.Contains(out, p.id) {
 			out = append(out, p.id)
 		}
 	}
