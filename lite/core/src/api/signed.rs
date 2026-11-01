@@ -40,7 +40,7 @@ fn read(kind: &str, body: &[u8]) -> Result<Value> {
         return Err(Error::msg("The file is too large."));
     }
     match kind {
-        "command" => value(crate::records::Command::parse(body)?),
+        "command" => value(crate::command::Command::parse(body)?),
         "credential" => value(crate::credential::Body::parse(body)?),
         "keys" => value(crate::release::decode_keys(body)?),
         "release" => value(crate::release::decode_release(body)?),

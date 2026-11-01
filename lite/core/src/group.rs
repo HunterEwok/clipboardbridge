@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::authority::{self, Body, Hash, Input, Record, Seen, SigCache, State, key_hash_of};
 use crate::certs::{self, Cert, KeyHash, sha256};
+use crate::command::{COMMAND_AHEAD_MS, Command, store_of};
 use crate::error::{Context, Error, Result, Wrap};
-use crate::records::{COMMAND_AHEAD_MS, Command, store_of};
 
 /// The most records the set keeps, waiting ones included.
 pub const MAX_RECORDS: usize = 4096;

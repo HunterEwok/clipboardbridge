@@ -62,7 +62,7 @@ type watchKey struct {
 	Watch   bool    `json:"watch"`
 }
 
-// What each case of go-watch.json must say, whatever the file holds.
+// What each case of v2-watch.json must say, whatever the file holds.
 var (
 	wantWatchRevoked = map[string]map[string]bool{
 		"phone root":    {"the laptop": true},
@@ -83,14 +83,14 @@ var (
 // device, certifies one, is a hub, nor signs more than the commands that
 // turn things off and run quick actions; an admin computer freezes it, and
 // an admin computer does not remove it. In a group whose root is a
-// computer, a watch does not take the group over. The records of version 1
-// that go-watch.json keeps for the phone kits are refused.
+// computer, a watch does not take the group over. With -update it writes
+// the cases as testdata/interop/v2-watch.json, which the Rust core reads.
 func TestGoWatchVectors(t *testing.T) {
-	checkV1Refused(t, "go-watch.json")
 	var v watchVectors
 	for _, name := range []string{"phone root", "frozen watch", "computer root"} {
 		v.Cases = append(v.Cases, makeWatchCase(t, name))
 	}
+	writeV2Vectors(t, "v2-watch.json", v)
 	for _, c := range v.Cases {
 		for _, cmd := range c.Commands {
 			body, err := parseCommandBody(cmd.Command.Body)

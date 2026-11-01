@@ -1127,7 +1127,7 @@ All built in 0.5, but for what each step names as still to do.
    with an admin phone's takeover; `TestMoveHub` moves a hub with a client away from home.
    Still to do on the bench: moving from a phone to the Linux desktop with the lite member far away.
 7. Done: several hubs with a priority (D-65; docs/protocol.md, section 11, "Several hubs"):
-   the order of hubs from the records (`go-hubs.json` checks Go, both kits and the lite
+   the order of hubs from the records (`v2-hubs.json` checks Go, both kits and the lite
    member), the clients keeping every hub's offer with a preshared key of their own, the
    hubs sharing their clients and passing each other's offers on, and a computer's hub
    yielding to a higher one and serving again when it goes; `TestSeveralHubs` switches both

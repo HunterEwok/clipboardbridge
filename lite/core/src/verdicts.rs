@@ -3,7 +3,7 @@
 
 //! The lite member's verdicts on a corpus of tools/difffuzz
 //! (docs/differential.md): one line per case, which the comparison checks
-//! against the other implementations' lines. A child of `records`, so that
+//! against the other implementations' lines. A child of `command`, so that
 //! it reads a command's fields; records are of version 2 (`crate::group`). It runs on the corpus that
 //! CBB_VERDICTS names and writes to CBB_VERDICTS_OUT; without them, on a
 //! corpus of its own.

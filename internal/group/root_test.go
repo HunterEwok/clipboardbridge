@@ -294,7 +294,7 @@ func TestIdentityWithRoots(t *testing.T) {
 // group CA handed to a root (cbb upgrade, version 1) are refused: there is
 // no migration to version 2.
 func TestUpgradeRecords(t *testing.T) {
-	checkV1Refused(t, "go-upgrade.json")
+	checkV1Refused(t)
 }
 
 // TestUpgraded checks that an identity of a legacy group, made before

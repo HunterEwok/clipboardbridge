@@ -823,6 +823,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
   with the greater record ID as its own device, as the computers and the lite member do, so
   every member agrees which device holds the root and whether it is a phone or a computer.
 
+### Removed
+
+- The Rust core's reader of group records of version 1 (`records`): commands now live in
+  `command`, and the interop vectors of version 1 (`go-*.json` for records, commands, hubs
+  and credentials) give way to the `v2-*.json` vectors of the same cases.
+
 ### Fixed
 
 - A computer that signs two group records in one pass, or at the same moment, gives them

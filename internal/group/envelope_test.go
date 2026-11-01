@@ -31,10 +31,8 @@ func resign(t *testing.T, r Record, signer *CA, chain ...*x509.Certificate) Reco
 // In v:2 a body names its signer, so one body signed by another signer is
 // no record: a set refuses the copy a computer admin signed of the root's
 // removal of an admin phone, and the root's own copy removes the phone
-// whichever came first. The records of testdata/interop/go-envelopes.json
-// are v:1 and refused.
+// whichever came first.
 func TestEnvelopeVectors(t *testing.T) {
-	checkV1Refused(t, "go-envelopes.json")
 	pg := newPhoneGroup(t)
 	g := pg.root.Cert
 	pc, phone := pg.a, pg.b

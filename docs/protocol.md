@@ -1305,7 +1305,7 @@ chains and records signed through one are implemented on both sides: Go's
 `adminCA` (cross-checked by `TestSwiftAdmin`). A second phone joins as an admin in
 ClipboardBridgeKit (`PairingJoiner`, `PhoneGroup.joined`, section 6). `root` records are
 implemented in Go (`Records.Roots`, `Identity.Roots`, the Welcome's `roots`;
-`testdata/interop/go-root.json` holds a handover for the phone kit to check; `go-watch.json`
+`testdata/interop/v2-records.json` holds a handover for the phone kit to check; `v2-watch.json`
 what a watch's admin key may do, rule 8) and in
 ClipboardBridgeKit (`RecordSet.roots`, `PhoneGroup.takeOver`, `PhoneGroup.roots`, the Welcome's
 `roots`; `TestSwiftRoot` checks a takeover the kit signs). Admins are
@@ -1864,7 +1864,7 @@ its own hub on; the clients keep its offer as any hub's.
 The group's root and admins with a hub set up are its hubs, in an order every member
 derives from the records alone: phones first (a phone is the hub while its app is open,
 so it serves whenever it is there), then computers; within each, the root first, then by
-device ID. The vectors in `testdata/interop/go-hubs.json` (Go's `TestGoHubVectors`) give an
+device ID. The vectors in `testdata/interop/v2-hubs.json` (Go's `TestGoHubVectors`) give an
 order that Go (`Records.HubOrder`), both kits (`RecordSet.hubOrder`) and the lite member
 (`hub_order`) must all derive. The root, or an admin with `hub`, may sign a table of main
 hubs in the user's order (a `hubs` record, docs/records-v2.md, "The hubs table"; `cbb hubs`):
@@ -2972,7 +2972,7 @@ What a forwarder and a relay check in place of the group's records, so that no d
 name, system, root or date leaves the group, and a server cannot follow a group or a device
 from one month to the next ([design.md](design.md), D-67 and D-75). Implemented in Go
 (`internal/group/credential.go` and `serverkeys.go`, `internal/forward`, `internal/relay`,
-`internal/service/credentials.go`). The vectors in `testdata/interop/go-credentials.json`
+`internal/service/credentials.go`). The vectors in `testdata/interop/v2-credentials.json`
 (Go's `TestGoCredentialVectors`) give a group's records, the lists its credentials must hold,
 a period with its server credentials, its hubs' and members' credentials, and sets a server
 refuses. The lite member's core reads and checks them as Go does (`lite/core/src/credential.rs`:
