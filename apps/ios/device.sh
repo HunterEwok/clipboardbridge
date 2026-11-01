@@ -94,7 +94,8 @@ else
 	xcodegen generate --spec device.yml
 fi
 
-derived=$HOME/Library/Developer/Xcode/DerivedData/cbb-device
+# .noindex keeps Spotlight from listing the built app beside the installed one.
+derived=$HOME/Library/Developer/Xcode/DerivedData/cbb-device.noindex
 set -- -project ClipboardBridge.xcodeproj -configuration Debug -derivedDataPath "$derived" \
 	-allowProvisioningUpdates -allowProvisioningDeviceRegistration \
 	DEVELOPMENT_TEAM="$team" CODE_SIGN_STYLE=Automatic CBB_BUNDLE_ID="$bundle"

@@ -930,6 +930,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- On Windows the service names the user of the agent, so it gives it remote pastes and quick
+  actions: the service's own account could not look up another user's process, and every
+  agent was a user the system does not name.
 - The iPhone app shows the group's notifications (a device joined, was removed, and the
   others) while it is open too: iOS dropped them there.
 - `cbb keyboard` on a computer in no group said it cannot be a Bluetooth keyboard, though
