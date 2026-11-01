@@ -673,12 +673,12 @@ jobs:
           (cd "$rel" && sha256sum -- *.tar.gz >SHA256SUMS)
           go run ./tools/release-sign drill -version 0.6.0 "$rel" "$RUNNER_TEMP/roots.pem"
           export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/roots.pem"
-          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
+          sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
           # stable.json renewed by a channel key, as cbb.tools does.
           go run ./tools/release-sign drill -version 0.6.0 -channel-key "$rel" "$RUNNER_TEMP/roots.pem"
-          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
+          sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY sh packaging/get.sh --no-firewall | grep -q "signature checks out (0.6.0)"
           refused() {
-            if sudo -E sh packaging/get.sh --no-firewall; then
+            if sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY sh packaging/get.sh --no-firewall; then
               echo "get.sh installed a release with $1" >&2
               exit 1
             fi
@@ -705,10 +705,10 @@ jobs:
             refused "keys.json with the fault $f"
           done
           go run ./tools/release-sign drill -version 0.6.0 "$rel" "$RUNNER_TEMP/roots.pem"
-          sudo -E sh packaging/get.sh --no-firewall | grep -q "signature checks out"
+          sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY sh packaging/get.sh --no-firewall | grep -q "signature checks out"
           rm "$rel/stable.json"
           refused "no stable.json"
-          CBB_VERIFY=skip sudo -E sh packaging/get.sh --no-firewall | grep -q "Not checked"
+          CBB_VERIFY=skip sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY sh packaging/get.sh --no-firewall | grep -q "Not checked"
       - name: cbb update installs a newer signed release, puts the old one back, and sets the timer
         run: |
           version() { CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/HunterEwok/clipboardbridge/internal/version.Version=v$1" -o "$2" ./cmd/cbb; }
@@ -726,10 +726,10 @@ jobs:
           grep -q 'keys.json' "$RUNNER_TEMP/err"
           export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/update.pem"
           cbb update -check | grep -q '0.6.1 is available'
-          sudo -E cbb update
+          sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY cbb update
           cbb version | grep -q ' v0.6.1 '
           sudo cbb status | grep -q 'Not in a group'
-          sudo -E cbb update | grep -q 'is the newest release'
+          sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY cbb update | grep -q 'is the newest release'
           # 0.6.2, whose service never starts: 0.6.1 goes back, and 0.6.2 is a failed version.
           rel2="$RUNNER_TEMP/update2"
           mkdir -p "$RUNNER_TEMP/v062"
@@ -1821,9 +1821,9 @@ jobs:
           grep -q 'keys.json' "$RUNNER_TEMP/err"
           export CBB_RELEASE_DIR="$rel" CBB_RELEASE_ROOTS="$RUNNER_TEMP/lite-update.pem"
           cbb update -check | grep -q '0.6.1 is available'
-          sudo -E cbb update
+          sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY cbb update
           cbb version | grep -q '^cbb 0.6.1 '
-          sudo -E cbb update | grep -q 'is the newest release'
+          sudo --preserve-env=CBB_RELEASE_DIR,CBB_RELEASE_ROOTS,CBB_VERIFY cbb update | grep -q 'is the newest release'
           # 0.6.2, whose service never starts: 0.6.1 goes back.
           rel2="$RUNNER_TEMP/lite-update2"
           mkdir -p "$RUNNER_TEMP/lite-0.6.2"
