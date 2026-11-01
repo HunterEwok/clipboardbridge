@@ -306,23 +306,67 @@ struct CommandArgs {
     set: SetArgs,
     command: Record,
     me: String,
+    /// The member's secret for sealed messages, which opens a sealed
+    /// command; left out by a member that has none.
+    #[serde(with = "b64", default)]
+    secret: Vec<u8>,
 }
 
 /// `group_command`: checks a command for the member `me` and gives its
-/// body, the device that signed it and whom the limits count it for.
+/// body, the device that signed it and whom the limits count it for. A
+/// sealed command's orders are opened with `secret` and put in the body,
+/// with `opened`; a paste in the open for a member whose device record has
+/// a `seal` key is refused, as the members refuse it (docs/protocol.md,
+/// section 15, "Sealed commands").
 fn command(a: CommandArgs) -> Result<Vec<u8>, Refusal> {
     let s = a.set.open()?;
-    let body = s
+    let mut body = s
         .verify_command(&a.command, &a.me, a.set.now_ms)
         .map_err(|e| refuse(Code::Command, e.context("The command is refused.")))?;
+    let sealed_to_me = s.devices().iter().any(|d| d.id == a.me && !d.seal.is_empty());
+    if body.sealed() {
+        if a.secret.is_empty() {
+            return Err(refuse(
+                Code::Command,
+                Error::msg("the command is sealed, and this device has no key to open it")
+                    .context("The command is refused."),
+            ));
+        }
+        body.open(&a.secret).map_err(|e| refuse(Code::Command, e.context("The command is refused.")))?;
+    } else if sealed_to_me && body.kind == "paste" {
+        return Err(refuse(
+            Code::Command,
+            Error::msg("a paste for this device must be sealed to its key, and this one came in the open")
+                .context("The command is refused."),
+        ));
+    }
     let (dev, root) = s.command_signer(&a.command);
     let (sender, verified) = s.command_sender(&a.command, &body.by);
     let mut m = Map::new();
-    m.insert(
-        "command".into(),
-        serde_json::from_slice(&a.command.body)
-            .map_err(|e| refuse(Code::Request, Error::with("The command's body does not read.", e)))?,
-    );
+    let mut fields: Value = serde_json::from_slice(&a.command.body)
+        .map_err(|e| refuse(Code::Request, Error::with("The command's body does not read.", e)))?;
+    if body.opened {
+        if let Some(f) = fields.as_object_mut() {
+            for (k, v) in [
+                ("mode", Value::from(body.mode.as_str())),
+                ("kind", Value::from(body.paste_kind.as_str())),
+                ("text", Value::from(body.text.as_str())),
+                ("action", Value::from(body.action.as_str())),
+            ] {
+                if v.as_str() != Some("") {
+                    f.insert(k.into(), v);
+                }
+            }
+            if body.enter {
+                f.insert("enter".into(), Value::from(true));
+            }
+            if let Some(h) = body.hub.clone() {
+                f.insert("hub".into(), h);
+            }
+        }
+        m.insert("opened".into(), Value::from(true));
+    }
+    m.insert("command".into(), fields);
     if let Some(d) = dev {
         m.insert("signer".into(), device_value(&d, &s));
     }
@@ -531,6 +575,36 @@ mod tests {
         let mut a = set.clone();
         a["body"] = serde_json::json!({"type": "revoke"});
         assert_eq!(ask("group_body", a)["error"]["code"], Code::Body as u64);
+    }
+
+    /// A sealed command the root signed opens in the check with the
+    /// member's secret, its orders in the body, and is refused without it.
+    #[test]
+    fn group_command_opens_sealed_commands() {
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/go-sealed-commands.json");
+        let v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let set = serde_json::json!({"group_ca": v["group_ca"], "now_ms": v["now_ms"]});
+        let mut opened = 0;
+        for c in v["commands"].as_array().unwrap() {
+            if !(c["ok"] == true && c["opens"] == true) {
+                continue;
+            }
+            let mut a = set.clone();
+            a["command"] = c["command"].clone();
+            a["me"] = v["self"].clone();
+            let without = ask("group_command", a.clone());
+            assert_eq!(without["error"]["code"], Code::Command as u64, "{without}");
+            a["secret"] = v["secret"].clone();
+            let got = ok("group_command", a);
+            assert_eq!(got["opened"], true, "{got}");
+            assert_eq!(got["command"]["mode"], c["mode"], "{got}");
+            if let Some(t) = c.get("text") {
+                assert_eq!(got["command"]["text"], *t, "{got}");
+            }
+            opened += 1;
+        }
+        assert_eq!(opened, 2);
     }
 
     /// A claim time from a Welcome is kept when it is earlier than the

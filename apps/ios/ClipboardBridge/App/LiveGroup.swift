@@ -287,7 +287,8 @@ final class LiveGroup: GroupController {
         let ca = try await caSigner(reason: String(localized: "Add a computer to your group", bundle: .app))
         let member = try memberSigner()
         let made = state == nil
-        var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name, now: Date())
+        var g = try state ?? PhoneGroup.create(caSigner: ca, memberKey: member.publicKeyDER, name: UIDevice.current.name,
+                                               seal: Self.sealKey(), now: Date())
         let id = try identity(g, member)
         var failure: Error?
         for addr in Self.ordered(code.addrs) {
@@ -461,7 +462,8 @@ final class LiveGroup: GroupController {
         }
         let code = JoinCode(code: JoinCode.newCode(), addrs: addrs, fingerprint: Pairing.fingerprint(cert: cert))
         show(code)
-        let info = Pairing.Info(name: PhoneGroup.validName(UIDevice.current.name), os: "ios", adminKey: admin.publicKeyDER)
+        let info = Pairing.Info(name: PhoneGroup.validName(UIDevice.current.name), os: "ios", adminKey: admin.publicKeyDER,
+                                seal: Self.sealKey())
         let file = file
         let timer = Task {
             try await Task.sleep(for: .seconds(Self.joinWindow))
@@ -774,6 +776,19 @@ final class LiveGroup: GroupController {
             }
         } catch {
             keysLog.error("finishing the takeover: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// This phone's public key for sealed messages, which its pairing and
+    /// device record carry so that commands for it come sealed (section
+    /// 15); nil, with the reason in the log, when the keychain refuses it,
+    /// and the commands for it then come in the open.
+    nonisolated static func sealKey() -> Data? {
+        do {
+            return try SealKey.publicKey()
+        } catch {
+            keysLog.error("no key for sealed messages: \(String(describing: error), privacy: .public)")
+            return nil
         }
     }
 
@@ -1472,9 +1487,11 @@ final class LiveGroup: GroupController {
         /// Whether a record names device.
         func knows(_ device: String) -> Bool { lock.withLock { set.knows(device) } }
 
-        /// Checks a command for me against the records now (Commands.verify).
+        /// Checks a command for me against the records now (Commands.verify),
+        /// opening a sealed one with this phone's secret for sealed messages.
         func verify(_ c: Member.Record, me: String, nowMS: Int64) throws -> Commands.Body {
-            try lock.withLock { try Commands.verify(c, records: set, me: me, nowMS: nowMS) }
+            let secret = try? SealKey.secret()
+            return try lock.withLock { try Commands.verify(c, records: set, me: me, nowMS: nowMS, secret: secret) }
         }
 
         /// Whether device is a phone, a hub only while its app is open.
