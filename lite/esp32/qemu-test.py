@@ -84,7 +84,11 @@ class Board:
                 self.out += got
             if self.out:
                 return
-            transcript.append(f"(no echo of {line!r} in {ECHO_WAIT:.0f} s; sending it again)")
+            note = f"no echo of {line!r} in {ECHO_WAIT:.0f} s; sending it again"
+            transcript.append(f"({note})")
+            # Loud on purpose: a line the board dropped must not pass unseen.
+            # GitHub shows ::warning:: on the job and the pull request.
+            print(f"::warning title=qemu-test::{note}", file=sys.stderr, flush=True)
         fail(f"no echo of {line!r}")
 
     def type(self, line, want, timeout=TIMEOUT):
