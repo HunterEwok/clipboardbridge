@@ -117,6 +117,14 @@ public enum Core {
         return try run("seal_command", Args(body: body, key: key), as: Answer.self).body
     }
 
+    /// The public key for sealed messages of secret, 32 random bytes the
+    /// device keeps: the `seal` its pairing and device record carry.
+    static func sealPublic(_ secret: Data) throws -> Data {
+        struct Args: Encodable { var secret: Data }
+        struct Answer: Decodable { var key: Data }
+        return try run("seal_public", Args(secret: secret), as: Answer.self).key
+    }
+
     /// checkBody, with a refusal in words for the log: the core's message
     /// and its details.
     static func bodyRefusal(_ kind: String, _ body: Data) -> String? {

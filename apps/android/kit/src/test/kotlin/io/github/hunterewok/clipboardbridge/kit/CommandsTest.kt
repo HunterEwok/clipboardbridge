@@ -273,6 +273,36 @@ class CommandsTest {
         }
     }
 
+    /**
+     * testdata/interop/go-sealed-commands.json, from Go: commands sealed to this member open with its secret, whose
+     * public key the core gives, and are refused without it or when they do not open.
+     */
+    @Test
+    fun goSealedCommands() {
+        val v = Interop.read("go-sealed-commands.json").jsonObject
+        val secret = b64(v.str("secret"))
+        assertTrue(Core.sealPublic(secret).contentEquals(b64(v.str("public"))))
+        assertFailsWith<Core.Refusal> { Core.sealPublic(byteArrayOf(1, 2, 3)) }
+        val set = RecordSet()
+        set.addAll(emptyList(), b64(v.str("group_ca")))
+        val now = v.getValue("now_ms").jsonPrimitive.long
+        var opened = 0
+        for (c in v.getValue("commands").jsonArray.map { it.jsonObject }) {
+            val name = c.str("name")
+            val r = Member.Record.fromJson(c.getValue("command").jsonObject)
+            val opens = c.getValue("ok").jsonPrimitive.boolean && c.getValue("opens").jsonPrimitive.boolean
+            val got = runCatching { Commands.verify(r, set, v.str("self"), now, secret) }
+            assertEquals(opens, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
+            got.getOrNull()?.let {
+                assertEquals(c["mode"]?.jsonPrimitive?.content, it.mode, name)
+                assertEquals(c["text"]?.jsonPrimitive?.content, it.text, name)
+                assertFailsWith<Commands.Refused>(name) { Commands.verify(r, set, v.str("self"), now) }
+                opened++
+            }
+        }
+        assertEquals(2, opened)
+    }
+
     /** testdata/interop/v2-actions.json, from Go's TestGoActionVectors: action commands for a member, as Go checks them. */
     @Test
     fun goActions() {
