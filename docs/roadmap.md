@@ -296,7 +296,8 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     names, titles, menus, notifications, Shortcuts and Siri actions and the Mac's
     application bundle (today the iPhone's home screen, its Shortcuts actions and Siri
     phrases and `/Applications/CBB.app` say "CBB"). What a user types stays short: the
-    command `cbb`, its subcommands and the paths.
+    command `cbb`, its subcommands and the paths. The iPhone's home screen shows the full name too,
+    shortened by iOS (owner's choice).
 
 ## Devices that are hard to type into
 
