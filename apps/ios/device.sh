@@ -60,7 +60,8 @@ lower=$(printf %s "$team" | tr '[:upper:]' '[:lower:]')
 # Not the release identifier: the developer account will register that one.
 bundle=${CBB_BUNDLE_ID:-dev.$lower.clipboardbridge}
 
-# The connected devices from devicectl: "platform udid name" lines.
+# The paired devices from devicectl: "platform udid name tunnel" lines, the
+# tunnel "connected" when Xcode can reach the device now.
 list=$(mktemp)
 trap 'rm -f "$list" device.yml' EXIT
 xcrun devicectl list devices --json-output "$list" >/dev/null
@@ -70,11 +71,12 @@ for d in json.load(open(sys.argv[1]))["result"]["devices"]:
     hw, cp = d.get("hardwareProperties", {}), d.get("connectionProperties", {})
     if cp.get("pairingState") != "paired":
         continue
-    print(hw.get("platform", ""), hw.get("udid", ""), d.get("deviceProperties", {}).get("name", "").replace(" ", "_"))
+    print(hw.get("platform", ""), hw.get("udid", ""), d.get("deviceProperties", {}).get("name", "").replace(" ", "_") or "-", cp.get("tunnelState", "-"))
 EOF
 )
 phone=${CBB_DEVICE:-$(printf '%s\n' "$devices" | awk '$1 == "iOS" { print $2; exit }')}
 watch=$(printf '%s\n' "$devices" | awk '$1 == "watchOS" { print $2; exit }')
+watchtunnel=$(printf '%s\n' "$devices" | awk '$1 == "watchOS" { print $4; exit }')
 if [ -z "$phone" ]; then
 	echo "no iPhone: connect it by cable, unlock it, trust this Mac and turn on" >&2
 	echo "Developer Mode (Settings, Privacy & Security)" >&2
@@ -93,16 +95,30 @@ else
 fi
 
 derived=$HOME/Library/Developer/Xcode/DerivedData/cbb-device
-set -- -project ClipboardBridge.xcodeproj -scheme ClipboardBridge -configuration Debug \
-	-destination "id=$phone" -derivedDataPath "$derived" \
+set -- -project ClipboardBridge.xcodeproj -configuration Debug -derivedDataPath "$derived" \
 	-allowProvisioningUpdates -allowProvisioningDeviceRegistration \
 	DEVELOPMENT_TEAM="$team" CODE_SIGN_STYLE=Automatic CBB_BUNDLE_ID="$bundle"
 
+# A free team's profile lists the devices it runs on, and only a build for a
+# device adds it: a build of the watch app for the watch puts the watch in
+# the profiles, or the watch refuses the app ("could not verify its
+# integrity"). Xcode must reach the watch for that.
+if [ "$test" = 0 ] && [ -n "$watch" ]; then
+	if [ "$watchtunnel" = connected ]; then
+		xcodebuild build -scheme Watch -destination "id=$watch" "$@" ||
+			echo "the watch was not added to the profile; the watch app may not run on it" >&2
+	else
+		echo "Xcode does not reach the watch now: with the watch unlocked near the phone, open" >&2
+		echo "Xcode, Window, Devices and Simulators until it shows the watch connected, then run" >&2
+		echo "this again; until then a watch new to this team refuses the app" >&2
+	fi
+fi
+
 if [ "$test" = 1 ]; then
-	xcodebuild test "$@"
+	xcodebuild test -scheme ClipboardBridge -destination "id=$phone" "$@"
 	exit
 fi
-xcodebuild build "$@"
+xcodebuild build -scheme ClipboardBridge -destination "id=$phone" "$@"
 
 app=$derived/Build/Products/Debug-iphoneos/ClipboardBridge.app
 xcrun devicectl device install app --device "$phone" "$app"

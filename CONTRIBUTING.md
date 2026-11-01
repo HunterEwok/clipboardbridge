@@ -239,6 +239,13 @@ Such a build runs for 7 days, and a free team may have three apps on a phone at 
 4. On the first run trust the developer on the phone (Settings, General, VPN & Device
    Management).
 
+A free team's app runs only on the devices its profile lists, and a build for a device adds
+it: when Xcode reaches the watch, `device.sh` builds the watch app for it first, which adds
+the watch. When the watch shows only as paired (a watch new to Xcode often does), keep it
+unlocked near the phone and open Xcode's Devices and Simulators window until the watch shows
+as connected, then run the script again; otherwise the watch refuses the app as one whose
+integrity it could not verify.
+
 The build has its own bundle identifier (`CBB_BUNDLE_ID`, `dev.<team>.clipboardbridge`)
 and goes without the app group and the shared keychain, which need the developer account,
 as the simulator's build does: the share extension finds no group in it.
