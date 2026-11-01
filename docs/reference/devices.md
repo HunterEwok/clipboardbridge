@@ -54,7 +54,7 @@ others ([the firewall](../guide/install.md#the-firewall)).
 | Linux | `/var/lib/clipboardbridge` | `/etc/clipboardbridge` | `journalctl -u clipboardbridge`; the desktop connector in `journalctl --user` |
 | FreeBSD, OPNsense | `/var/db/clipboardbridge` | `/usr/local/etc/clipboardbridge` | syslog, `/var/log/messages` |
 | OpenWrt | `/etc/clipboardbridge/state`, kept by sysupgrade | `/etc/config/clipboardbridge` | `logread -e clipboardbridge` |
-| Mac | `/Library/Application Support/clipboardbridge/state` | `/etc/clipboardbridge` | `/Library/Logs/clipboardbridge/service.log` |
+| Mac | `/Library/Application Support/clipboardbridge/state` | `/etc/clipboardbridge` | `/Library/Logs/clipboardbridge/service.log`, the agent's `~/Library/Logs/clipboardbridge/agent.log` |
 | Windows | `ProgramData\clipboardbridge\state` | the service's registry key ([settings](config.md#settings-files)) | `ProgramData\clipboardbridge\logs\service.log`, the agent's `LocalAppData\clipboardbridge\agent.log` |
 | Lite member | `/var/lib/clipboardbridge`; on OpenWrt `/etc/clipboardbridge/state` | `/etc/clipboardbridge` | `journalctl -u clipboardbridge`; on OpenWrt `logread -e clipboardbridge` |
 

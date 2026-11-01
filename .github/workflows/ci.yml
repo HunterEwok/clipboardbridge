@@ -455,6 +455,31 @@ jobs:
             test ! -e /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc
             if pfctl -a clipboardbridge -s rules 2>/dev/null | grep -q pass; then exit 1; fi
             cmp /etc/pf.conf /tmp/pf.conf.before
+            rm -rf /usr/local/opnsense /usr/local/sbin/configctl
+            # pfSense: nothing is changed, the rules to add are printed.
+            echo pfSense >/etc/platform
+            test "$(sh packaging/freebsd/firewall.sh kind)" = pfsense
+            sh packaging/freebsd/firewall.sh commands 8764 | grep -q 'Firewall > Rules'
+            sh packaging/freebsd/firewall.sh hub-commands 51820 | grep -q 'port 51820'
+            sh packaging/freebsd/firewall.sh open 8764 2>&1 | grep -q 'nothing was added' || { echo "open changed pfSense's rules" >&2; exit 1; }
+            rm -f /etc/platform
+            # ipfw, with pf off; it lets everything else in, as this VM's
+            # SSH needs.
+            pfctl -d
+            kenv net.inet.ip.fw.default_to_accept=1
+            kldload -n ipfw
+            sysctl net.inet.ip.fw.enable=1
+            k=$(sh packaging/freebsd/firewall.sh kind)
+            test "$k" = ipfw || { echo "firewall.sh found $k, not ipfw" >&2; kldstat; exit 1; }
+            sh packaging/freebsd/firewall.sh open 8764
+            sh packaging/freebsd/firewall.sh hub-open 51820
+            ipfw list
+            # ipfw shows "allow tcp ... in ip4" as "allow ip4 ... proto tcp in".
+            ipfw list | grep -qE 'allow (tcp|ip4) from 192\.168\.0\.0/16 to me 8764( proto tcp)? in' || { echo "ipfw has no rule for the member port" >&2; exit 1; }
+            ipfw list | grep -qE 'allow (udp|ip) from any to me 51820( proto udp)? in' || { echo "ipfw has no rule for the hub's port" >&2; exit 1; }
+            sh packaging/freebsd/firewall.sh hub-close
+            sh packaging/freebsd/firewall.sh close
+            if ipfw list | grep -qE 'to me (8764|51820)'; then echo "ipfw kept the rules" >&2; ipfw list; exit 1; fi
 
   openwrt:
     name: OpenWrt
@@ -1650,6 +1675,7 @@ jobs:
       - name: the MIPS builds under qemu with Go members, all but sync away from home
         run: |
           for a in mips mipsel; do
+            # Ubuntu 26.04's qemu-user is static and has no -static names.
             q=$(command -v "qemu-$a-static" || command -v "qemu-$a")
             printf '#!/bin/sh\nexec %s %s "$@"\n' "$q" "$PWD/lite/target/$a-unknown-linux-musl/release/cbb" >"$RUNNER_TEMP/cbb-$a"
             chmod +x "$RUNNER_TEMP/cbb-$a"

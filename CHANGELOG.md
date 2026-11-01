@@ -106,6 +106,21 @@ All notable changes to clipboardbridge are documented in this file. The format f
   clipboards and the e2e), the lite member, the Swift kit and the Kotlin kit, prints it in
   the run's summary, and fails when a part falls below its floor (`tools/coverage`,
   docs/testing.md, "Coverage").
+- The bench's desktop suite runs on the Linux member alone too: the primary selection kept
+  out of the group (Y26), HTML and a PNG image copied on Linux and arriving with their types
+  (O4, O1), the session's kind and a copy from an X11 program under Wayland (H1), the keys
+  helper's refusals (T15), the console's tmux on a new virtual terminal (H4), keys in the
+  TPM in the hub's device list (K13) and files through the Flatpak portals (O12); with
+  `-disruptive` it locks, puts to sleep and restarts the computers through the quick actions
+  (Q3, I18, H7) and turns a Mac's application firewall on (H8). CI's OpenWrt job checks the UCI memory limit, procd's
+  respawn and sysupgrade's keep list (I23, H9), and its FreeBSD VM the ipfw rules and
+  pfSense's refusal to open ports (H10).
+- The bench's fleet runs a lite member on another subnet behind a router with avahi, found
+  through the mDNS reflector and reached with `-peer` (D9), a member with a router's memory
+  passing a 90 MiB copy on (O14), and a soak for `-soak-for` with a fault every hour (E10).
+- `release-sign verify` checks SHA256SUMS against the files and the signed manifest and
+  prints the manifest's Docker image; the published workflow checks every published release
+  with it, each file's build attestation, and the image's digest on ghcr.io (I22).
 - The bench's fleet runs the holder's election and handover (D4, D5), dial-back (D11), what a
   stranger learns (S21), the forwarder's hub rule (W30) and fuzzing for `-fuzz-for` (S20).
 - The bench's fleet runs the key-file warnings (K11), the join matrix (G41, Y6) and, in a
@@ -167,6 +182,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
   text arrives exactly, 1 MiB pasted and 4 KiB typed, the clipboard's own text comes back and
   nothing is copied to the group (T3, T5); a secret paste is in no log (T11); the log of
   pastes names each one without its text (T12).
+- The bench's `desktop` suite also checks each device's log, the Windows and Mac services'
+  logs rotated past 1 MiB (I21); `cbb copy` on purpose in every mode (M2); one Linux agent per
+  session and a restarted one (H2); tmux's copy and paste keys (H3); and a large copy's
+  progress in `cbb status` (O13).
+- CI runs the tray app's window in a headless Chrome or Edge against its real Go side: the
+  colours and layouts, collections, Russian, error details and the admin actions (A5, A8,
+  A9, A15, A16, U12); the bench's coverage counts such CI tests as `ci`. XCUITest drives
+  the iPhone app's screens before a group on the simulator and the Mac app's window with no
+  service, and Robolectric the Android app's screens (A2, A4, A14).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
@@ -666,6 +690,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- On a Mac the service and the agent write their own logs, as on Windows:
+  `/Library/Logs/clipboardbridge/service.log` and `~/Library/Logs/clipboardbridge/agent.log`,
+  each line after the time, each moved to `.1` at 1 MiB, so a log no longer grows without
+  end; the agent's log is new.
 - The protocol's section 10 now specifies the group records of version 2 (docs/protocol.md,
   from "Records" to "The state", and the records' canonical form in Conventions, "Signed
   bodies"), in place of version 1's rules; docs/records-v2.md keeps why the records changed
@@ -874,6 +902,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The tray app keeps the last of quick changes in its settings: two changes close together
+  could leave the earlier one in `desktop.json`.
+- The tray app no longer hangs when the service does not answer, and opened while the
+  service is not running it says so instead of showing an empty window.
+- On Linux the tray item is named Clipboard Bridge instead of Wails.
+- The Mac and iPhone apps take ShowErrorDetails given as YES or NO text, as a launch argument gives it;
+  before, such a value was ignored.
 - A computer that signs two group records in one pass, or at the same moment, gives them
   consecutive numbers: before, both could take one number, which reads as two histories of
   the signer and, for the root, stops the group.

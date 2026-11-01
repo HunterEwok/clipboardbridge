@@ -170,6 +170,23 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+  # The screens driven as a person would, on the simulator (XCUITest).
+  ClipboardBridgeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - ClipboardBridgeUITests
+      # The app's texts, to look up the Russian the screens show.
+      - path: ClipboardBridge/Resources/Localizable.xcstrings
+        buildPhase: resources
+    dependencies:
+      - target: ClipboardBridge
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: ClipboardBridge
+        # The tests' own strings stay out of the app's catalog.
+        SWIFT_EMIT_LOC_STRINGS: NO
 schemes:
   ClipboardBridge:
     build:
@@ -178,3 +195,4 @@ schemes:
     test:
       targets:
         - ClipboardBridgeTests
+        - ClipboardBridgeUITests

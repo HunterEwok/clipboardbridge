@@ -71,6 +71,13 @@ func (e skipError) Error() string { return string(e) }
 // Skip records a case that did not run.
 func (r *Report) Skip(name, why string) { r.add(Case{Name: name, Skipped: why}) }
 
+// Note prints what a case found, beside its result, for the run's log.
+func (r *Report) Note(name, text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fmt.Fprintf(r.out, "NOTE %s%s: %s\n", r.prefix, name, text)
+}
+
 // within puts prefix before the names of the cases recorded until the next
 // call; "" ends it.
 func (r *Report) within(prefix string) {

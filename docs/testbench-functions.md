@@ -136,7 +136,7 @@ line here with every new function, and a case for it in the catalogue.
 | G.53 | `cbb takeover` | G26 |
 | G.54 | A takeover undone | G27 |
 | G.55 | A phone takes the group over (`root` records) | G28 |
-| G.56 | `cbb upgrade` of an old group | G29 |
+| G.56 | An old group's records refused (`cbb upgrade` gone) | G29 |
 | G.57 | `cbb rename` and the phones' rename | G30, A1 |
 | G.58 | Name lengths and Unicode names | G30 |
 | G.59 | Records converge in any order | G31 |
@@ -305,7 +305,7 @@ line here with every new function, and a case for it in the catalogue.
 | O.29 | The phones serve their own copies | O11 |
 | O.30 | Flatpak's document portal and FileTransfer | O12 |
 | O.31 | Progress shown | O13 |
-| O.32 | The router's media cache | O14 |
+| O.32 | A copy passed on by a router's small memory | O14 |
 | O.33 | Fetch limits and padding | O15 |
 
 ## T. Remote paste
