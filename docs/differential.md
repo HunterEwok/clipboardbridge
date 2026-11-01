@@ -15,8 +15,8 @@ the same record set of the same signed records in any order and subset.
 
 - `tools/difffuzz gen` writes a **corpus**, one case to a line, from a seed: the same seed
   gives the same corpus. It starts from every body of `testdata/interop/strict-generated.json`,
-  `strict-mutants-*.json` (more record bodies) and `strict-files.json` (records, commands, manifests, server credentials, `keys.json`,
-  `release.json`, channel files and `attest-status.json`) and changes them: bits and bytes,
+  `strict-mutants-*.json` (more record bodies), `strict-files.json` (records, commands, manifests, server credentials, `keys.json`,
+  `release.json`, channel files and `attest-status.json`) and the records of `v2-records.json`, and changes them: bits and bytes,
   bytes that JSON treats specially, members twice, missing, in another place or with their
   names in another case or escaped, values of another JSON type, integers at the edges of
   each reader's types and in forms the strict form refuses, strings with escapes, control and
@@ -41,8 +41,8 @@ A verdict is one line:
 
 - `refused` when the implementation refuses the body;
 - `skip` when it does not read bodies of that kind: the lite member reads no
-  `attest-status.json`, and the kits refuse legacy groups (protocol, section 2), so they skip
-  a set whose group CA has path length 0 and that holds a root record;
+  `attest-status.json`, and the kits read records (version 2) and record sets only through
+  the Rust core (docs/core-api.md), which the comparison reads as the lite core's;
 - `taken` and, for records, commands and server credentials, every field the body gives, as
   ` name=value` in a fixed order (`tools/difffuzz/main.go` lists them): strings as the hex of
   their UTF-8 bytes, integers in decimal, booleans as 0 or 1, bytes in hex, lists joined by

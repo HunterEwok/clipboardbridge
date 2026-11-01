@@ -538,6 +538,17 @@ func TestSwiftCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err := s.VerifyCommand(c, v.To, time.UnixMilli(b.TimeMS))
+		// An admin's command needs the device record that names its key
+		// and gives it the command's type (records v2), which the kits do
+		// not write yet: until they sign records v2 through the core,
+		// their admins' commands are refused here, and only the root's
+		// are checked through.
+		if len(c.Chain) > 0 {
+			if err == nil || !strings.Contains(err.Error(), "not an admin") {
+				t.Errorf("command %d, by an admin no record names: %v", i, err)
+			}
+			continue
+		}
 		if err != nil {
 			t.Fatalf("command %d: %v", i, err)
 		}
