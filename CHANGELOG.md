@@ -904,6 +904,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A computer's log no longer fills with a line each time a phone's system ends the app's
+  connection in the background (a reset or a close by the peer); with `CBB_DEBUG=1` the log
+  still has them, and a failed handshake is logged as before.
 - The phone app finds the computers again when iOS stopped its browsing: on the first launch,
   where it browses before the user allows the local network, and in the background. A browser
   that waits or fails starts again (after 1 s, doubling to 30 s), and the app browses again
