@@ -2039,6 +2039,35 @@ in it as in the rest of this document):
 | `exp` | number | when it expires, Unix seconds |
 | `o` | object or absent | the hub's obfuscation settings, as in its offer (section 11, "Obfuscation") |
 
+The JSON is in the strict form of signed bodies (Conventions), with exactly these fields and
+no other, so that every implementation reads one text alike (Go's `internal/invite`, the
+Rust core's `cbb_core::invite`, both checked on `testdata/interop/invites.json`):
+
+- The text is the prefix, in these lowercase letters, and base64url without padding and
+  without stray bits; spaces, tabs and line breaks around it are ignored, and nothing else
+  is.
+- `g` is a group tag and `h` a device ID (section 1). `hk`, `k`, `psk`, `s` and the
+  obfuscation's `header_protection_key` are standard base64 in its one form (padded).
+- `hk`, `k` and `psk` are 32 bytes and not all zeros. `s` holds 16 to 64 bytes. `exp` is
+  greater than 0.
+- Each `ep` is an address in its canonical form: an IPv4 address without leading zeros, or
+  an IPv6 address in brackets, compressed, in lowercase and without a zone, then `:` and a
+  port from 1 to 65535 without a leading zero.
+- `o`, when present, has every field of the offer's settings, each within the offer's
+  bounds. Each `h1` to `h4` is `min-max`: two decimal numbers of 32 bits, without a sign or
+  a leading zero, `min` not above `max`.
+
+A text refused names one reason, the same in every implementation:
+
+- `not_invitation`: not the prefix.
+- `damaged`: not base64url, not strict JSON, a field missing, unknown or of another type.
+- `version`: a `v` other than 1.
+- `group`, `hub`, `key`, `endpoints`, `secret`, `expiry` or `obfuscation`: that field's
+  value is refused.
+
+A device joins only while `exp` is later than its clock. A device that does not know the
+time yet does not join.
+
 It travels as a file of one line (`.cbbinvite`, mode 0600, which `cbb invite` deletes when
 the invitation ends and `cbb pair -invite` deletes once it joined) or, later, a QR code; it
 is never typed. It is a secret until it is used. It serves one device once, for 1 hour

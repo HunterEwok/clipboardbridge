@@ -255,16 +255,17 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       safety form; the reason for the `connectedDevice` foreground service; the current
       target API level. The GitHub and F-Droid builds are not affected.
 - **44.** More tools that check the code (all free and run only in CI, none ships in the
-    product). Mutation testing of the records' code and Kani are done in 0.6 with the rules
-    core (item 42); the rest is planned for 0.7, after the core settles:
+    product). Mutation testing of the records' code is done in 0.6 with the rules core
+    (item 42); the rest is planned for 0.7, after the core settles:
     - Mutation testing, nightly, on the records' code only: cargo-mutants for `cbb_core` and
       gremlins for Go change the code (drop a check, turn `<` into `<=`) and report every
       change that no test notices, so a weakened check cannot go unseen.
-    - Kani on `cbb_core`'s parsers (the wire framing, the canonical form): a proof, for
-      inputs up to a bound, that they never panic and never overflow.
     - golangci-lint with a few linters beside staticcheck: errcheck (an error left unread),
       exhaustive (a switch over the record kinds that misses one), gosec's G115 (an integer
       conversion that overflows), errorlint and bodyclose; first a clean-up of what they find.
+    - Not Kani: tried on `cbb_core` in 0.6, its proofs did not finish on the parsers, which
+      read JSON into `BTreeMap`, `Vec` and `String`; the property tests, the fuzzing and the
+      mutation testing cover them instead.
     - goleak in the tests of the daemon, the relay and the forwarder: a goroutine a test
       leaves running fails it.
     - The Swift code that stays in Swift (the network, `AppModel`, `LiveGroup`): the
