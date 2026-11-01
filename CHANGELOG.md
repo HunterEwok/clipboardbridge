@@ -30,6 +30,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   identifier of its own; CONTRIBUTING.md, "The iPhone app on your own phone".
 - The Mac app and the tray app list the device they run on too, first and marked as this
   Mac or this computer, as the phones do, and count it in "N of M online".
+- The Apple Watch and Wear OS apps list their phone too, first and marked as the watch's
+  phone, as the phone's own list has it.
 - The Apple Watch app and the Mac app have the app's icon (`tools/icon` draws them too); before,
   watchOS and macOS showed an empty one.
 - The computers apply the group's stop when its records show a likely thief (docs/protocol.md,
