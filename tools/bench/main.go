@@ -62,7 +62,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|away|relay|fleet|time|all|coverage")
+		fmt.Fprintln(stderr, "usage: bench [flags] check|reset|smoke|full|faults|desktop|away|relay|fleet|time|all|coverage")
 		return 2
 	}
 	if *coverDir != "" {
@@ -128,6 +128,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Relay(ctx, r, inv, devices, *timeout)
 	case "faults":
 		Faults(ctx, r, devices, *timeout)
+	case "desktop":
+		Desktop(ctx, r, devices, *timeout)
 	case "all":
 		All(ctx, r, inv, devices, *timeout, *stopForwarder, *cbb, *cbbTime, *fleetSize)
 	case "reset":

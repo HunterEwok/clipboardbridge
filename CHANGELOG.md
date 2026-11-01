@@ -115,6 +115,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   each release feed it builds, close to 1 GiB a run, when the scenario ends. A member
   limited to its home interface (`CBB_INTERFACES`, as on OpenWrt) refuses member TLS from a
   second network with no firewall, even one it takes as its group's (D10).
+- The bench has a `desktop` suite for the Macs and Windows PCs with their own clipboards: a
+  text the service writes late is not sent back, not even when a clipboard history offers it
+  again 10 s later, and `cbb copy` of the text already held is still a copy (Y24, Y25); a
+  password manager's mark keeps the text on the computer, also when put back without it
+  (Y31); a received secret carries the marks and is gone after its minute (Y32).
+  `setup-windows.ps1` registers a third task that runs the bench's scripts in the signed-in
+  session, and lets only that user, administrators and the system write to its folder.
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
