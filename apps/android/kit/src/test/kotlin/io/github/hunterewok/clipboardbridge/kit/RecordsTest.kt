@@ -2,394 +2,202 @@
 
 package io.github.hunterewok.clipboardbridge.kit
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class RecordsTest {
     private val now = Instant.now()
 
-    /** A device ID whose records name two keys stays listed while either is not revoked, as Go's TestDeviceWithTwoKeys. */
-    @Test
-    fun deviceWithTwoKeys() {
-        val g = Group(now)
-        val k1 = Records.keyHash(SoftwareSigner().publicKeyDER)
-        val k2 = Records.keyHash(SoftwareSigner().publicKeyDER)
-        val set = RecordSet()
-        val dev = "00112233445566778899aabbccddeeff"
-        set.add(Records.device(dev, "pc", "full", k1, g.tag, g.phone, now, g.rootKey), g.ca)
-        set.add(Records.device(dev, "pc", "full", k2, g.tag, g.phone, now.plusSeconds(1), g.rootKey), g.ca)
-        assertTrue(set.knows(dev))
-        assertEquals(2, set.devices.single().keys.size)
-        set.add(Records.revoke(listOf(k2), g.tag, g.phone, now, g.rootKey), g.ca)
-        assertContentEquals(k1, set.devices.single().key)
-        set.add(Records.revoke(set.devices.single().keys, g.tag, g.phone, now.plusSeconds(2), g.rootKey), g.ca)
-        assertTrue(set.devices.isEmpty())
-    }
-
-    /** A phone's root, its own record and a computer's. */
+    /** A phone's group with a computer it admitted. */
     private class Group(now: Instant) {
-        val rootKey = SoftwareSigner()
-        val ca = GroupCertificates.groupCA(rootKey, now, pathLength = 1)
-        val tag = GroupCertificates.tag(ca)
-        val phone = "0123456789abcdef0123456789abcdef"
-        val pc = "fedcba9876543210fedcba9876543210"
-        val phoneKey = SoftwareSigner().publicKeyDER
-        val pcCert = GroupCertificates.member(pc, SoftwareSigner().publicKeyDER, ca, rootKey, now)
-        val set = RecordSet()
+        val ca = SoftwareSigner()
+        val g = PhoneGroup.create(ca, SoftwareSigner().publicKeyDER, now, "My\u0007phone")
+        val pc = SyncEngine.newID()
+        val cert = GroupCertificates.member(pc, SoftwareSigner().publicKeyDER, g.groupCA, ca, now)
 
         init {
-            set.add(Records.device(phone, "My phone", "phone", Records.keyHash(phoneKey), tag, phone, now, rootKey), ca)
-            set.add(Records.device(pc, "pi", "linux", Records.keyHashOfCert(pcCert), tag, phone, now, rootKey), ca)
+            g.computers.add(PhoneGroup.Computer(pc, "pi", "linux", cert, now))
+            g.record(pc, "pi", "full", Records.keyHashOfCert(cert), ca, now)
         }
     }
 
     @Test
     fun devicesAndRevoke() {
-        val g = Group(now)
-        assertEquals(listOf("My phone", "pi"), g.set.devices.map { it.name })
-        assertEquals(g.phone, g.set.rootDevice)
-        val digest = g.set.digest
-        assertTrue(g.set.add(Records.revoke(listOf(Records.keyHashOfCert(g.pcCert)), g.tag, g.phone, now, g.rootKey), g.ca))
-        assertEquals(listOf(g.phone), g.set.devices.map { it.id })
-        assertNotEquals(digest, g.set.digest)
-        assertEquals("the device was removed from the group", g.set.refused(listOf(g.pcCert)))
+        val x = Group(now)
+        val g = x.g
+        assertEquals(listOf("Myphone", "pi"), g.devices.map { it.name })
+        assertEquals("phone", g.devices.first { it.id == g.device }.role)
+        assertEquals(g.device, g.records.rootDevice)
+        val digest = assertNotNull(g.records.digest)
+        assertFailsWith<PhoneGroup.Failure> { g.revoke(g.device, x.ca, now) }
+        assertFailsWith<PhoneGroup.Failure> { g.revoke(SyncEngine.newID(), x.ca, now) }
+        g.revoke(x.pc, x.ca, now)
+        assertEquals(listOf(g.device), g.devices.map { it.id })
+        assertTrue(g.computers.isEmpty())
+        assertNotEquals(digest, g.records.digest)
+        assertEquals("the device was removed from the group", g.records.refused(listOf(x.cert)))
 
-        val kept = RecordSet.fromJson(g.set.toJson())
-        assertEquals(g.set.digest, kept.digest)
-        assertContentEquals(g.ca, kept.groupCA)
+        val kept = RecordSet.fromJson(g.records.toJson())
+        assertEquals(g.records.digest, kept.digest)
+        assertContentEquals(g.groupCA, kept.groupCA)
+    }
+
+    /**
+     * A device ID whose records name two keys stays listed while either is
+     * not revoked, and removing it revokes both, as Go's TestDeviceWithTwoKeys.
+     */
+    @Test
+    fun deviceWithTwoKeys() {
+        val x = Group(now)
+        val g = x.g
+        val second = GroupCertificates.member(x.pc, SoftwareSigner().publicKeyDER, g.groupCA, x.ca, now.plusSeconds(1))
+        g.record(x.pc, "pi", "full", Records.keyHashOfCert(second), x.ca, now.plusSeconds(1))
+        assertTrue(g.records.knows(x.pc))
+        assertEquals(2, g.devices.first { it.id == x.pc }.keys.size)
+        g.revoke(x.pc, x.ca, now.plusSeconds(2))
+        assertEquals(listOf(g.device), g.devices.map { it.id })
     }
 
     @Test
     fun refused() {
-        val g = Group(now)
+        val x = Group(now)
         val set = RecordSet()
-        val good = g.set.records[0]
+        val good = x.g.records.records.first { String(it.body).contains("\"role\":\"phone\"") }
         val forged = Member.Record(good.body, good.sig.reversedArray())
-        val tampered = Member.Record(String(good.body).replace("phone", "linux").toByteArray(), good.sig)
+        val tampered = Member.Record(String(good.body).replace("phone", "full").toByteArray(), good.sig)
         val chained = Member.Record(good.body, good.sig, listOf(byteArrayOf(1)))
-        for (r in listOf(forged, tampered, chained)) assertFalse(set.add(r, g.ca))
-        assertFalse(set.add(good, GroupCertificates.groupCA(SoftwareSigner(), now, pathLength = 1)))
-        assertTrue(set.add(good, g.ca))
-        assertFalse(set.add(good, g.ca), "a known record is not new")
-    }
-
-    /** testdata/interop/go-root.json, a handover that Go's TestGoRootVectors wrote, and what Go makes of it. */
-    @Test
-    fun goHandover() {
-        val v = Interop.read("go-root.json").jsonObject
-        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-        val set = RecordSet()
-        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
-        assertEquals(v.str("digest"), set.digest)
-        assertEquals(v.getValue("roots").jsonArray.map { it.jsonPrimitive.content }, set.roots.map { b64(it) })
-        val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
-        assertEquals(devices.map { it.str("id") }, set.devices.map { it.id })
-        assertEquals(devices.map { it.str("name") }, set.devices.map { it.name })
-        assertEquals(devices.map { it.getValue("admin").jsonPrimitive.boolean }, set.devices.map { it.admin })
-        for (c in v.getValue("chains").jsonArray) {
-            val o = c.jsonObject
-            val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
-            assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, o.str("name"))
-        }
-    }
-
-    /** testdata/interop/go-hubs.json, from Go's TestGoHubVectors: the order of the group's hubs. */
-    @Test
-    fun goHubOrder() {
-        val v = Interop.read("go-hubs.json").jsonObject
-        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-        val set = RecordSet()
-        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
-        assertEquals(v.getValue("hub_order").jsonArray.map { it.jsonPrimitive.content }, set.hubOrder)
+        for ((name, r) in listOf("forged" to forged, "tampered" to tampered, "chained" to chained)) assertFalse(set.add(r, x.g.groupCA), name)
+        val other = PhoneGroup.create(SoftwareSigner(), SoftwareSigner().publicKeyDER, now)
+        assertFalse(RecordSet().add(good, other.groupCA), "a record of another group")
+        assertTrue(set.add(good, x.g.groupCA))
+        assertFalse(set.add(good, x.g.groupCA), "a known record is not new")
     }
 
     /**
-     * testdata/interop/go-admins.json, from Go's TestGoAdminVectors: a
-     * computer's admin CA removes a device but neither the admin phone nor
-     * the root, nor hands the group over, and nothing it signs after the
-     * admin phone removed it counts.
+     * Runs the cases of testdata/interop/v2-records.json whose names start
+     * with one of the prefixes (all of them for null) through the set: the
+     * core gives each case's state, the same as Go, the lite member and the
+     * Swift kit. Answers how many cases ran.
      */
-    @Test
-    fun goAdminPowers() {
-        val v = Interop.read("go-admins.json").jsonObject
-        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
-        val set = RecordSet()
-        // The record signed under the root the computer admin named is dropped: that root is never known.
-        val dropped = v["dropped"]?.jsonPrimitive?.int ?: 0
-        assertEquals(1, dropped)
-        assertEquals(records.size - dropped, set.addAll(records, b64(v.str("group_ca"))).size)
-        assertEquals(v.str("digest"), set.digest)
-        assertTrue(set.roots.isEmpty(), "a computer admin handed the group over")
-        val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
-        assertEquals(devices.map { it.str("name") }, set.devices.map { it.name })
-        assertEquals(devices.map { it.getValue("admin").jsonPrimitive.boolean }, set.devices.map { it.admin })
-        for (k in v.getValue("keys").jsonArray) {
-            val o = k.jsonObject
-            assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), o.str("name"))
-        }
-        for (c in v.getValue("chains").jsonArray) {
-            val o = c.jsonObject
-            val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
-            assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, o.str("name"))
-        }
-    }
-
-    /**
-     * testdata/interop/go-envelopes.json, from Go's TestEnvelopeVectors: one
-     * body signed by two signers is two records, and the set says the same
-     * whichever came first; the root's removal of an admin phone counts
-     * though a computer admin's copy came first.
-     */
-    @Test
-    fun goEnvelopes() {
-        val v = Interop.read("go-envelopes.json").jsonObject
-        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-        val ca = b64(v.str("group_ca"))
-        for ((name, recs) in listOf("as written" to records, "reversed" to records.reversed(), "the computer admin's copy only" to records.take(3))) {
-            val set = RecordSet()
-            for (r in recs) assertTrue(set.add(r, ca), name)
-            for (r in recs) assertFalse(set.add(r, ca), "$name: a record held already was new again")
-            val full = recs.size == records.size
-            for (k in v.getValue("keys").jsonArray) {
-                val o = k.jsonObject
-                assertEquals(o.getValue("revoked").jsonPrimitive.boolean && full, set.isRevoked(b64(o.str("key"))), "$name: ${o.str("name")}")
-            }
-            if (full) {
-                assertEquals(v.getValue("count").jsonPrimitive.int, set.records.size, name)
-                assertEquals(v.str("digest"), set.digest, name)
-            }
-        }
-    }
-
-    /**
-     * testdata/interop/go-removed-admin.json, from Go's TestRemovedAdminVectors:
-     * an admin phone that the root removed signs a root record afterwards,
-     * for a root of its own that revokes the group's root and admins; that
-     * root is not known, so none of it counts, in any order.
-     */
-    @Test
-    fun goRemovedAdmin() {
-        val v = Interop.read("go-removed-admin.json").jsonObject
-        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-        val ca = b64(v.str("group_ca"))
-        for ((name, recs) in listOf("as written" to records, "reversed" to records.reversed())) {
-            val set = RecordSet()
-            for (r in recs) set.add(r, ca)
-            assertEquals(v.getValue("roots").jsonPrimitive.int, set.roots.size, name)
-            for (k in v.getValue("keys").jsonArray) {
-                val o = k.jsonObject
-                assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), "$name: ${o.str("name")}")
-            }
-        }
-    }
-
-    /**
-     * testdata/interop/go-removed-admins.json, from Go's TestRemovedAdminCases:
-     * an admin phone removed by the current root after a handover, or by
-     * another admin phone, signs a root record afterwards, for a root of its
-     * own that revokes the group's roots and admins; that root is not known
-     * either. A root an admin phone hands on counts only when no root that
-     * may count removes that phone; two such roots that would remove each
-     * other's phones do not count, and both phones are removed.
-     */
-    @Test
-    fun goRemovedAdmins() {
-        val cases = Interop.read("go-removed-admins.json").jsonArray
-        assertTrue(cases.size >= 7, "${cases.size} cases")
+    private fun v2Cases(prefixes: List<String>? = null): Int {
+        val cases = Interop.read("v2-records.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
+        var n = 0
         for (c in cases) {
-            val v = c.jsonObject
-            val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-            val ca = b64(v.str("group_ca"))
-            // Each record first and last in turn; Go checks every order.
-            val n = records.size
-            val orders = (0 until n).flatMap { start ->
-                val forward = (0 until n).map { records[(start + it) % n] }
-                listOf("from $start" to forward, "from $start, reversed" to forward.reversed())
-            }
-            for ((name, recs) in orders) {
-                val set = RecordSet()
-                set.addAll(recs, ca)
-                assertEquals(v.getValue("roots").jsonPrimitive.int, set.roots.size, "${v.str("name")}, $name")
-                for (k in v.getValue("keys").jsonArray) {
-                    val o = k.jsonObject
-                    assertEquals(
-                        o.getValue("revoked").jsonPrimitive.boolean,
-                        set.isRevoked(b64(o.str("key"))),
-                        "${v.str("name")}, $name: ${o.str("name")}",
-                    )
-                }
-            }
+            if (c["time_unknown"]?.jsonPrimitive?.boolean == true) continue
+            val name = c.str("name")
+            if (prefixes != null && prefixes.none { name.startsWith(it) }) continue
+            val set = RecordSet()
+            set.tag = c.str("group")
+            set.nowMS = c.str("now_ms").toLong()
+            val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
+            val fresh = set.addAll(records, b64(c.str("group_ca")))
+            if (fresh.size != records.size) continue // records the set does not keep
+            set.takeClaimTimes(RecordSet.ClaimTime.list(c["first_seen"] as? JsonArray))
+            val want = RecordSet.State.of(Json.parseToJsonElement(c.str("state")).jsonObject)
+            assertEquals(want, set.view.state, name)
+            n++
         }
+        assertTrue(n > 0, "no case of $prefixes")
+        return n
     }
 
-    /**
-     * testdata/interop/go-root-member.json, from Go's TestGoRootMemberVectors: the root's own device when the root
-     * signed two own device records at the same time, the one with the greater record ID, and whether it is a phone
-     * or a computer, in every rotation of the records.
-     */
     @Test
-    fun goRootMember() {
-        val v = Interop.read("go-root-member.json").jsonObject
-        val ca = b64(v.str("group_ca"))
-        val cases = v.getValue("cases").jsonArray
-        assertTrue(cases.size >= 4, "${cases.size} cases")
-        for (c in cases) {
-            val o = c.jsonObject
-            val records = o.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-            val n = records.size
-            val orders = (0 until n).flatMap { start ->
-                val forward = (0 until n).map { records[(start + it) % n] }
-                listOf("from $start" to forward, "from $start, reversed" to forward.reversed())
-            }
-            for ((name, recs) in orders) {
-                val set = RecordSet()
-                assertEquals(n, set.addAll(recs, ca).size, "${o.str("name")}, $name")
-                val root = set.rootMember()?.first
-                assertEquals(o.str("root_device"), root, "${o.str("name")}, $name")
-                val role = set.devices.firstOrNull { it.id == root }?.role
-                assertEquals(o.str("root_role"), role, "${o.str("name")}, $name")
-                assertEquals(if (role == "phone") root else null, set.rootDevice, "${o.str("name")}, $name: the root phone")
-            }
-        }
+    fun v2Vectors() {
+        assertTrue(v2Cases() > 10)
     }
 
-    /**
-     * testdata/interop/go-authority.json, from Go's TestGoAuthorityVectors: a
-     * device is an admin, with the role and store of that record, only by a
-     * record a root's own key signed, and a removed admin's records no
-     * longer decide a device's entry.
-     */
+    // The cases of Go's records of version 1 had these tests; each now runs
+    // the cases of version 2 that took their place.
+
     @Test
     fun goAuthority() {
-        val v = Interop.read("go-authority.json").jsonObject
-        val set = RecordSet()
-        fun check(name: String) {
-            val want = v.getValue(name).jsonArray.map { it.jsonObject }
-            val got = set.devices
-            assertEquals(want.map { it.str("id") }, got.map { it.id }, name)
-            for ((w, g) in want.zip(got)) {
-                assertEquals(w.str("name"), g.name, name)
-                assertEquals(w.getValue("admin").jsonPrimitive.boolean, g.admin, g.name)
-                assertEquals(w["admin_key"]?.jsonPrimitive?.content, g.adminKey?.let { java.util.Base64.getEncoder().encodeToString(it) }, g.name)
-                assertEquals(w.str("role"), g.role, g.name)
-                assertEquals(w.str("store"), g.store, g.name)
-            }
-        }
-        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
-        check("devices")
-        assertEquals(v.getValue("other_revoked").jsonPrimitive.boolean, set.isRevoked(b64(v.str("other"))))
-        val later = v.getValue("later").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
-        assertEquals(later.size, set.addAll(later, b64(v.str("group_ca"))).size)
-        check("devices_later")
+        v2Cases(listOf("basic", "record of a later version", "ignored records", "checkpoint"))
     }
 
-    /** An admin computer freezing another (go-freeze.json, docs/protocol.md section 10, rule 4), as Go's TestGoFreezeVectors writes it. */
+    @Test
+    fun goAdminPowers() {
+        v2Cases(listOf("powers"))
+    }
+
+    @Test
+    fun goEnvelopes() {
+        v2Cases(listOf("one record under two admin CAs", "two histories", "times at the ends"))
+    }
+
     @Test
     fun goFreeze() {
-        val v = Interop.read("go-freeze.json").jsonObject
-        val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
-        val set = RecordSet()
-        assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
-        assertEquals(v.str("digest"), set.digest)
-        val devices = v.getValue("devices").jsonArray.map { it.jsonObject }
-        assertEquals(devices.map { it.str("name") }, set.devices.map { it.name })
-        assertEquals(devices.map { it.getValue("admin").jsonPrimitive.boolean }, set.devices.map { it.admin })
-        for (k in v.getValue("keys").jsonArray) {
-            val o = k.jsonObject
-            assertEquals(o.getValue("frozen").jsonPrimitive.boolean, set.isFrozen(b64(o.str("key"))), o.str("name"))
-            assertTrue(!set.isRevoked(b64(o.str("key"))), o.str("name"))
-        }
-        for (c in v.getValue("chains").jsonArray) {
-            val o = c.jsonObject
-            val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
-            assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, o.str("name"))
-        }
+        v2Cases(listOf("freeze and thaw", "freezes crossed"))
     }
 
-    /**
-     * An admin computer taking over a group whose root is a computer (go-takeover.json, from Go's
-     * TestGoTakeoverVectors): it counts there, but not in a phone's group, not while another admin computer has
-     * frozen it, and not once the old root removed it.
-     */
+    @Test
+    fun goHandover() {
+        v2Cases(listOf("claim waits and takes effect", "settings delay", "claim disputed"))
+    }
+
+    @Test
+    fun goHubOrder() {
+        v2Cases(listOf("hubs table"))
+    }
+
+    @Test
+    fun goRemovedAdmin() {
+        v2Cases(listOf("root removal cuts an admin", "removed admin's device", "removed admin's claim"))
+    }
+
+    @Test
+    fun goRemovedAdmins() {
+        v2Cases(listOf("admin removals"))
+    }
+
+    @Test
+    fun goRootMember() {
+        v2Cases(listOf("removed phone after a takeover", "chain of claims"))
+    }
+
     @Test
     fun goTakeover() {
-        val cases = Interop.read("go-takeover.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
-        assertEquals(4, cases.size)
-        for (c in cases) {
-            val name = c.str("name")
-            val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
-            val set = RecordSet()
-            val dropped = c["dropped"]?.jsonPrimitive?.int ?: 0
-            assertEquals(if (name == "phone root") 1 else 0, dropped, name)
-            assertEquals(records.size - dropped, set.addAll(records, b64(c.str("group_ca"))).size, name)
-            assertEquals(c.str("digest"), set.digest, name)
-            val roots = (c["roots"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
-            assertEquals(roots, set.roots.map { b64(it) }, name)
-            for (k in c.getValue("keys").jsonArray) {
-                val o = k.jsonObject
-                assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(b64(o.str("key"))), "$name: ${o.str("name")}")
-            }
-        }
+        v2Cases(listOf("two claims", "claim after removal", "claim while another waits", "stranger's claim", "claimed root signs early"))
     }
 
     /**
-     * Watches (go-watch.json, from Go's TestGoWatchVectors; docs/protocol.md section 10, rule 8): a watch freezes
-     * and removes as a computer's admin CA does, but admits nobody, never makes a root, is never a hub and signs
-     * only the commands that turn things off and action.
+     * A watch's records count only for its powers: removing an admin is not
+     * one of them, so a revocation of an admin's key that a watch signs
+     * counts for nothing, while the root's does.
      */
     @Test
     fun goWatch() {
-        val cases = Interop.read("go-watch.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
-        assertEquals(3, cases.size)
-        for (c in cases) {
-            val name = c.str("name")
-            val records = c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }.reversed()
-            val set = RecordSet()
-            val dropped = c["dropped"]?.jsonPrimitive?.int ?: 0
-            assertEquals(records.size - dropped, set.addAll(records, b64(c.str("group_ca"))).size, name)
-            assertEquals(c.str("digest"), set.digest, name)
-            assertTrue(set.roots.isEmpty(), name)
-            val devices = c.getValue("devices").jsonArray.map { it.jsonObject }
-            assertEquals(devices.map { listOf(it.str("id"), it.str("name"), it.str("role"), it.getValue("admin").jsonPrimitive.boolean.toString()) },
-                set.devices.map { listOf(it.id, it.name, it.role, it.admin.toString()) }, name)
-            for (k in c.getValue("keys").jsonArray) {
-                val o = k.jsonObject
-                val key = b64(o.str("key"))
-                val what = "$name: ${o.str("name")}"
-                assertEquals(o.getValue("revoked").jsonPrimitive.boolean, set.isRevoked(key), "$what revoked")
-                assertEquals(o.getValue("frozen").jsonPrimitive.boolean, set.isFrozen(key), "$what frozen")
-                assertEquals(o.getValue("watch").jsonPrimitive.boolean, set.isWatch(key), "$what watch")
-            }
-            for (ch in (c["chains"] as? JsonArray).orEmpty()) {
-                val o = ch.jsonObject
-                val chain = o.getValue("chain").jsonArray.map { b64(it.jsonPrimitive.content) }
-                assertEquals(o.getValue("refused").jsonPrimitive.boolean, set.refused(chain) != null, "$name: ${o.str("name")}")
-            }
-            assertEquals(c.getValue("hubs").jsonArray.map { it.jsonPrimitive.content }, set.hubOrder, name)
-            for (d in set.devices) if (d.role == "watch") assertFalse(set.mayHost(d.id), name)
-            val self = c["self"]?.jsonPrimitive?.content ?: ""
-            val now = c["now_ms"]?.jsonPrimitive?.content?.toLong() ?: 0L
-            for (cmd in (c["commands"] as? JsonArray).orEmpty()) {
-                val o = cmd.jsonObject
-                val r = Member.Record.fromJson(o.getValue("command").jsonObject)
-                val got = runCatching { Commands.verify(r, set, self, now) }
-                assertEquals(o.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${o.str("name")}: ${got.exceptionOrNull()}")
-            }
-        }
+        val x = Group(now)
+        val g = x.g
+        val adminKey = SoftwareSigner()
+        val admin = SyncEngine.newID()
+        val adminCA = GroupCertificates.adminCA(admin, adminKey.publicKeyDER, g.groupCA, x.ca)
+        val adminHash = Records.keyHashOfCert(adminCA)
+        g.record(admin, "B", "phone", Records.keyHash(SoftwareSigner().publicKeyDER), x.ca, now, adminHash)
+        val watchKey = SoftwareSigner()
+        val watch = SyncEngine.newID()
+        val (watchCA, _) = g.addWatch(watch, "Watch", "wearos", watchKey.publicKeyDER, x.ca, now.plusSeconds(1))
+        assertEquals(Records.WATCH_POWERS, g.devices.first { it.id == watch }.powers)
+        assertFalse("remove-admins" in Records.WATCH_POWERS)
+        g.records.signed(V2.revoke(listOf(adminHash), watchKey, now.plusSeconds(2)), watchKey, g.groupCA, watchCA)
+        assertFalse(g.records.isRevoked(adminHash))
+        assertTrue(g.devices.any { it.id == admin })
+        g.records.signed(V2.revoke(listOf(adminHash), x.ca, now.plusSeconds(3)), x.ca, g.groupCA)
+        assertTrue(g.records.isRevoked(adminHash))
     }
 
     /**
@@ -399,14 +207,15 @@ class RecordsTest {
     @Test
     fun recordsForGo() {
         val dir = Interop.out ?: return
-        val g = Group(now)
-        g.set.add(Records.revoke(listOf(Records.keyHashOfCert(g.pcCert)), g.tag, g.phone, now, g.rootKey), g.ca)
+        val x = Group(now)
+        val g = x.g
+        g.revoke(x.pc, x.ca, now)
         val out = Wire.obj(
-            "group_ca" to Wire.bytes(g.ca),
-            "records" to JsonArray(g.set.records.map { it.toJson() }),
-            "digest" to Wire.str(g.set.digest),
-            "devices" to JsonArray(g.set.devices.map { JsonPrimitive(it.id) }),
-            "revoked" to JsonArray(g.set.revoked.map { JsonPrimitive(b64(unhex(it))) }),
+            "group_ca" to Wire.bytes(g.groupCA),
+            "records" to JsonArray(g.records.records.map { it.toJson() }),
+            "digest" to Wire.str(g.records.digest),
+            "devices" to JsonArray(g.devices.map { JsonPrimitive(it.id) }),
+            "revoked" to JsonArray(g.records.revoked.map { JsonPrimitive(b64(unhex(it))) }),
         )
         File(dir, "swift-records.json").writeBytes(Wire.encode(out))
     }

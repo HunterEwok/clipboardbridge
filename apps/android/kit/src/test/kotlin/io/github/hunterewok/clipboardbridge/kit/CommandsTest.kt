@@ -176,9 +176,10 @@ class CommandsTest {
     }
 
     /**
-     * Writes mode commands this kit signed, with the root key and with an
-     * admin CA's, for internal/group's TestSwiftCommand, under the Swift
-     * kit's file name, when CBB_INTEROP_OUT names a directory.
+     * Writes commands this kit signed, with the root key and with an admin
+     * CA's, and the records that name both, for internal/group's
+     * TestSwiftCommand, under the Swift kit's file name, when
+     * CBB_INTEROP_OUT names a directory.
      */
     @Test
     fun commandsForGo() {
@@ -188,42 +189,49 @@ class CommandsTest {
         val tag = GroupCertificates.tag(ca)
         val admin = SoftwareSigner()
         val adminCA = GroupCertificates.adminCA("fedcba9876543210fedcba9876543210", admin.publicKeyDER, ca, root)
+        // The records name the root's own device and the admin phone, which may sign every command.
         val by = "0123456789abcdef0123456789abcdef"
+        val adminBy = "fedcba9876543210fedcba9876543210"
+        val set = RecordSet()
+        set.signed(V2.device(by, "Root", "phone", Records.keyHash(SoftwareSigner().publicKeyDER), root, now, holdsRoot = true), root, ca)
+        set.signed(V2.device(adminBy, "Admin", "phone", Records.keyHash(SoftwareSigner().publicKeyDER), root, now, Records.keyHashOfCert(adminCA)), root, ca)
+        val commands = listOf(
+            Commands.mode(pc, "receive", tag, by, now, root),
+            Commands.mode(pc, "receive", tag, adminBy, now, admin, adminCA),
+            Commands.hub(
+                pc,
+                "203.0.113.9:8764" to "sha256:AAAA",
+                emptyList(),
+                listOf(PhoneHub.Client("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ByteArray(32) { 1 }, ByteArray(32) { 2 })),
+                tag,
+                by,
+                now,
+                root,
+            ),
+            Commands.paste(pc, "echo <ok> & \"done\"\n", "type", enter = true, group = tag, by = adminBy, now = now, signer = admin, adminCA = adminCA),
+            Commands.pasteOff(pc, tag, by, now, root),
+            Commands.action(pc, "lock", tag, adminBy, now, admin, adminCA),
+            Commands.actionsOff(pc, tag, by, now, root),
+        )
+        for (c in commands) Commands.verify(c, set, pc, now.toEpochMilli())
         val out = Wire.obj(
             "group_ca" to Wire.bytes(ca),
+            "records" to JsonArray(set.records.map { it.toJson() }),
             "to" to Wire.str(pc),
-            "commands" to JsonArray(
-                listOf(
-                    Commands.mode(pc, "receive", tag, by, now, root).toJson(),
-                    Commands.mode(pc, "receive", tag, by, now, admin, adminCA).toJson(),
-                    Commands.hub(
-                        pc,
-                        "203.0.113.9:8764" to "sha256:AAAA",
-                        emptyList(),
-                        listOf(PhoneHub.Client("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ByteArray(32) { 1 }, ByteArray(32) { 2 })),
-                        tag,
-                        by,
-                        now,
-                        root,
-                    ).toJson(),
-                    Commands.paste(pc, "echo <ok> & \"done\"\n", "type", enter = true, group = tag, by = by, now = now, signer = admin, adminCA = adminCA).toJson(),
-                    Commands.pasteOff(pc, tag, by, now, root).toJson(),
-                    Commands.action(pc, "lock", tag, by, now, admin, adminCA).toJson(),
-                    Commands.actionsOff(pc, tag, by, now, root).toJson(),
-                ),
-            ),
+            "commands" to JsonArray(commands.map { it.toJson() }),
         )
         File(dir, "swift-command.json").writeBytes(Wire.encode(out))
     }
 
-    /** testdata/interop/go-commands.json, from Go's TestGoCommandVectors: which commands for this phone count. */
+    /** testdata/interop/v2-commands.json, from Go's TestGoCommandVectors: which commands for this phone count. */
     @Test
     fun goCommands() {
-        val v = Interop.read("go-commands.json").jsonObject
+        val v = Interop.read("v2-commands.json").jsonObject
         val set = RecordSet()
         val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
         assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)
         val now = v.getValue("now_ms").jsonPrimitive.long
+        set.nowMS = now
         val commands = v.getValue("commands").jsonArray.map { it.jsonObject }
         assertEquals(17, commands.size)
         for (c in commands) {
@@ -233,7 +241,7 @@ class CommandsTest {
             assertEquals(c.getValue("ok").jsonPrimitive.boolean, got.isSuccess, "$name: ${got.exceptionOrNull()?.message}")
             got.getOrNull()?.let { assertEquals(c["mode"]?.jsonPrimitive?.content, it.mode, name) }
             got.getOrNull()?.let {
-                val (sender, verified) = set.commandSender(r, it.by)
+                val (sender, verified) = set.commandSender(r, v.str("self"))
                 assertEquals(c["verified"]?.jsonPrimitive?.boolean ?: false, verified, name)
                 assertTrue(if (verified) sender == it.by else sender.startsWith("key "), "$name: $sender")
             }
@@ -241,10 +249,10 @@ class CommandsTest {
         }
     }
 
-    /** testdata/interop/go-actions.json, from Go's TestGoActionVectors: action commands for a member, as Go checks them. */
+    /** testdata/interop/v2-actions.json, from Go's TestGoActionVectors: action commands for a member, as Go checks them. */
     @Test
     fun goActions() {
-        val v = Interop.read("go-actions.json").jsonObject
+        val v = Interop.read("v2-actions.json").jsonObject
         val set = RecordSet()
         val records = v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }
         assertEquals(records.size, set.addAll(records, b64(v.str("group_ca"))).size)

@@ -627,7 +627,10 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     private fun adopt(g: PhoneGroup) {
         synchronized(lock) {
             if (state == null) newDeviceMode()
-            state?.let { g.add(it.records.records) }
+            state?.let {
+                g.add(it.records.records)
+                g.records.takeClaimTimes(it.records.claimTimes)
+            }
             g.save(file)
             state = g
         }
@@ -911,7 +914,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }
         when (body.type) {
             "paste" -> {
-                val (sender, verified) = synchronized(lock) { g.records.commandSender(c, body.by) }
+                val (sender, verified) = synchronized(lock) { g.records.commandSender(c, g.device) }
                 val name = if (verified) g.devices.firstOrNull { it.id == body.by }?.name else null
                 return pastes.paste(body, sender, verified, name)
             }
@@ -1140,25 +1143,57 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /**
      * Removes the phone that holds the group's root, when it is lost: this
-     * admin phone makes a new root key and takes the group over
-     * (docs/protocol.md, section 10, "Handing the group over"). From then
-     * on it signs with that key.
+     * admin phone makes a new root key and claims the group for it
+     * (docs/records-v2.md, "Handing the group over"). The claim waits the
+     * group's delay, in which the root, if it is still in use, cancels it;
+     * [finishTakeOverIfDue] then makes this phone the root.
      */
     private suspend fun takeOver(id: String) {
         val admin = signer(Keys.ADMIN, R.string.reason_take_over)
-        val rs = withContext(Dispatchers.IO) {
+        val r = withContext(Dispatchers.IO) {
             val g = copyOfState() ?: return@withContext null
             // A root key left from a group this phone made before goes.
             val root = Keys.create(context, Keys.ROOT, g.tag)
-            val rs = g.takeOver(id, admin, root, Instant.now())
+            val newRoot = GroupCertificates.groupCA(root, Instant.now(), pathLength = 1)
+            val r = g.takeOver(id, admin, newRoot, Instant.now())
             adopt(g)
-            rs
+            r
         } ?: return
-        published(rs)
-        currentNode?.close(id)
-        // The lost phone was the hub: this phone is the hub now (docs/design.md, "Losing the phone").
-        val wasHub = awayFromHome?.hub == id
-        withContext(Dispatchers.IO) { if (wasHub) setPhoneHub(true) else restartSync() }
+        published(listOf(r))
+    }
+
+    /**
+     * Makes this phone the group's root once its claim took effect: it
+     * signs, with the new root key, what a new root starts with, and becomes
+     * the hub when the lost phone was (docs/design.md, "Losing the phone").
+     * A claim that was cancelled is dropped.
+     */
+    suspend fun finishTakeOverIfDue() {
+        val g = withContext(Dispatchers.IO) { copyOfState() } ?: return
+        if (g.claim == null) return
+        g.records.refresh()
+        g.adoptRoots()
+        val lost = g.claimedFrom
+        if (!g.currentRoot.contentEquals(g.claim)) {
+            if (!g.dropEndedClaim()) return
+            Log.i(TAG, "the claim to take the group over ended; this phone stays an admin")
+            withContext(Dispatchers.IO) { adopt(g) }
+            return
+        }
+        try {
+            val root = signer(Keys.ROOT, R.string.reason_take_over)
+            val rs = withContext(Dispatchers.IO) {
+                val rs = g.finishTakeOver(root, Instant.now())
+                adopt(g)
+                rs
+            }
+            published(rs)
+            if (lost != null) currentNode?.close(lost)
+            val wasHub = lost != null && awayFromHome?.hub == lost
+            withContext(Dispatchers.IO) { if (wasHub) setPhoneHub(true) else restartSync() }
+        } catch (e: Exception) {
+            Log.e(TAG, "finishing the takeover: $e")
+        }
     }
 
     // Syncing

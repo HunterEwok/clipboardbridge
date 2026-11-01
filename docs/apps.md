@@ -784,7 +784,8 @@ the app on real devices.
   root's phone may cancel it (`resolve`). Once the wait is over the app finishes the takeover
   by itself (`finishTakeOver`): as the new root it signs its own record, keeps the other
   admins and removes the lost phone. The kit keeps the records file and asks the Rust core
-  what it says (`RecordSet`, docs/core-api.md, "The record set").
+  what it says (`RecordSet`, docs/core-api.md, "The record set"); the Android kit does the
+  same, with its root key in the Keystore behind BiometricPrompt.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux;
   the app's `src/full` and `src/fdroid` hold what its two builds do differently, and
   `packaging/fdroid` the F-Droid recipe.

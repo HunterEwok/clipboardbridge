@@ -264,29 +264,3 @@ func checkV1Refused(t *testing.T, name string) {
 		}
 	}
 }
-
-// kitRecordsV1 reports whether recs, which a phone kit signed, are of
-// version 1, as until the kits move to the core; then it checks that s
-// refuses each of them, since there is no migration, and the test's
-// comparison of what Go and the kit make of them waits for the kits'
-// records of version 2.
-func kitRecordsV1(t *testing.T, s *Records, recs []Record) bool {
-	t.Helper()
-	if len(recs) == 0 {
-		return false
-	}
-	for _, r := range recs {
-		var b struct {
-			V int `json:"v"`
-		}
-		if json.Unmarshal(r.Body, &b) != nil || b.V != 1 {
-			return false
-		}
-	}
-	for i, r := range recs {
-		if ok, err := s.Add(r); ok || err == nil {
-			t.Errorf("record %d of version 1 from the kit taken", i)
-		}
-	}
-	return true
-}

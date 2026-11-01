@@ -115,7 +115,7 @@ final class StrictTests: XCTestCase {
     }
 
     /// Mutants of good record bodies of version 2, each refused by the
-    /// core: a field dropped, a version or an alg it does not know, a
+    /// core: a field every record has dropped, a version or an alg it does not know, a
     /// number written as a float or with a sign, a duplicate key, a null.
     func testMutants() throws {
         var n = 0
@@ -124,10 +124,10 @@ final class StrictTests: XCTestCase {
             let text = String(decoding: body, as: UTF8.self)
             let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
             var mutants: [String] = []
-            for key in obj.keys {
+            for key in ["v", "alg", "type", "signer", "time_ms", "group", "seq"] where obj[key] != nil {
                 var o = obj
                 o[key] = nil
-                if let d = try? JSONSerialization.data(withJSONObject: o, options: [.sortedKeys]) {
+                if let d = try? JSONSerialization.data(withJSONObject: o, options: [.sortedKeys, .withoutEscapingSlashes]) {
                     mutants.append(String(decoding: d, as: UTF8.self))
                 }
             }

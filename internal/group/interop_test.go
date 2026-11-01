@@ -102,9 +102,6 @@ func TestSwiftRecords(t *testing.T) {
 		t.Errorf("the phone's root has path length %d, want 1", ca.MaxPathLen)
 	}
 	s := NewRecords(ca)
-	if kitRecordsV1(t, s, v.Records) {
-		return
-	}
 	for i, r := range v.Records {
 		if _, err := s.Add(r); err != nil {
 			t.Fatalf("record %d: %v", i, err)
@@ -252,9 +249,6 @@ func TestSwiftAdmin(t *testing.T) {
 		t.Fatalf("member TLS through the admin CA: client %v, server %v", cerr, serr)
 	}
 	s := NewRecords(ca)
-	if kitRecordsV1(t, s, v.Records) {
-		return
-	}
 	for i, r := range v.Records {
 		if _, err := s.Add(r); err != nil {
 			t.Fatalf("record %d: %v", i, err)
@@ -373,9 +367,6 @@ func TestSwiftRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewRecords(ca)
-	if kitRecordsV1(t, s, v.Records) {
-		return
-	}
 	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
 		t.Fatalf("Go refuses the phone's records: %v", errs)
 	}
@@ -451,9 +442,6 @@ func TestSwiftComputerAdmin(t *testing.T) {
 		t.Error("the admin CA does not name the computer or its admin key")
 	}
 	s := NewRecords(root)
-	if kitRecordsV1(t, s, v.Records) {
-		return
-	}
 	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
 		t.Fatalf("Go refuses the phone's records: %v", errs)
 	}
@@ -543,15 +531,6 @@ func TestSwiftCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err := s.VerifyCommand(c, v.To, time.UnixMilli(b.TimeMS))
-		// A kit that does not sign records v2 through the core yet (the
-		// Kotlin kit, until it moves) writes no records, and its admin's
-		// commands are refused: only the root's are checked through.
-		if len(v.Records) == 0 && len(c.Chain) > 0 {
-			if err == nil || !strings.Contains(err.Error(), "not an admin") {
-				t.Errorf("command %d, by an admin no record names: %v", i, err)
-			}
-			continue
-		}
 		if err != nil {
 			t.Fatalf("command %d: %v", i, err)
 		}

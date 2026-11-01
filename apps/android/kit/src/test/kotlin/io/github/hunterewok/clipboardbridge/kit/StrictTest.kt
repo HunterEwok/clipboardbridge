@@ -3,6 +3,7 @@
 
 package io.github.hunterewok.clipboardbridge.kit
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class StrictTest {
@@ -23,10 +25,34 @@ class StrictTest {
             Triple(o.str("name"), b64(o.str("body")), o.getValue("valid").jsonPrimitive.boolean)
         }.also { assertTrue(it.isNotEmpty(), "no $kind") }
 
-    /** testdata/interop/strict.json, from the Go tests: the kit takes exactly the record bodies the Go member does. */
+    /** Whether the core's check_body takes a record body. */
+    private fun takes(body: ByteArray): Boolean = runCatching { Core.run("check_body", Wire.obj("body" to Wire.bytes(body))) }.isSuccess
+
+    /** Well-formed record bodies of version 2: the records of the cases of testdata/interop/v2-records.json that hold only good records. */
+    private fun goodBodies(): List<ByteArray> {
+        val good = listOf("basic", "powers", "hubs table", "freeze and thaw", "claim waits and takes effect")
+        val bodies = Interop.read("v2-records.json").jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
+            .filter { c -> good.any { c.str("name").startsWith(it) } }
+            .flatMap { c -> c.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject).body } }
+        assertTrue(bodies.isNotEmpty())
+        return bodies
+    }
+
+    /**
+     * Record bodies of version 2 are the Rust core's to check (check_body): each good body passes, and the same body
+     * with a field the rows do not have, its keys out of order or a space in front does not.
+     */
     @Test
     fun records() {
-        for ((name, body, valid) in cases("records")) assertEquals(valid, Records.Body.decode(body) != null, "record $name")
+        assertTrue(cases("records").isNotEmpty())
+        for (body in goodBodies()) {
+            val text = String(body)
+            assertTrue(takes(body), text)
+            for (b in listOf("{\"zz\":1," + text.drop(1), " $text", "{\"a\":1," + text.drop(1))) assertFalse(takes(b.toByteArray()), b)
+            val o = Json.parseToJsonElement(text).jsonObject
+            val reordered = JsonObject(o.entries.reversed().associate { it.toPair() }).toString()
+            if (reordered != text) assertFalse(takes(reordered.toByteArray()), reordered)
+        }
     }
 
     @Test
@@ -68,6 +94,21 @@ class StrictTest {
             wrong += strictWrong(v)
         }
         assertTrue(n > 0, "no mutant vectors")
+        // Mutants of good record bodies of version 2, each refused by the core: a field every record has dropped, a version or an alg
+        // it does not know, a number written as a float or with a sign, a duplicate key, a null.
+        for (body in goodBodies()) {
+            val text = String(body)
+            val o = Json.parseToJsonElement(text).jsonObject
+            val mutants = REQUIRED.filter { it in o }.map { k -> JsonObject(o - k).toString() } + listOf(
+                text.replace("\"v\":2", "\"v\":3"),
+                text.replace("\"alg\":\"es256\"", "\"alg\":\"rs256\""),
+                text.replace("\"v\":2", "\"v\":2.0"),
+                text.replace("\"v\":2", "\"v\":+2"),
+                text.replace("\"v\":2", "\"v\":2,\"v\":2"),
+                text.replace("\"v\":2", "\"v\":null"),
+            )
+            for (m in mutants) if (m != text && takes(m.toByteArray())) wrong += "record mutant taken: $m"
+        }
         assertTrue(wrong.isEmpty(), "${wrong.size} vectors read otherwise:\n" + wrong.joinToString("\n"))
     }
 
@@ -78,7 +119,8 @@ class StrictTest {
      */
     private fun strictWrong(v: JsonObject): List<String> {
         val wrong = mutableListOf<String>()
-        for (kind in listOf("records", "commands", "manifests")) {
+        // Record bodies are the core's to check; records() and v2Mutants() cover them.
+        for (kind in listOf("commands", "manifests")) {
             for (c in v[kind]?.jsonArray ?: continue) {
                 val o = c.jsonObject
                 var body = b64(o.str("body"))
@@ -87,7 +129,6 @@ class StrictTest {
                     body = body.copyOfRange(0, at) + ByteArray(it.jsonPrimitive.int) { 'a'.code.toByte() } + body.copyOfRange(at, body.size)
                 }
                 val got = when (kind) {
-                    "records" -> Records.Body.decode(body) != null
                     "commands" -> try {
                         Commands.parse(body)
                         true
@@ -139,5 +180,10 @@ class StrictTest {
             }
         }
         assertTrue(wrong.isEmpty(), "${wrong.size} vectors read otherwise:\n" + wrong.joinToString("\n"))
+    }
+
+    private companion object {
+        /** The fields every record body of version 2 has (docs/records-v2.md). */
+        val REQUIRED = listOf("v", "alg", "type", "signer", "time_ms", "group", "seq")
     }
 }
