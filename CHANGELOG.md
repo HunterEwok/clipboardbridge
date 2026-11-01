@@ -863,6 +863,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The tray app keeps the last of quick changes in its settings: two changes close together
+  could leave the earlier one in `desktop.json`.
 - The tray app no longer hangs when the service does not answer, and opened while the
   service is not running it says so instead of showing an empty window.
 - On Linux the tray item is named Clipboard Bridge instead of Wails.

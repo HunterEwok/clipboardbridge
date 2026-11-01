@@ -162,10 +162,9 @@ func (d *Desk) Arrange(op ArrangeOp) {
 	}
 	d.mu.Lock()
 	d.settings.Arrangement = &a
-	s := d.settings
 	d.message = ""
 	d.mu.Unlock()
-	if err := d.writeSettings(s); err != nil {
+	if err := d.writeSettings(); err != nil {
 		log.Printf("settings: %v", err)
 	}
 }
@@ -217,9 +216,8 @@ func (d *Desk) refresh() {
 	}
 	d.problem, d.status, d.devices = "", st, devices
 	if d.pruneLocked() {
-		s := d.settings
 		go func() {
-			if err := d.writeSettings(s); err != nil {
+			if err := d.writeSettings(); err != nil {
 				log.Printf("settings: %v", err)
 			}
 		}()
@@ -348,13 +346,18 @@ func (d *Desk) SaveSettings(s Settings) error {
 	s.Arrangement = d.settings.Arrangement
 	d.settings = s
 	d.mu.Unlock()
-	return d.writeSettings(s)
+	return d.writeSettings()
 }
 
-// writeSettings writes the settings to desktop.json.
-func (d *Desk) writeSettings(s Settings) error {
+// writeSettings writes the current settings to desktop.json. It reads them
+// under settingsMu, so that of two writes close together the last one
+// holds the newer settings, never a copy taken before the other's.
+func (d *Desk) writeSettings() error {
 	d.settingsMu.Lock()
 	defer d.settingsMu.Unlock()
+	d.mu.Lock()
+	s := d.settings
+	d.mu.Unlock()
 	if d.settingsPath == "" {
 		return errors.New("no configuration folder")
 	}
