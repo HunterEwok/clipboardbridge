@@ -130,7 +130,7 @@ fn pairing() {
 #[test]
 fn swift_records() {
     let v = vectors("swift-records.json");
-    let mut s = Records::new(&cert(&v["group_ca"]));
+    let mut s = crate::group::Records::new(&cert(&v["group_ca"]));
     let (fresh, errs) = s.add_all(&records(&v["records"]));
     assert!(errs.is_empty(), "{errs:?}");
     assert_eq!(fresh.len(), v["records"].as_array().unwrap().len());
@@ -150,7 +150,7 @@ fn swift_admin() {
     let v = vectors("swift-admin.json");
     let ca = cert(&v["group_ca"]);
     let admin = cert(&v["admin_ca"]);
-    let mut s = Records::new(&ca);
+    let mut s = crate::group::Records::new(&ca);
     let (_, errs) = s.add_all(&records(&v["records"]));
     assert!(errs.is_empty(), "{errs:?}");
     let mut ids: Vec<String> = s.devices().into_iter().map(|d| d.id).collect();

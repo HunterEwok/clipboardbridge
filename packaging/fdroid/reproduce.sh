@@ -7,9 +7,10 @@
 #   reproduce.sh CHECKOUT ELSEWHERE
 # CHECKOUT, the repository, is built where it is. ELSEWHERE, a new or empty directory, gets
 # its committed files without .git, as a tarball has them, and is built there with another
-# time zone, umask and Go build cache. Both need what the app's build needs: the Android SDK
-# with the NDK of cbb.ndk (apps/android/gradle.properties), Go and a JDK. CI's fdroid job
-# runs it.
+# time zone, umask, Go build cache and cargo target directory. Both need what the app's
+# build needs: the Android SDK with the NDK of cbb.ndk (apps/android/gradle.properties), the
+# Rust of cbb.rust with the Android targets and cargo-ndk, Go and a JDK. CI's fdroid job runs
+# it.
 set -eu
 if [ $# -ne 2 ]; then
 	echo "usage: reproduce.sh CHECKOUT ELSEWHERE" >&2

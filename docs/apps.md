@@ -716,6 +716,9 @@ its updates to either. That needs the build to be reproducible:
   and the Go of go.mod's `toolchain` line, with `-trimpath`, no VCS stamp and from one
   path, `/tmp/cbbtun-bind`, a link to the checkout (gomobile's go.mod names the module's
   directory, which goes into the library's build info);
+- the Rust core's libraries (`lite/ffi`) built with the same NDK and the Rust of `cbb.rust`
+  there, with the paths of the checkout and of cargo's sources written as fixed names
+  (`lite/ffi/bind.sh`);
 - no dependency block (`dependenciesInfo`) and no commit details (`vcsInfo`) in the APK.
 
 CI's `fdroid` job builds the fdroid APK twice, the second time from a copy without `.git` in
@@ -775,9 +778,14 @@ the app on real devices.
   the join QR code with its home network addresses (`LocalAddresses`). An admin phone scans
   it in "Add a device". The root phone makes every phone it admits an admin; an admin that
   is not the root admits phones as plain members. An admin phone that removes the root
-  phone takes the group over (`PhoneGroup.takeOver`, protocol.md section 10, "Handing the
-  group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
-  `root` record with its admin key, then, as the new root, the revocation and its own record.
+  phone takes the group over (`PhoneGroup.takeOver`, docs/records-v2.md): it makes a new
+  root key in the Secure Enclave behind Face ID and signs a claim with its admin key. The
+  claim waits as long as the root decided (72 hours by default, `setTakeoverDelay`), and the
+  root's phone may cancel it (`resolve`). Once the wait is over the app finishes the takeover
+  by itself (`finishTakeOver`): as the new root it signs its own record, keeps the other
+  admins and removes the lost phone. The kit keeps the records file and asks the Rust core
+  what it says (`RecordSet`, docs/core-api.md, "The record set"); the Android kit does the
+  same, with its root key in the Keystore behind BiometricPrompt.
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux;
   the app's `src/full` and `src/fdroid` hold what its two builds do differently, and
   `packaging/fdroid` the F-Droid recipe.

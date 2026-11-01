@@ -33,6 +33,10 @@ Builds:
     sudo:
       - apt-get update
       - apt-get install -y -t bookworm-backports golang-go
+    # Rust for the core's library (lite/ffi), the version of cbb.rust in
+    # apps/android/gradle.properties, with cargo-ndk.
+    srclibs:
+      - rustup@1.28.2
     # The Wear OS app and the full build's Google Play services, which the fdroid
     # flavor never uses.
     rm:
@@ -40,8 +44,10 @@ Builds:
     prebuild:
       - sed -i -e '/play-services/d' build.gradle.kts
       - go env -w GOTOOLCHAIN=auto
+      - $$rustup$$/rustup-init.sh -y --profile minimal --default-toolchain 1.99.0 --target aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - $HOME/.cargo/bin/cargo install --locked cargo-ndk@4.1.2
     output: build/outputs/apk/fdroid/release/app-fdroid-release-unsigned.apk
-    # cbb.ndk in apps/android/gradle.properties.
+    # cbb.ndk in apps/android/gradle.properties, for the tunnel and the core.
     ndk: 30.0.16248370
     gradle:
       - fdroid

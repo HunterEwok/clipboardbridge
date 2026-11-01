@@ -19,10 +19,10 @@ import kotlin.test.assertTrue
 class CredentialsTest {
     private fun hashes(l: List<ByteArray>) = l.map { b64(it) }
 
-    /** testdata/interop/go-credentials.json, from Go's TestGoCredentialVectors. */
+    /** testdata/interop/v2-credentials.json, from Go's TestGoCredentialVectors. */
     @Test
     fun goCredentials() {
-        val v = Interop.read("go-credentials.json").jsonObject
+        val v = Interop.read("v2-credentials.json").jsonObject
         val ca = b64(v.str("group_ca"))
         val s = RecordSet()
         s.addAll(v.getValue("records").jsonArray.map { Member.Record.fromJson(it.jsonObject) }, ca)

@@ -18,7 +18,7 @@ use core::cell::RefCell;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
-use crate::authority::{self, Body, Hash, Input, Record, SigCache, State, key_hash_of};
+use crate::authority::{self, Body, Hash, Input, Record, Seen, SigCache, State, key_hash_of};
 use crate::certs::{self, Cert, KeyHash, sha256};
 use crate::error::{Context, Error, Result, Wrap};
 use crate::records::{COMMAND_AHEAD_MS, Command, store_of};
@@ -59,6 +59,10 @@ pub struct Device {
     pub key: KeyHash,
     /// Where its keys live (store_of).
     pub store: String,
+    /// With a checked attestation: the kind of hardware and the hex
+    /// SHA-256 of the attestation's leaf; empty without one.
+    pub kind: String,
+    pub proof: String,
     /// An admin now: it has an admin key and is not frozen.
     pub admin: bool,
     /// Its admin key, whether or not it is frozen.
@@ -407,6 +411,8 @@ impl Records {
                     os: d.os.clone(),
                     key,
                     store: store_of(&d.store, &d.role).to_string(),
+                    kind: d.hardware.clone(),
+                    proof: d.proof.clone(),
                     // A frozen admin is no admin until the freeze ends.
                     admin: d.admin.is_some() && !d.frozen,
                     admin_key: d.admin.map(|a| a.0),
@@ -723,6 +729,109 @@ impl Records {
             data.extend_from_slice(&sha256(sig));
         }
         base64::engine::general_purpose::STANDARD.encode(sha256(&data))
+    }
+
+    /// Names the set's group with tag instead of the group CA's own: for
+    /// the vectors, whose groups carry tags of their own.
+    pub(crate) fn set_tag(&mut self, tag: &str) {
+        self.tag = tag.to_string();
+        self.st.replace(None);
+    }
+
+    /// The seq and prev of the next record the key signer signs: one past
+    /// the highest seq of its records in the set, after that record's ID;
+    /// 1 and none when the set holds none of its records.
+    pub fn next_for(&self, signer: &Hash) -> (i64, Option<Hash>) {
+        self.bodies()
+            .filter(|(_, b)| b.signer == *signer)
+            .max_by_key(|(_, b)| b.seq)
+            .map_or((1, None), |(id, b)| (b.seq.saturating_add(1), Some(id)))
+    }
+
+    /// The group's tag, which every record of the set names.
+    pub fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    /// For every signer of the set, the highest seq the set holds of it:
+    /// what a removal, a freeze or a claim names in seen, sorted by key.
+    pub fn seen(&self) -> Vec<Seen> {
+        let mut top: BTreeMap<Hash, i64> = BTreeMap::new();
+        for (_, b) in self.bodies() {
+            let e = top.entry(b.signer).or_insert(0);
+            if b.seq > *e {
+                *e = b.seq;
+            }
+        }
+        top.into_iter().map(|(key, seq)| Seen { key, seq }).collect()
+    }
+
+    /// Every device ID a device record of the set names, whether it counts
+    /// or not, sorted: IDs a new device must not take.
+    pub fn known(&self) -> Vec<String> {
+        let mut out: Vec<String> =
+            self.bodies().filter(|(_, b)| b.kind == authority::TYPE_DEVICE).map(|(_, b)| b.device).collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// The IDs of the freezes of the admin key, which a thaw names.
+    pub fn freezes_of(&self, admin: &KeyHash) -> Vec<Hash> {
+        let mut out: Vec<Hash> = Vec::new();
+        for (id, b) in self.bodies() {
+            if b.kind == authority::TYPE_FREEZE && b.keys.iter().any(|k| k.0 == *admin) && !out.contains(&id) {
+                out.push(id);
+            }
+        }
+        out
+    }
+
+    /// Whether chain is the member certificate of a root's own device that
+    /// a claim took the group over from, as Go's TakenOver: its leaf is the
+    /// key of a holds_root device record of a root on the path that is no
+    /// longer the current root, which certified it, and a claim to the
+    /// next root took effect. It gives the claimant's device and admin
+    /// key. Such a peer is refused, but its connections carry records, so
+    /// that the old root, if it is still in use, can cancel the claim
+    /// (docs/records-v2.md, "Handing the group over").
+    pub fn taken_over(&self, chain: &[Cert]) -> Option<(String, KeyHash)> {
+        let first = chain.first()?;
+        let st = self.state();
+        let path = self.path();
+        let leaf = first.key_hash();
+        for (i, root) in path.iter().enumerate() {
+            let Some(next) = path.get(i.saturating_add(1)) else { break };
+            if !from(first, root) {
+                continue;
+            }
+            let rk = root.key_hash();
+            let own = self.bodies().any(|(_, b)| {
+                b.kind == authority::TYPE_DEVICE
+                    && b.holds_root
+                    && b.signer.0 == rk
+                    && b.key.is_some_and(|k| k.0 == leaf)
+            });
+            if !own {
+                continue;
+            }
+            let nk = next.key_hash();
+            if let Some(c) = st.claims.iter().find(|c| c.root.0 == nk && c.state == "effective") {
+                let dev = self
+                    .bodies()
+                    .filter(|(_, b)| b.kind == authority::TYPE_DEVICE && b.admin == Some(c.claimant))
+                    .last()
+                    .map(|(_, b)| b.device)
+                    .unwrap_or_default();
+                return Some((dev, c.claimant.0));
+            }
+        }
+        None
+    }
+
+    /// The certificates of the roots on the path, the group CA first.
+    pub fn path_certs(&self) -> Vec<Cert> {
+        self.path()
     }
 
     /// The records file's contents.

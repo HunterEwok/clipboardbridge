@@ -14,12 +14,13 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Root records (docs/protocol.md, section 10, "Roots" and "Handing the
- * group over"): the root phone is lost, and admin phone B takes the group
- * over with a new root.
+ * Handing the group over (docs/records-v2.md, "Handing the group over"):
+ * the root phone is lost, and admin phone B claims the group for a new
+ * root, which takes effect after the delay.
  */
 class RootTest {
-    private val t0 = Instant.now()
+    /** When the group was made: long enough ago that a claim made then took effect by now. */
+    private val t0 = Instant.now().minusSeconds(100L * 3600)
 
     /** A computer: its device ID, key and member certificate. */
     class Computer(ca: ByteArray, signer: CertificateSigner, now: Instant) {
@@ -45,14 +46,29 @@ class RootTest {
         val two = Computer(adminCA, adminKey, now)
 
         init {
+            // The members held every record since now.
+            root.records.clock = { now }
+            b.records.clock = { now }
             root.record(bDevice, "B", "phone", Records.keyHashOfCert(bCert), rootKey, now, Records.keyHashOfCert(adminCA))
-            root.record(one.device, "one", "linux", one.keyHash, rootKey, now)
+            root.record(one.device, "one", "full", one.keyHash, rootKey, now)
             b.isRoot = false
             b.adminCA = adminCA
             b.add(root.records.records)
-            b.record(two.device, "two", "linux", two.keyHash, adminKey, now)
+            b.record(two.device, "two", "full", two.keyHash, adminKey, now)
             root.add(b.records.records)
+            root.records.clock = { Instant.now() }
         }
+    }
+
+    /** B's claim, made at t0, and B as the root once it took effect. */
+    private fun takeOver(g: Group): Pair<Member.Record, List<Member.Record>> {
+        val newRoot = GroupCertificates.groupCA(g.newRootKey, t0, pathLength = 1)
+        val claim = g.b.takeOver(g.root.device, g.adminKey, newRoot, t0)
+        assertEquals("pending", g.b.claimState)
+        assertFalse(g.b.isRoot)
+        assertTrue(g.b.finishTakeOver(g.newRootKey, t0).isEmpty(), "the claim waits")
+        g.b.records.clock = { Instant.now() }
+        return claim to g.b.finishTakeOver(g.newRootKey, Instant.now())
     }
 
     @Test
@@ -60,43 +76,86 @@ class RootTest {
         val g = Group(t0)
         val lost = g.root.device
         assertEquals(lost, g.b.records.rootDevice)
-        val rs = g.b.takeOver(lost, g.adminKey, g.newRootKey, t0)
-        assertEquals(3, rs.size)
+        val (_, rs) = takeOver(g)
+        assertEquals(2, rs.size, "B's own device and the removal of the lost phone")
         assertTrue(g.b.isRoot)
         assertNull(g.b.adminCA)
+        assertNull(g.b.claim)
         assertEquals(1, g.b.roots.size)
+        assertEquals(g.b.roots.map { Key(it) }, g.b.records.roots.map { Key(it) })
         assertEquals(g.root.tag, g.b.tag, "the group keeps its tag")
         assertEquals(g.b.device, g.b.records.rootDevice)
         assertEquals(listOf("B", "one", "two"), g.b.devices.map { it.name })
-        assertEquals(true, g.b.devices.firstOrNull { it.name == "B" }?.admin)
         val set = g.b.records
         assertNotNull(set.refused(listOf(g.root.memberCert)), "the lost phone")
         assertNull(set.refused(listOf(g.one.cert)), "the computer the old root admitted")
         assertNull(set.refused(listOf(g.two.cert, g.adminCA)), "the computer B admitted")
         assertNull(set.refused(g.b.memberChain), "B itself")
 
-        // A computer that gets the records in any order sees the same.
+        // A computer that gets the records in any order, and the claim times with them, sees the same.
         val computer = RecordSet()
-        computer.addAll(g.b.records.records.shuffled() + rs.shuffled(), g.root.groupCA)
+        computer.addAll(g.b.records.records.shuffled(), g.root.groupCA)
+        computer.takeClaimTimes(g.b.records.claimTimes)
         assertEquals(g.b.records.digest, computer.digest)
         assertEquals(g.b.roots.map { Key(it) }, computer.roots.map { Key(it) })
         assertEquals(listOf("B", "one", "two"), computer.devices.map { it.name })
+        // Without them, it waits the delay itself.
+        val late = RecordSet()
+        late.addAll(g.b.records.records, g.root.groupCA)
+        assertEquals(emptyList(), late.roots)
+        assertEquals(listOf("pending"), late.claims.map { it.state })
 
         // The new root admits and renews.
         val three = Computer(g.b.currentRoot, g.newRootKey, t0)
         assertEquals(three.device, GroupCertificates.verifyMember(listOf(three.cert), g.b.trusted, t0))
-        assertNull(set.refused(listOf(three.cert)))
+        g.b.record(three.device, "three", "full", three.keyHash, g.newRootKey, Instant.now())
+        assertNull(g.b.records.refused(listOf(three.cert)))
         val later = t0.plusSeconds(500L * 24 * 3600)
         val renewed = assertNotNull(g.b.renewal(listOf(g.one.cert), g.newRootKey, later)).cert
         assertEquals(g.one.device, GroupCertificates.verifyMember(renewed, g.b.currentRoot, later))
     }
 
+    /** The root cancels a claim while it waits, and the claimant stays an admin. */
+    @Test
+    fun claimCancelled() {
+        val g = Group(t0)
+        val newRoot = GroupCertificates.groupCA(g.newRootKey, t0, pathLength = 1)
+        val claim = g.b.takeOver(g.root.device, g.adminKey, newRoot, t0)
+        val e = assertFailsWith<PhoneGroup.Failure> { g.b.takeOver(g.root.device, g.adminKey, newRoot, t0) }
+        assertEquals(PhoneGroup.CLAIM_WAITING, e.message)
+        g.root.add(listOf(claim))
+        assertEquals(listOf("pending"), g.root.records.claims.map { it.state })
+        val cancel = g.root.resolve(listOf(Records.id(claim)), g.rootKey, Instant.now())
+        g.b.add(listOf(cancel))
+        g.b.records.clock = { Instant.now() }
+        assertTrue(g.b.finishTakeOver(g.newRootKey, Instant.now()).isEmpty())
+        assertNull(g.b.claim, "a cancelled claim is dropped")
+        assertFalse(g.b.isRoot)
+        assertEquals(g.root.device, g.b.records.rootDevice)
+    }
+
+    /** The root sets how long a claim waits. */
+    @Test
+    fun takeoverDelay() {
+        val g = Group(t0)
+        val e = assertFailsWith<PhoneGroup.Failure> { g.root.setTakeoverDelay(8L * 24 * 3600 * 1000, g.rootKey, Instant.now()) }
+        assertEquals(PhoneGroup.INVALID_DELAY, e.message)
+        assertFailsWith<PhoneGroup.Failure> { g.b.setTakeoverDelay(0, g.adminKey, Instant.now()) }
+        val r = g.root.setTakeoverDelay(0, g.rootKey, Instant.now())
+        g.b.add(listOf(r))
+        g.b.records.clock = { Instant.now() }
+        val newRoot = GroupCertificates.groupCA(g.newRootKey, t0, pathLength = 1)
+        g.b.takeOver(g.root.device, g.adminKey, newRoot, Instant.now())
+        assertTrue(g.b.finishTakeOver(g.newRootKey, Instant.now()).isNotEmpty(), "no delay")
+        assertTrue(g.b.isRoot)
+    }
+
     @Test
     fun oldRootKeyAfterTakeOver() {
         val g = Group(t0)
-        g.b.takeOver(g.root.device, g.adminKey, g.newRootKey, t0)
+        takeOver(g)
         val set = g.b.records
-        // Whoever has the lost phone's root key signs a computer, an admin CA, a device record and a root record: none counts.
+        // Whoever has the lost phone's root key signs a computer, an admin CA, a device record and a claim: none counts.
         val stolen = Computer(g.root.groupCA, g.rootKey, t0)
         val thiefKey = SoftwareSigner()
         val thiefCA = GroupCertificates.adminCA(SyncEngine.newID(), thiefKey.publicKeyDER, g.root.groupCA, g.rootKey)
@@ -104,71 +163,69 @@ class RootTest {
         assertNotNull(set.refused(listOf(stolen.cert)))
         assertNotNull(set.refused(listOf(viaThief, thiefCA)))
         val otherRoot = GroupCertificates.groupCA(SoftwareSigner(), t0, pathLength = 1)
-        val thirdRoot = GroupCertificates.groupCA(SoftwareSigner(), t0, pathLength = 1)
-        for (r in listOf(
-            Records.device(stolen.device, "stolen", "linux", stolen.keyHash, g.b.tag, g.root.device, t0, g.rootKey),
-            Records.root(otherRoot, g.b.tag, g.root.device, t0, g.rootKey),
-            Records.root(thirdRoot, g.b.tag, g.root.device, t0, thiefKey, thiefCA),
-        )) {
-            assertTrue(set.add(r, g.root.groupCA))
-        }
+        set.add(set.sign(V2.device(stolen.device, "stolen", "full", stolen.keyHash, g.rootKey, Instant.now()), g.rootKey), g.root.groupCA)
+        set.add(set.sign(V2.claim(otherRoot, thiefKey, Instant.now()), thiefKey, thiefCA), g.root.groupCA)
         assertEquals(listOf("B", "one", "two"), set.devices.map { it.name })
         assertEquals(g.b.roots.map { Key(it) }, set.roots.map { Key(it) })
+        assertNotNull(set.refused(listOf(stolen.cert)))
     }
 
     @Test
     fun takeOverRefused() {
         val g = Group(t0)
-        assertFailsWith<PhoneGroup.Failure> { g.b.takeOver(g.one.device, g.adminKey, g.newRootKey, t0) }
-        assertFailsWith<PhoneGroup.Failure> { g.root.takeOver(g.root.device, g.rootKey, g.newRootKey, t0) }
-        // A root record in a computer's group, or naming no phone root, is not taken.
-        val pcCA = GroupCertificates.groupCA(g.rootKey, t0)
-        val set = RecordSet()
-        assertFalse(set.add(Records.root(pcCA, g.root.tag, g.root.device, t0, g.rootKey), g.root.groupCA))
-        assertFalse(set.add(Records.root(g.adminCA, g.root.tag, g.root.device, t0, g.rootKey), g.root.groupCA))
+        val newRoot = GroupCertificates.groupCA(g.newRootKey, t0, pathLength = 1)
+        assertFailsWith<PhoneGroup.Failure> { g.b.takeOver(g.one.device, g.adminKey, newRoot, t0) }
+        assertFailsWith<PhoneGroup.Failure> { g.root.takeOver(g.root.device, g.rootKey, newRoot, t0) }
+        // A claim that hands the group to a computer's group CA, or to no root at all, never takes effect.
+        val pcCA = GroupCertificates.groupCA(SoftwareSigner(), t0)
+        for (root in listOf(pcCA, g.adminCA)) {
+            val set = RecordSet.fromJson(g.b.records.toJson())
+            set.clock = { t0 }
+            set.add(set.sign(V2.claim(root, g.adminKey, t0), g.adminKey, g.adminCA), g.root.groupCA)
+            set.clock = { Instant.now() }
+            set.refresh()
+            assertEquals(emptyList(), set.roots)
+        }
     }
 
-    /** A welcome after the takeover names the new root, and a phone that joins checks it. */
+    /** A welcome after the takeover names the new root and carries the claim times, and a phone that joins checks it. */
     @Test
     fun welcomeAfterTakeOver() {
         val g = Group(t0)
-        g.b.takeOver(g.root.device, g.adminKey, g.newRootKey, t0)
+        takeOver(g)
         val joiner = SyncEngine.newID()
         val key = SoftwareSigner()
         val selfSigned = GroupCertificates.selfSigned(joiner, key)
         val cert = GroupCertificates.member(joiner, key.publicKeyDER, g.b.currentRoot, g.newRootKey, t0)
-        val w = Pairing.Welcome(cert, g.b.groupCA, roots = g.b.roots, records = g.b.records.pathRecords)
+        val w = Pairing.Welcome(cert, g.b.groupCA, roots = g.b.roots, records = g.b.records.pathRecords, claimTimes = g.b.records.claimTimes)
         val j = PairingJoiner.Joined(joiner, w, Pairing.MemberAD(g.b.device, g.b.tag))
         val info = Pairing.Info("C", "android")
         PairingJoiner.check(j, info, g.b.memberCert, selfSigned, t0)
-        assertTrue(g.b.records.pathRecords.size < g.b.records.records.size, "the welcome carries more than the path needs")
-        val bad = PairingJoiner.Joined(joiner, Pairing.Welcome(cert, g.b.groupCA), j.member)
+        val bad = PairingJoiner.Joined(joiner, Pairing.Welcome(cert, g.b.groupCA, records = w.records, claimTimes = w.claimTimes), j.member)
         assertFailsWith<PairingJoiner.Failure> { PairingJoiner.check(bad, info, g.b.memberCert, selfSigned, t0) }
-        // A root that no record leads to, as one an admin made up and named in the Welcome, is refused.
+        // A root that no record leads to, as one an admin made up and named in the Welcome, is refused; so is one
+        // whose claim still waits for the joiner, without the claim times.
         val made = PairingJoiner.Joined(joiner, Pairing.Welcome(cert, g.b.groupCA, roots = g.b.roots), j.member)
         assertFailsWith<PairingJoiner.Failure> { PairingJoiner.check(made, info, g.b.memberCert, selfSigned, t0) }
+        val early = PairingJoiner.Joined(joiner, Pairing.Welcome(cert, g.b.groupCA, roots = g.b.roots, records = w.records), j.member)
+        assertFailsWith<PairingJoiner.Failure> { PairingJoiner.check(early, info, g.b.memberCert, selfSigned, t0) }
         assertEquals(g.b.roots.map { Key(it) }, PhoneGroup.joined(j).roots.map { Key(it) })
     }
 
-    /**
-     * What a phone hub shows its forwarder: the records of the root's own device and of the admins, and every
-     * record that is no device record, never the records that name the computers.
-     */
+    /** Every record the set holds goes to a forwarder, which sees the same roots and the lost phone removed. */
     @Test
     fun authorityRecords() {
         val g = Group(t0)
-        fun names(rs: List<Member.Record>) = rs.mapNotNull { Records.Body.decode(it.body) }.filter { it.type == "device" }.map { it.name }.toSet()
-        assertEquals(setOf("Lost", "B"), names(g.root.records.authorityRecords))
-        val rs = g.b.takeOver(g.root.device, g.adminKey, g.newRootKey, t0)
+        val (claim, rs) = takeOver(g)
         val after = g.b.records.authorityRecords
-        assertEquals(setOf("Lost", "B"), names(after))
         val ids = after.map { Key(Records.id(it)) }.toSet()
-        assertTrue(rs.all { Key(Records.id(it)) in ids }, "the takeover's records")
-        assertTrue(g.b.records.pathRecords.all { Key(Records.id(it)) in ids }, "the path")
+        assertTrue((rs + claim).all { Key(Records.id(it)) in ids }, "the takeover's records")
         assertEquals(ids.size, after.size)
-        // A forwarder that knows only these sees the same roots and the lost phone removed.
         val forwarder = RecordSet()
+        forwarder.clock = { t0 }
         forwarder.addAll(after.shuffled(), g.root.groupCA)
+        forwarder.clock = { Instant.now() }
+        forwarder.refresh()
         assertEquals(g.b.roots.map { Key(it) }, forwarder.roots.map { Key(it) })
         assertNotNull(forwarder.refused(listOf(g.root.memberCert)))
     }
@@ -178,12 +235,13 @@ class RootTest {
     fun takeOverForGo() {
         val dir = Interop.out ?: return
         val g = Group(t0)
-        g.b.takeOver(g.root.device, g.adminKey, g.newRootKey, t0)
+        takeOver(g)
         File(dir, "swift-root.json").writeBytes(
             Wire.encode(
                 Wire.obj(
                     "group_ca" to Wire.bytes(g.root.groupCA),
                     "records" to JsonArray(g.b.records.records.reversed().map { it.toJson() }),
+                    "claim_times" to JsonArray(g.b.records.claimTimes.map { it.toJson() }),
                     "roots" to Wire.list(g.b.roots),
                     "devices" to JsonArray(g.b.devices.map { Wire.str(it.id)!! }),
                     "digest" to Wire.str(g.b.records.digest ?: ""),

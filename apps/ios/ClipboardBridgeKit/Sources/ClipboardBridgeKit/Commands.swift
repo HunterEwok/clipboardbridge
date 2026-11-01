@@ -16,9 +16,12 @@ public enum Commands {
     /// How long after signing a command expires; the receivers take at most 30 s.
     public static let lifetimeMS: Int64 = 30_000
 
+    /// The version of command bodies.
+    public static let version = 1
+
     /// A command body.
     public struct Body: Codable, Equatable, Sendable {
-        public var v = Records.version
+        public var v = Commands.version
         public var type: String
         public var group: String
         public var by: String
@@ -197,30 +200,16 @@ public enum Commands {
     /// Why a command was refused, in words for the sender.
     public struct Refused: Error, Equatable { public var reason: String }
 
-    /// Checks command c for the member me at nowMS, as Go's
-    /// Records.VerifyCommand: an admin of the group signed it now (records
-    /// says), its by is the signer's device when the records show it, it is
-    /// for me in this group, it has not expired and was not
-    /// signed in the future. The caller keeps the replay cache; a mode
-    /// command's mode is not checked against Member.modes here.
+    /// Checks command c for the member me, as every member does, in the
+    /// Rust core (RecordSet.check): an admin of the group that may sign its
+    /// type signed it now, its by is the signer's device when the records
+    /// show it, it is for me in this group, it has not expired and was not
+    /// signed in the future, at nowMS. The caller keeps the replay cache; a
+    /// mode command's mode is not checked against Member.modes here.
     public static func verify(_ c: Member.Record, records: RecordSet, me: String, nowMS: Int64) throws -> Body {
-        func refuse(_ reason: String) -> Refused { Refused(reason: reason) }
-        let b = try parse(c.body)
-        guard let ca = records.groupCA else { throw refuse("this device has no records of its group yet") }
-        guard b.group == GroupCertificates.tag(groupCA: ca) else { throw refuse("the command is for another group") }
-        guard b.to == me else { throw refuse("the command is for another device") }
-        guard records.signedByAdmin(c) else { throw refuse("the command's signer is not an admin of the group") }
-        guard watchTypes.contains(b.type) || !records.signedByWatch(c) else { throw refuse("a watch does not sign \(b.type) commands") }
-        // by names the signer's device whenever the records show it, and
-        // otherwise no device they show.
-        if let dev = records.signerDevice(c) {
-            guard dev == b.by else { throw refuse("a command's by is not the device of its signer") }
-        } else if records.devices.contains(where: { $0.id == b.by }) {
-            throw refuse("a command's by names a device that does not hold its signer's key")
-        }
-        guard b.expires_ms > nowMS else { throw refuse("the command expired; check the clocks of both devices") }
-        guard b.time_ms <= nowMS + aheadMS else { throw refuse("the command was signed in the future; check the clocks of both devices") }
-        return b
+        var set = records
+        set.nowMS = nowMS
+        return try set.check(command: c, me: me).command
     }
 
     /// The members every command's body has.
@@ -252,7 +241,7 @@ public enum Commands {
         }
         guard b.type == "paste" || data.count <= maxBody else { throw refuse("the command is too large") }
         func hex32(_ s: String) -> Bool { s.utf8.count == 32 && s.allSatisfy { "0123456789abcdef".contains($0) } }
-        guard b.v == Records.version else { throw refuse("unknown command version") }
+        guard b.v == Commands.version else { throw refuse("unknown command version") }
         guard hex32(b.id) else { throw refuse("the command has no valid ID") }
         // As in Go, an empty string is no paste and no action.
         guard b.type == "paste" || (b.enter != true && (b.kind ?? "").isEmpty && (b.text ?? "").isEmpty) else { throw refuse("a \(b.type) command carries a paste") }

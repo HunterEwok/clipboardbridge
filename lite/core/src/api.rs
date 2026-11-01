@@ -3,7 +3,7 @@
 
 //! The core's one entry point (docs/core-api.md): a request in bytes, an
 //! answer in bytes. Every program that uses the core's rules (the phones
-//! through UniFFI, Go through cgo or wasm) calls `call` and nothing else,
+//! through its C functions, Go through cgo or wasm) calls `call` and nothing else,
 //! so the bindings stay one function wide and the request's ABI version
 //! says which shape of request and answer both sides speak.
 //!
@@ -12,6 +12,8 @@
 //! "name": "...", "message": "...", "details": "..."}}`, where code and name
 //! are stable and listed in Code. `call` never panics on any input and
 //! always answers.
+
+mod group;
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -71,6 +73,9 @@ pub enum Code {
     /// The saved state cannot be read, is of another version or group, or
     /// its check with the member's secret does not match.
     Saved = 14,
+    /// A command is refused: its signer, its target, its time or its
+    /// limits.
+    Command = 15,
 }
 
 impl Code {
@@ -86,6 +91,7 @@ impl Code {
             Code::Strict => "strict",
             Code::Rollback => "rollback",
             Code::Saved => "saved",
+            Code::Command => "command",
         }
     }
 }
@@ -169,7 +175,8 @@ fn dispatch(op: &str, args: Value) -> Result<Vec<u8>, Refusal> {
         "canonicalize" => canonicalize(serde_json::from_value(args).map_err(bad_args)?),
         "check_member" => check_member(serde_json::from_value(args).map_err(bad_args)?),
         "read_invite" => read_invite(serde_json::from_value(args).map_err(bad_args)?),
-        _ => Err(refuse(Code::Op, Error::msg(alloc::format!("The core has no call named {op:?}.")))),
+        _ => group::dispatch(op, &args)
+            .unwrap_or_else(|| Err(refuse(Code::Op, Error::msg(alloc::format!("The core has no call named {op:?}."))))),
     }
 }
 
@@ -599,11 +606,15 @@ mod tests {
             Code::Strict,
             Code::Rollback,
             Code::Saved,
+            Code::Command,
         ]
         .iter()
         .map(|c| c.name())
         .collect();
-        assert_eq!(names, ["request", "abi", "op", "too_large", "body", "cert", "strict", "rollback", "saved"]);
+        assert_eq!(
+            names,
+            ["request", "abi", "op", "too_large", "body", "cert", "strict", "rollback", "saved", "command"]
+        );
     }
 
     /// evaluate_saved gives evaluate's state and a saved state that the
