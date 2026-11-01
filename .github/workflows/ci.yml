@@ -1643,6 +1643,7 @@ jobs:
         run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/cbb" ./cmd/cbb
       - name: an emulator, with KVM
         # The runner has KVM for its user once udev lets it.
+        timeout-minutes: 15
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
@@ -1651,10 +1652,13 @@ jobs:
           image="system-images;android-35;google_apis;x86_64"
           "$sdk/sdkmanager" --install emulator platform-tools "$image" >/dev/null </dev/null
           echo no | "$sdk/avdmanager" create avd -n bench -k "$image" -d pixel_6
-          "$ANDROID_HOME/emulator/emulator" -avd bench -no-window -no-audio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect -camera-back none -camera-front none >"$RUNNER_TEMP/emulator.log" 2>&1 &
+          ls -l /dev/kvm
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+          "$ANDROID_HOME/emulator/emulator" -avd bench -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
+            -accel on -gpu swiftshader_indirect -camera-back none -camera-front none >"$RUNNER_TEMP/emulator.log" 2>&1 &
           adb="$ANDROID_HOME/platform-tools/adb"
-          "$adb" wait-for-device
+          # An emulator that does not start says why in its log.
+          timeout 300 "$adb" wait-for-device || { tail -100 "$RUNNER_TEMP/emulator.log"; exit 1; }
           for _ in $(seq 120); do
             [ "$("$adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && break
             sleep 5
@@ -1666,7 +1670,7 @@ jobs:
       - name: the phone suite
         run: go run ./tools/bench -cbb "$RUNNER_TEMP/cbb" -android apps/android -report "$RUNNER_TEMP/phone" phone
       - name: the emulator's log
-        if: failure()
+        if: failure() || cancelled()
         run: |
           tail -100 "$RUNNER_TEMP/emulator.log"
           "$ANDROID_HOME/platform-tools/adb" logcat -d -t 400 '*:W' || true
