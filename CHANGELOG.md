@@ -121,6 +121,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (Y31); a received secret carries the marks and is gone after its minute (Y32).
   `setup-windows.ps1` registers a third task that runs the bench's scripts in the signed-in
   session, and lets only that user, administrators and the system write to its folder.
+- The bench's `desktop` suite pastes and types from the root into a window on Windows: the
+  text arrives exactly, 1 MiB pasted and 4 KiB typed, the clipboard's own text comes back and
+  nothing is copied to the group (T3, T5); a secret paste is in no log (T11); the log of
+  pastes names each one without its text (T12).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
