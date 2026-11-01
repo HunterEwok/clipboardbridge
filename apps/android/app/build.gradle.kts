@@ -86,6 +86,13 @@ android {
     // The screens' tests (ScreensTest) run on Robolectric with the app's resources.
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // A failing test shows its whole stack in CI's log, as there is no report to open.
+        unitTests.all {
+            it.testLogging {
+                events("failed")
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            }
+        }
     }
 }
 
