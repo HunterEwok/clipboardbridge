@@ -1070,8 +1070,12 @@ final class LiveGroup: GroupController {
         // Back at the front without a computer: iOS may have ended the
         // browsing in the background, so it starts again.
         if on, let node, let browser {
+            let dialer = dialer
             Task {
-                if await node.connected.isEmpty { browser.restart() }
+                if await node.connected.isEmpty {
+                    browser.restart()
+                    await dialer?.hurry()
+                }
             }
         }
     }
