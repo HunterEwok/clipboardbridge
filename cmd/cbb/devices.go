@@ -164,6 +164,24 @@ func cmdTakeoverDelay(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// cmdHubs sets the group's main hubs, in the order they serve.
+func cmdHubs(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || len(args) == 1 && helpFlag(args[0]) {
+		fmt.Fprintln(stderr, "cbb: usage: cbb hubs <name or ID>..., the group's main hubs in the order they serve")
+		return 2
+	}
+	c, err := control.DialFor(control.OpHubs)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpHubs, Hubs: args}}); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "The group's main hubs are now %s, in this order; the other hubs serve after them.\n", strings.Join(args, ", "))
+	return 0
+}
+
 // helpFlag reports whether a command's only argument asks for its usage,
 // which no device's name or ID can be taken for.
 func helpFlag(arg string) bool {

@@ -49,6 +49,7 @@ const (
 	RecordResolve    = authority.TypeResolve
 	RecordSettings   = authority.TypeSettings
 	RecordCheckpoint = authority.TypeCheckpoint
+	RecordHubs       = authority.TypeHubs
 )
 
 // Device roles in device records: the member roles, shortcut for an
@@ -739,8 +740,9 @@ func (s *Records) MayHost(dev DeviceID) bool {
 
 // HubOrder returns the devices that may be the group's hubs, in the order
 // in which they serve (docs/protocol.md, section 11, "Several hubs"):
-// first the phones, whose keys are in hardware, then the others, and in
-// each part the root's own device first, then by device ID.
+// first the main hubs of the hubs table, in its order, then the others:
+// the phones, whose keys are in hardware, then the rest, and in each part
+// the root's own device first, then by device ID.
 func (s *Records) HubOrder() []DeviceID {
 	root, key := s.RootMember()
 	if root != "" && s.Revoked(key) {
@@ -766,9 +768,20 @@ func (s *Records) HubOrder() []DeviceID {
 		}
 		return a.id < b.id
 	})
-	out := make([]DeviceID, len(hubs))
-	for i, h := range hubs {
-		out[i] = h.id
+	var out []DeviceID
+	main := map[DeviceID]bool{}
+	for _, id := range s.State().Hubs {
+		for _, h := range hubs {
+			if h.id == DeviceID(id) {
+				out = append(out, h.id)
+				main[h.id] = true
+			}
+		}
+	}
+	for _, h := range hubs {
+		if !main[h.id] {
+			out = append(out, h.id)
+		}
 	}
 	return out
 }

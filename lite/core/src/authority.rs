@@ -51,6 +51,9 @@ pub const TYPE_CLAIM: &str = "claim";
 pub const TYPE_RESOLVE: &str = "resolve";
 pub const TYPE_SETTINGS: &str = "settings";
 pub const TYPE_CHECKPOINT: &str = "checkpoint";
+pub const TYPE_HUBS: &str = "hubs";
+/// How many devices a hubs record names.
+pub const MAX_HUBS: usize = 16;
 
 pub const POWER_ADMIT: &str = "admit";
 pub const POWER_RENEW: &str = "renew";
@@ -206,6 +209,10 @@ pub struct Body {
     pub heads: Vec<Head>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keep: Vec<Hash>,
+
+    /// The user's main hubs, in the order they serve.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hubs: Vec<String>,
 }
 
 const COMMON: [&str; 7] = ["v", "alg", "type", "group", "signer", "seq", "time_ms"];
@@ -233,6 +240,7 @@ fn allowed(kind: &str) -> Option<&'static [&'static str]> {
         TYPE_CLAIM => &["root", "seen"],
         TYPE_SETTINGS => &["takeover_delay_ms"],
         TYPE_CHECKPOINT => &["heads", "keep"],
+        TYPE_HUBS => &["hubs"],
         _ => return None,
     })
 }
@@ -266,6 +274,7 @@ impl Body {
         add(self.takeover_delay_ms.is_some(), "takeover_delay_ms");
         add(!self.heads.is_empty(), "heads");
         add(!self.keep.is_empty(), "keep");
+        add(!self.hubs.is_empty(), "hubs");
         n
     }
 
@@ -379,6 +388,7 @@ impl Body {
                 }
                 sorted_hashes(&self.keep, "keep")
             }
+            TYPE_HUBS => check_hubs(&self.hubs),
             _ => match self.takeover_delay_ms {
                 Some(d) if !(0..=MAX_DELAY).contains(&d) => {
                     Err(Error::msg(format!("a takeover delay of {d} ms is not from 0 to {MAX_DELAY}")))
@@ -427,6 +437,20 @@ impl Body {
 /// control character (U+0000 to U+001F, U+007F to U+009F).
 pub fn valid_name(s: &str) -> bool {
     (1..=64).contains(&s.len()) && !s.chars().any(|c| c < ' ' || ('\u{7f}'..='\u{9f}').contains(&c))
+}
+
+/// Checks a hubs record's hubs: 1 to MAX_HUBS device IDs, each once, in
+/// the user's order.
+fn check_hubs(hubs: &[String]) -> Result<()> {
+    if hubs.is_empty() || hubs.len() > MAX_HUBS {
+        return Err(Error::msg(format!("a hubs record names {} devices, not 1 to {MAX_HUBS}", hubs.len())));
+    }
+    for (i, h) in hubs.iter().enumerate() {
+        if !certs::is_id(h) || hubs.iter().take(i).any(|o| o == h) {
+            return Err(Error::msg("a hubs record's hubs are not device IDs, each once"));
+        }
+    }
+    Ok(())
 }
 
 fn sorted_hashes(hs: &[Hash], field: &str) -> Result<()> {
@@ -650,6 +674,11 @@ pub struct State {
     /// leaves out.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<Hash>,
+    /// The user's main hubs from the hubs record that counts, the devices
+    /// of the state with the role full or phone, in its order
+    /// (docs/records-v2.md, "The hubs table").
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hubs: Vec<String>,
 }
 
 /// A record of the set that does not count, with why: one of the WHY_
@@ -1479,6 +1508,7 @@ impl<'a> Epoch<'a> {
             }
             TYPE_THAW => self.has(a, POWER_THAW) && self.has(a, POWER_REMOVE_ADMINS),
             TYPE_CLAIM => self.has(a, POWER_TAKEOVER) && r.issuer == Some(self.cur),
+            TYPE_HUBS => self.has(a, POWER_HUB),
             _ => false,
         }
     }
@@ -1919,12 +1949,54 @@ impl<'a> Epoch<'a> {
             c.signers.sort();
         }
         s.conflicts.sort_by(|a, b| a.records.first().cmp(&b.records.first()));
+        s.hubs = self.hubs(&s.devices);
         if self.stop_full {
             s.stop = "full".into();
         } else if forked_admin {
             s.stop = "secrets".into();
         }
         s
+    }
+
+    /// The main hubs of the hubs record that counts: a root's beats an
+    /// admin's, a later root's an earlier one's, then the higher seq; among
+    /// admins the later time_ms, then the smaller signer, then the higher
+    /// seq. Only the devices it names that are among devices with the role
+    /// full or phone are kept.
+    fn hubs(&self, devices: &[Device]) -> Vec<String> {
+        let mut best: Option<usize> = None;
+        for &i in self.e.by_sig.values().flatten() {
+            if self.r(i).b().kind == TYPE_HUBS && self.counts(i) && best.is_none_or(|b| self.newer_hubs(i, b)) {
+                best = Some(i);
+            }
+        }
+        let Some(best) = best else { return Vec::new() };
+        self.r(best)
+            .b()
+            .hubs
+            .iter()
+            .filter(|h| devices.iter().any(|d| &d.device == *h && (d.role == "full" || d.role == "phone")))
+            .cloned()
+            .collect()
+    }
+
+    /// Reports whether hubs record a beats b.
+    fn newer_hubs(&self, a: usize, b: usize) -> bool {
+        let (ra, rb) = (!self.r(a).admin(), !self.r(b).admin());
+        if ra != rb {
+            return ra;
+        }
+        if ra {
+            return self.newer(a, b);
+        }
+        let (ba, bb) = (self.r(a).b(), self.r(b).b());
+        if ba.time_ms != bb.time_ms {
+            return ba.time_ms > bb.time_ms;
+        }
+        if ba.signer != bb.signer {
+            return ba.signer < bb.signer;
+        }
+        ba.seq > bb.seq
     }
 
     /// Builds one device of the state from its counting records.
@@ -2105,6 +2177,17 @@ mod tests {
             good.replace(r#""name""#, r#""keys":["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="],"name""#),
             good.replace(r#"{"#, r#"{ "#),
         ] {
+            assert!(Body::parse(bad.as_bytes()).is_err(), "{bad} is taken");
+        }
+        let hubs = |list: &str| {
+            format!(
+                r#"{{"alg":"es256","group":"g","hubs":[{list}],"seq":1,"signer":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","time_ms":1,"type":"hubs","v":2}}"#
+            )
+        };
+        let (a, b) = (r#""bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb""#, r#""aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#);
+        Body::parse(hubs(&format!("{a},{b}")).as_bytes()).unwrap();
+        let many: Vec<String> = (0..=MAX_HUBS).map(|i| format!(r#""{i:032x}""#)).collect();
+        for bad in [hubs(""), hubs(&format!("{a},{a}")), hubs(r#""ABCDEF""#), hubs(&many.join(","))] {
             assert!(Body::parse(bad.as_bytes()).is_err(), "{bad} is taken");
         }
     }

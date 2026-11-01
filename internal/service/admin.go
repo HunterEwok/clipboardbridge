@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -420,6 +421,49 @@ func (s *Service) setTakeoverDelay(value string) error {
 	}
 	s.publish(nd, r)
 	s.logf("cbb: a claim to take the group over now waits %v on each member", d)
+	return nil
+}
+
+// setHubs signs, on the group's root or an admin with the power hub, the
+// table of the group's main hubs: the devices targets name, in the order
+// they serve, before the hubs the records give (docs/records-v2.md, "The
+// hubs table").
+func (s *Service) setHubs(targets []string) error {
+	if len(targets) == 0 || len(targets) > authority.MaxHubs {
+		return fmt.Errorf("name 1 to %d hubs, in the order they serve", authority.MaxHubs)
+	}
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil {
+		return s.errNoGroup()
+	}
+	s.recMu.Lock()
+	may := s.records != nil && (id.IsRoot() || s.records.MayHost(id.ID))
+	s.recMu.Unlock()
+	if !may {
+		return errors.New("only the group's root or an admin that may be a hub sets the main hubs")
+	}
+	var ids []string
+	for _, t := range targets {
+		d, err := s.findDevice(t)
+		if err != nil {
+			return err
+		}
+		if d.Role != group.RoleFull && d.Role != group.RolePhone {
+			return fmt.Errorf("%s cannot be a hub: only a computer or a phone can", d.Name)
+		}
+		if slices.Contains(ids, d.ID) {
+			return fmt.Errorf("%s is named twice", d.Name)
+		}
+		ids = append(ids, d.ID)
+	}
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordHubs, Hubs: ids})
+	if err != nil {
+		return err
+	}
+	s.publish(nd, r)
+	s.logf("cbb: the group's main hubs are now %s", strings.Join(targets, ", "))
 	return nil
 }
 

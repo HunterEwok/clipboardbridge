@@ -1086,7 +1086,7 @@ can: while its app is open, it is the hub. Decided on 2026-10-25 (D-64).
 | Phones only, or phones and Android TVs or other Android devices | a phone with its app open is the hub; the others sync while they run (Android in its foreground service, an iPhone with its app open) | |
 | A phone and lite members | syncs at home, where lite members listen; from afar, the phone with its app open is the hub | |
 | The whole group away together (a trip, a hotel Wi-Fi that isolates its clients, mobile data) | the phone hub, through the forwarder | |
-| A computer is the hub but is off, broken or offline | another hub of the group serves: the root and every admin with a hub set up, phones first (docs/protocol.md, section 11, "Several hubs") | the user's main hubs in a signed table (D-65) |
+| A computer is the hub but is off, broken or offline | another hub of the group serves: the root and every admin with a hub set up, phones first (docs/protocol.md, section 11, "Several hubs") | the user's main hubs in a signed table (D-65; `cbb hubs` signs it, the apps later) |
 | The hub's home has no public address and the project's forwarder is not reached | nothing syncs away from home, unless the group has a forwarder or relay of the user's own (`cbb forward`, `cbb relay`) | |
 | A network blocks WireGuard | AmneziaWG, then VLESS; AmneziaWG for the phone hub as for any hub | VLESS for the phone hub's own registration is to be checked |
 | The root phone that is the hub is lost | an admin phone takes over and is the hub; devices far away are invited again | |
@@ -1131,8 +1131,9 @@ All built in 0.5, but for what each step names as still to do.
    member), the clients keeping every hub's offer with a preshared key of their own, the
    hubs sharing their clients and passing each other's offers on, and a computer's hub
    yielding to a higher one and serving again when it goes; `TestSeveralHubs` switches both
-   ways. Still to do: the phone hub yielding to a hub above it, the signed table of main
-   hubs the user orders, and a bench run with two computers as hubs.
+   ways; the signed table of main hubs the user orders (`hubs` records, `cbb hubs`). Still
+   to do: the phone hub yielding to a hub above it, setting the table from the apps, and a
+   bench run with two computers as hubs.
 
 Not yet verified on real devices: how long iOS keeps the forwarder registration and the
 tunnel up while the app is open and the screen locks, the battery cost of the clients'

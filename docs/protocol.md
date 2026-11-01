@@ -1111,6 +1111,7 @@ Header fields (all omitted when empty):
 | `html` | bool | `watch`: the same for formatted text, a copy with a `text/html` part whose plain-text alternative is its text; such a watcher reports formatted text with `copied-media` and the text as the alternative, and the others get the text |
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
+| `hubs` | array | `hubs`: the group's main hubs by name or device ID, in the order they serve |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
 | `keys` | string | `inject` to a `desktop` watcher: the grant that its desktop connector hands the uinput helper; `keys`: that grant |
 | `keyboard` | object | `keyboard on`: the Bluetooth keyboard's settings, `{layout?, rate?, pastes?}`; in `status`, also `{on?, connected?, visible_until_ms?, problem?}` |
@@ -1749,6 +1750,7 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
 | `takeover` | `{name}`: the lost root, a device ID or a name (case-insensitive) | `{name, done}` or an error. Only on an admin computer of a group whose root is a computer, and holding the iPhone CA: signs a `claim` against the root that name names, which takes effect when the root's takeover delay has passed on each member, unless the root cancels it (records-v2.md, "Handing the group over") |
 | `takeover-delay` | `{value}`: a duration from `0s` to `168h` | `{done}` or an error. Only on the group's root: signs a `settings` record with `takeover_delay_ms`, how long a claim waits on each member |
+| `hubs` | `{hubs}`: 1 to 16 names or device IDs of computers and phones, in the order they serve | `{done}` or an error. On the group's root or an admin with `hub`: signs a `hubs` record, the group's main hubs |
 | `freeze` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin that is not frozen: freezes another admin computer, never the root or an admin phone (rule 4) |
 | `thaw` | `{name}` | `{name, done}` or an error. Only on the root computer: ends every freeze of that admin computer (rule 4) |
 
@@ -1863,8 +1865,10 @@ derives from the records alone: phones first (a phone is the hub while its app i
 so it serves whenever it is there), then computers; within each, the root first, then by
 device ID. The vectors in `testdata/interop/go-hubs.json` (Go's `TestGoHubVectors`) give an
 order that Go (`Records.HubOrder`), both kits (`RecordSet.hubOrder`) and the lite member
-(`hub_order`) must all derive. A signed table of main hubs, which the user orders, comes
-later (D-65 in [design.md](design.md)).
+(`hub_order`) must all derive. The root, or an admin with `hub`, may sign a table of main
+hubs in the user's order (a `hubs` record, docs/records-v2.md, "The hubs table"; `cbb hubs`):
+its hubs come first, in its order, then the others in the derived order (D-65 in
+[design.md](design.md)).
 
 - A member keeps every hub's offer and, away from home, uses the first hub in the order that
   answers: it tries them in turn, each at the next of its endpoints. On a hub below the

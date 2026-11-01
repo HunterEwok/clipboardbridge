@@ -52,6 +52,8 @@ Commands:
   takeover <name or ID>   Claim the group from its lost root computer (on an admin); it waits.
   takeover-delay <duration>
                           Set how long such a claim waits, 0s to 168h (on the root; 72h by default).
+  hubs <name or ID>...    Set the group's main hubs for sync over the internet, in the order
+                          they serve, before the others (on the root, or an admin that may be a hub).
   freeze <name or ID>     Stop an admin computer, as a stolen one, until the root decides.
   unfreeze <name or ID>   Make a frozen admin computer an admin again (on the group's root).
   global [on|off]         Show, or turn on or off, sync over the internet on this device.
@@ -146,6 +148,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdTakeover(rest, stdout, stderr)
 	case "takeover-delay":
 		return cmdTakeoverDelay(rest, stdout, stderr)
+	case "hubs":
+		return cmdHubs(rest, stdout, stderr)
 	case "freeze", "unfreeze":
 		return cmdFreeze(rest, cmd == "freeze", stdout, stderr)
 	case "admin":
