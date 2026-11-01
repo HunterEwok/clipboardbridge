@@ -28,7 +28,7 @@ func writeDevices(w io.Writer, devs, peers []control.Device, newest string, now 
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tSYSTEM\tVERSION\tROLE\tADMIN\tKEYS\tMODE\tSEEN\tCLOCK\tID")
-	unlisted, oldKeys, old := false, false, false
+	unlisted, old := false, false
 	for _, d := range devs {
 		name := d.Name
 		if d.Self {
@@ -46,9 +46,6 @@ func writeDevices(w io.Writer, devs, peers []control.Device, newest string, now 
 			admin = "frozen"
 		case d.Admin:
 			admin = "admin"
-		case d.OldKeys:
-			admin = "old keys"
-			oldKeys = true
 		}
 		clock := ""
 		if ms, ok := skew[d.ID]; ok {
@@ -71,9 +68,6 @@ func writeDevices(w io.Writer, devs, peers []control.Device, newest string, now 
 	}
 	if old {
 		fmt.Fprintf(w, "(old): below Clipboard Bridge %s, the newest release the group passed around; update it.\n", newest)
-	}
-	if oldKeys {
-		fmt.Fprintln(w, "old keys: it may still hold the group's CA keys from before cbb upgrade; it deletes them when it next connects.")
 	}
 }
 
@@ -227,27 +221,7 @@ func cmdTakeover(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "This device is the group's root now, and %s is removed from it. The group has a new iPhone CA: iPhones that use the shortcut pair again with cbb pair -phone.\n", m.Name)
-	return 0
-}
-
-// cmdUpgrade gives a group made before roots and admins a root: this
-// computer, which holds the group's keys.
-func cmdUpgrade(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
-		fmt.Fprintln(stderr, "cbb: usage: cbb upgrade, on a Linux or Windows member, after every member runs this version")
-		return 2
-	}
-	c, err := control.DialFor(control.OpUpgrade)
-	if err != nil {
-		return fail(stderr, err)
-	}
-	defer c.Close()
-	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpUpgrade}}); err != nil {
-		return fail(stderr, err)
-	}
-	fmt.Fprintln(stdout, "Upgraded the group: this computer is its root now, and only it and the admins it makes (cbb admin) hold keys.")
-	fmt.Fprintln(stdout, "The other computers delete their copies of the old keys when they hear of it; cbb status marks those that have not yet.")
-	fmt.Fprintln(stdout, "The group has a new iPhone CA: iPhones that use the shortcut pair again with cbb pair -phone.")
+	fmt.Fprintf(stdout, "Claimed the group from %s. This device becomes its root when the waiting time ends (72 hours unless the root set another), unless the root cancels the claim; cbb status shows the time left.\n", m.Name)
+	fmt.Fprintln(stdout, "Then it removes the old root and makes a new iPhone CA: iPhones that use the shortcut pair again with cbb pair -phone.")
 	return 0
 }

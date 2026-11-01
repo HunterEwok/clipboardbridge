@@ -91,9 +91,7 @@ func TestDeviceCommands(t *testing.T) {
 		{name: "admin refused", args: []string{"admin", "desk"}, answer: refused, check: sent(control.OpAdmin, nil), code: 1, stderr: "only the group's root"},
 		{name: "admin without a device", args: []string{"admin"}, code: 2, stderr: "usage: cbb admin"},
 		{name: "takeover", args: []string{"takeover", "old"}, answer: control.Header{Name: "old"},
-			check: sent(control.OpTakeover, func(m *control.Message) bool { return m.Name == "old" }), stdout: "old is removed from it"},
-		{name: "upgrade", args: []string{"upgrade"}, check: sent(control.OpUpgrade, nil), stdout: "this computer is its root now"},
-		{name: "upgrade with an argument", args: []string{"upgrade", "x"}, code: 2, stderr: "usage: cbb upgrade"},
+			check: sent(control.OpTakeover, func(m *control.Message) bool { return m.Name == "old" }), stdout: "Claimed the group from old"},
 	})
 }
 

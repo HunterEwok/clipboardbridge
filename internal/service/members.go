@@ -409,7 +409,6 @@ func (s *Service) peersChanged() {
 	peers := nd.Peers()
 	s.learnFrom(peers)
 	s.trackSeen(peers)
-	s.noteOldKeys(peers)
 	s.ensureListed()
 	s.renewAdminCAs(peers)
 }

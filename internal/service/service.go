@@ -199,8 +199,6 @@ type Service struct {
 	holder        bool
 	holdSetting   string // HolderAuto, HolderFirst, HolderFallback or HolderNever
 	battery       bool   // the machine has a battery, guessed at the start
-	// oldKeysMu guards oldKeysFile.
-	oldKeysMu sync.Mutex
 	// pendingPhoneCA is an iPhone CA another admin sent while this one held
 	// another that still stood, kept in case the records revoke that one.
 	pendingPhoneCA *group.CA
@@ -533,10 +531,14 @@ func (s *Service) startGroup(id *group.Identity) error {
 		s.logf("cbb: trusting the group's new root: %v", err)
 	}
 	nd.Rejoin() // the service just started; there are no connections yet
-	s.wg.Add(3)
+	s.wg.Add(4)
 	go func() {
 		defer s.wg.Done()
 		s.renewLoop(gctx)
+	}()
+	go func() {
+		defer s.wg.Done()
+		s.claimLoop(gctx)
 	}()
 	go func() {
 		defer s.wg.Done()

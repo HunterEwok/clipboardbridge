@@ -567,6 +567,33 @@ func (s *Records) RootMember() (DeviceID, KeyHash) {
 	return DeviceID(st.RootDevice), *best.b.Key
 }
 
+// DeviceOfRoot returns the device of the newest holds_root device record
+// that the root key root signed: the device that held that root; "" when
+// there is none.
+func (s *Records) DeviceOfRoot(root KeyHash) DeviceID {
+	var best *parsed
+	for _, p := range s.bodies() {
+		if p.b.Type == RecordDevice && p.b.HoldsRoot && p.b.Signer == root && (best == nil || p.b.Seq > best.b.Seq) {
+			best = &p
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return DeviceID(best.b.Device)
+}
+
+// AdminUnder reports whether a device record that the root key root signed
+// names the admin key admin.
+func (s *Records) AdminUnder(root, admin KeyHash) bool {
+	for _, p := range s.bodies() {
+		if p.b.Type == RecordDevice && p.b.Signer == root && p.b.Admin != nil && *p.b.Admin == admin {
+			return true
+		}
+	}
+	return false
+}
+
 // MayHost reports whether the device dev may be the group's hub for sync
 // away from home by the records alone: the root's own device, whose key is
 // not revoked, or an admin with the power hub (docs/protocol.md, section

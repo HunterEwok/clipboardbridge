@@ -248,9 +248,6 @@ type Peer struct {
 	AdminKey []byte
 	// Chain is the certificate chain its handshake verified, leaf first.
 	Chain []*x509.Certificate
-	// OldKeys tells that its hello says it holds the group CA key of a
-	// legacy group.
-	OldKeys bool
 	// Mode is the sync mode its hello reports; "" when it reports none.
 	Mode string
 	// KeyStore is where its hello says its keys live: group.StoreFile or
@@ -690,11 +687,11 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, oldKeys, device, mode, store, acts, media := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
+			adminKey, device, mode, store, acts, media := c.peerAdminKey, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), Chain: c.peerChain, AdminKey: adminKey,
-				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
+				Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -1231,7 +1228,6 @@ type conn struct {
 	// the iPhone CA that the peer's hello names.
 	peerAdminKey []byte
 	peerPhoneCA  []byte
-	peerOldKeys  bool     // the peer's hello says it holds a legacy group CA key
 	peerMode     string   // the sync mode its hello reports; "" when none or unknown
 	peerKeyStore string   // where its hello says its keys live; "" when it says neither
 	peerActions  []string // the quick actions its hello says are on
@@ -1408,7 +1404,6 @@ func (c *conn) message(o outgoing) (*message, error) {
 			h := group.KeyHashOf(id.PhoneCA.Cert)
 			out.PhoneCA = h[:]
 		}
-		out.OldKeys = id.Legacy() && id.GroupCA.Key != nil
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
@@ -1593,7 +1588,7 @@ func (c *conn) reader() error {
 			if extra.Device != nil {
 				c.peerDevice = extra.Device.Clean()
 			}
-			c.peerAdminKey, c.peerPhoneCA, c.peerOldKeys = extra.AdminKey, extra.PhoneCA, extra.OldKeys
+			c.peerAdminKey, c.peerPhoneCA = extra.AdminKey, extra.PhoneCA
 			c.peerKeyStore = ""
 			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware || extra.KeyStore == group.StoreRootless {
 				c.peerKeyStore = extra.KeyStore

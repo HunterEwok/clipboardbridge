@@ -49,8 +49,7 @@ Commands:
   rename <name or ID> <new name>
                           Give a device of the group another name (on an admin).
   admin <name or ID>      Make a computer an admin of the group (on the group's root).
-  takeover <name or ID>   Take the group over from its lost root computer (on an admin).
-  upgrade                 Give a group made before 0.4 a root: this computer (holds its keys).
+  takeover <name or ID>   Claim the group from its lost root computer (on an admin); it waits.
   freeze <name or ID>     Stop an admin computer, as a stolen one, until the root decides.
   unfreeze <name or ID>   Make a frozen admin computer an admin again (on the group's root).
   global [on|off]         Show, or turn on or off, sync over the internet on this device.
@@ -141,8 +140,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdRename(rest, stdout, stderr)
 	case "install":
 		return cmdInstall(rest, stdout, stderr)
-	case "upgrade":
-		return cmdUpgrade(rest, stdout, stderr)
 	case "takeover":
 		return cmdTakeover(rest, stdout, stderr)
 	case "freeze", "unfreeze":

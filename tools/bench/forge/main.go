@@ -29,6 +29,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -193,12 +194,32 @@ func run(state, signerDir string, to group.DeviceID, addr, system string, cases 
 			fmt.Printf("%s: refused: %s\n", name, res.Reason)
 		}
 	}
-	// rename signs a record that renames the device d.
+	// rename signs a record that renames the device d, as the next record
+	// of this signer: each one goes into set, so that seq and prev follow
+	// on.
+	var set *group.Records
 	rename := func(d group.Device, name string, at time.Time) (group.Record, error) {
+		if set == nil {
+			var err error
+			if set, err = group.LoadRecords(signerDir, admin.GroupCA.Cert); err != nil {
+				return group.Record{}, err
+			}
+		}
+		var adminCA *x509.Certificate
+		if len(chain) > 0 {
+			adminCA = chain[0]
+		}
 		key := d.Key
-		return group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: at.UnixMilli(), By: admin.ID,
-			Device: d.ID, Name: name, Role: d.Role, OS: d.OS, Key: &key, Admin: d.AdminKey, Store: d.Store, Kind: d.Kind, Proof: d.Proof},
-			ca.Key, chain...)
+		r, err := set.Sign(group.RecordBody{Type: group.RecordDevice, TimeMS: at.UnixMilli(),
+			Device: string(d.ID), Name: name, Role: d.Role, OS: d.OS, Key: &key, Admin: d.AdminKey, Powers: d.Powers, Commands: d.Commands,
+			Store: d.Store, Kind: d.Kind, Proof: d.Proof, Seal: d.Seal}, ca.Key, adminCA)
+		if err != nil {
+			return group.Record{}, err
+		}
+		if _, err := set.Add(r); err != nil {
+			return group.Record{}, err
+		}
+		return r, nil
 	}
 	devices := func() ([]group.Device, error) {
 		rs, err := group.LoadRecords(signerDir, admin.GroupCA.Cert)

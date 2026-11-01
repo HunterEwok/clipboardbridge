@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
@@ -91,12 +92,19 @@ func (s *Service) addRecords(from group.DeviceID, rs []group.Record) []group.Rec
 func (s *Service) settleRecords(fresh []group.Record) {
 	revoked, rooted := false, false
 	for _, r := range fresh {
-		// A freeze refuses devices as a revocation does.
-		switch r.Type() {
+		b, err := authority.ParseBody(r.Body)
+		if err != nil {
+			continue
+		}
+		// A freeze refuses devices as a revocation does; a resolve or a
+		// checkpoint may undo either, and a claim, a resolve or a settings
+		// record may change the root.
+		switch b.Type {
 		case group.RecordRevoke, group.RecordFreeze, group.RecordThaw:
 			revoked = true
+		case group.RecordClaim, group.RecordResolve, group.RecordSettings, group.RecordCheckpoint:
+			revoked, rooted = true, true
 		}
-		rooted = rooted || r.Type() == group.RecordRoot
 	}
 	// A root record may not count yet when it comes: a takeover's root
 	// record counts once the records that make its signer an admin are in,
@@ -139,7 +147,14 @@ func (s *Service) adoptRootsLocked() error {
 	s.recMu.Unlock()
 	// A set that is empty, as after a records file that could not be read,
 	// says nothing yet: the peers give the records again.
-	if empty || slices.EqualFunc(roots, s.id.Roots, (*x509.Certificate).Equal) {
+	if empty {
+		return nil
+	}
+	// An admin whose claim took effect becomes the root.
+	if done, err := s.finishTakeoverLocked(roots); done || err != nil {
+		return err
+	}
+	if slices.EqualFunc(roots, s.id.Roots, (*x509.Certificate).Equal) {
 		return nil
 	}
 	if _, _, taken := s.takenOver(s.id); taken {
@@ -257,8 +272,11 @@ func (s *Service) allow(_ group.DeviceID, chain []*x509.Certificate) error {
 	return err
 }
 
-// signRecord signs a record for this group with the group CA key of id, or
-// with its admin CA.
+// signRecord signs the next record of this member's signer: the root's
+// own key, or its admin key under its admin CA. A device record that makes
+// an admin gives it a computer admin's powers unless body names them, and
+// the root's record of its own device says that it holds the root
+// (docs/records-v2.md, "Who signs what").
 func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.Record, error) {
 	ca, chain := id.Signer()
 	if ca == nil {
@@ -267,10 +285,34 @@ func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.R
 	if s.frozen(id) {
 		return group.Record{}, errFrozen
 	}
-	body.Group = group.Tag(id.GroupCA.Cert)
 	body.TimeMS = s.cfg.now().UnixMilli()
-	body.By = id.ID
-	return group.SignRecord(body, ca.Key, chain...)
+	if body.Type == group.RecordDevice {
+		if body.Admin != nil && len(body.Powers) == 0 {
+			body.Powers, body.Commands = computerAdminPowers(id.IsRoot()), slices.Clone(authority.Commands)
+		}
+		body.HoldsRoot = id.IsRoot() && body.Device == string(id.ID)
+	}
+	var adminCA *x509.Certificate
+	if len(chain) > 0 {
+		adminCA = chain[0]
+	}
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return group.Record{}, s.errNoGroup()
+	}
+	return s.records.Sign(body, ca.Key, adminCA)
+}
+
+// computerAdminPowers are the powers of an admin computer: takeover too
+// when the root that makes it an admin is a computer (docs/records-v2.md,
+// "Who signs what").
+func computerAdminPowers(computerRoot bool) []string {
+	p := []string{authority.PowerAdmit, authority.PowerFreeze, authority.PowerHub, authority.PowerRemove, authority.PowerRenew}
+	if computerRoot {
+		p = append(p, authority.PowerTakeover)
+	}
+	return p
 }
 
 var errFrozen = errors.New("another admin froze this computer's admin key: it changes nothing until the group's root or an admin phone unfreezes it")
@@ -311,7 +353,7 @@ func (s *Service) recordDevice(dev group.DeviceID, name, role, os string, key gr
 	if !group.ValidName(name) {
 		name = defaultName(role, dev)
 	}
-	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, OS: os, Key: &key})
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(dev), Name: name, Role: role, OS: os, Key: &key})
 	if err != nil {
 		s.logf("cbb: recording %s in the devices list: %v", dev, err)
 		return
@@ -374,7 +416,7 @@ func (s *Service) ensureListed() {
 	s.recMu.Unlock()
 	var rs []group.Record
 	add := func(dev group.DeviceID, name, role, os string, key group.KeyHash, store string) {
-		body := group.RecordBody{Type: group.RecordDevice, Device: dev, Name: name, Role: role, OS: os, Key: &key, Store: store}
+		body := group.RecordBody{Type: group.RecordDevice, Device: string(dev), Name: name, Role: role, OS: os, Key: &key, Store: store}
 		if d, ok := listed[key]; ok {
 			// A computer whose record names no system or another one, as a
 			// Windows PC that joined as a Linux member, or that its record
@@ -391,8 +433,9 @@ func (s *Service) ensureListed() {
 				return
 			}
 			body.Name, body.Admin, body.Kind, body.Proof = d.Name, d.AdminKey, d.Kind, d.Proof
+			body.Powers, body.Commands, body.Seal = d.Powers, d.Commands, d.Seal
 			if rootless {
-				body.Admin, body.Kind, body.Proof = nil, "", ""
+				body.Admin, body.Kind, body.Proof, body.Powers, body.Commands = nil, "", "", nil, nil
 			}
 			if !newOS {
 				body.OS = d.OS
@@ -480,7 +523,6 @@ func (s *Service) devices() ([]control.Device, error) {
 	entry := func(dev group.DeviceID, name, role, os, store string, admin, listed bool) {
 		d := control.Device{ID: string(dev), Name: name, Role: role, OS: os, Store: store, Listed: listed, Self: dev == id.ID, Root: dev == root, Frozen: frozen[dev]}
 		d.Admin = admin || (legacy && keyHolder(role, os))
-		d.OldKeys = !legacy && !d.Self && s.holdsOldKeys(dev, peers)
 		if _, ok := peers[dev]; ok || d.Self {
 			d.Online, d.LastSeenMS = true, now.UnixMilli()
 		} else if t, ok := seen[dev]; ok {
@@ -555,8 +597,6 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", fmt.Errorf("%s holds the group's root; remove it on another admin phone, which takes the group over", d.Name)
 	case d.ID == string(root) && !undoing:
 		return "", fmt.Errorf("%s holds the group's root; run cbb takeover %s on an admin, which takes the group over and removes it", d.Name, d.Name)
-	case !id.Legacy() && s.holdsOldKeys(group.DeviceID(d.ID), peersOf(nd)):
-		return "", errOldKeys(d.Name)
 	case admin != nil && !id.IsRoot():
 		return "", fmt.Errorf("%s is an admin; only the group's root or an admin phone removes an admin, since this computer's admin key sits in a file", d.Name)
 	case replace && !id.ServesPhone():
@@ -567,25 +607,12 @@ func (s *Service) revoke(target string) (string, error) {
 		return "", fmt.Errorf("the key of %s is unknown", d.ID)
 	}
 	// Every key the device ever had in the group goes, so none of them
-	// stays a member nobody sees. An admin goes with its admin key, and the
-	// devices it admitted stay.
+	// stays a member nobody sees. An admin goes with its admin key; what
+	// it signed before this record saw it stays (docs/records-v2.md,
+	// "Removals and freezes keep what the author saw").
 	body := group.RecordBody{Type: group.RecordRevoke, Keys: keys}
 	if admin != nil {
 		body.Keys = append(body.Keys, *admin)
-		s.recMu.Lock()
-		// Its own removals stop counting with it, so this record names
-		// them again.
-		for _, k := range s.records.RevokedBy(*admin) {
-			if !slices.Contains(body.Keys, k) {
-				body.Keys = append(body.Keys, k)
-			}
-		}
-		for _, k := range s.records.Staying(*admin) {
-			if !slices.Contains(keys, k) && !slices.Contains(body.Keys, k) {
-				body.Keep = append(body.Keep, k)
-			}
-		}
-		s.recMu.Unlock()
 	}
 	var phoneCA *group.CA
 	if replace {
@@ -603,6 +630,7 @@ func (s *Service) revoke(target string) (string, error) {
 		}
 		s.recMu.Unlock()
 	}
+	body.Keys = uniqueKeys(body.Keys)
 	r, err := s.signRecord(id, body)
 	if err != nil {
 		return "", err
@@ -650,8 +678,8 @@ func (s *Service) rename(target, name string) (string, error) {
 	if rec.Name == name {
 		return rec.Name, nil
 	}
-	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: rec.ID, Name: name, Role: rec.Role,
-		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Store: rec.Store, Kind: rec.Kind, Proof: rec.Proof})
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(rec.ID), Name: name, Role: rec.Role,
+		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Powers: rec.Powers, Commands: rec.Commands, Store: rec.Store, Kind: rec.Kind, Proof: rec.Proof, Seal: rec.Seal})
 	if err != nil {
 		return "", err
 	}
@@ -697,16 +725,14 @@ func (s *Service) freeze(target string, on bool) (string, error) {
 	case !on && !id.IsRoot():
 		return "", errors.New("only the group's root or an admin phone unfreezes an admin, since this computer's admin key sits in a file")
 	}
+	// What it signed before this record saw it keeps counting, so the
+	// devices it admitted stay; nothing it signs later does.
 	body := group.RecordBody{Type: group.RecordFreeze, Keys: []group.KeyHash{*admin}}
-	s.recMu.Lock()
-	if on {
-		// What it signed until now keeps counting, so the devices it
-		// admitted stay; nothing it signs later does.
-		body.Records = s.records.SignedBy(*admin)
-	} else {
+	if !on {
+		s.recMu.Lock()
 		body.Type, body.Keys, body.Records = group.RecordThaw, nil, s.records.FreezesOf(*admin)
+		s.recMu.Unlock()
 	}
-	s.recMu.Unlock()
 	r, err := s.signRecord(id, body)
 	if err != nil {
 		return "", err
@@ -718,6 +744,13 @@ func (s *Service) freeze(target string, on bool) (string, error) {
 		s.logf("cbb: unfroze the admin %s (%s)", d.Name, d.ID)
 	}
 	return d.Name, nil
+}
+
+// uniqueKeys returns keys sorted as a record wants them, each once.
+func uniqueKeys(keys []group.KeyHash) []group.KeyHash {
+	keys = slices.Clone(keys)
+	slices.SortFunc(keys, func(a, b group.KeyHash) int { return strings.Compare(a.String(), b.String()) })
+	return slices.Compact(keys)
 }
 
 // adminKeyOf returns the key of a listed device's admin CA, nil when it has
