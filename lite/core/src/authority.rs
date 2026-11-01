@@ -4,7 +4,8 @@
 //! The group's authority records of version 2 (docs/records-v2.md): the
 //! record, its closed canonical body, its signature, and the one rule that
 //! turns a set of records into the group's state, as Go's
-//! internal/authority. Both are checked on testdata/interop/v2-records.json.
+//! internal/authority. Both are checked on testdata/interop/v2-records.json
+//! and v2-flood.json.
 //! What the set says depends on the records alone, never on the order in
 //! which they arrived.
 
@@ -670,6 +671,24 @@ pub const WHY_POWER: &str = "power";
 pub const WHY_REMOVED: &str = "removed";
 /// It is in a conflict between admins.
 pub const WHY_UNDECIDED: &str = "undecided";
+/// It is past a limit on the set (MAX_RECORDS, MAX_SET_BYTES, MAX_DEVICES,
+/// MAX_ADMINS).
+pub const WHY_LIMIT: &str = "limit";
+
+// The limits on a record set (docs/records-v2.md, "Limits"). Records over
+// them count for nothing, with the reason WHY_LIMIT; the set is never
+// refused, so that no admin can stop the group by filling it.
+
+/// Records in the set, as the checkpoint prunes it.
+pub const MAX_RECORDS: usize = 1024;
+/// Their bodies, signatures and chains together.
+pub const MAX_SET_BYTES: usize = 1 << 20;
+/// Devices with a device record.
+pub const MAX_DEVICES: usize = 256;
+/// Admin keys a root names.
+pub const MAX_ADMINS: usize = 64;
+/// Roots on the path: the group CA and 15 handovers.
+pub const MAX_PATH: usize = 16;
 
 /// One device of the state.
 #[derive(Clone, Serialize, PartialEq, Debug, Default)]
@@ -839,6 +858,21 @@ fn anchors_of(b: &Body) -> BTreeSet<Hash> {
 struct Rec {
     s: Signed,
     issuer: Option<Hash>, // None for a root's own record
+    key: LimitKey,
+}
+
+/// A record's place in the order the limits take records in: the group
+/// CA's own records first, then those of the other roots of the group, then
+/// those under an admin CA of the group, then the rest; within each, by
+/// depth (how many of its signer's records have a lower seq), then signer
+/// and ID. Each signer's records stay in seq order, so what a limit leaves
+/// out is the end of its chains, never a record in the middle.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+struct LimitKey {
+    rank: u8,
+    depth: usize,
+    signer: Hash,
+    id: Hash,
 }
 
 impl Rec {
@@ -857,9 +891,17 @@ struct Evaluation {
     /// Why records were left out before the epochs, by ID.
     failed: BTreeMap<Hash, &'static str>,
     roots: BTreeMap<Hash, Cert>,
+    /// Every verified record, those within the limits (the first kept)
+    /// first; the epochs see only those.
     recs: Vec<Rec>,
+    kept: usize,
     by_sig: BTreeMap<Hash, Vec<usize>>,
+    /// by_sig with the records past the limits too, for seqs.
+    all_by_sig: BTreeMap<Hash, Vec<usize>>,
     devices: BTreeMap<String, Vec<usize>>,
+    /// Device records over MAX_DEVICES or MAX_ADMINS, which count for
+    /// nothing; of the same length as recs.
+    capped: Vec<bool>,
 }
 
 // The evaluation keeps its records in one Vec and refers to them by their
@@ -892,8 +934,11 @@ impl Evaluation {
             failed: BTreeMap::new(),
             roots,
             recs: Vec::new(),
+            kept: 0,
             by_sig: BTreeMap::new(),
+            all_by_sig: BTreeMap::new(),
             devices: BTreeMap::new(),
+            capped: Vec::new(),
         };
         // One body may come with more than one valid admin CA (an admin key
         // certified again); the smallest DER is kept, whatever the order.
@@ -927,18 +972,120 @@ impl Evaluation {
                 (Some(_), None) => false,
             };
             if better {
-                by_id.insert(s.id, Rec { s, issuer });
+                by_id.insert(s.id, Rec { s, issuer, key: LimitKey::default() });
             }
         }
-        for (_, x) in by_id {
+        let (all, kept) = e.limit(key_hash_of(input.group_ca), by_id.into_values().collect());
+        e.kept = kept;
+        for x in all {
             let i = e.recs.len();
-            e.by_sig.entry(x.s.body.signer).or_default().push(i);
-            if x.s.body.kind == TYPE_DEVICE {
-                e.devices.entry(x.s.body.device.clone()).or_default().push(i);
+            e.all_by_sig.entry(x.s.body.signer).or_default().push(i);
+            if i < kept {
+                e.by_sig.entry(x.s.body.signer).or_default().push(i);
+                if x.s.body.kind == TYPE_DEVICE {
+                    e.devices.entry(x.s.body.device.clone()).or_default().push(i);
+                }
             }
             e.recs.push(x);
         }
+        e.cap_devices();
         e
+    }
+
+    /// Sorts the records in LimitKey order and returns how many of them fit
+    /// in MAX_RECORDS and MAX_SET_BYTES, up to the first that does not fit;
+    /// that one and every record after it fail with WHY_LIMIT. It notes each
+    /// record's key for cap_devices.
+    fn limit(&mut self, group_ca: Hash, mut all: Vec<Rec>) -> (Vec<Rec>, usize) {
+        // The roots of the group: the group CA and the root of each claim an
+        // admin CA of one of them signed.
+        let mut roots = BTreeSet::from([group_ca]);
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for x in &all {
+                if x.b().kind == TYPE_CLAIM && x.issuer.is_some_and(|h| roots.contains(&h)) {
+                    grew |= roots.insert(claim_root(x.b()));
+                }
+            }
+        }
+        let mut rank: BTreeMap<Hash, u8> = BTreeMap::new();
+        let mut seqs: BTreeMap<Hash, Vec<i64>> = BTreeMap::new();
+        for x in &all {
+            let k = x.b().signer;
+            let r = if k == group_ca {
+                0
+            } else if roots.contains(&k) {
+                1
+            } else if x.issuer.is_some_and(|h| roots.contains(&h)) {
+                2
+            } else {
+                3
+            };
+            let old = rank.entry(k).or_insert(r);
+            *old = r.min(*old);
+            seqs.entry(k).or_default().push(x.b().seq);
+        }
+        for q in seqs.values_mut() {
+            q.sort_unstable();
+        }
+        for x in &mut all {
+            let k = x.s.body.signer;
+            let depth = seqs.get(&k).map_or(0, |q| q.partition_point(|&s| s < x.s.body.seq));
+            x.key = LimitKey { rank: rank.get(&k).copied().unwrap_or(3), depth, signer: k, id: x.s.id };
+        }
+        all.sort_by_key(|x| x.key);
+        let mut size = 0usize;
+        let mut keep = all.len();
+        for (i, x) in all.iter().enumerate() {
+            let r = &x.s.record;
+            let n = r.chain.iter().fold(r.body.len().saturating_add(r.sig.len()), |n, c| n.saturating_add(c.len()));
+            size = size.saturating_add(n);
+            if i >= MAX_RECORDS || size > MAX_SET_BYTES {
+                keep = i;
+                break;
+            }
+        }
+        for x in all.get(keep..).unwrap_or_default() {
+            self.fail(x.s.id, WHY_LIMIT);
+        }
+        (all, keep)
+    }
+
+    /// Marks the device records over MAX_DEVICES and MAX_ADMINS: the
+    /// devices, and the admin keys of a root's own records, are taken in
+    /// the LimitKey order of their first such record, and a record naming
+    /// one past the limit counts for nothing.
+    fn cap_devices(&mut self) {
+        let admin_of = |x: &Rec| if x.admin() { None } else { x.b().admin.map(|a| a.text()) };
+        let devices = self.over(MAX_DEVICES, |x| Some(x.b().device.clone()));
+        let admins = self.over(MAX_ADMINS, admin_of);
+        self.capped = (0..self.recs.len())
+            .map(|i| {
+                let x = &self.recs[i];
+                x.b().kind == TYPE_DEVICE
+                    && (devices.contains(&x.b().device) || admin_of(x).is_some_and(|a| admins.contains(&a)))
+            })
+            .collect();
+    }
+
+    /// Takes the names the device records give (name returns None for a
+    /// record that gives none) in the LimitKey order of each name's first
+    /// record and returns those past the first max.
+    fn over(&self, max: usize, name: impl Fn(&Rec) -> Option<String>) -> BTreeSet<String> {
+        let mut best: BTreeMap<String, LimitKey> = BTreeMap::new();
+        for rs in self.devices.values() {
+            for &i in rs {
+                let x = &self.recs[i];
+                if let Some(n) = name(x) {
+                    let k = best.entry(n).or_insert(x.key);
+                    *k = x.key.min(*k);
+                }
+            }
+        }
+        let mut names: Vec<(LimitKey, String)> = best.into_iter().map(|(n, k)| (k, n)).collect();
+        names.sort();
+        names.into_iter().skip(max).map(|(_, n)| n).collect()
     }
 
     /// Notes why a record was left out; of two copies of one body left out
@@ -969,15 +1116,17 @@ impl Evaluation {
             .flat_map(|r| anchors_of(r.b()))
             .collect();
         let mut seqs = BTreeMap::new();
-        for (signer, rs) in &self.by_sig {
+        // Past the limits too: a set that grows past them is no rollback.
+        for (signer, rs) in &self.all_by_sig {
             let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.recs[i].s.id, i)).collect();
+            let wholes = self.wholes(rs, &by_id, &anchors);
             for &i in rs {
                 let r = &self.recs[i];
                 let ours = match r.issuer {
                     Some(h) => roots.contains(&h),
                     None => !r.admin() && roots.contains(signer),
                 };
-                if ours && self.whole(i, &by_id, &anchors) {
+                if ours && wholes.contains(&i) {
                     let s = seqs.entry(*signer).or_insert(0);
                     *s = r.b().seq.max(*s);
                 }
@@ -986,23 +1135,25 @@ impl Evaluation {
         seqs
     }
 
-    /// Reports whether i's prev chain down to seq 1, or to a record whose ID
-    /// is one of anchors, is held, each step one seq lower.
-    fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>, anchors: &BTreeSet<Hash>) -> bool {
-        let mut steps: i64 = 0;
-        loop {
-            let Some(r) = self.recs.get(i) else { return false };
+    /// The records of rs (one signer's, by_id their IDs) whose prev chain
+    /// down to seq 1, or to a record whose ID is one of anchors, is held,
+    /// each step one seq lower. Each record is walked once, so that a long
+    /// chain costs its length, not its square.
+    fn wholes(&self, rs: &[usize], by_id: &BTreeMap<Hash, usize>, anchors: &BTreeSet<Hash>) -> BTreeSet<usize> {
+        let step = |i: usize| -> Result<bool, usize> {
+            let Some(r) = self.recs.get(i) else { return Ok(false) };
             if r.b().seq <= 1 || anchors.contains(&r.s.id) {
-                return true;
+                return Ok(true);
             }
-            let Some(&p) = r.b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
-            let Some(prev) = self.recs.get(p) else { return false };
-            if Some(prev.b().seq) != r.b().seq.checked_sub(1) || steps > MAX_SEQ {
-                return false;
+            let Some(&p) = r.b().prev.as_ref().and_then(|p| by_id.get(p)) else { return Ok(false) };
+            let Some(prev) = self.recs.get(p) else { return Ok(false) };
+            if Some(prev.b().seq) != r.b().seq.checked_sub(1) {
+                return Ok(false);
             }
-            i = p;
-            steps = steps.saturating_add(1);
-        }
+            Err(p)
+        };
+        let mut memo = BTreeMap::new();
+        rs.iter().copied().filter(|&i| walk(&mut memo, i, step)).collect()
     }
 
     /// Turns the evaluation into its last epoch, with the claims of the
@@ -1045,7 +1196,9 @@ impl Evaluation {
     }
 
     /// The checkpoints the evaluation tries, by index: a root's own, of a
-    /// root of the group, at most MAX_CHECKPOINTS.
+    /// root of the group, at most MAX_CHECKPOINTS. They come from every
+    /// verified record, past the limits too, so that a root's checkpoint can
+    /// bring a set back under them.
     fn checkpoints(&self, group_ca: Hash) -> Vec<usize> {
         let roots = self.group_roots(group_ca);
         let mut cs: Vec<usize> = (0..self.recs.len())
@@ -1141,7 +1294,7 @@ impl<'a> Epoch<'a> {
     }
 
     fn all(&self) -> core::ops::Range<usize> {
-        0..self.e.recs.len()
+        0..self.e.kept
     }
 
     fn of(&self, signer: &Hash) -> &'a [usize] {
@@ -1152,7 +1305,7 @@ impl<'a> Epoch<'a> {
     /// epoch: its root is on the path and it is within that root's cut.
     fn root_record(&self, i: usize) -> bool {
         let r = self.r(i);
-        if r.admin() || !self.counted[i] || !self.on_path.contains_key(&r.b().signer) {
+        if r.admin() || !self.counted[i] || self.e.capped[i] || !self.on_path.contains_key(&r.b().signer) {
             return false;
         }
         !matches!(self.cuts.get(&r.b().signer), Some(cut) if r.b().seq > *cut)
@@ -1163,21 +1316,16 @@ impl<'a> Epoch<'a> {
     fn voids(&self) -> BTreeSet<Hash> {
         let rs = self.of(&self.cur);
         let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.r(i).s.id, i)).collect();
+        let wholes = self.e.wholes(rs, &by_id, &self.e.anchors);
         let mut v = BTreeSet::new();
         for &i in rs {
             let r = self.r(i);
-            if r.admin() || r.b().kind != TYPE_RESOLVE || !self.whole(i, &by_id, &self.e.anchors) {
+            if r.admin() || r.b().kind != TYPE_RESOLVE || !wholes.contains(&i) {
                 continue;
             }
             v.extend(r.b().records.iter().copied());
         }
         v
-    }
-
-    /// Reports whether i's prev chain down to seq 1, or to a record whose ID
-    /// is one of anchors, is held, each step one seq lower.
-    fn whole(&self, i: usize, by_id: &BTreeMap<Hash, usize>, anchors: &BTreeSet<Hash>) -> bool {
-        self.e.whole(i, by_id, anchors)
     }
 
     /// Finds which of one signer's records count: whole chains, not on a
@@ -1189,19 +1337,26 @@ impl<'a> Epoch<'a> {
             let n = by_seq.entry(self.r(i).b().seq).or_default();
             *n = n.saturating_add(1);
         }
-        let dead = |mut i: usize| loop {
+        // A record is dead when it or a record below it is voided and has
+        // a twin of its seq; only whole chains are walked.
+        let dead = |i: usize| -> Result<bool, usize> {
             let r = self.r(i);
             if self.voided.contains(&r.s.id) && by_seq[&r.b().seq] > 1 {
-                return true;
+                return Ok(true);
             }
             if r.b().seq == 1 || self.e.anchors.contains(&r.s.id) {
-                return false;
+                return Ok(false);
             }
-            i = by_id[r.b().prev.as_ref().unwrap_or(&Hash::default())];
+            match r.b().prev.as_ref().and_then(|p| by_id.get(p)) {
+                Some(&p) => Err(p),
+                None => Ok(false),
+            }
         };
+        let wholes = self.e.wholes(rs, &by_id, &self.e.anchors);
+        let mut dead_memo = BTreeMap::new();
         let mut live: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
         for &i in rs {
-            if self.whole(i, &by_id, &self.e.anchors) && !dead(i) {
+            if wholes.contains(&i) && !walk(&mut dead_memo, i, dead) {
                 live.entry(self.r(i).b().seq).or_default().push(i);
             }
         }
@@ -1285,7 +1440,8 @@ impl<'a> Epoch<'a> {
     fn permitted(&self, i: usize) -> bool {
         let r = self.r(i);
         let a = &r.b().signer;
-        if !r.issuer.is_some_and(|h| self.on_path.contains_key(&h)) || !self.admins.contains_key(a) {
+        if !r.issuer.is_some_and(|h| self.on_path.contains_key(&h)) || !self.admins.contains_key(a) || self.e.capped[i]
+        {
             return false;
         }
         let b = r.b();
@@ -1479,6 +1635,8 @@ impl<'a> Epoch<'a> {
         Some(if self.counts(i) || r.b().kind == TYPE_CLAIM && effective(r.s.id) {
             // A claim that took effect counted under the root before.
             return None;
+        } else if self.e.capped[i] {
+            WHY_LIMIT
         } else if !self.counted[i] {
             WHY_HISTORY
         } else if !r.admin() {
@@ -1695,6 +1853,12 @@ impl<'a> Epoch<'a> {
             self.pending = Some(r.b().signer);
             return None;
         }
+        if self.path.len() >= MAX_PATH {
+            // A handover past the limit on the path counts for nothing.
+            cl.state = "void";
+            self.claims.push(cl);
+            return None;
+        }
         cl.state = "effective";
         let next = cl.root;
         self.claims.push(cl);
@@ -1804,6 +1968,33 @@ impl<'a> Epoch<'a> {
     }
 }
 
+/// Follows a chain from i by step, which either decides a record
+/// (Ok) or names the record below it (Err), and gives every record on
+/// the way the answer at its end; memo keeps the answers, so that each
+/// record is stepped at most once across calls.
+fn walk(memo: &mut BTreeMap<usize, bool>, mut i: usize, step: impl Fn(usize) -> Result<bool, usize>) -> bool {
+    let mut path = Vec::new();
+    let v = loop {
+        if let Some(&v) = memo.get(&i) {
+            break v;
+        }
+        match step(i) {
+            Ok(v) => {
+                memo.insert(i, v);
+                break v;
+            }
+            Err(p) => {
+                path.push(i);
+                i = p;
+            }
+        }
+    };
+    for j in path {
+        memo.insert(j, v);
+    }
+    v
+}
+
 fn claim_root(b: &Body) -> Hash {
     Cert::parse(&b.root).map(|c| key_hash_of(&c)).unwrap_or_default()
 }
@@ -1812,13 +2003,20 @@ fn claim_root(b: &Body) -> Hash {
 mod tests {
     use super::*;
 
+    /// The cases of v2-records.json and v2-flood.json (the sets at the
+    /// limit on records, apart for the size of a file) in one "cases".
     fn vectors() -> serde_json::Value {
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/v2-records.json");
-        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap()
+        let mut cases = Vec::new();
+        for name in ["v2-records.json", "v2-flood.json"] {
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop").join(name);
+            let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            cases.extend(v["cases"].as_array().unwrap().iter().cloned());
+        }
+        serde_json::json!({ "cases": cases })
     }
 
-    /// Every case of v2-records.json gives the state Go gives, byte for
-    /// byte, in every order tried.
+    /// Every case of the vectors gives the state Go gives, byte for byte,
+    /// in every order tried.
     #[test]
     fn v2_vectors() {
         let v = vectors();

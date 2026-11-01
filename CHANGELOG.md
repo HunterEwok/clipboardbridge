@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Limits on a group's record set, the same in Go and the Rust core (docs/records-v2.md,
+  "Limits"): 1024 records, 1 MiB, 256 devices, 64 admin keys and 16 roots on the path.
+  Records past a limit count for nothing, with the reason `limit`; the set is never refused,
+  the root's records go first, and the root's checkpoint brings a set back under the limits.
+  The Rust core checks a signer's chain in one pass instead of once per record.
 - The nightly `cargo fuzz` run covers the Rust core's entry point (`api`), starting from
   requests for each operation built from the interop vectors.
 - The remote invitation is read the same way by Go and the Rust core (`cbb_core::invite`),
