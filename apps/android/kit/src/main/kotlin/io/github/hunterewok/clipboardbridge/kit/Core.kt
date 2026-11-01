@@ -135,6 +135,17 @@ object Core {
             r.details?.takeIf { it.isNotEmpty() }?.let { "${r.message}: $it" } ?: r.message
         }
 
+    /**
+     * A command in the open with its orders sealed to key, the receiver's key
+     * for sealed messages (seal_command, docs/core-api.md, "Signed bodies"),
+     * for the sender to sign.
+     */
+    internal fun sealCommand(body: ByteArray, key: ByteArray): ByteArray {
+        val ok = run("seal_command", Wire.obj("body" to Wire.bytes(body), "key" to Wire.bytes(key))) as? JsonObject
+            ?: throw Mismatch("the answer to seal_command is not an object")
+        return ok.optBytes("body") ?: throw Mismatch("the answer to seal_command has no body")
+    }
+
     /** The linked core's version, ABI and the commit it was built from. */
     fun version(): Version {
         val ok = run("version") as? JsonObject ?: throw Mismatch("the answer to version is not an object")

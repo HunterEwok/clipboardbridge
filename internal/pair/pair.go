@@ -52,6 +52,7 @@ import (
 
 	wire "github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/seal"
 )
 
 // Protocol is the ALPN protocol of pairing connections.
@@ -184,6 +185,11 @@ type Info struct {
 	// Role is RoleLite for a lite member, which never holds CA keys;
 	// empty for a full computer.
 	Role string `json:"role,omitempty"`
+	// Seal is the joiner's public key for sealed messages (internal/seal),
+	// as its hello offers it, so that a phone that admits it puts it in
+	// the device record without waiting for a hello; empty from a phone and
+	// from a member that has none.
+	Seal []byte `json:"seal,omitempty"`
 }
 
 // RoleLite is the Info role of a lite member.
@@ -198,6 +204,9 @@ func (i Info) check() error {
 	}
 	if i.Role != "" && i.Role != RoleLite {
 		return fmt.Errorf("pair: unknown device role %q", i.Role)
+	}
+	if i.Seal != nil && seal.CheckPublicKey(i.Seal) != nil {
+		return errors.New("pair: the key for sealed messages is not one")
 	}
 	if i.Name == "" || len(i.Name) > maxNameLen || !utf8.ValidString(i.Name) {
 		return errors.New("pair: the device name must be 1 to 64 bytes of UTF-8")

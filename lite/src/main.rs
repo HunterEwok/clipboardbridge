@@ -275,7 +275,15 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
          sudo install -d -o clipboardbridge -g clipboardbridge -m 0700 {0}",
         g.state.display()
     ))?;
-    let joiner = pair::Joiner::new(&name)?;
+    let mut joiner = pair::Joiner::new(&name)?;
+    // The key for sealed messages the service will offer in its hello goes
+    // with the info, so that a phone records it as it admits this member.
+    match sealkey::load(&g.state)
+        .and_then(|s| cbb_core::seal::public_key(&s).map_err(|e| e.context("the key for sealed messages")))
+    {
+        Ok(public) => joiner.seal = public,
+        Err(e) => eprintln!("cbb: the key for sealed commands: {e}; commands will come unsealed"),
+    }
     let state = g.state.clone();
     let save = move |id: &identity::Identity, rs: &[records::Record], ts: &[records::ClaimTime]| {
         let mut set = records::new(&id.group_ca);

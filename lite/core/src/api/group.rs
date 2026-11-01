@@ -102,6 +102,9 @@ fn device_value(d: &Device, s: &Records) -> Value {
     if !d.proof.is_empty() {
         m.insert("proof".into(), Value::from(d.proof.as_str()));
     }
+    if !d.seal.is_empty() {
+        m.insert("seal".into(), b64_value(&d.seal));
+    }
     if d.admin {
         m.insert("admin".into(), Value::from(true));
     }

@@ -46,6 +46,9 @@ object Records {
         var proof: String? = null
         var holdsRoot = false
 
+        /** The device's public key for sealed messages (docs/protocol.md, section 15). */
+        var seal: ByteArray? = null
+
         // revoke, freeze
         var keys: List<ByteArray>? = null
 
@@ -85,6 +88,7 @@ object Records {
                 "kind" to s(kind),
                 "proof" to s(proof),
                 "holds_root" to if (holdsRoot) JsonPrimitive(true) else null,
+                "seal" to b(seal),
                 "keys" to once(keys),
                 "records" to once(records),
                 "root" to b(root),
@@ -226,6 +230,8 @@ class RecordSet {
         val commands: List<String> = emptyList(),
         /** The IDs of the freezes of a frozen admin, which a thaw names. */
         val freezes: List<ByteArray> = emptyList(),
+        /** Its public key for sealed messages, which commands for it are sealed to; null when its record has none. */
+        val seal: ByteArray? = null,
     ) {
         /** Whether it is an admin with the power p. */
         fun may(p: String): Boolean = admin && p in powers
@@ -260,6 +266,7 @@ class RecordSet {
                     powers = o.strings("powers"),
                     commands = o.strings("commands"),
                     freezes = o.optBytesList("freezes").orEmpty(),
+                    seal = o.optBytes("seal"),
                 )
             }
         }

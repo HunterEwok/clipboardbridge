@@ -17,6 +17,7 @@ import (
 	"errors"
 	"math/big"
 	"net"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
+	"github.com/HunterEwok/clipboardbridge/internal/seal"
 	"github.com/HunterEwok/clipboardbridge/internal/testnet"
 	"github.com/HunterEwok/clipboardbridge/internal/third_party/cpace"
 )
@@ -152,6 +154,14 @@ func closed(w *Window) bool {
 func TestPairMac(t *testing.T) {
 	f := newFixture(t)
 	j := newJoiner(t, "macos")
+	// The key for sealed messages reaches the window's result.
+	secret, err := seal.GenerateSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Info.Seal, err = seal.PublicKey(secret); err != nil {
+		t.Fatal(err)
+	}
 	out := f.attempt(t, j, f.code, nil)
 	if out.joinErr != nil || out.serveErr != nil {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
@@ -170,7 +180,7 @@ func TestPairMac(t *testing.T) {
 		t.Fatal("the window is still open after a success")
 	}
 	res, err := f.window.Result()
-	if err != nil || res.Device != j.ID || res.Info != j.Info || !res.Cert.Equal(id.Cert) || !res.Confirmed {
+	if err != nil || res.Device != j.ID || !reflect.DeepEqual(res.Info, j.Info) || !res.Cert.Equal(id.Cert) || !res.Confirmed {
 		t.Errorf("Result = %+v, %v", res, err)
 	}
 	assertMembers(t, id, f.admin)
@@ -864,7 +874,7 @@ func TestCodes(t *testing.T) {
 
 func TestInfo(t *testing.T) {
 	for _, bad := range []Info{{Name: "", OS: "linux"}, {Name: "x", OS: "darwin"}, {Name: "x", OS: "none"}, {Name: strings.Repeat("x", 65), OS: "linux"},
-		{Name: "a\nb", OS: "linux"}, {Name: "\xff", OS: "macos"}} {
+		{Name: "a\nb", OS: "linux"}, {Name: "\xff", OS: "macos"}, {Name: "x", OS: "linux", Seal: []byte{1, 2, 3}}} {
 		if _, err := NewJoiner(bad); err == nil {
 			t.Errorf("NewJoiner(%+v) succeeded", bad)
 		}

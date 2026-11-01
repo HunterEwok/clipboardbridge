@@ -66,6 +66,7 @@ lands in the source tree.
 | `group_command` | the set's arguments, `command` (`{body, sig, chain}`), `me` (the member's device) | `{"command", "signer", "root", "sender", "verified"}`: the command's body as an object, the device that signed it, whether it signed as the root, and the device the limits count it for, `verified` when that device's own key signed; a command refused is code 15 |
 | `group_claim_times` | the set's arguments, `claim_times` (`[{record, ms}]`, from a Welcome) | `{"file"}`: the times earlier than the set's own and not in the future taken |
 | `parse_body` | `kind` (`command`, `credential`, `keys`, `release`, `channel`, `attest-status` or `manifest`), `body` (base64) | `{"kind", "value"}`: the body's fields as an object, once it checks; see "Signed bodies" |
+| `seal_command` | `body` (base64, a command in the open), `key` (base64, the receiver's `seal` key) | `{"body"}`: the same command with its orders sealed to the key (`v` `2`, `sealed`), canonical, for the sender to sign; see "Signed bodies" |
 | `group_body` | the set's arguments, `body` (a record body as `canonical_body` takes it, with `signer` set) | `{"body"}`: the canonical bytes of the signer's next record, to sign: the group, seq and prev set from the set, and for a removal, a freeze or a claim `seen` from the set, the signer's own previous seq among them |
 
 The arguments of `evaluate` are a case of `testdata/interop/v2-records.json` as it is.
@@ -131,7 +132,7 @@ most the records records-v2.md allows. `group_view` answers:
 | Field | Meaning |
 |---|---|
 | `state` | the group's state, as `evaluate` gives it for the records the set keeps |
-| `devices` | `[{device, name, role, os, key, store, kind, proof, admin, admin_key, powers, commands, frozen, freezes, keys}]`: the devices list the apps show; `key` and `keys` base64; `freezes`, for a frozen admin, the IDs of the freezes a thaw names |
+| `devices` | `[{device, name, role, os, key, store, kind, proof, seal, admin, admin_key, powers, commands, frozen, freezes, keys}]`: the devices list the apps show; `key`, `keys` and `seal` (the key commands for it are sealed to, when its record has one) base64; `freezes`, for a frozen admin, the IDs of the freezes a thaw names |
 | `path` | the roots' certificates on the path, the group CA first, base64 DER |
 | `root_member` | `{device, key}`: the device that holds the root key, when the set names one |
 | `hub_order` | the devices that may be hubs, in the order members try them |
@@ -154,6 +155,13 @@ each command, credential and release file they take. A manifest comes inside a f
 bytes of its own, and the fields Go and the kits decode from the frame cannot show everything
 the frame held (an empty field and a missing one look alike), so they still check manifests with
 their own code, which the strict vectors keep the same as the core's.
+
+`seal_command` seals a command's orders to its receiver (protocol.md, section 15, "Sealed
+commands"): it checks the command in the open as `parse_body` does, moves `mode`, `hub`,
+`enter`, `kind`, `text` and `action` into the sealed part with the header as associated data,
+and writes the body with `v` `2` in the canonical form. The phone kits call it for each command
+to a device whose record has a `seal` key; Go seals with its own `group.SealCommand`, and both
+open each other's.
 
 ## Signatures already checked
 

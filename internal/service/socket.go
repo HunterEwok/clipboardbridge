@@ -760,7 +760,11 @@ func (s *Service) join(ctx context.Context, c net.Conn, r *control.Reader, m *co
 		cancel()
 	}()
 
-	j, err := pair.NewJoiner(pair.Info{Name: s.cfg.Name, OS: s.cfg.OS})
+	s.mu.Lock()
+	s.loadSealSecretLocked()
+	sealKey := s.sealPublic
+	s.mu.Unlock()
+	j, err := pair.NewJoiner(pair.Info{Name: s.cfg.Name, OS: s.cfg.OS, Seal: sealKey})
 	if err != nil {
 		end()
 		fail(c, err)

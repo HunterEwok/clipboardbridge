@@ -190,6 +190,58 @@ impl Command {
         Ok(())
     }
 
+    /// Seals the orders of `body`, a command in the open, to `public`, the
+    /// receiver's key for sealed messages, as Go's SealCommand: the body
+    /// that comes back has the same header with `v` 2 and `sealed`, in the
+    /// canonical form, for the sender to sign.
+    pub fn seal_body(body: &[u8], public: &[u8]) -> Result<Vec<u8>> {
+        Self::seal_body_with(body, public, |aad, plain| crate::seal::seal(public, aad, plain))
+    }
+
+    /// seal_body with the randomness drawn from seed: for tests only.
+    #[doc(hidden)]
+    pub fn seal_body_with_seed(body: &[u8], public: &[u8], seed: [u8; 32]) -> Result<Vec<u8>> {
+        Self::seal_body_with(body, public, |aad, plain| crate::seal::seal_with_seed(public, aad, plain, seed))
+    }
+
+    fn seal_body_with(
+        body: &[u8],
+        public: &[u8],
+        seal: impl FnOnce(&[u8], &[u8]) -> core::result::Result<Vec<u8>, Error>,
+    ) -> Result<Vec<u8>> {
+        let c = Self::parse(body)?;
+        if c.v != VERSION {
+            return Err(Error::msg("only a command in the open is sealed"));
+        }
+        crate::seal::check_public_key(public)?;
+        let Ok(serde_json::Value::Object(mut header)) = serde_json::from_slice::<serde_json::Value>(body) else {
+            return Err(Error::msg("a command does not decode"));
+        };
+        let mut orders = serde_json::Map::new();
+        for k in ["mode", "hub", "enter", "kind", "text", "action"] {
+            if let Some(v) = header.remove(k) {
+                orders.insert(String::from(k), v);
+            }
+        }
+        let mut plain = Vec::new();
+        crate::strict::write_canonical(&mut plain, &serde_json::Value::Object(orders));
+        if plain.len() > c.max_body() {
+            return Err(Error::msg("the command is too large"));
+        }
+        let sealed = seal(&c.aad(), &plain)?;
+        header.insert(String::from("v"), serde_json::Value::from(SEALED_VERSION));
+        header.insert(
+            String::from("sealed"),
+            serde_json::Value::String(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &sealed)),
+        );
+        let mut out = Vec::new();
+        crate::strict::write_canonical(&mut out, &serde_json::Value::Object(header));
+        if out.len() > c.max_body() {
+            return Err(Error::msg("the command is too large"));
+        }
+        Ok(out)
+    }
+
     /// Whether the command's orders are sealed and not yet opened.
     pub fn sealed(&self) -> bool {
         self.v == SEALED_VERSION && !self.opened
