@@ -188,11 +188,19 @@ vm)
 
 		# After a boot the service waits for NTP; ntpd itself stays out of it.
 		/etc/init.d/sysntpd stop
+		# An ntp hotplug event that ntpd sent before it stopped may still wait
+		# in the queue of procd; it would start the service once the flag is gone.
+		sleep 3
 		/etc/init.d/clipboardbridge stop
 		rm -f /var/state/clipboardbridge.time
 		/etc/init.d/clipboardbridge start
 		sleep 2
-		if pgrep -f "cbb service" >/dev/null; then echo "it started before NTP" >&2; exit 1; fi
+		if pgrep -f "cbb service" >/dev/null; then
+			echo "it started before NTP" >&2
+			ls -l /var/state/clipboardbridge.time >&2 || true
+			logread | tail -n 30 >&2 || true
+			exit 1
+		fi
 		ACTION=stratum sh /etc/hotplug.d/ntp/50-clipboardbridge
 		for i in $(seq 20); do pgrep -f "cbb service" >/dev/null && break; sleep 1; done
 		pgrep -f "cbb service" >/dev/null
