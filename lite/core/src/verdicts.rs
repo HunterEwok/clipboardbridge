@@ -16,8 +16,8 @@ use serde_json::Value;
 
 use super::Command;
 use crate::authority::{Hash, Record};
-use crate::group::Records;
 use crate::certs::{Cert, KeyHash, sha256};
+use crate::group::Records;
 
 fn hex(b: &[u8]) -> String {
     b.iter().fold(String::new(), |mut s, x| {
