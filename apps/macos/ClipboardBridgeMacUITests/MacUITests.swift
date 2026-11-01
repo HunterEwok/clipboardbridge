@@ -16,7 +16,10 @@ final class MacUITests: XCTestCase {
 
     private func launch(_ extra: [String] = [], language: String = "en") -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["CBB_SOCKET"] = NSTemporaryDirectory() + "cbb-ui-no-service.sock"
+        // A short path: the test runner's own temporary folder can be long
+        // enough to pass a socket address's 104 bytes, which the app reports
+        // as an unexpected answer instead of a stopped service.
+        app.launchEnvironment["CBB_SOCKET"] = "/tmp/cbb-ui-no-service-\(ProcessInfo.processInfo.processIdentifier).sock"
         app.launchArguments = ["-AppleLanguages", "(\(language))"] + extra
         app.launch()
         return app
