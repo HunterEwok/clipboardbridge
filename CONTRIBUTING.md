@@ -119,6 +119,11 @@ npx @informalsystems/quint@0.33.1 run --backend=typescript --invariant=promises 
 
 The lite member (Rust, the `lite` job in CI):
 
+The core and the phones' bindings deny panics outside their tests (`lite/core/src/lib.rs`,
+`lite/ffi/src/lib.rs`): read with `get`, add with `checked_` or `saturating_` operations, and
+return an error. Where something truly cannot fail, allow the lint on that item with a
+`reason`.
+
 ```sh
 cd lite && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 cargo build -p clipboardbridge-core --target riscv32imac-unknown-none-elf   # the core without an OS

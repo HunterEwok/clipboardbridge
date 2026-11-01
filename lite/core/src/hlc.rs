@@ -167,11 +167,11 @@ impl Clock {
         if st.last < st.mark {
             return;
         }
-        let mut next = Timestamp { wall: st.last.wall + MARK_STEP, logical: 0 };
+        let mut next = Timestamp { wall: st.last.wall.saturating_add(MARK_STEP), logical: 0 };
         if st.last.wall > MAX_WALL - MARK_STEP {
             next = Timestamp {
                 wall: MAX_WALL,
-                logical: (st.last.logical as u64 + MARK_STEP as u64).min(u32::MAX as u64) as u32,
+                logical: (st.last.logical as u64).saturating_add(MARK_STEP as u64).min(u32::MAX as u64) as u32,
             };
         }
         if next <= st.mark {
@@ -187,9 +187,9 @@ impl Clock {
 /// exhausted, and stopping at MAX_WALL.
 fn tick(t: &mut Timestamp) {
     if t.logical < u32::MAX {
-        t.logical += 1;
+        t.logical = t.logical.saturating_add(1);
     } else if t.wall < MAX_WALL {
-        *t = Timestamp { wall: t.wall + 1, logical: 0 };
+        *t = Timestamp { wall: t.wall.saturating_add(1), logical: 0 };
     }
 }
 

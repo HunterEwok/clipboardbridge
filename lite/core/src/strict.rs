@@ -4,6 +4,10 @@
 //! The strict form of signed bodies (docs/protocol.md, section 1, "Signed
 //! bodies"), which every member reads alike, as Go's checkStrict.
 
+// The parser's arithmetic is on positions in the input, each at most one or
+// a few past its end, so it cannot overflow.
+#![allow(clippy::arithmetic_side_effects, reason = "positions in the input cannot overflow")]
+
 use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
@@ -47,12 +51,12 @@ pub fn check(b: &[u8], required: &[&str]) -> Result<()> {
 /// included. It only scans: whether b is JSON is for the decoder.
 pub fn integers_only(b: &[u8]) -> Result<()> {
     let mut i = 0;
-    while i < b.len() {
-        match b[i] {
+    while let Some(&c) = b.get(i) {
+        match c {
             b'"' => {
                 i += 1;
-                while i < b.len() && b[i] != b'"' {
-                    i += if b[i] == b'\\' { 2 } else { 1 };
+                while let Some(&s) = b.get(i).filter(|s| **s != b'"') {
+                    i += if s == b'\\' { 2 } else { 1 };
                 }
                 i += 1;
             }
@@ -125,15 +129,17 @@ pub(crate) fn write_canonical(out: &mut alloc::vec::Vec<u8>, v: &serde_json::Val
     }
 }
 
+/// The lowercase hex digit of the low four bits of n.
+fn hex_digit(n: u8) -> u8 {
+    b"0123456789abcdef".get(usize::from(n & 15)).copied().unwrap_or(b'0')
+}
+
 fn write_string(out: &mut alloc::vec::Vec<u8>, s: &str) {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     out.push(b'"');
     for &c in s.as_bytes() {
         match c {
             b'"' | b'\\' => out.extend_from_slice(&[b'\\', c]),
-            0..=0x1f => {
-                out.extend_from_slice(&[b'\\', b'u', b'0', b'0', HEX[(c >> 4) as usize], HEX[(c & 15) as usize]])
-            }
+            0..=0x1f => out.extend_from_slice(&[b'\\', b'u', b'0', b'0', hex_digit(c >> 4), hex_digit(c & 15)]),
             _ => out.push(c),
         }
     }
@@ -222,7 +228,7 @@ impl Parser<'_> {
                 Some(_) => return Err("a member name is not of a-z, 0-9 and _"),
             }
         }
-        let name = &self.b[start..self.i];
+        let name = self.b.get(start..self.i).ok_or("it ends early")?;
         self.i += 1;
         if name.is_empty() || name.len() > 64 {
             return Err("a member name is not 1 to 64 characters");
@@ -304,7 +310,7 @@ impl Parser<'_> {
     }
 
     fn literal(&mut self, s: &[u8]) -> Step {
-        if !self.b[self.i..].starts_with(s) {
+        if !self.b.get(self.i..).is_some_and(|rest| rest.starts_with(s)) {
             return Err("an unknown literal");
         }
         self.i += s.len();
@@ -325,16 +331,18 @@ impl Parser<'_> {
         if self.i == digits {
             return Err("a number has no digits");
         }
-        if self.b[digits] == b'0' && self.i > digits + 1 {
+        let zero = self.b.get(digits) == Some(&b'0');
+        if zero && self.i > digits + 1 {
             return Err("a number has a leading zero");
         }
-        if self.b[digits] == b'0' && digits > start {
+        if zero && digits > start {
             return Err("a number is a negative zero");
         }
         if matches!(self.peek(), Some(b'.' | b'e' | b'E')) {
             return Err("a number is not an integer");
         }
-        let text = core::str::from_utf8(&self.b[start..self.i]).map_err(|_| "a number is not valid")?;
+        let text = core::str::from_utf8(self.b.get(start..self.i).ok_or("a number is not valid")?)
+            .map_err(|_| "a number is not valid")?;
         text.parse::<i64>().map(|_| ()).map_err(|_| "a number is out of range")
     }
 }

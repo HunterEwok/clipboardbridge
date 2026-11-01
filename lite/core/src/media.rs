@@ -85,7 +85,7 @@ impl Manifest {
             return Err(Error::msg(format!("a manifest has more than {MAX_TYPES} types")));
         }
         let mut size: i64 = 0;
-        let mut paths = 0;
+        let mut paths: usize = 0;
         let mut seen = BTreeSet::new();
         for p in &self.parts {
             // Paths compare as a receiver writes them: two that save_path
@@ -95,7 +95,7 @@ impl Manifest {
                     return Err(Error::msg("a manifest mixes files and clipboard data"));
                 }
                 check_path(&p.path)?;
-                paths += p.path.len();
+                paths = paths.saturating_add(p.path.len());
                 save_path(&p.path)
             } else {
                 if p.kind.is_empty() || p.dir {
@@ -122,7 +122,8 @@ impl Manifest {
             if p.size < 0 || p.size > MAX_MEDIA {
                 return Err(Error::msg(format!("a part of {} bytes", p.size)));
             }
-            size += p.size;
+            size =
+                size.checked_add(p.size).ok_or_else(|| Error::msg("the parts of a manifest are too large together"))?;
         }
         if paths > MAX_PATHS {
             return Err(Error::msg(format!("the paths of a manifest have more than {MAX_PATHS} bytes")));
@@ -195,7 +196,11 @@ fn reserved(name: &str) -> bool {
     let base = name.split('.').next().unwrap_or("").to_ascii_uppercase();
     match base.as_str() {
         "CON" | "PRN" | "AUX" | "NUL" => true,
-        b => b.len() == 4 && (b.starts_with("COM") || b.starts_with("LPT")) && (b'1'..=b'9').contains(&b.as_bytes()[3]),
+        b => {
+            b.len() == 4
+                && (b.starts_with("COM") || b.starts_with("LPT"))
+                && b.as_bytes().get(3).is_some_and(|d| (b'1'..=b'9').contains(d))
+        }
     }
 }
 

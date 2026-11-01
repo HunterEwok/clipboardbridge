@@ -235,10 +235,11 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 - **41.** **Being built for 0.6**, with the rules core (item 42). Commands sealed for their receiver: a command's body (a
     paste's text among it) is signed but not encrypted, so a hub that passes a command on
     for a device the sender cannot reach reads it; since 0.6 only the hubs pass commands
-    on. Each member gets a key for this beside its member key (X25519; the keys in the TPM,
-    the Secure Enclave and the Keystore only sign), published in a statement its member key
-    signs; the sender seals the body to it (HPKE, RFC 9180: DHKEM-X25519, HKDF-SHA256,
-    ChaCha20-Poly1305) with the open header (group, sender, receiver, ID, times) as its
+    on. Each member gets a key for this beside its member key (X-Wing, ML-KEM-768 with
+    X25519, so a recorded paste stays closed to a later quantum computer; the keys in the
+    TPM, the Secure Enclave and the Keystore only sign), published in a statement its member
+    key signs; the sender seals the body to it (HPKE, RFC 9180: X-Wing, HKDF-SHA256,
+    ChaCha20-Poly1305; `internal/seal` and `cbb_core::seal`) with the open header (group, sender, receiver, ID, times) as its
     associated data, and signs the sealed command. A device that published no key gets a
     secret paste only directly. The same in Go, the lite member, both kits, with shared
     vectors and docs/protocol.md section 15.

@@ -1,6 +1,8 @@
 # Nightly: the differential comparison of the four implementations with a
-# fresh seed and more cases than a pull request's run, and the native fuzz
-# targets of the readers of network input (docs/differential.md). It only
+# fresh seed and more cases than a pull request's run, the native fuzz
+# targets of the readers of network input (docs/differential.md), and
+# mutation testing of the records' code (docs/testing.md, "Mutation
+# testing"). It only
 # reads the repository; a failure prints the cases, which become vectors of
 # testdata/interop.
 name: nightly
@@ -111,4 +113,76 @@ jobs:
         with:
           name: cargo-fuzz-${{ matrix.target }}
           path: lite/core/fuzz/artifacts/
+          if-no-files-found: ignore
+
+  # Mutation testing: change the records' code (drop a check, turn < into <=)
+  # and list every change that no test notices. It reports and does not fail
+  # yet: the first runs' survivors get tests first.
+  mutants-rust:
+    name: cargo mutants (shard ${{ matrix.shard }}/8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    defaults:
+      run:
+        working-directory: lite
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the Rust toolchain and cargo-mutants
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          cargo install --locked cargo-mutants@27.1.0
+      # In place: the tests read testdata/ beside lite/, which a copy of the
+      # workspace would leave behind. Each shard has its own checkout.
+      - name: mutate the rules and the strict form
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          cargo mutants --in-place --no-shuffle --shard "$SHARD/8" -p clipboardbridge-core \
+            -f core/src/authority.rs -f core/src/strict.rs || true
+          {
+            echo "### cargo mutants, shard $SHARD/8"
+            echo '```'
+            cat mutants.out/missed.txt 2>/dev/null || echo "(none missed)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-rust-${{ matrix.shard }}
+          path: lite/mutants.out/
+          if-no-files-found: ignore
+
+  mutants-go:
+    name: gremlins (internal/authority)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: mutate the rules
+        run: |
+          go run github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0 unleash \
+            --output gremlins.json ./internal/authority | tee gremlins.txt || true
+          {
+            echo "### gremlins, internal/authority"
+            echo '```'
+            grep -E 'LIVED|Killed:|Mutator coverage|Test efficacy' gremlins.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-go
+          path: |
+            gremlins.json
+            gremlins.txt
           if-no-files-found: ignore
