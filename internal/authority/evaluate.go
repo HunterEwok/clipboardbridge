@@ -764,6 +764,8 @@ func (ep *epoch) permitted(r *rec) bool {
 		return ep.has(a, PowerThaw) && ep.has(a, PowerRemoveAdmins)
 	case TypeClaim:
 		return ep.has(a, PowerTakeover) && r.issuer == ep.cur
+	case TypeHubs:
+		return ep.has(a, PowerHub)
 	}
 	return false
 }
@@ -1216,6 +1218,10 @@ type State struct {
 	// Checkpoint is the root's checkpoint that counts: a member may drop
 	// the records it leaves out (docs/records-v2.md, "Checkpoints").
 	Checkpoint *Hash `json:"checkpoint,omitempty"`
+	// Hubs is the user's main hubs from the hubs record that counts, the
+	// devices of the state with the role full or phone, in its order
+	// (docs/records-v2.md, "The hubs table").
+	Hubs []string `json:"hubs,omitempty"`
 }
 
 // Device is one device of the state.
@@ -1310,6 +1316,7 @@ func (ep *epoch) state() *State {
 	sort.Slice(s.Conflicts, func(i, j int) bool {
 		return s.Conflicts[i].Records[0].String() < s.Conflicts[j].Records[0].String()
 	})
+	s.Hubs = ep.hubs(s.Devices)
 	switch {
 	case ep.stopFull:
 		s.Stop = "full"
@@ -1317,6 +1324,52 @@ func (ep *epoch) state() *State {
 		s.Stop = "secrets"
 	}
 	return s
+}
+
+// hubs returns the main hubs of the hubs record that counts: a root's
+// beats an admin's, a later root's an earlier one's, then the higher seq;
+// among admins the later time_ms, then the smaller signer, then the
+// higher seq. Only the devices it names that are among devices with the
+// role full or phone are kept.
+func (ep *epoch) hubs(devices []Device) []string {
+	var best *rec
+	for _, rs := range ep.e.bySig {
+		for _, r := range rs {
+			if r.Body.Type == TypeHubs && ep.counts(r) && (best == nil || ep.newerHubs(r, best)) {
+				best = r
+			}
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	may := map[string]bool{}
+	for _, d := range devices {
+		may[d.Device] = d.Role == "full" || d.Role == "phone"
+	}
+	var out []string
+	for _, h := range best.Body.Hubs {
+		if may[h] {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// newerHubs reports whether hubs record a beats b.
+func (ep *epoch) newerHubs(a, b *rec) bool {
+	ra, rb := a.AdminCA == nil, b.AdminCA == nil
+	switch {
+	case ra != rb:
+		return ra
+	case ra:
+		return ep.newer(a, b)
+	case a.Body.TimeMS != b.Body.TimeMS:
+		return a.Body.TimeMS > b.Body.TimeMS
+	case a.Body.Signer != b.Body.Signer:
+		return a.Body.Signer.String() < b.Body.Signer.String()
+	}
+	return a.Body.Seq > b.Body.Seq
 }
 
 // The reasons a record does not count (docs/records-v2.md, "The state").

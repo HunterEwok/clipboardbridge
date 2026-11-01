@@ -122,6 +122,7 @@ var scenarios = []struct {
 	{"admin limit", TestAdminLimit},
 	{"path limit", TestPathLimit},
 	{"record limit", TestRecordLimit},
+	{"hubs table", TestHubsTable},
 }
 
 // TestV2Vectors writes (with -update) and checks

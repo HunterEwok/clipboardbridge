@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The group's main hubs in a table the root signs, or an admin that may be a hub (`cbb hubs`,
+  a `hubs` record, docs/records-v2.md, "The hubs table"): they serve first, in the user's
+  order, before the hubs the records give, in Go and the Rust core alike.
 - `cbb version` of the lite member names the Rust core it was built with: its version, the
   ABI of its entry point and, in a release, the commit it was built from.
 - The Rust core evaluates a record set at the limit with about a third of the memory it took

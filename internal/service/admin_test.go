@@ -392,3 +392,54 @@ func mustLoad(t *testing.T, dir string) *group.Identity {
 	}
 	return id
 }
+
+// TestHubsTable: the root signs the group's main hubs, which come first in
+// every member's order of hubs; an admin without a hub set up, a device
+// that cannot be a hub and a device named twice are refused.
+func TestHubsTable(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	mac := startRole(t, &h, "mac", group.OSMacOS)
+	pairWith(t, pi, deck)
+	pairWith(t, pi, mac)
+	waitFor(t, "the Mac lists every device", func() bool { return listed(mac.devices(t)) == "deck mac pi" })
+	makeAdmin(t, pi, deck)
+	if _, err := mac.do(t, control.Header{Op: control.OpHubs, Hubs: []string{"pi"}}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root") {
+		t.Errorf("hubs on the Mac: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpHubs, Hubs: []string{"deck", "deck"}}, ""); err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("a hub named twice: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpHubs}, ""); err == nil || !strings.Contains(err.Error(), "1 to 16") {
+		t.Errorf("no hubs: %v", err)
+	}
+	var deckID string
+	for _, d := range mac.devices(t) {
+		if d.Name == "deck" {
+			deckID = d.ID
+		}
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpHubs, Hubs: []string{deckID, "pi"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*testService{pi, deck, mac} {
+		waitFor(t, s.name+" puts the deck first", func() bool {
+			order := hubOrderIn(s.dir)
+			return len(order) == 2 && string(order[0]) == deckID
+		})
+	}
+}
+
+// hubOrderIn returns the order of hubs of the records in dir.
+func hubOrderIn(dir string) []group.DeviceID {
+	id, err := group.Load(dir)
+	if err != nil {
+		return nil
+	}
+	recs, err := group.LoadRecords(dir, id.GroupCA.Cert)
+	if err != nil {
+		return nil
+	}
+	return recs.HubOrder()
+}
