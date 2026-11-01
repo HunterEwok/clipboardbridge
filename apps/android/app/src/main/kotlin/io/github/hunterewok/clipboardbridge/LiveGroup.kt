@@ -11,6 +11,8 @@ import android.net.NetworkRequest
 import android.os.Build
 import android.provider.Settings as SystemSettings
 import android.util.Log
+import io.github.hunterewok.clipboardbridge.kit.alerts
+import io.github.hunterewok.clipboardbridge.kit.GroupAlert
 import io.github.hunterewok.clipboardbridge.kit.AndroidAttestation
 import io.github.hunterewok.clipboardbridge.kit.CertificateInfo
 import io.github.hunterewok.clipboardbridge.kit.CredentialKeeper
@@ -219,6 +221,12 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      * one when it adds a computer.
      */
     val isAdmin: Boolean get() = synchronized(lock) { state?.isAdmin ?: true }
+
+    /** Whether this phone holds the group's root, which ends conflicts. */
+    val isRoot: Boolean get() = synchronized(lock) { state?.isRoot ?: false }
+
+    /** What the group's records stop and what ends it (GroupAlert). */
+    val alerts: List<GroupAlert> get() = synchronized(lock) { state?.records?.alerts.orEmpty() }
 
     /** Every device of the group, this phone included. */
     val devices: List<Device>
@@ -752,6 +760,21 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val ca = caSigner(R.string.reason_rename)
         val g = copyOfState() ?: return
         val r = withContext(Dispatchers.IO) { g.rename(id, name, ca, Instant.now()) }
+        withContext(Dispatchers.IO) { adopt(g) }
+        published(listOf(r))
+    }
+
+    /**
+     * Ends a conflict or cancels a claim (docs/protocol.md, section 10,
+     * "Stopping the exchange"): a resolve of the records ids, signed with the
+     * root key after the fingerprint or the screen lock, sent to every
+     * connected member.
+     */
+    suspend fun resolve(ids: List<ByteArray>) {
+        if (!isRoot) throw Failure(Failure.Kind.NOT_ADMIN)
+        val root = caSigner(R.string.reason_resolve)
+        val g = copyOfState() ?: return
+        val r = withContext(Dispatchers.IO) { g.resolve(ids, root, Instant.now()) }
         withContext(Dispatchers.IO) { adopt(g) }
         published(listOf(r))
     }

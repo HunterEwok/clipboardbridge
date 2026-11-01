@@ -187,6 +187,8 @@ final class LiveGroup: GroupController {
     /// the phone that did made it an admin. A phone without a group makes
     /// one when it adds a computer.
     var isAdmin: Bool { state?.isAdmin ?? true }
+    var isRoot: Bool { state?.isRoot ?? false }
+    var alerts: [GroupAlert] { state?.records.alerts ?? [] }
 
     /// The label of the key this phone signs with: the root key, or the
     /// admin key of a phone that joined.
@@ -517,6 +519,20 @@ final class LiveGroup: GroupController {
         groupChanged()
         await node?.sendRecords([r])
         await node?.close(peer: id)
+    }
+
+    /// Ends a conflict or cancels a claim (docs/protocol.md, section 10,
+    /// "Stopping the exchange"): a resolve of the records ids, signed with
+    /// the root key after Face ID and sent to every connected member.
+    func resolve(_ ids: [Data]) async throws {
+        guard state?.isRoot == true else { throw PhoneGroup.Failure.notRoot }
+        let root = try await caSigner(reason: String(localized: "Resolve a conflict in your group", bundle: .app))
+        guard var g = state else { throw PhoneGroup.Failure.notRoot }
+        let r = try g.resolve(ids, rootSigner: root, now: Date())
+        try g.save(to: file)
+        state = g
+        groupChanged()
+        await node?.sendRecords([r])
     }
 
     /// Unfreezes an admin computer that another admin froze
