@@ -1651,7 +1651,12 @@ jobs:
           sdk="$ANDROID_HOME/cmdline-tools/latest/bin"
           image="system-images;android-35;google_apis;x86_64"
           "$sdk/sdkmanager" --install emulator platform-tools "$image" >/dev/null </dev/null
-          echo no | "$sdk/avdmanager" create avd -n bench -k "$image" -d pixel_6
+          # avdmanager and the emulator look for AVDs in different places
+          # by default; one folder for both.
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | "$sdk/avdmanager" create avd -n bench -k "$image" -d pixel_6 -p "$ANDROID_AVD_HOME/bench.avd"
+          [ -f "$ANDROID_AVD_HOME/bench.ini" ] || { ls -la "$ANDROID_AVD_HOME" ~/.android ~/.android/avd 2>&1; exit 1; }
           ls -l /dev/kvm
           "$ANDROID_HOME/emulator/emulator" -accel-check
           "$ANDROID_HOME/emulator/emulator" -avd bench -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
