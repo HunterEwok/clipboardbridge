@@ -165,10 +165,22 @@ type phoneHelper struct {
 	addrs   map[string]string // a member's port as the emulator dials it
 	jobs    map[string]*phoneJob
 	nextJob int
+	fwd     *phoneForwarder
 }
 
-// phoneRequest is what a test asks: op is add, addr, run, copy, arrives,
-// start, output or stop. add with udp also publishes a UDP port, the same
+// phoneForwarder is the run's forwarder for a hub on the phone. Its port
+// is the same number on this computer, where the emulator dials it at
+// 10.0.2.2, and in its container; each member sends what it addresses to
+// 10.0.2.2 at that port to the forwarder, so the hub's offer, which names
+// the forwarder as the phone does, works on both sides.
+type phoneForwarder struct {
+	ip   string
+	port int
+	key  string
+}
+
+// phoneRequest is what a test asks: op is add, addr, forwarder, run, copy,
+// arrives, start, output or stop. add with udp also publishes a UDP port, the same
 // number on this computer and in the container, for a hub's tunnel.
 type phoneRequest struct {
 	Op      string `json:"op"`
@@ -280,6 +292,14 @@ func (h *phoneHelper) add(ctx context.Context, udp bool) (*Device, int, error) {
 		return nil, 0, fmt.Errorf("docker port %s gave %q: %w", d.Container, out, err)
 	}
 	h.mu.Lock()
+	fwd := h.fwd
+	h.mu.Unlock()
+	if fwd != nil {
+		if err := fwd.reach(ctx, d); err != nil {
+			return nil, 0, err
+		}
+	}
+	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.addrs == nil {
 		h.addrs = map[string]string{}
@@ -307,6 +327,13 @@ func (h *phoneHelper) do(ctx context.Context, req phoneRequest, a *phoneAnswer) 
 		return nil
 	case "start", "output", "stop":
 		return h.job(req, a)
+	case "forwarder":
+		fwd, err := h.forwarder(ctx)
+		if err != nil {
+			return err
+		}
+		a.Addr, a.Out = net.JoinHostPort(emulatorHost, fmt.Sprint(fwd.port)), fwd.key
+		return nil
 	}
 	d, err := h.member(req.Dev)
 	if err != nil {
@@ -327,6 +354,54 @@ func (h *phoneHelper) do(ctx context.Context, req phoneRequest, a *phoneAnswer) 
 		return arrives(ctx, d, req.Text, timeout)
 	}
 	return fmt.Errorf("no op %q", req.Op)
+}
+
+// forwarder starts the run's forwarder, once, and lets every member reach
+// it at 10.0.2.2.
+func (h *phoneHelper) forwarder(ctx context.Context) (*phoneForwarder, error) {
+	h.mu.Lock()
+	fwd := h.fwd
+	h.mu.Unlock()
+	if fwd != nil {
+		return fwd, nil
+	}
+	c, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	port := c.LocalAddr().(*net.UDPAddr).Port
+	c.Close()
+	run := []string{"-p", fmt.Sprintf("127.0.0.1:%d:%d/udp", port, port), "-p", fmt.Sprintf("127.0.0.1:%d:%d/tcp", port, port)}
+	d, key, err := startForwarder(ctx, h.f, h.f.net, run, fmt.Sprintf("-listen :%d", port))
+	if err != nil {
+		return nil, err
+	}
+	ip, err := fleetIPOn(ctx, d, h.f.net)
+	if err != nil {
+		return nil, err
+	}
+	fwd = &phoneForwarder{ip: ip, port: port, key: key}
+	h.mu.Lock()
+	members := append([]*Device(nil), h.members...)
+	h.fwd = fwd
+	h.mu.Unlock()
+	for _, m := range members {
+		if err := fwd.reach(ctx, m); err != nil {
+			return nil, err
+		}
+	}
+	return fwd, nil
+}
+
+// reach sends what d addresses to 10.0.2.2 at the forwarder's port to the
+// forwarder.
+func (fwd *phoneForwarder) reach(ctx context.Context, d *Device) error {
+	var rules []string
+	for _, proto := range []string{"udp", "tcp"} {
+		rules = append(rules, fmt.Sprintf("iptables -t nat -A OUTPUT -d %s -p %s --dport %d -j DNAT --to-destination %s:%d", emulatorHost, proto, fwd.port, fwd.ip, fwd.port))
+	}
+	_, err := Run(ctx, d, strings.Join(rules, " && "), "")
+	return err
 }
 
 // job starts a command on a member that runs on, reads what it printed so

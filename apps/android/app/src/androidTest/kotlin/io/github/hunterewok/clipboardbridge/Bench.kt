@@ -66,6 +66,15 @@ object Bench {
         return a.str("dev")!! to a["port"]!!.jsonPrimitive.content.toInt()
     }
 
+    /**
+     * Starts the run's forwarder, once; its address as this emulator dials
+     * it, which the members reach too, and its key.
+     */
+    fun forwarder(): Pair<String, String> {
+        val a = call("op" to "forwarder")
+        return a.str("addr")!! to a.str("out")!!
+    }
+
     /** This computer's loopback as the emulator dials it. */
     const val HOST = "10.0.2.2"
 

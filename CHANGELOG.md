@@ -1298,8 +1298,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   fleet, driven by instrumented tests (`apps/android/app/src/androidTest`) through a helper
   that runs cbb on the members: the phone makes its own group, admits computers, syncs both
   ways, pastes on a computer, runs a quick action, notifies of the group's events, sends from
-  the tile and the widget, shares files, takes a computer's secret and syncs through a
-  computer hub's tunnel. CI's new `Android app on an emulator` job runs it.
+  the tile and the widget, shares files, takes a computer's secret, syncs through a
+  computer hub's tunnel and is the hub itself at a forwarder. CI's new `Android app on an emulator` job runs it.
 - An open blind relay: `cbb relay -open` serves every group that registers, as the project's
   relay at `cbb.tools` will, within limits that keep groups nobody vouches for from filling
   it: 4096 groups, 16 registrations from one address and 64 from one network, and 1 MiB a

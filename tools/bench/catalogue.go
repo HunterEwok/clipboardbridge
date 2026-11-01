@@ -69,6 +69,7 @@ var automated = map[string][]string{
 	// The Android app on an emulator in a group with the fleet (the phone suite).
 	"A1": {"phone"}, "M7": {"phone"}, "T16": {"phone"}, "Q8": {"phone"}, "A6": {"phone"},
 	"A12": {"phone"}, "O11": {"phone"}, "Y35": {"phone"}, "W5": {"phone"}, "W42": {"phone"},
+	"W16": {"phone"}, "G14": {"phone"},
 	"A2": {"ci"}, "A4": {"ci"}, "A5": {"ci"}, "A8": {"ci"}, "A9": {"ci"}, "A14": {"ci"}, "A15": {"ci"}, "A16": {"ci"}, "U12": {"ci"},
 	// CI's OpenWrt job (the apk feed, procd, UCI, fw4, the NTP wait, a
 	// sysupgrade's kept files) and the mips tests under qemu, its FreeBSD

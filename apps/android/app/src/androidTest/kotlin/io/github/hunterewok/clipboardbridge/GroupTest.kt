@@ -301,6 +301,57 @@ class GroupTest {
     }
 
     /**
+     * W16 and G14: the phone is the group's hub while its app is open, at a
+     * forwarder: a wrong key is refused with the reason, the right one
+     * registers, a computer away reaches the phone through it, an
+     * invitation the phone serves admits a computer, and the network the
+     * phone is on becomes a home network.
+     */
+    @Test
+    fun c1_phoneHub() {
+        val hubNow = { runBlocking { model.refresh() }; model.hub ?: throw AssertionError("the phone cannot be the hub") }
+        val (fwd, key) = Bench.forwarder()
+        runBlocking { model.setHub(true) }
+        assertEquals("the hub without a forwarder: ${model.hubNote}", HubOnPhone.Status.HOME_ONLY, hubNow().status)
+        try {
+            runBlocking { model.setForwarder(fwd, "sha256:" + "A".repeat(43)) }
+            until(60, "a wrong key refused with the reason; the app says ${model.hub}") {
+                hubNow().let { it.status == HubOnPhone.Status.FAILED && it.error != null }
+            }
+            runBlocking { model.setForwarder(fwd, key) }
+            assertEquals("setting the forwarder says ${model.hubNote}", null, model.hubNote)
+            until(60, "the phone registered at $fwd; the app says ${model.hub}") { hubNow().status == HubOnPhone.Status.REGISTERED }
+
+            // A computer away (the fleet sees no mDNS from the emulator) reaches the phone through the forwarder.
+            Bench.run(Bench.PC, "cbb global on", stdin = "yes\n")
+            until(120, "${Bench.PC} connected to the phone hub:\n${runCatching { Bench.run(Bench.PC, "cbb global") }.getOrDefault("")}") {
+                Bench.run(Bench.PC, "cbb global").contains("connected to the hub")
+            }
+
+            // G14: an invitation the phone makes and serves, used by a new computer.
+            runBlocking { model.openInvite() }
+            val invite = model.invite ?: throw AssertionError("no invitation: ${model.inviteNote}")
+            val guest = Bench.add()
+            Bench.run(guest, "umask 077 && cat >/tmp/invite", stdin = invite.file.readText())
+            val join = Bench.start(guest, "echo yes | cbb pair -invite /tmp/invite")
+            until(120, "the phone asks about $guest; the job says ${join.output().first}") { model.invite?.request != null }
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { model.answer(true) }
+            val out = join.finish(120)
+            assertTrue("cbb pair -invite on $guest did not join:\n$out", out.contains("Joined the group."))
+            until(30, "the invitation says it admitted $guest: ${model.inviteNote}") { model.inviteNote?.text == R.string.invite_admitted }
+            until(60, "$guest in the phone's devices") { model.group.devices.any { it.name == guest } }
+
+            // "This is my home network".
+            runBlocking { model.addHomeNetwork() }
+            assertTrue("the hub does not count this network as home: ${model.hub}", hubNow().home)
+        } finally {
+            runCatching { Bench.run(Bench.PC, "cbb global off", stdin = "yes\n") }
+            runBlocking { model.setHub(false) }
+        }
+        assertEquals("the hub turned off", HubOnPhone.Status.OFF, hubNow().status)
+    }
+
+    /**
      * W42 and W5: a computer the phone made an admin is the hub; with sync
      * away from home on, the phone, which finds no hub on its network (the
      * emulator sees no mDNS), reaches it through the tunnel in the app's
@@ -308,7 +359,7 @@ class GroupTest {
      * hub does not answer.
      */
     @Test
-    fun c1_awayThroughHub() {
+    fun c2_awayThroughHub() {
         val (hub, udp) = Bench.addHub()
         admit(hub)
         runBlocking { model.makeAdmin(idOf(hub)) }
