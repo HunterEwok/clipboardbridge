@@ -77,7 +77,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   an address or a copy (S18, but for `systemd-analyze`); and the away client's
   `max-copy-away`, a file within it arriving through the hub and one over it staying at home (O10). The fleet also checks that a
   text sent as a secret stays one when sent again without the mark, and that the sender
-  remembers 4096 secrets (Y34).
+  remembers 4096 secrets (Y34); and that a failed step of install.sh or
+  uninstall.sh ends them with its exit status and says so, or with `CBB_ERROR_DETAILS=1` shows
+  every command (I25, Linux). The forge's invitation to a missing hub names a group, as
+  invitations must now.
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built

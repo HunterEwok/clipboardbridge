@@ -207,4 +207,5 @@ func updates(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	ufwRules(ctx, r, f, builds["0.6.0"])
 	inviteGrant(ctx, r, f, builds["0.6.0"])
 	besideAvahi(ctx, r, f, builds["0.6.0"])
+	installerErrors(ctx, r, f, builds["0.6.0"])
 }
