@@ -653,7 +653,9 @@ func (s *Service) accept(ctx context.Context, ln net.Listener) {
 			return
 		}
 		if !ap.Addr().Unmap().IsLoopback() && !s.takesOn(raw.LocalAddr()) {
-			raw.Close() // a network this device has not met its group on
+			// A network this device has not met its group on.
+			s.logRepeat("cbb: a connection from %v to %v, on a network this device has not met its group on; closed", ap.Addr(), raw.LocalAddr())
+			raw.Close()
 			return
 		}
 		if !s.arrivedOn(raw) {

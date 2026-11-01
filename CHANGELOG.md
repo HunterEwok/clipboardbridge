@@ -904,6 +904,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A computer takes member connections to its IPv6 link-local address: it closed them at once,
+  as from a network it had not met its group on, so a phone that reached it that way (as
+  iOS often does) never connected. The log now says when it closes a connection for that.
 - A watcher the service refuses (a paste target or the quick actions offered by a user the
   system does not name) is logged once in 10 minutes instead of at each try, every 2 seconds;
   on Windows the line says what the system did not tell.
