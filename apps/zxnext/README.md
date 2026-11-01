@@ -36,10 +36,35 @@ comes later.
    `clipboardbridge-lite-linux-armv6` of a release) to the Pi, for example with `.piput`, and put it on the shell's `PATH` (NextPi's root is
    read-only: `mount -o remount,rw /`, copy, `mount -o remount,ro /`).
 3. Give the Pi a network: the Zero W's own Wi-Fi, which NextPi turns off, or the Next's
-   ESP8266 (planned).
+   ESP8266 (planned). Many Accelerated boards carry a Pi Zero without a radio: NextPi's
+   shell shows which (`cat /proc/device-tree/model`), and `ls /sys/class/net` lists only
+   `lo` on such a Pi.
 4. Start `cbb run` at boot, then run `.cbb join` on the Next.
 
 The exact NextPi paths and the start script come with the first test on a real Next.
+
+## Test bench: the Pi's shell over the network
+
+`.pibridge` opens NextPi's shell (`SUP>`) to a computer on the home network, so a test can
+drive the Pi without typing on the Next, even on a Pi Zero without a radio. The Next's
+ESP8266 dials the computer in its stock AT firmware's passthrough mode, and the Z80 copies
+bytes between the Pi's UART and the ESP's until SPACE is pressed. The shell is root's and
+travels in the clear: use it only on a network of your own, and only while testing.
+
+1. Join the ESP8266 to the Wi-Fi network once, as NextZXOS's own tools do.
+2. On the computer, listen on one port and take only the Next's address:
+
+   ```sh
+   socat TCP-LISTEN:2323,reuseaddr,range=NEXT_IP/32 -,raw,echo=0
+   ```
+
+3. On the Next: `.pibridge COMPUTER_IP 2323` (`.pibridge -d ...` shows the ESP's answers,
+   its firmware version among them). The computer gets the `SUP>` prompt.
+4. SPACE on the Next stops it. It then says how many bytes went each way and whether a
+   receive buffer filled up, which would mean the Z80 lost bytes.
+
+Not yet run on a real Next: the ESP's speed (115200, its stock one), the UART status bit
+for a full buffer, and passthrough's timing.
 
 ## Build
 
@@ -47,9 +72,10 @@ With [z88dk](https://github.com/z88dk/z88dk) 2.3 (`zcc` on the `PATH`, `ZCCCFG` 
 at its `lib/config`):
 
 ```sh
-make          # build/CBB: copy it to C:/DOT on the Next's SD card
+make          # build/CBB and build/PIBRIDGE: copy them to C:/DOT on the Next's SD card
 make test     # the frame parser's tests, with the host's C compiler
 ```
 
 CI's `ZX Spectrum Next` job builds z88dk from its release source, checked against a
-SHA-256, and runs both.
+SHA-256, and runs both; the run keeps `CBB` and `PIBRIDGE` as its artifact
+`clipboardbridge-zxnext-dot`.
