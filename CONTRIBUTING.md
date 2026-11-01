@@ -98,7 +98,7 @@ go tool actionlint             # GitHub Actions workflows
 pipx run zizmor==1.31.1 --offline --min-severity low .github/workflows   # their security
 go run ./tools/repocheck       # English only, license headers, copied code, no programs or files over 1 MiB, documentation links and names
 go run ./tools/tokens -check   # apps/design/tokens.json -> Swift and Kotlin, WCAG contrast
-go run ./tools/icon -check     # the app icon
+go run ./tools/icon -check     # the apps' icons
 go test -race ./...
 go build -o /dev/null ./cmd/cbb
 GOOS=linux GOARCH=arm GOARM=6 go build -o /dev/null ./cmd/cbb   # Raspberry Pi Zero W

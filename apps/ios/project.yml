@@ -163,6 +163,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(CBB_BUNDLE_ID).watchkitapp
+        # Drawn by tools/icon.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: YES
   ClipboardBridgeTests:
     type: bundle.unit-test
