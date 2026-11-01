@@ -65,6 +65,12 @@ var automated = map[string][]string{
 	// CI's tests of the apps' windows: the tray app in a headless browser,
 	// XCUITest of the iPhone app and the Mac app, the Android app on Robolectric.
 	"A2": {"ci"}, "A4": {"ci"}, "A5": {"ci"}, "A8": {"ci"}, "A9": {"ci"}, "A14": {"ci"}, "A15": {"ci"}, "A16": {"ci"}, "U12": {"ci"},
+	// CI's OpenWrt job (the apk feed, procd, UCI, fw4, the NTP wait, a
+	// sysupgrade's kept files) and the mips tests under qemu, its FreeBSD
+	// VM (rc.d, pf, ipfw, OPNsense, pfSense's printed rules, X11 under
+	// Xvfb), and the F-Droid build reproduced without Play services, whose
+	// screens the Android ScreensTest drives.
+	"I23": {"ci"}, "H9": {"ci"}, "H10": {"ci"}, "A10": {"ci"},
 	// The time-scaled build.
 	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
 	"Y13": {"time"}, "W39": {"time"}, "W12": {"time"}, "K5": {"time"},

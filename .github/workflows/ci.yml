@@ -455,6 +455,28 @@ jobs:
             test ! -e /usr/local/etc/inc/plugins.inc.d/clipboardbridge.inc
             if pfctl -a clipboardbridge -s rules 2>/dev/null | grep -q pass; then exit 1; fi
             cmp /etc/pf.conf /tmp/pf.conf.before
+            rm -rf /usr/local/opnsense /usr/local/sbin/configctl
+            # pfSense: nothing is changed, the rules to add are printed.
+            echo pfSense >/etc/platform
+            test "$(sh packaging/freebsd/firewall.sh kind)" = pfsense
+            sh packaging/freebsd/firewall.sh commands 8764 | grep -q 'Firewall > Rules'
+            sh packaging/freebsd/firewall.sh hub-commands 51820 | grep -q 'port 51820'
+            if sh packaging/freebsd/firewall.sh open 8764; then echo "open changed pfSense's rules" >&2; exit 1; fi
+            rm -f /etc/platform
+            # ipfw, with pf off; it lets everything else in, as this VM's
+            # SSH needs.
+            pfctl -d
+            kenv net.inet.ip.fw.default_to_accept=1
+            kldload -n ipfw
+            sysctl net.inet.ip.fw.enable=1
+            test "$(sh packaging/freebsd/firewall.sh kind)" = ipfw
+            sh packaging/freebsd/firewall.sh open 8764
+            ipfw list | grep -q 'allow tcp from 192.168.0.0/16 to me 8764'
+            sh packaging/freebsd/firewall.sh hub-open 51820
+            ipfw list | grep -q 'allow udp from any to me 51820'
+            sh packaging/freebsd/firewall.sh hub-close
+            sh packaging/freebsd/firewall.sh close
+            if ipfw list | grep -q 'to me 8764'; then echo "ipfw kept the rules" >&2; exit 1; fi
 
   openwrt:
     name: OpenWrt
