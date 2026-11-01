@@ -284,6 +284,13 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     cbb.tools runs it), or with REALITY, for forwarders without a web server. Every client
     speaks each of them; on the lite member VLESS comes first, then AmneziaWG and the blind
     relay ([below](#vless-behind-a-web-server)).
+- **47.** **After TestFlight.** Back Tap on the iPhone in two taps: iOS lets no app make a
+    shortcut or set Back Tap, so the app carries a signed shortcut file (`shortcuts sign
+    --mode anyone` on a Mac) that runs its Sync clipboard action. A button "Add the
+    double-tap shortcut", in Settings and after the first computer connects, opens it and iOS
+    asks to add it; a card then gives the steps to Settings, Accessibility, Touch, Back Tap,
+    Double Tap. The file names the release bundle identifier, so it waits for TestFlight; a
+    copy for a Personal Team build tests it before.
 
 ## Devices that are hard to type into
 
