@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 use core::cell::{Ref, RefCell};
 
 use base64::Engine as _;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::certs::{self, Cert, KeyHash, b64, sha256};
 use crate::error::{Context, Error, Result};
@@ -253,23 +253,8 @@ struct HubClient {
 }
 
 /// A signed record: the body's exact bytes, an ECDSA signature over them,
-/// and the signer's certificates below the group CA.
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub struct Record {
-    #[serde(with = "b64")]
-    pub body: Vec<u8>,
-    #[serde(with = "b64")]
-    pub sig: Vec<u8>,
-    #[serde(with = "b64::list", default, skip_serializing_if = "Vec::is_empty")]
-    pub chain: Vec<Vec<u8>>,
-}
-
-impl Record {
-    /// The record's ID: SHA-256 over its body.
-    pub fn id(&self) -> [u8; 32] {
-        sha256(&self.body)
-    }
-}
+/// and the signer's admin CA when an admin signed it.
+pub use crate::authority::Record;
 
 /// What a record says; the fields depend on its type.
 #[derive(Deserialize, Default, Clone)]
@@ -556,7 +541,7 @@ impl Records {
     /// Whether the set holds exactly r: its body with the same signature
     /// and chain.
     pub fn has(&self, r: &Record) -> bool {
-        self.sigs.get(&r.id()).is_some_and(|rs| rs.iter().any(|o| o.sig == r.sig && o.chain == r.chain))
+        self.sigs.get(&r.id().0).is_some_and(|rs| rs.iter().any(|o| o.sig == r.sig && o.chain == r.chain))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -725,7 +710,7 @@ impl Records {
             certs::check_root(&c)?;
             root = Some(c);
         }
-        Ok(Signed { record: r.clone(), id: r.id(), body, signer, anchor, root })
+        Ok(Signed { record: r.clone(), id: r.id().0, body, signer, anchor, root })
     }
 
     /// The roots from the group CA to the current root: from each root, the

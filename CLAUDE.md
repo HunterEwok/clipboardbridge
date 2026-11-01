@@ -89,7 +89,7 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   in Go tests.
 - `lite/`: the lite member in Rust (its command is `cbb` too): no CA keys, joins by the phone's QR code,
   dials the Linux members and listens for phones and Macs (mDNS TXT `r=lite`). Its protocol core is the crate `lite/core` (`cbb_core`: `certs`,
-  `records`, `authority` (records `v:2` and their evaluation, docs/records-v2.md), `api` (the one entry point, docs/core-api.md), `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, `keyboard` (the layouts' keys), CPace under `src/third_party`, the
+  `records`, `authority` (records `v:2` and their evaluation, docs/records-v2.md), `group` (the set of records `v:2` a member keeps), `api` (the one entry point, docs/core-api.md), `clip`, `hlc`, `wire`, `pair`, `identity`, `store`, `keyboard` (the layouts' keys), CPace under `src/third_party`, the
   interop vectors, and with the `tls` feature `tls`: rustls unbuffered with a RustCrypto
   provider, the peer checks, a sans-I/O `Session`, the pairing exporter from the key log):
   no_std with alloc, RustCrypto, no I/O, for the ESP32; CI's `esp32` job builds it for the

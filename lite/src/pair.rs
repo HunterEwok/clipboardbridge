@@ -20,7 +20,7 @@ use crate::wire;
 /// What stores a join's result: the records that lead to the group's
 /// roots, then the identity, so the identity never trusts roots its records
 /// do not name.
-pub type Save = dyn Fn(&Identity, &[crate::records::Record]) -> Result<()>;
+pub type Save = dyn Fn(&Identity, &[crate::records::Record], &[crate::records::ClaimTime]) -> Result<()>;
 
 const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a listening join waits.
@@ -97,7 +97,9 @@ fn exchange(
         }
     };
     send(rw, &confirm)?;
-    let res = ex.welcome(&wire::read_frame(rw, MAX_FRAME)?).and_then(|id| save(&id, &ex.records()).map(|_| id));
+    let res = ex
+        .welcome(&wire::read_frame(rw, MAX_FRAME)?, crate::uptime::wall_ms())
+        .and_then(|id| save(&id, &ex.records(), &ex.claim_times()).map(|_| id));
     let _ = send(rw, &done(res.is_ok()));
     res
 }
