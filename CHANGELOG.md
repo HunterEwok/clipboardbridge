@@ -75,7 +75,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   nothing sent anywhere but to the servers once the tunnel breaks (S9); and the forwarder and the relay, with
   `CBB_DEBUG=1`, keeping only their keys, state and log, none of which names the group, a device,
   an address or a copy (S18, but for `systemd-analyze`); and the away client's
-  `max-copy-away`, a file within it arriving through the hub and one over it staying at home (O10).
+  `max-copy-away`, a file within it arriving through the hub and one over it staying at home (O10). The fleet also checks that a
+  text sent as a secret stays one when sent again without the mark, and that the sender
+  remembers 4096 secrets (Y34).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
