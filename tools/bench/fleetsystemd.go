@@ -15,10 +15,10 @@ import (
 // Members with systemd (the installer's and the feed's cases, I1 to I12): a
 // container that boots systemd, as a Linux computer does, with no cbb until
 // the case installs one from a release archive with install.sh or get.sh.
-const systemdImage = "cbbbench-systemd:2"
+const systemdImage = "cbbbench-systemd:3"
 
 const systemdDockerfile = `FROM debian:stable-slim
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv dbus iproute2 iptables nftables procps curl ca-certificates openssl tmux ufw && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv dbus iproute2 iptables nftables procps curl ca-certificates openssl tmux ufw avahi-daemon avahi-utils && rm -rf /var/lib/apt/lists/*
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
 `

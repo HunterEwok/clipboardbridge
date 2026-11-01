@@ -63,7 +63,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   (G15), the invitation file as a secret (S7), a removed client reaching no one (S6) and the
   lite member's options (H5).
 - The bench's fleet runs the lite member as a client of the hub's tunnel: plain WireGuard
-  away from home, and an obfuscated hub's offer refused, so it stays at home (W17).
+  away from home, and an obfuscated hub's offer refused, so it stays at home (W17); and
+  members beside avahi-daemon, which keeps working, ignoring another group's member (D1).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
