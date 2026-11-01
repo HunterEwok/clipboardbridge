@@ -132,9 +132,13 @@ class GroupTest {
     private fun idOf(name: String): String = model.group.devices.firstOrNull { it.name == name }?.id
         ?: throw AssertionError("no $name in the phone's devices: ${model.group.devices.map { it.name }}")
 
-    /** M7: in the default mode (shared) a computer's new copy comes onto the phone's clipboard without the button. */
+    /** M7: a new phone keeps its own clipboard (own); in the mode shared a computer's new copy comes onto it without the button. */
     @Test
     fun a4_receivesByItself() {
+        val self = model.group.devices.first { it.isSelf }.id
+        assertEquals("a new phone's mode", "own", model.group.syncMode)
+        runBlocking { model.setMode(self, "shared") }
+        assertEquals("shared", model.group.syncMode)
         val text = "cbb-bench phone M7 by itself ${System.currentTimeMillis()}"
         Bench.copy(Bench.PC, text)
         until(30, "${Bench.PC}'s copy on the phone's clipboard without the button; it has ${clip()}") { clip() == text }

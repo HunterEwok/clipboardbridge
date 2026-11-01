@@ -901,6 +901,9 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /** Sets this phone's own sync mode and keeps it. */
     fun setOwnMode(mode: String) {
         require(mode in Member.MODES) { "unknown sync mode $mode" }
+        // A phone making its first group sets its mode before the group's
+        // file, which makes the folder, is written.
+        modeFile.parentFile?.mkdirs()
         val tmp = File(modeFile.parentFile, "mode.tmp")
         tmp.writeText(mode + "\n")
         if (!tmp.renameTo(modeFile)) throw IOException("cannot save the sync mode")
