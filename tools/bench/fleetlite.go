@@ -234,6 +234,7 @@ func liteRelease(ctx context.Context, r *Report, lite *Device) {
 	const p = "fleet/S22-lite-release/"
 	var fd *feed
 	var built string
+	defer func() { fd.remove() }()
 	if r.Do(p+"feed", func() error {
 		var err error
 		if fd, err = newFeed(ctx); err != nil {
