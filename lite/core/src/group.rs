@@ -725,6 +725,28 @@ impl Records {
         base64::engine::general_purpose::STANDARD.encode(sha256(&data))
     }
 
+    /// Names the set's group with tag instead of the group CA's own: for
+    /// the vectors, whose groups carry tags of their own.
+    pub(crate) fn set_tag(&mut self, tag: &str) {
+        self.tag = tag.to_string();
+        self.st.replace(None);
+    }
+
+    /// The seq and prev of the next record the key signer signs: one past
+    /// the highest seq of its records in the set, after that record's ID;
+    /// 1 and none when the set holds none of its records.
+    pub fn next_for(&self, signer: &Hash) -> (i64, Option<Hash>) {
+        self.bodies()
+            .filter(|(_, b)| b.signer == *signer)
+            .max_by_key(|(_, b)| b.seq)
+            .map_or((1, None), |(id, b)| (b.seq.saturating_add(1), Some(id)))
+    }
+
+    /// The certificates of the roots on the path, the group CA first.
+    pub fn path_certs(&self) -> Vec<Cert> {
+        self.path()
+    }
+
     /// The records file's contents.
     pub fn to_file(&self) -> Result<Vec<u8>> {
         let f = File { v: 2, records: self.all(), first_seen: self.claim_times() };
