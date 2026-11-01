@@ -152,9 +152,10 @@ function render() {
   const s = state;
   const others = s.devices.filter((d) => !d.self);
   const inGroup = !s.problem && s.status && s.status.group && !s.status.removed;
-  const online = others.filter((d) => d.online).length;
+  // This computer counts too, online as it is the one in front of the user.
+  const online = s.devices.filter((d) => d.online || d.self).length;
   $("headline").textContent = s.problem ? t("The service does not answer")
-    : !inGroup ? t("This computer is in no group yet") : t("%d of %d online", online, others.length);
+    : !inGroup ? t("This computer is in no group yet") : t("%d of %d online", online, s.devices.length);
   $("tag").textContent = inGroup ? s.status.group : "";
   renderAway(inGroup ? s.status.away : undefined, inGroup);
   renderAlerts(inGroup ? s.status : undefined);
@@ -289,7 +290,7 @@ function renderArranged(box, others) {
   let body;
   if (searching()) {
     const q = query.trim().toLowerCase();
-    const found = others.filter((d) => (!q || d.name.toLowerCase().includes(q) || systemWithVersion(d).toLowerCase().includes(q)) &&
+    const found = state.devices.filter((d) => (!q || d.name.toLowerCase().includes(q) || systemWithVersion(d).toLowerCase().includes(q)) &&
       (filter !== "online" || d.online) && (filter !== "attention" || d.frozen));
     body = found.length === 0 ? `<p class="dim">${esc(t("No devices match."))}</p>`
       : list ? `<div class="list">${found.map((d) => deviceRow(d)).join("")}</div>`
@@ -310,14 +311,16 @@ function renderArranged(box, others) {
         : `<div class="tiles">${ds.map((d) => deviceTile(d, level)).join("")}</div>`;
   } else {
     const items = (state.arranged ?? []).filter((it) => it.collection || byId.has(it.device));
+    // This computer first, as on the phones; it stays out of the arrangement.
+    const me = state.devices.find((d) => d.self);
     if (list) {
-      body = `<div class="list">${items.map((it) => {
+      body = `<div class="list">${me ? deviceRow(me) : ""}${items.map((it) => {
         if (!it.collection) return deviceRow(byId.get(it.device), "top");
         const c = it.collection, ds = c.devices.map((id) => byId.get(id)).filter(Boolean);
         return collectionRow(c, ds) + ds.map((d) => deviceRow(d, "c:" + c.id, true)).join("");
       }).join("")}</div>`;
     } else {
-      body = `<div class="tiles">${items.map((it) => it.collection
+      body = `<div class="tiles">${me ? deviceTile(me) : ""}${items.map((it) => it.collection
         ? collectionTile(it.collection, it.collection.devices.map((id) => byId.get(id)).filter(Boolean))
         : deviceTile(byId.get(it.device), "top")).join("")}</div>`;
     }
@@ -348,13 +351,13 @@ function cell(ref, level, name, inner) {
 
 function deviceTile(d, level) {
   return cell("d:" + d.id, level, d.name, `<button class="tile${d.id === selected ? " selected" : ""}" data-id="${esc(d.id)}">` +
-    `<span class="top">${glyph(d)}${dot(d.online)}</span><span class="name">${esc(d.name)}</span>` +
-    `<span class="dim small">${esc(systems[d.os] ?? "")}</span></button>`);
+    `<span class="top">${glyph(d)}${dot(d.online || d.self)}</span><span class="name">${esc(d.name)}</span>` +
+    `<span class="dim small">${esc([systems[d.os], d.self && t("This computer")].filter(Boolean).join(" · "))}</span></button>`);
 }
 
 function deviceRow(d, level, inside) {
   return cell("d:" + d.id, level, d.name, `<button class="row${d.id === selected ? " selected" : ""}${inside ? " inside" : ""}" data-id="${esc(d.id)}">${glyph(d, 32)}` +
-    `<span class="name">${esc(d.name)}</span><span class="dim">${esc(systemWithVersion(d))}</span>${dot(d.online)}</button>`);
+    `<span class="name">${esc(d.name)}</span><span class="dim">${esc([systemWithVersion(d), d.self && t("This computer")].filter(Boolean).join(" · "))}</span>${dot(d.online || d.self)}</button>`);
 }
 
 // A collection as a tile: up to four of its devices' icons, its name and

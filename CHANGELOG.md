@@ -28,6 +28,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - `apps/ios/device.sh` installs the iPhone app and its watch app on your own phone and watch,
   signed by a free Personal Team (an Apple ID in Xcode, no developer account), with a bundle
   identifier of its own; CONTRIBUTING.md, "The iPhone app on your own phone".
+- The Mac app and the tray app list the device they run on too, first and marked as this
+  Mac or this computer, as the phones do, and count it in "N of M online".
 - The Apple Watch app and the Mac app have the app's icon (`tools/icon` draws them too); before,
   watchOS and macOS showed an empty one.
 - The computers apply the group's stop when its records show a likely thief (docs/protocol.md,
