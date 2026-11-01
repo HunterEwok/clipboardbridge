@@ -299,6 +299,10 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     command `cbb`, its subcommands and the paths. Icon labels show the full name too, even where the
     system shortens it: the iPhone's home screen, Android's launcher, the Windows Start menu
     and taskbar, the Linux desktop's menus and tray.
+- **49.** **Planned for 0.7.** A language choice in the Mac app and the tray app, as on the
+    phones: System, English or Русский in Settings, remembered. Today the Mac app follows the
+    system's language (macOS can set one per app) and the tray app the system's interface
+    language on Windows and `LANGUAGE`/`LANG` on Linux.
 
 ## Devices that are hard to type into
 
