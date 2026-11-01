@@ -359,6 +359,11 @@ and `seen` with what it held, the current root's records among them. A claim:
   root's records up to the claim's `seen` entry for the old root keep counting, and its
   later ones count only to cancel the claim, as above.
 
+A new member takes, for each claim the Welcome's records hold, the time the admitting member
+first held it when that is earlier than its own and not in the future (protocol.md, the
+Welcome's `claim_times`): it trusts that member with its certificate already, and a claim
+that took effect there takes effect on it too; the rest of the group keeps its own times.
+
 **Two claims** under one root that are neither void nor cancelled stop the group fully on
 every member that holds both, at once and whatever their order or delay: no sync, no
 messages, no admissions. Only the current root ends it, by cancelling one or both; a group
@@ -382,7 +387,10 @@ record that is not revoked, its issuer is a root on the path or the admin CA of 
 whose newest root record gives `admit` or `renew` (also when that admin was removed later,
 for the devices whose records stay), and neither its key nor its issuer is frozen. An admin CA
 is taken when it is under a root on the path and its key is an admin key that is not
-revoked. The **root's own device** is the device of the newest `device` record with `holds_root` that
+revoked. A certificate that passes everything but the rule on its `device` record, as a
+device whose record has not reached this member yet or a new member that holds no records
+yet, gets a connection that carries records only, so the records reach whichever side lacks
+them; it connects as a member once they name it. The **root's own device** is the device of the newest `device` record with `holds_root` that
 the current root's own key signed (the apps and `cbb` sign it right after making the group
 or taking it over); a peer is the root only when its member key is that record's `key`.
 

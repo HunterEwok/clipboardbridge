@@ -19,6 +19,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/invite"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
@@ -52,11 +53,8 @@ func newRootPhone(t *testing.T) rootPhone {
 		t.Fatal(err)
 	}
 	k := group.KeyHashOf(leaf)
-	own, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: group.Tag(ca.Cert), TimeMS: now.UnixMilli(),
-		By: dev, Device: dev, Name: "iPhone", Role: group.RolePhone, Key: &k}, ca.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	own := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: group.Tag(ca.Cert), TimeMS: now.UnixMilli(),
+		Device: string(dev), Name: "iPhone", Role: group.RolePhone, Key: &k, HoldsRoot: true}, ca.Key)
 	chain, _ := json.Marshal([][]byte{leaf.Raw, ca.Cert.Raw})
 	records, _ := json.Marshal([]group.Record{own})
 	return rootPhone{device: string(dev), chain: string(chain), key: key, records: string(records)}

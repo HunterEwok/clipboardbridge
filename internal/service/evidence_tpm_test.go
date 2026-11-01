@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/node"
 	"github.com/HunterEwok/clipboardbridge/internal/tpmkey"
 	"github.com/HunterEwok/clipboardbridge/internal/tpmkey/tpmtest"
@@ -88,11 +89,8 @@ func TestTPMCredentialOnlyFromRoot(t *testing.T) {
 	}
 	recs := group.NewRecords(root.GroupCA.Cert)
 	key := group.KeyHashOf(root.Cert)
-	r, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: group.Tag(root.GroupCA.Cert), Device: root.ID,
-		Name: "pi", Role: group.RoleFull, Key: &key, By: root.ID, TimeMS: now.UnixMilli()}, root.GroupCA.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: group.Tag(root.GroupCA.Cert), Device: string(root.ID),
+		Name: "pi", Role: group.RoleFull, Key: &key, TimeMS: now.UnixMilli()}, root.GroupCA.Key)
 	if _, errs := recs.AddAll([]group.Record{r}); len(errs) > 0 {
 		t.Fatal(errs)
 	}

@@ -22,6 +22,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/hlc"
 	signed "github.com/HunterEwok/clipboardbridge/internal/release"
 	"github.com/HunterEwok/clipboardbridge/internal/testnet"
@@ -936,10 +937,7 @@ func withRecords(r *recordStore) option {
 func (m *member) record(t *testing.T, body group.RecordBody) group.Record {
 	t.Helper()
 	body.Group = group.Tag(admin.GroupCA.Cert)
-	r, err := group.SignRecord(body, admin.GroupCA.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := grouptest.Sign(t, body, admin.GroupCA.Key)
 	return r
 }
 
@@ -955,8 +953,20 @@ func TestRecordsSpread(t *testing.T) {
 		ms = append(ms, m)
 	}
 	a, b, c := ms[0], ms[1], ms[2]
-	key := group.KeyHashOf(a.id.Cert)
-	dev := a.record(t, group.RecordBody{Type: group.RecordDevice, Device: a.id.ID, Name: "a", Role: group.RoleFull, Key: &key})
+	// In records v:2 a member is taken only when a device record names its
+	// key, so every store starts with the records of all three; a then
+	// holds one more, of a device that is not here, which spreads.
+	var devs []group.Record
+	for _, m := range ms {
+		key := group.KeyHashOf(m.id.Cert)
+		devs = append(devs, a.record(t, group.RecordBody{Type: group.RecordDevice, Device: string(m.id.ID), Name: "m", Role: group.RoleFull, Key: &key}))
+	}
+	for _, st := range stores {
+		st.Add("", devs)
+		<-st.added
+	}
+	other := group.KeyHash{1}
+	dev := a.record(t, group.RecordBody{Type: group.RecordDevice, Device: string(group.NewDeviceID()), Name: "d", Role: group.RoleFull, Key: &other})
 	stores[0].Add("", []group.Record{dev})
 	<-stores[0].added
 

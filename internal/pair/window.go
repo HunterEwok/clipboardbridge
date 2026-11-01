@@ -31,6 +31,9 @@ type Options struct {
 	// roots (group.Records.PathRecords), for the Welcome; a group that was
 	// handed over needs them, or the new device refuses the Welcome.
 	Records func() []group.Record
+	// ClaimTimes, when set, returns when the admin first held each claim
+	// of the records (group.Records.ClaimTimes), for the Welcome.
+	ClaimTimes func() []group.ClaimTime
 	// Taken, when set, reports whether a device ID is in the group already:
 	// a device record names it or a member with it is connected. Such a
 	// joiner is refused before the exchange, since a device picks its own
@@ -62,6 +65,7 @@ type Window struct {
 	code     []byte // the password: the six digits, or a secret
 	noCAKeys bool
 	records  func() []group.Record
+	claims   func() []group.ClaimTime
 	taken    func(group.DeviceID) bool
 	confirm  func(context.Context, Request) error
 	wait     time.Duration // how long confirm may take
@@ -131,7 +135,7 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if opt.AfterFunc == nil {
 		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 	}
-	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, taken: opt.Taken, confirm: opt.Confirm, wait: opt.ConfirmWait,
+	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, claims: opt.ClaimTimes, taken: opt.Taken, confirm: opt.Confirm, wait: opt.ConfirmWait,
 		now: opt.Now, uptime: opt.Uptime, expires: opt.Uptime() + lifetime, done: make(chan struct{})}
 	stop := opt.AfterFunc(lifetime, w.expire)
 	w.mu.Lock()
@@ -546,6 +550,9 @@ func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	}
 	if len(wel.Roots) > 0 && w.records != nil {
 		wel.Records = w.records()
+		if w.claims != nil {
+			wel.ClaimTimes = w.claims()
+		}
 	}
 	if !keys {
 		return wel, nil

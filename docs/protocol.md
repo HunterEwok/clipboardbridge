@@ -846,6 +846,7 @@ peer cannot put words in front of the user.
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
 | `records` | array of record envelopes (section 10) | with `roots`: the records that lead to them, the **path records**: each `root` record on the path and, for one an admin CA signed, the `device` records its root's own key signed that name that admin CA in `admin` or that are the root's own (`by` = `device`) |
+| `claim_times` | array of `{record, ms}` | with `records` that hold a claim: when the admitting member first held each claim, in Unix milliseconds; the joiner takes a time that is earlier than its own and not in the future, so a claim that took effect there takes effect on the joiner too (records-v2.md, "Handing the group over") |
 | `group_ca_key` | bytes, PKCS #8 DER | only in a legacy group (section 2), when ADa `os` is `linux` or `windows` without `role` `lite` |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |

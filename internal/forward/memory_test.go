@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 )
 
 // fakeRecords returns n records of about size bytes each; the memory does
@@ -153,10 +154,7 @@ func TestRegistrationKeepsBoundedRecords(t *testing.T) {
 				rand.Read(h[:])
 				hs = append(hs, h)
 			}
-			r, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: time.Now().UnixMilli(), Keys: hs}, ca.Key)
-			if err != nil {
-				t.Fatal(err)
-			}
+			r := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: time.Now().UnixMilli(), Keys: hs}, ca.Key)
 			recs = append(recs, r)
 		}
 		k, _ := ecdh.X25519().GenerateKey(rand.Reader)

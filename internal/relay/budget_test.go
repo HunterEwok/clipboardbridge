@@ -99,7 +99,7 @@ func TestRegistrationsBoundByProvider(t *testing.T) {
 // group they are of, so the groups of one network cannot take the records'
 // room in all.
 func TestRecordBytesChargedToTheSource(t *testing.T) {
-	one := recordSize(deviceRecords(t, newGroup(t), 1)[0])
+	one := recordSize(deviceRecords(t, newGroup(t), 2)[1]) // with prev, as all but a group's first
 	r, link := startWith(t, Config{Open: true, Limits: Limits{PerAddress: 100, PerNetwork: 100, GroupRecordBytes: 11 * one, RecordBytes: 1000 * one}})
 	for i := range 4 {
 		g := newGroup(t)
@@ -191,8 +191,8 @@ func TestOpenRelayForgetsStrangers(t *testing.T) {
 	r.mu.Unlock()
 	for range 3 {
 		g := newGroup(t)
-		d := newDevice(t, g)
 		recs := deviceRecords(t, g, 5)
+		d := listedDevice(t, g, recs)
 		tc, _, _, err := register(context.Background(), MemberConfig{Link: link, Key: d.key, Cert: func() tls.Certificate { return d.cert },
 			Records: func() []group.Record { return recs }})
 		if err != nil {

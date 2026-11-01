@@ -17,7 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -448,15 +450,13 @@ func TestKeys(t *testing.T) {
 func TestRemovedDevice(t *testing.T) {
 	ca := newGroup(t)
 	_, link := startRelay(t, ca)
-	gone, stays := newDevice(t, ca), newDevice(t, ca)
+	recs := deviceRecords(t, ca, 2)
+	gone, stays := listedDevice(t, ca, recs), listedDevice(t, ca, recs)
 	j := join(t, link, gone)
 	waitFor(t, "the device to connect", func() bool { return j.last().Connected })
-	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(ca.Cert), TimeMS: time.Now().UnixMilli(),
+	revoke := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(ca.Cert), TimeMS: time.Now().UnixMilli(),
 		Keys: []group.KeyHash{group.KeyHashOf(gone.cert.Leaf)}}, ca.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stays.records = []group.Record{revoke}
+	stays.records = append(recs, revoke)
 	k := join(t, link, stays)
 	waitFor(t, "the other device to connect", func() bool { return k.last().Connected })
 	waitFor(t, "the removed device to be refused", func() bool {
@@ -467,52 +467,65 @@ func TestRemovedDevice(t *testing.T) {
 
 // TestRemovedAdmin checks that the relay goes by the whole certificate
 // chain: once the records it holds remove an admin, it drops the devices
-// that admin certified, unless the removal keeps them, and refuses any
-// certificate that admin issues afterwards.
+// the removal names, keeps the others that admin certified, whose records
+// stay, and refuses a device the removed admin lists afterwards.
 func TestRemovedAdmin(t *testing.T) {
 	root, err := group.NewRootCA(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
+	tag := group.Tag(root.Cert)
 	_, link := startRelay(t, root)
 	adminKey, err := group.NewKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminCert, err := root.IssueAdmin(group.NewDeviceID(), &adminKey.PublicKey, time.Now())
+	adminDev := newDevice(t, root)
+	adminCert, err := root.IssueAdmin(group.DeviceID(adminDev.id), &adminKey.PublicKey, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	admin := &group.CA{Cert: adminCert, Key: adminKey}
-	certified := func() device {
+	adminHash, adminDevKey := group.KeyHashOf(adminCert), group.KeyHashOf(adminDev.cert.Leaf)
+	recs := []group.Record{grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: time.Now().UnixMilli(),
+		Device: adminDev.id, Name: "admin", Role: group.RolePhone, Key: &adminDevKey, Admin: &adminHash,
+		Powers: authority.Powers, Commands: authority.Commands}, root.Key)}
+	// certified is a device the admin admits, with the admin's record of it.
+	certified := func() (device, group.Record) {
 		d := newDevice(t, admin)
 		d.cert.Certificate = append(d.cert.Certificate, root.Cert.Raw)
-		return d
+		k := group.KeyHashOf(d.cert.Leaf)
+		r := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: time.Now().UnixMilli(),
+			Device: d.id, Name: "pc", Role: group.RoleFull, Key: &k}, admin.Key, adminCert)
+		return d, r
 	}
-	gone, kept := certified(), certified()
+	gone, goneRec := certified()
+	kept, keptRec := certified()
+	recs = append(recs, goneRec, keptRec)
 	jg, jk := join(t, link, gone), join(t, link, kept)
 	waitFor(t, "the admin's devices to connect", func() bool { return jg.last().Connected && jk.last().Connected })
 
-	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(root.Cert), TimeMS: time.Now().UnixMilli(),
-		Keys: []group.KeyHash{group.KeyHashOf(adminCert)}, Keep: []group.KeyHash{group.KeyHashOf(kept.cert.Leaf)}}, root.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	revoke := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: time.Now().UnixMilli(),
+		Keys: []group.KeyHash{adminHash, adminDevKey, group.KeyHashOf(gone.cert.Leaf)}}, root.Key)
 	stays := newDevice(t, root)
-	stays.records = []group.Record{revoke}
+	staysKey := group.KeyHashOf(stays.cert.Leaf)
+	own := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: time.Now().UnixMilli(),
+		Device: stays.id, Name: "root phone", Role: group.RolePhone, Key: &staysKey, HoldsRoot: true}, root.Key)
+	stays.records = append(slices.Clip(recs), own, revoke)
 	js := join(t, link, stays)
 	waitFor(t, "the root's device to connect", func() bool { return js.last().Connected })
-	waitFor(t, "the removed admin's device to be refused", func() bool {
+	waitFor(t, "the removed device to be refused", func() bool {
 		r := jg.last()
 		return !r.Connected && r.Err != nil && strings.Contains(r.Err.Error(), "removed")
 	})
 	if r := jk.last(); !r.Connected {
-		t.Errorf("the device the removal keeps: %+v", r)
+		t.Errorf("the device whose record stays: %+v", r)
 	}
-	fresh := certified()
+	fresh, freshRec := certified()
+	fresh.records = []group.Record{freshRec}
 	jf := join(t, link, fresh)
-	waitFor(t, "a certificate the removed admin issued later to be refused", func() bool {
+	waitFor(t, "a device the removed admin listed later to be refused", func() bool {
 		r := jf.last()
-		return !r.Connected && r.Err != nil && strings.Contains(r.Err.Error(), "removed")
+		return !r.Connected && r.Err != nil && strings.Contains(r.Err.Error(), "no device record that counts")
 	})
 }

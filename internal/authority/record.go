@@ -475,6 +475,21 @@ type Record struct {
 	Chain [][]byte `json:"chain"`
 }
 
+// MarshalJSON writes the envelope with chain, empty for a root's own key,
+// as the records Sign makes and a set keeps carry it; a record that never
+// had one (nil), as a test's made-up record, is written without it, as
+// version 1 wrote such records, never with a null chain.
+func (r Record) MarshalJSON() ([]byte, error) {
+	if r.Chain == nil {
+		return json.Marshal(struct {
+			Body []byte `json:"body"`
+			Sig  []byte `json:"sig"`
+		}{r.Body, r.Sig})
+	}
+	type plain Record
+	return json.Marshal(plain(r))
+}
+
 // ID returns the record ID: SHA-256 over the body.
 func (r Record) ID() Hash { return sha256.Sum256(r.Body) }
 

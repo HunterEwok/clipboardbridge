@@ -567,7 +567,23 @@ func (s *Records) adminDevice(k KeyHash) (authority.Device, bool) {
 // (docs/records-v2.md, "Certificates"): its key must be a listed device's
 // that is not revoked nor frozen, and its issuer a root on the path or the
 // admin CA, under one, of an admin that may admit or renew, not frozen.
+// A chain that passes all but the first rule, as a device whose record has
+// not reached this member yet or a new member that holds no records yet,
+// is refused with ErrNotListed, which lets records through
+// (ErrRecordsOnly), so that the records reach the member that lacks them.
 func (s *Records) Refused(chain []*x509.Certificate) error {
+	if err := s.refusedChain(chain); err != nil {
+		return err
+	}
+	if !s.listed(KeyHashOf(chain[0])) {
+		return ErrNotListed
+	}
+	return nil
+}
+
+// refusedChain is Refused without the rule that a device record names the
+// key.
+func (s *Records) refusedChain(chain []*x509.Certificate) error {
 	if len(chain) == 0 {
 		return errors.New("group: no certificate")
 	}
@@ -577,9 +593,6 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 	}
 	if s.Frozen(leaf) {
 		return errors.New("group: the device is a frozen admin; the root or an admin with thaw unfreezes or removes it")
-	}
-	if !s.listed(leaf) {
-		return errors.New("group: no device record that counts names the device's key")
 	}
 	path := s.path()
 	if signedByAny(chain[0], path) {
@@ -609,6 +622,19 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 	}
 	return nil
 }
+
+// ErrNotListed is what Refused returns for a chain that no device record
+// that counts names; errors.Is(ErrNotListed, ErrRecordsOnly) holds, so the
+// connection carries records only.
+var ErrNotListed error = notListed{}
+
+type notListed struct{}
+
+func (notListed) Error() string {
+	return "group: no device record that counts names the device's key"
+}
+
+func (notListed) Is(target error) bool { return target == ErrRecordsOnly }
 
 // signedByAny reports whether one of roots signed c.
 func signedByAny(c *x509.Certificate, roots []*x509.Certificate) bool {
@@ -797,8 +823,8 @@ func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool)
 }
 
 // ErrRecordsOnly is what a check of a peer returns for a root that a claim
-// took the group over from (Records.TakenOver): its connection carries
-// records and nothing else.
+// took the group over from (Records.TakenOver), and what ErrNotListed is:
+// its connection carries records and nothing else.
 var ErrRecordsOnly = errors.New("group: the group was taken over from this root; its connection carries records only")
 
 // Next returns the seq and prev of the next record the key signer signs:
@@ -855,6 +881,31 @@ func (s *Records) Sign(body RecordBody, key crypto.Signer, adminCA *x509.Certifi
 	return authority.Sign(body, key, adminCA)
 }
 
+// ClaimTimes returns when the set first held each claim, sorted by record.
+func (s *Records) ClaimTimes() []ClaimTime {
+	var out []ClaimTime
+	for id, ms := range s.firstSeen {
+		out = append(out, ClaimTime{id, ms})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Record.String() < out[j].Record.String() })
+	return out
+}
+
+// TakeClaimTimes takes, for each claim the set holds, the time in ts when
+// it is earlier than the set's own and not in the future: a new member
+// takes the times of the member that admitted it from the Welcome, so a
+// claim that took effect there takes effect on the new member too
+// (docs/records-v2.md, "Handing the group over").
+func (s *Records) TakeClaimTimes(ts []ClaimTime) {
+	now := s.now().UnixMilli()
+	for _, t := range ts {
+		if ms, ok := s.firstSeen[t.Record]; ok && t.MS < ms && t.MS <= now {
+			s.firstSeen[t.Record] = t.MS
+			s.st = nil
+		}
+	}
+}
+
 // Digest returns SHA-256 over each record's ID and signature, sorted as
 // All sorts them, in base64: the value a hello carries; "" for an empty
 // set.
@@ -877,10 +928,12 @@ func (s *Records) Digest() string {
 type recordsFile struct {
 	V         int         `json:"v"`
 	Records   []Record    `json:"records"`
-	FirstSeen []firstSeen `json:"first_seen,omitempty"`
+	FirstSeen []ClaimTime `json:"first_seen,omitempty"`
 }
 
-type firstSeen struct {
+// ClaimTime is when a member first held a claim, in Unix milliseconds:
+// what the records file keeps and a Welcome hands a new member.
+type ClaimTime struct {
 	Record KeyHash `json:"record"`
 	MS     int64   `json:"ms"`
 }
@@ -888,11 +941,7 @@ type firstSeen struct {
 // Save writes the records to dir/records.json, replacing the file in one
 // step.
 func (s *Records) Save(dir string) error {
-	f := recordsFile{V: 2, Records: s.All()}
-	for id, ms := range s.firstSeen {
-		f.FirstSeen = append(f.FirstSeen, firstSeen{id, ms})
-	}
-	sort.Slice(f.FirstSeen, func(i, j int) bool { return f.FirstSeen[i].Record.String() < f.FirstSeen[j].Record.String() })
+	f := recordsFile{V: 2, Records: s.All(), FirstSeen: s.ClaimTimes()}
 	data, err := json.MarshalIndent(f, "", "\t")
 	if err != nil {
 		return err
