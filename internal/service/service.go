@@ -249,6 +249,8 @@ type Service struct {
 	records     *group.Records     // the group's device records; nil while in no group
 	creds       *group.Credentials // the group's server credentials, under recMu as records
 	serverKeys  *group.ServerKeys  // this device's keys for the servers, under recMu as records
+	sealSecret  []byte             // this device's secret for sealed messages (internal/seal); nil if it could not be loaded
+	sealPublic  []byte             // its public key, which the hello offers
 	credChanged chan struct{}      // closed when creds change, under recMu
 	credMu      sync.Mutex         // serialises refreshCredential, taken before mu and recMu
 
@@ -501,12 +503,13 @@ func (s *Service) startGroup(id *group.Identity) error {
 	s.guardLocked()
 	s.tunMu.Unlock()
 	tunKey, tunPSK := tunnelKey(tun)
+	s.loadSealSecretLocked()
 	nd := node.New(node.Config{
 		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: s.keyStore(id), Actions: s.actionsOn,
 		OnWrite: s.write, OnRelay: s.relayed, Serves: s.serves, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
 		Records: recordStore{s}, Credentials: credentialStore{s}, Releases: releaseStore{s}, Allow: s.allow,
-		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered,
+		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered, SealKey: s.sealPublic,
 		HubShare: s.hubShare, OnHubs: s.hubsShared, OnEvidence: s.evidenceReceived, Evidence: s.ownEvidence(id),
 	})
 	// Every member listens, so that phones and lite members reach it, and

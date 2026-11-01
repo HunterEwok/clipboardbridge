@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
+  and offers it in its hello; a root computer puts it in the device records, the first step
+  to commands sealed for their receiver (docs/protocol.md, section 15).
 - The group's main hubs in a table the root signs, or an admin that may be a hub (`cbb hubs`,
   a `hubs` record, docs/records-v2.md, "The hubs table"): they serve first, in the user's
   order, before the hubs the records give, in Go and the Rust core alike.
