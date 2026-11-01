@@ -187,12 +187,28 @@ vm)
 		echo "vm: the hub rule came and went with the service data"
 
 		# After a boot the service waits for NTP; ntpd itself stays out of it.
+		# The old process may take a moment to exit, and an NTP event that
+		# ntpd sent before it stopped may still bring the flag back; only a
+		# service that runs without the flag fails.
 		/etc/init.d/sysntpd stop
 		/etc/init.d/clipboardbridge stop
+		for i in $(seq 20); do pgrep -f "cbb service" >/dev/null || break; sleep 1; done
+		if pgrep -f "cbb service" >/dev/null; then echo "it did not stop" >&2; exit 1; fi
 		rm -f /var/state/clipboardbridge.time
 		/etc/init.d/clipboardbridge start
 		sleep 2
-		if pgrep -f "cbb service" >/dev/null; then echo "it started before NTP" >&2; exit 1; fi
+		if pgrep -f "cbb service" >/dev/null && [ ! -f /var/state/clipboardbridge.time ]; then
+			echo "it started before NTP" >&2; exit 1
+		fi
+		if [ -f /var/state/clipboardbridge.time ]; then
+			echo "vm: a late NTP event set the flag again; checking the wait once more"
+			/etc/init.d/clipboardbridge stop
+			for i in $(seq 20); do pgrep -f "cbb service" >/dev/null || break; sleep 1; done
+			rm -f /var/state/clipboardbridge.time
+			/etc/init.d/clipboardbridge start
+			sleep 2
+			if pgrep -f "cbb service" >/dev/null; then echo "it started before NTP" >&2; exit 1; fi
+		fi
 		ACTION=stratum sh /etc/hotplug.d/ntp/50-clipboardbridge
 		for i in $(seq 20); do pgrep -f "cbb service" >/dev/null && break; sleep 1; done
 		pgrep -f "cbb service" >/dev/null
