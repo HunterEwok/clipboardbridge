@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 )
@@ -57,12 +58,36 @@ func (r Range) MarshalText() ([]byte, error) {
 	return fmt.Appendf(nil, "%d-%d", r.Min, r.Max), nil
 }
 
-// UnmarshalText reads "min-max".
+// UnmarshalText reads "min-max": two decimal numbers of 32 bits, without
+// a sign or a leading zero, the first not above the second. Nothing else
+// is taken, so that every implementation reads one text alike.
 func (r *Range) UnmarshalText(b []byte) error {
-	if _, err := fmt.Sscanf(string(b), "%d-%d", &r.Min, &r.Max); err != nil || r.Min > r.Max {
+	lo, hi, ok := strings.Cut(string(b), "-")
+	min, err1 := parseUint32(lo)
+	max, err2 := parseUint32(hi)
+	if !ok || err1 != nil || err2 != nil || min > max {
 		return fmt.Errorf("tunnel: %q is not a range such as 100-200", b)
 	}
+	r.Min, r.Max = min, max
 	return nil
+}
+
+// parseUint32 reads a decimal number of 32 bits in its shortest form.
+func parseUint32(s string) (uint32, error) {
+	if s == "" || len(s) > 10 || (len(s) > 1 && s[0] == '0') {
+		return 0, errors.New("not a number")
+	}
+	var n uint64
+	for _, c := range []byte(s) {
+		if c < '0' || c > '9' {
+			return 0, errors.New("not a number")
+		}
+		n = n*10 + uint64(c-'0')
+	}
+	if n > math.MaxUint32 {
+		return 0, errors.New("not a number")
+	}
+	return uint32(n), nil
 }
 
 func (r Range) overlaps(o Range) bool { return r.Min <= o.Max && o.Min <= r.Max }
