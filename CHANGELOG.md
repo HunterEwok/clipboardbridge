@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `apps/ios/device.sh` installs the iPhone app and its watch app on your own phone and watch,
+  signed by a free Personal Team (an Apple ID in Xcode, no developer account), with a bundle
+  identifier of its own; CONTRIBUTING.md, "The iPhone app on your own phone".
 - A recovery key for a group whose phones are all lost (docs/records-v2.md, "The recovery
   key"): the root names an offline admin key in a `recovery` record, and that key may only
   claim the group, waiting the delay the root set for admins and cancelled the same ways. The
