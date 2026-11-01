@@ -930,6 +930,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The iPhone app shows why a computer refused a remote paste under the text, where the
+  keyboard no longer hides it.
 - The Mac app shows "Allowed" for remote paste once Accessibility allows it, without
   a restart, and "Allow…" opens System Settings again after the leave was taken back.
 - On Windows the service names the user of the agent, so it gives it remote pastes and quick

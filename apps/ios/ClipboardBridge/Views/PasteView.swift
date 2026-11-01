@@ -15,6 +15,7 @@ struct PasteView: View {
     @State private var enter = false
     @State private var secret = false
     @State private var sending = false
+    @FocusState private var editing: Bool
 
     var body: some View {
         NavigationStack {
@@ -24,6 +25,7 @@ struct PasteView: View {
                         .lineLimit(3...10)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .focused($editing)
                     // PasteButton reads the clipboard without the system's prompt.
                     PasteButton(payloadType: String.self) { strings in
                         if let s = strings.first { text = s }
@@ -31,15 +33,19 @@ struct PasteView: View {
                 } footer: {
                     Text("It goes where \(device.name)'s keyboard focus is, once its user turned remote paste on there.")
                 }
+                // Why the computer did not take it, right under the text, where
+                // the keyboard does not hide it.
+                if let message = model.message, !sending {
+                    Section {
+                        Text(message).foregroundStyle(palette.danger)
+                    }
+                }
                 Section {
                     Toggle(isOn: $typing) { Text("Type it key by key") }
                     Toggle(isOn: $enter) { Text("Press Enter after it") }
                     Toggle(isOn: $secret) { Text("A secret") }
                 } footer: {
                     Text("A paste suits most apps; typing suits those that take no paste, and only up to 4 KB. Enter runs a command in a terminal, so the computer takes it only when its user allowed that. A secret leaves no trace in the computer's log or clipboard.")
-                }
-                if let message = model.message, !sending {
-                    Text(message).foregroundStyle(palette.textDim)
                 }
             }
             .navigationTitle(Text("Paste on \(device.name)"))
@@ -60,6 +66,7 @@ struct PasteView: View {
     }
 
     private func send() {
+        editing = false
         sending = true
         Task {
             let done = await model.paste(device.id, text: text, method: typing ? "type" : "paste", enter: enter, secret: secret)
