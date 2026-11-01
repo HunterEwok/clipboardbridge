@@ -164,7 +164,6 @@ class PhoneGroupTest {
         // Only the home network addresses are kept, to dial it when mDNS does not reach its subnet.
         assertEquals(mapOf(l.device to listOf("192.168.20.5:8764", "[fd00::5]:8764")), root.addresses)
         val welcome = j.getOrThrow().welcome
-        assertNull(welcome.groupCAKey)
         assertNull(welcome.adminCA)
         assertEquals("lite", root.devices.first { it.id == l.device }.role)
         assertFailsWith<PhoneGroup.Failure> { root.makeAdmin(l.device, SoftwareSigner().publicKeyDER, rootKey, t0, allowFileKey = true) }

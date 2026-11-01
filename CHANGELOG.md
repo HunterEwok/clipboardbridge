@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The key-level setting's format: the root's `settings` record may carry `key_level`
+  (`proven`, `hardware` or `files`; docs/records-v2.md), and the group's state carries it, in
+  Go and the Rust core alike. The apps' setting and its checks come later.
 - Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
   and offers it in its hello; a root computer puts it in the device records, the first step
   to commands sealed for their receiver (docs/protocol.md, section 15).
@@ -628,6 +631,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
   bindings, and building the Android app, F-Droid's build included, needs the Rust of
   `cbb.rust` in `apps/android/gradle.properties` with cargo-ndk.
+- The pairing's Welcome carries no CA key any more (`group_ca_key`, `phone_ca` and
+  `phone_ca_key` are gone, docs/protocol.md, section 6): no device gets one by joining, in
+  Go, the lite member and both phone kits.
 - The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
   member: each record names its signer and follows that signer's previous one, the Rust
   core decides what a set says, and the old records are refused. A group of an earlier

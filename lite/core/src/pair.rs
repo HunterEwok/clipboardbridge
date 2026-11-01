@@ -67,20 +67,6 @@ struct Welcome {
     /// When the member first held each claim of records.
     #[serde(default)]
     claim_times: Vec<ClaimTime>,
-    #[serde(with = "b64::opt", default)]
-    group_ca_key: Option<Vec<u8>>,
-    #[serde(with = "b64::opt", default)]
-    phone_ca: Option<Vec<u8>>,
-    #[serde(with = "b64::opt", default)]
-    phone_ca_key: Option<Vec<u8>>,
-}
-
-impl Welcome {
-    /// Reports whether the Welcome carries CA keys, which the member sends
-    /// only to a computer it makes an admin.
-    fn holds_ca_keys(&self) -> bool {
-        self.group_ca_key.is_some() || self.phone_ca.is_some() || self.phone_ca_key.is_some()
-    }
 }
 
 /// Every frame of the exchange; each uses some of the fields.
@@ -321,9 +307,6 @@ impl Exchange<'_> {
     /// Checks what the member sent and builds the new identity.
     fn identity(&self, w: &Welcome, member: &MemberAd, now_ms: i64) -> Result<Identity> {
         let member_cert = &self.member_cert;
-        if w.holds_ca_keys() {
-            return Err(Error::msg("the member sent CA keys, which a lite member never holds"));
-        }
         let group_ca = Cert::parse(&w.group_ca).wrap("the group CA")?;
         if certs::tag(&group_ca) != member.group {
             return Err(Error::msg("the member sent another group CA than it announced"));
@@ -442,10 +425,11 @@ pub fn check_frames_for_tests(frames: &[serde_json::Value]) {
     assert_eq!(member.group.len(), 16);
     assert!(decoded[1].tag.is_some() && decoded[2].tag.is_some());
     assert_eq!(serde_json::to_value(&decoded[2]).unwrap(), frames[2]);
-    // A plain Welcome is taken, one with CA keys is refused.
+    // A plain Welcome, and one from an admin of a group handed over.
     let plain = decoded[3].welcome.as_ref().unwrap();
-    assert!(!plain.cert.is_empty() && !plain.group_ca.is_empty() && !plain.holds_ca_keys());
-    assert!(decoded[4].welcome.as_ref().unwrap().holds_ca_keys());
+    assert!(!plain.cert.is_empty() && !plain.group_ca.is_empty() && plain.issuer.is_none());
+    let admin = decoded[4].welcome.as_ref().unwrap();
+    assert!(admin.issuer.is_some() && admin.roots.len() == 1);
     assert_eq!(Refusal::of(&decoded[5].error), Refusal::WrongCode);
     assert!(decoded[6].ok);
 }

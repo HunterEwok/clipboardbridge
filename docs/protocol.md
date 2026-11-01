@@ -847,9 +847,6 @@ peer cannot put words in front of the user.
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
 | `records` | array of record envelopes (section 10) | the group's records (records-v2.md), so the new device takes its peers at once; always with `roots`, which they must lead to; otherwise left out when they do not fit in the frame, and the new device gets them over connections that carry records only |
 | `claim_times` | array of `{record, ms}` | with `records` that hold a claim: when the admitting member first held each claim, in Unix milliseconds; the joiner takes a time that is earlier than its own and not in the future, so a claim that took effect there takes effect on the joiner too (records-v2.md, "Handing the group over") |
-| `group_ca_key` | bytes, PKCS #8 DER | only in a legacy group (section 2), when ADa `os` is `linux` or `windows` without `role` `lite` |
-| `phone_ca` | bytes, DER | likewise |
-| `phone_ca_key` | bytes, PKCS #8 DER | likewise |
 | `admin_ca` | bytes, DER | only to a phone (`ios` or `android`) that sent `admin_key`, from the root phone: the joiner's admin CA for that key (section 10) |
 
 The joiner MUST check: the tag of `group_ca` equals ADb `group`; `issuer`, when present, is an
@@ -858,13 +855,14 @@ signed by `issuer` or by one of those roots and names ADb `device` (section 2); 
 verifies to one of them, through `issuer` when present; `roots` are exactly the path that
 `records` lead to from `group_ca` (section 10, rule 7), so an admin cannot make a joiner trust a
 root of its own; the joiner keeps `records` in its record set before it keeps the identity, keeps
-`roots`, and keeps `issuer` to send in its handshakes; the three CA fields are all present
-or all absent, and a `macos` or lite joiner refuses them; when present, the keys are P-256 and
-match, and `group_ca` has path length 0: a group with a root never hands out CA keys. A Linux
-or Windows joiner of a legacy group that got them then issues its own `clipboardbridge.local`
-certificate from the iPhone CA; any other is a member without CA keys: it publishes and
-listens, but admits nobody until the root makes it an admin (section 10, "Admins"), and
-until then serves no iPhone and never holds `clipboardbridge.local`.
+`roots`, and keeps `issuer` to send in its handshakes.
+
+The Welcome carries no CA key: no device gets the key of the group CA or of the iPhone CA by
+joining. A new computer is a member without CA keys: it publishes and listens, but admits
+nobody until the root makes it an admin (section 10, "Admins"), and until then serves no
+iPhone and never holds `clipboardbridge.local`. A joiner reads a Welcome by the fields of this
+table only; the `group_ca_key`, `phone_ca` and `phone_ca_key` of the legacy groups (section 2)
+are gone with them.
 
 The Welcome carries no group state and no token hashes: tokens need no hashes (section 7),
 and the group state arrives in the first hello.

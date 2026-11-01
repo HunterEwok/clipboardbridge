@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -333,46 +331,8 @@ func (j *Joiner) identity(w *Welcome, memberCert *x509.Certificate, member membe
 	if dev, err := group.DeviceOf(memberCert); err != nil || dev != member.Device {
 		return nil, errors.New("pair: the member's certificate does not name the member")
 	}
-	// Only in a legacy group does a Linux or Windows computer get the CA
-	// keys; in a group with a root no device gets them by joining, and a
-	// Mac or a lite member never does.
-	keys := w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil
-	if keys && (!j.Info.holdsKeys() || id.GroupCA.Cert.MaxPathLen != 0) {
-		return nil, errors.New("pair: the member sent CA keys to a device that never holds them")
-	}
-	if keys {
-		if w.GroupCAKey == nil || w.PhoneCA == nil || w.PhoneCAKey == nil {
-			return nil, errors.New("pair: the member sent only some of the CA keys")
-		}
-		if id.GroupCA.Key, err = parseKey(w.GroupCAKey); err != nil {
-			return nil, err
-		}
-		phoneCA := &group.CA{}
-		if phoneCA.Cert, err = x509.ParseCertificate(w.PhoneCA); err != nil {
-			return nil, err
-		}
-		if phoneCA.Key, err = parseKey(w.PhoneCAKey); err != nil {
-			return nil, err
-		}
-		id.PhoneCA = phoneCA
-		if id.Phone, err = phoneCA.IssuePhone(group.PublicKey(j.Key), j.now()); err != nil {
-			return nil, err
-		}
-	}
 	if err := id.Check(); err != nil {
 		return nil, err
 	}
 	return id, nil
-}
-
-func parseKey(der []byte) (*ecdsa.PrivateKey, error) {
-	k, err := x509.ParsePKCS8PrivateKey(der)
-	if err != nil {
-		return nil, err
-	}
-	key, ok := k.(*ecdsa.PrivateKey)
-	if !ok || key.Curve != elliptic.P256() {
-		return nil, errors.New("pair: a CA key is not a P-256 key")
-	}
-	return key, nil
 }

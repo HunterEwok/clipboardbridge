@@ -211,12 +211,6 @@ func (i Info) check() error {
 	return nil
 }
 
-// holdsKeys reports whether the device gets the CA keys in a group a
-// computer created: a Linux or Windows computer does.
-func (i Info) holdsKeys() bool {
-	return i.Role != RoleLite && (i.OS == group.OSLinux || i.OS == group.OSWindows)
-}
-
 // memberAD is the member's CPace associated data.
 type memberAD struct {
 	Device group.DeviceID `json:"device"`
@@ -239,9 +233,6 @@ type Welcome struct {
 	// Records, which the new device takes (group.Records.TakeClaimTimes);
 	// absent when there is no claim.
 	ClaimTimes []group.ClaimTime `json:"claim_times,omitempty"`
-	GroupCAKey []byte            `json:"group_ca_key,omitempty"`
-	PhoneCA    []byte            `json:"phone_ca,omitempty"`
-	PhoneCAKey []byte            `json:"phone_ca_key,omitempty"`
 }
 
 // frame is every message of the exchange; each uses some of the fields.

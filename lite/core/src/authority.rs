@@ -71,6 +71,11 @@ pub const POWERS: [&str; 8] =
 /// Every command type an admin may be given, sorted.
 pub const COMMANDS: [&str; 7] = ["action", "actions-off", "away-off", "hub", "mode", "paste", "paste-off"];
 
+/// The key levels a settings record may set (docs/roadmap.md, "Key
+/// levels"): only proven hardware keys, hardware keys (the default), or
+/// files allowed too.
+pub const KEY_LEVELS: [&str; 3] = ["proven", "hardware", "files"];
+
 const ROLES: [&str; 5] = ["full", "phone", "lite", "watch", "shortcut"];
 const OSES: [&str; 8] = ["linux", "windows", "macos", "ios", "android", "watchos", "wearos", "none"];
 
@@ -204,6 +209,10 @@ pub struct Body {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub takeover_delay_ms: Option<i64>,
+    /// Which keys may be the group's root, an admin or a hub: one of
+    /// KEY_LEVELS; absent means "hardware".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key_level: String,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub heads: Vec<Head>,
@@ -238,7 +247,7 @@ fn allowed(kind: &str) -> Option<&'static [&'static str]> {
         TYPE_REVOKE | TYPE_FREEZE => &["keys", "seen"],
         TYPE_THAW | TYPE_RESOLVE => &["records"],
         TYPE_CLAIM => &["root", "seen"],
-        TYPE_SETTINGS => &["takeover_delay_ms"],
+        TYPE_SETTINGS => &["takeover_delay_ms", "key_level"],
         TYPE_CHECKPOINT => &["heads", "keep"],
         TYPE_HUBS => &["hubs"],
         _ => return None,
@@ -272,6 +281,7 @@ impl Body {
         add(!self.records.is_empty(), "records");
         add(!self.root.is_empty(), "root");
         add(self.takeover_delay_ms.is_some(), "takeover_delay_ms");
+        add(!self.key_level.is_empty(), "key_level");
         add(!self.heads.is_empty(), "heads");
         add(!self.keep.is_empty(), "keep");
         add(!self.hubs.is_empty(), "hubs");
@@ -392,6 +402,9 @@ impl Body {
             _ => match self.takeover_delay_ms {
                 Some(d) if !(0..=MAX_DELAY).contains(&d) => {
                     Err(Error::msg(format!("a takeover delay of {d} ms is not from 0 to {MAX_DELAY}")))
+                }
+                _ if !self.key_level.is_empty() && !KEY_LEVELS.contains(&self.key_level.as_str()) => {
+                    Err(Error::msg(format!("an unknown key level {:?}", self.key_level)))
                 }
                 _ => Ok(()),
             },
@@ -679,6 +692,10 @@ pub struct State {
     /// (docs/records-v2.md, "The hubs table").
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hubs: Vec<String>,
+    /// The key level of the current root's newest settings record that
+    /// counts; empty when it sets none, which means "hardware".
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub key_level: String,
 }
 
 /// A record of the set that does not count, with why: one of the WHY_
@@ -1769,10 +1786,8 @@ impl<'a> Epoch<'a> {
         Claim { record: r.s.id, claimant: r.b().signer, root: claim_root(r.b()), state, left_ms: 0 }
     }
 
-    /// Looks at the claims under the current root and returns the next
-    /// root and the current root's cut when one takes effect.
-    fn decide_claims(&mut self, now: i64, first_seen: &BTreeMap<Hash, i64>, unknown: bool) -> Option<(Hash, i64)> {
-        let mut delay = DEFAULT_DELAY;
+    /// The current root's newest settings record that counts.
+    fn settings(&self) -> Option<usize> {
         let mut settings: Option<usize> = None;
         for &i in self.of(&self.cur) {
             if self.r(i).b().kind == TYPE_SETTINGS
@@ -1782,7 +1797,14 @@ impl<'a> Epoch<'a> {
                 settings = Some(i);
             }
         }
-        if let Some(d) = settings.and_then(|s| self.r(s).b().takeover_delay_ms) {
+        settings
+    }
+
+    /// Looks at the claims under the current root and returns the next
+    /// root and the current root's cut when one takes effect.
+    fn decide_claims(&mut self, now: i64, first_seen: &BTreeMap<Hash, i64>, unknown: bool) -> Option<(Hash, i64)> {
+        let mut delay = DEFAULT_DELAY;
+        if let Some(d) = self.settings().and_then(|s| self.r(s).b().takeover_delay_ms) {
             delay = d;
         }
         let cancelled = |c: usize| {
@@ -1950,6 +1972,9 @@ impl<'a> Epoch<'a> {
         }
         s.conflicts.sort_by(|a, b| a.records.first().cmp(&b.records.first()));
         s.hubs = self.hubs(&s.devices);
+        if let Some(i) = self.settings() {
+            s.key_level = self.r(i).b().key_level.clone();
+        }
         if self.stop_full {
             s.stop = "full".into();
         } else if forked_admin {

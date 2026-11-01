@@ -25,10 +25,11 @@
 		{
 			"welcome": {
 				"cert": "Y2VydA==",
+				"issuer": "YWRtaW4gQ0E=",
 				"group_ca": "Z3JvdXAgQ0E=",
-				"group_ca_key": "azE=",
-				"phone_ca": "cGhvbmUgQ0E=",
-				"phone_ca_key": "azI="
+				"roots": [
+					"cm9vdA=="
+				]
 			}
 		},
 		{

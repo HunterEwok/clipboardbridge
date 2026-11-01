@@ -34,7 +34,7 @@ func TestInteropVectors(t *testing.T) {
 		{Msg: bytes.Repeat([]byte{2}, 32), AD: mad, Tag: bytes.Repeat([]byte{3}, 64)},
 		{Tag: bytes.Repeat([]byte{4}, 64)},
 		{Welcome: &Welcome{Cert: []byte("cert"), GroupCA: []byte("group CA")}},
-		{Welcome: &Welcome{Cert: []byte("cert"), GroupCA: []byte("group CA"), GroupCAKey: []byte("k1"), PhoneCA: []byte("phone CA"), PhoneCAKey: []byte("k2")}},
+		{Welcome: &Welcome{Cert: []byte("cert"), Issuer: []byte("admin CA"), GroupCA: []byte("group CA"), Roots: [][]byte{[]byte("root")}}},
 		{Error: "wrong-code"},
 		{OK: true},
 	}

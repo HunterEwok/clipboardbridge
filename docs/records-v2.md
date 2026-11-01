@@ -137,7 +137,7 @@ and `a`-`f`.
 | `thaw` | `records` | ends the `freeze` records it names |
 | `claim` | `root`, `seen` | an admin's claim to take the group over with a new root |
 | `resolve` | `records` | the current root voids the records it names: a cancelled claim, one side of a conflict, one of two records with one number |
-| `settings` | `takeover_delay_ms` | the root's settings for the group |
+| `settings` | `takeover_delay_ms`, `key_level` | the root's settings for the group |
 | `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
 | `hubs` | `hubs` | the user's main hubs for sync away from home, in the order they serve |
 
@@ -161,6 +161,7 @@ and `a`-`f`.
 | `records` | array of strings | `thaw`, `resolve`, one at least | sorted record IDs |
 | `root` | string | `claim` | the new root CA certificate, DER, base64: self-signed, a CA with path length 1, a P-256 key |
 | `takeover_delay_ms` | integer | none | from 0 to 604 800 000 (7 days); absent means 259 200 000 (72 hours) |
+| `key_level` | string | none | `proven`, `hardware` or `files`: which devices may be the group's root, an admin or a hub ([roadmap](roadmap.md), "Key levels"); absent means `hardware`. The state carries it; the rules do not check it yet, the apps and `cbb` do when they make an admin or a hub |
 | `heads` | array of objects | `checkpoint`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": 1 or more, "id": the ID of that signer's record with that seq}` |
 | `keep` | array of strings | none | sorted record IDs: the records below the heads that still count |
 | `hubs` | array of strings | `hubs`, one at least | 1 to 16 device IDs, each once, in the user's order (not sorted) |
@@ -480,6 +481,7 @@ and returns the state as one canonical JSON object:
 | `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
 | `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
 | `hubs` | array of strings | the main hubs of the `hubs` record that counts ("The hubs table"): its devices that are in `devices` with the role `full` or `phone`, in its order |
+| `key_level` | string | the `key_level` of the current root's newest counting `settings` record; absent when it has none (then `hardware`), so a claim's new root starts without one |
 
 The reasons in `ignored`, in the order they are decided:
 

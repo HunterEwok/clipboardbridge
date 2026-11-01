@@ -78,9 +78,6 @@ object Pairing {
         val roots: List<ByteArray>? = null,
         /** The group's records (RecordSet.pathRecords), by which the joiner checks the roots and takes its peers at once. */
         val records: List<Member.Record>? = null,
-        val groupCAKey: ByteArray? = null,
-        val phoneCA: ByteArray? = null,
-        val phoneCAKey: ByteArray? = null,
         /** When the admitting member first held each claim, so the new member counts the claims' delays as it does. */
         val claimTimes: List<RecordSet.ClaimTime>? = null,
     ) {
@@ -90,9 +87,6 @@ object Pairing {
             "group_ca" to Wire.bytes(groupCA),
             "roots" to Wire.list(roots),
             "records" to records?.let { rs -> kotlinx.serialization.json.JsonArray(rs.map { it.toJson() }) },
-            "group_ca_key" to Wire.bytes(groupCAKey),
-            "phone_ca" to Wire.bytes(phoneCA),
-            "phone_ca_key" to Wire.bytes(phoneCAKey),
             "admin_ca" to Wire.bytes(adminCA),
             "claim_times" to claimTimes?.let { ts -> kotlinx.serialization.json.JsonArray(ts.map { it.toJson() }) },
         )
@@ -105,9 +99,6 @@ object Pairing {
                 adminCA = o.optBytes("admin_ca"),
                 roots = o.optBytesList("roots"),
                 records = o.optArray("records")?.map { Member.Record.fromJson(it as? JsonObject ?: throw WireTypeException("a record is not an object")) },
-                groupCAKey = o.optBytes("group_ca_key"),
-                phoneCA = o.optBytes("phone_ca"),
-                phoneCAKey = o.optBytes("phone_ca_key"),
                 claimTimes = o.optArray("claim_times")?.let { RecordSet.ClaimTime.list(it) },
             )
         }

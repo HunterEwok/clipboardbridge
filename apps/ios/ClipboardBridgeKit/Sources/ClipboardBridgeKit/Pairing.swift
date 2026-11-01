@@ -53,16 +53,12 @@ public enum Pairing {
         /// When the admitting member first held each claim of records,
         /// which the new device takes (RecordSet.takeClaimTimes).
         public var claimTimes: [RecordSet.ClaimTime]?
-        public var groupCAKey: Data?
-        public var phoneCA: Data?
-        public var phoneCAKey: Data?
         /// For a phone that joins as an admin: the admin CA the root issued
         /// for the admin key the phone sent in its Info.
         public var adminCA: Data?
 
         enum CodingKeys: String, CodingKey {
-            case cert, issuer, groupCA = "group_ca", roots, records, claimTimes = "claim_times", groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key",
-                 adminCA = "admin_ca"
+            case cert, issuer, groupCA = "group_ca", roots, records, claimTimes = "claim_times", adminCA = "admin_ca"
         }
 
         public init(cert: Data, groupCA: Data, issuer: Data? = nil, adminCA: Data? = nil) {

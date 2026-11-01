@@ -182,8 +182,9 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 - **31.** **Key levels**: the user picks who may be the group's root, an admin or a hub: only
     devices whose hardware key is proven by attestation, devices with a key in hardware (the
     default), or, after a warning, devices with a key in a file too. The evidence and the
-    marks are built; the setting is next, its record's format in 0.6 with the rules core
-    (item 42). See "Key levels" below.
+    marks are built, and so is the setting's format: `key_level` in the root's `settings`
+    record ([records-v2.md](records-v2.md)), which the state carries; the apps' setting and
+    its checks are next. See "Key levels" below.
 - **33.** **Researched; not built (D-73).** The iPhone as a hub in the background, as a Network
     Extension. See "Research: the iPhone hub in a Network Extension" below.
 - **34.** **Collections** in the apps: the user's own sets of devices and the order of the tiles,

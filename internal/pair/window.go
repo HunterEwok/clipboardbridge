@@ -23,10 +23,6 @@ import (
 
 // Options adjust a pairing window. The zero value uses the system clocks.
 type Options struct {
-	// NoCAKeys keeps the CA keys from a joining Linux device, which then
-	// cannot admit devices: the welcome of a group whose root is the phone.
-	NoCAKeys bool
-
 	// Records, when set, returns the records that lead to the admin's
 	// roots (group.Records.PathRecords), for the Welcome; a group that was
 	// handed over needs them, or the new device refuses the Welcome.
@@ -61,16 +57,15 @@ type Options struct {
 // A Window is an open pairing window on an admin: a member that holds the
 // CA keys, or a computer that the root phone made an admin.
 type Window struct {
-	admin    *group.Identity
-	code     []byte // the password: the six digits, or a secret
-	noCAKeys bool
-	records  func() []group.Record
-	claims   func() []group.ClaimTime
-	taken    func(group.DeviceID) bool
-	confirm  func(context.Context, Request) error
-	wait     time.Duration // how long confirm may take
-	now      func() time.Time
-	uptime   func() time.Duration
+	admin   *group.Identity
+	code    []byte // the password: the six digits, or a secret
+	records func() []group.Record
+	claims  func() []group.ClaimTime
+	taken   func(group.DeviceID) bool
+	confirm func(context.Context, Request) error
+	wait    time.Duration // how long confirm may take
+	now     func() time.Time
+	uptime  func() time.Duration
 
 	mu        sync.Mutex
 	expires   time.Duration // on the uptime clock
@@ -135,7 +130,7 @@ func Open(admin *group.Identity, code string, opt Options) (*Window, error) {
 	if opt.AfterFunc == nil {
 		opt.AfterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 	}
-	w := &Window{admin: admin, code: []byte(code), noCAKeys: opt.NoCAKeys, records: opt.Records, claims: opt.ClaimTimes, taken: opt.Taken, confirm: opt.Confirm, wait: opt.ConfirmWait,
+	w := &Window{admin: admin, code: []byte(code), records: opt.Records, claims: opt.ClaimTimes, taken: opt.Taken, confirm: opt.Confirm, wait: opt.ConfirmWait,
 		now: opt.Now, uptime: opt.Uptime, expires: opt.Uptime() + lifetime, done: make(chan struct{})}
 	stop := opt.AfterFunc(lifetime, w.expire)
 	w.mu.Lock()
@@ -511,7 +506,7 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 		return nil, true, err
 	}
 	// Only a legacy group hands its CA keys to the computers it admits.
-	welcome, err := w.welcome(cert, info.holdsKeys() && !w.noCAKeys && w.admin.Legacy() && w.admin.ServesPhone())
+	welcome, err := w.welcome(cert)
 	if err != nil {
 		return nil, true, err
 	}
@@ -540,10 +535,12 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 }
 
 // welcomeRoom is what a Welcome leaves in its frame for the frame's other
-// fields and the CA keys that may follow.
+// fields.
 const welcomeRoom = 4 << 10
 
-func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
+// welcome makes the Welcome for a new device's certificate. It carries no
+// CA key: no device gets one by joining (docs/protocol.md, section 6).
+func (w *Window) welcome(cert *x509.Certificate) (*Welcome, error) {
 	wel := &Welcome{Cert: cert.Raw, GroupCA: w.admin.GroupCA.Cert.Raw}
 	// An admin that is not the root issues from its admin CA.
 	if w.admin.AdminCA != nil {
@@ -567,17 +564,6 @@ func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 				wel.Records, wel.ClaimTimes = nil, nil
 			}
 		}
-	}
-	if !keys {
-		return wel, nil
-	}
-	var err error
-	if wel.GroupCAKey, err = x509.MarshalPKCS8PrivateKey(w.admin.GroupCA.Key); err != nil {
-		return nil, err
-	}
-	wel.PhoneCA = w.admin.PhoneCA.Cert.Raw
-	if wel.PhoneCAKey, err = x509.MarshalPKCS8PrivateKey(w.admin.PhoneCA.Key); err != nil {
-		return nil, err
 	}
 	return wel, nil
 }
