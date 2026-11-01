@@ -197,6 +197,7 @@ func captures(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		return leaks("member connections at home", seen)
 	})
 	failClosed(ctx, r, a, c, words)
+	awayLimit(ctx, r, a, c, timeout)
 	r.Do("fleet/S18-forwarder-keeps-nothing", func() error {
 		id, _, err := statusIDs(ctx, c)
 		if err != nil {
@@ -305,5 +306,59 @@ func failClosed(ctx context.Context, r *Report, a *awayGroup, c *Device, words [
 			err = fmt.Errorf("with the tunnel broken, the away client sent %d packets to neither the hub nor the forwarder", after-before)
 		}
 		return err
+	})
+}
+
+// awayLimit (O10, the fleet's part): the away client takes a file copied
+// at home through the hub while it is within its max-copy-away, and one
+// over it stays at home, where the hub has it, while the client's status
+// says so and it saves nothing.
+func awayLimit(ctx context.Context, r *Report, a *awayGroup, c *Device, timeout time.Duration) {
+	hub, home := a.hub, a.members[1]
+	r.Do("fleet/O10-away-limit", func() error {
+		if err := succeeds(ctx, c, "cbb config max-copy-away 2MiB", "", "2 MiB"); err != nil {
+			return err
+		}
+		defer Run(context.WithoutCancel(ctx), c, "cbb config max-copy-away 25MiB", "")
+		sum, err := fileOn(ctx, home, "/tmp/one", 1)
+		if err != nil {
+			return err
+		}
+		if _, err := Run(ctx, home, "cbb copy /tmp/one", ""); err != nil {
+			return err
+		}
+		if err := eventually(ctx, 2*timeout, func() error {
+			got, err := pastedFile(ctx, c, time.Minute)
+			if err == nil && got != sum {
+				err = fmt.Errorf("%s has another file than the 1 MiB one", c.Name)
+			}
+			return err
+		}); err != nil {
+			return fmt.Errorf("a copy within the away limit: %w", err)
+		}
+		if sum, err = fileOn(ctx, home, "/tmp/three", 3); err != nil {
+			return err
+		}
+		if _, err := Run(ctx, home, "cbb copy /tmp/three", ""); err != nil {
+			return err
+		}
+		if err := eventually(ctx, 2*timeout, func() error {
+			got, err := pastedFile(ctx, hub, time.Minute)
+			if err == nil && got != sum {
+				err = fmt.Errorf("%s at home has another file than the 3 MiB one", hub.Name)
+			}
+			return err
+		}); err != nil {
+			return err
+		}
+		if err := eventually(ctx, timeout, func() error {
+			return succeeds(ctx, c, "cbb status", "", "is over this device's limit of 2 MiB away from home")
+		}); err != nil {
+			return err
+		}
+		if got, err := pastedFile(ctx, c, time.Minute); err == nil && got == sum {
+			return fmt.Errorf("%s saved the copy over its away limit", c.Name)
+		}
+		return nil
 	})
 }
