@@ -50,8 +50,8 @@ final class MacUITests: XCTestCase {
             } else {
                 app.typeKey(",", modifierFlags: .command)
             }
-            let toggle = app.checkBoxes["Show error details"].exists ? app.checkBoxes["Show error details"] : app.switches["Show error details"]
-            XCTAssertTrue(toggle.waitForExistence(timeout: 10), "Settings has no error details switch")
+            let toggle = app.descendants(matching: .any).matching(identifier: "errorDetails").firstMatch
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10), "Settings has no error details switch in \(app.debugDescription)")
             let on = (toggle.value as? Int ?? Int(toggle.value as? String ?? "") ?? -1) == 1
             XCTAssertEqual(on, want, "ShowErrorDetails \(arg) gives the switch \(String(describing: toggle.value))")
             app.terminate()

@@ -61,6 +61,7 @@ struct SettingsView: View {
                     Text(verbatim: model.status?.version ?? "–").monospaced()
                 } label: { Text("Service version") }
                 Toggle(isOn: $errorDetails) { Text("Show error details") }
+                    .accessibilityIdentifier("errorDetails")
                 Link(destination: URL(string: "https://github.com/HunterEwok/clipboardbridge")!) {
                     Text("Source code and license (AGPL-3.0)")
                 }

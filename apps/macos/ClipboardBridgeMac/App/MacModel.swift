@@ -250,7 +250,9 @@ final class MacModel: ObservableObject {
     /// ShowErrorDetails default when it is set (Settings, or
     /// defaults write io.github.hunterewok.clipboardbridge.mac ShowErrorDetails -bool YES).
     nonisolated static var showsErrorDetails: Bool {
-        if let set = UserDefaults.standard.object(forKey: "ShowErrorDetails") as? Bool { return set }
+        // bool(forKey:) reads YES and NO given as text too, as a launch
+        // argument (-ShowErrorDetails NO) gives them.
+        if UserDefaults.standard.object(forKey: "ShowErrorDetails") != nil { return UserDefaults.standard.bool(forKey: "ShowErrorDetails") }
         #if DEBUG
         return true
         #else

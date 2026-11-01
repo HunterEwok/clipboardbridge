@@ -824,6 +824,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - The tray app no longer hangs when the service does not answer, and opened while the
   service is not running it says so instead of showing an empty window.
+- The Mac app takes ShowErrorDetails given as YES or NO text, as a launch argument gives it;
+  before, such a value was ignored.
 - A computer that signs two group records in one pass, or at the same moment, gives them
   consecutive numbers: before, both could take one number, which reads as two histories of
   the signer and, for the root, stops the group.
