@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/netip"
@@ -448,6 +449,12 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	err = c.reader()
 	c.close(false)
 	<-writerDone
+	c.mu.Lock()
+	bye := c.sayBye
+	c.mu.Unlock()
+	if bye {
+		linger(tc.NetConn())
+	}
 
 	n.mu.Lock()
 	if n.conns[id] == c {
@@ -457,6 +464,20 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	n.cfg.Engine.Disconnected(string(id))
 	n.peersChanged()
 	return err
+}
+
+// linger ends a connection that said goodbye without losing what it sent:
+// it shuts its sending side and reads what the peer still sends until the
+// peer closes or byeWait passes. A socket closed with unread data resets
+// the connection, and a reset makes the peer drop what it had received but
+// not yet read, such as the result of a command that ended the connection.
+func linger(raw net.Conn) {
+	cw, ok := raw.(interface{ CloseWrite() error })
+	if !ok || cw.CloseWrite() != nil {
+		return
+	}
+	raw.SetReadDeadline(time.Now().Add(byeWait))
+	io.Copy(io.Discard, raw)
 }
 
 // recordsQuiet is how long a records-only connection stays open after the
