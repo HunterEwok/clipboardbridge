@@ -172,6 +172,10 @@ jobs:
             ;;
           esac
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$(sed -n 's/^cbb.ndk=//p' gradle.properties)" >/dev/null </dev/null
+          # The Rust the core's libraries are built with (lite/ffi), and cargo-ndk.
+          rustup toolchain install "$(sed -n 's/^cbb.rust=//p' gradle.properties)" --profile minimal \
+            --target aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+          cargo install --locked cargo-ndk@4.1.2
           # The full build for GitHub and the fdroid one, which F-Droid builds again from the
           # tag and publishes with this signature when the two are the same (docs/apps.md, "F-Droid").
           ./gradlew --no-daemon :app:assembleFullRelease :app:assembleFdroidRelease :wear:assembleRelease "$@"

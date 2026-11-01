@@ -98,8 +98,9 @@ pushing. Cloud sessions: use `$(go env GOROOT)/bin/gofmt`, the `gofmt` on `PATH`
   helpers in `pastehelper.rs`) and the tunnel to the hub (`tunnel.rs`, `away.rs`:
   GotaTun's WireGuard and smoltcp's TCP behind a loopback port; GotaTun's AEAD comes from
   `lite/ring-shim`, a stand-in for ring on RustCrypto, patched in by `lite/Cargo.toml`).
-- `lite/ffi`: the core's one entry point (`cbb_core::api`, docs/core-api.md) for the phones through UniFFI (`bind.sh`: the
-  iPhone's xcframework, Android's libraries, the Swift and Kotlin bindings; CI's `phone core` jobs).
+- `lite/ffi`: the core's one entry point (`cbb_core::api`, docs/core-api.md) as C functions (`include/cbb_core.h`)
+  for Go and the phone kits (`Core.swift` through the module `CCbbCore`, `Core.kt` through JNA); `bind.sh` builds the
+  iPhone's and Android's libraries and the host's for `swift test`.
 - `lite/esp32`: the firmware for the Arduino Nano ESP32 (ESP32-S3), its own workspace, built
   with the Xtensa toolchain (`cargo +esp`) and rust-lld; esp-hal is pinned to a git commit
   until a release carries its fix for Rust 1.99; `console.rs` (the USB console), `store.rs`

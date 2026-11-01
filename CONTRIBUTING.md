@@ -142,9 +142,10 @@ cd lite && cargo build --release -p clipboardbridge-embassy --features host && c
 ```
 
 The Android app (`apps/android`, Gradle 9 with JDK 17 or later): the protocol core `kit` has
-no Android dependencies and builds anywhere; the app needs the Android SDK with the NDK of
-`cbb.ndk` in `apps/android/gradle.properties`, Go for the tunnel (see below) and Google's
-Maven repository (CI, or a Mac with Android Studio). It has two builds, full and fdroid
+no Android dependencies and builds anywhere with Rust, whose core its tests build (see below);
+the app needs the Android SDK with the NDK of `cbb.ndk` in `apps/android/gradle.properties`,
+the Rust of `cbb.rust` there with the Android targets and cargo-ndk for the core, Go for the
+tunnel (see below) and Google's Maven repository (CI, or a Mac with Android Studio). It has two builds, full and fdroid
 ([docs/apps.md](docs/apps.md#f-droid)):
 
 ```sh
@@ -154,10 +155,11 @@ sh packaging/fdroid/reproduce.sh . /tmp/cbb-reproduce   # the F-Droid build is r
 cd apps/android && ./gradlew :shared:testDebugUnitTest :wear:assembleDebug :wear:lintDebug
 ```
 
-The phone kit (Swift package, runs on Linux too):
+The phone kit (Swift package, runs on Linux too), with the Rust core it links:
 
 ```sh
-cd apps/ios/ClipboardBridgeKit && swift test
+sh lite/ffi/bind.sh host /tmp/cbb-core
+cd apps/ios/ClipboardBridgeKit && swift test -Xlinker -L/tmp/cbb-core
 ```
 
 The phones' tunnel (`mobile/cbbtun`, WireGuard for sync away from home) is a Go package that
@@ -174,15 +176,17 @@ The Android app's build runs `bind.sh` itself (the `bindTunnel` task), so buildi
 needs Go besides the Android SDK and its NDK.
 
 The group rules of records `v:2` (docs/records-v2.md) reach the phones from the Rust core:
-`lite/ffi` binds the core's one entry point (`cbb_core::api`, docs/core-api.md) for UniFFI, and
-its `bind.sh` builds the libraries and writes the Swift and Kotlin bindings; the `phone core`
-jobs run it:
+`lite/ffi` exports the core's one entry point (`cbb_core::api`, docs/core-api.md) as the C
+functions of `lite/ffi/include/cbb_core.h`, which the Swift kit links as its module `CCbbCore`
+and the Kotlin kit calls through JNA (`Core.swift`, `Core.kt`). Its `bind.sh` builds the
+libraries; the Android app's `bindCore` task and the Kotlin kit's tests build them
+themselves, and the `phone core` jobs build them with the latest Rust:
 
 ```sh
 cd lite && cargo test -p clipboardbridge-ffi
 ANDROID_NDK_HOME=<ndk> lite/ffi/bind.sh android OUT   # needs cargo-ndk
 lite/ffi/bind.sh ios OUT                              # macOS with Xcode
-lite/ffi/bind.sh jvm OUT                              # the host library, for JVM tests
+lite/ffi/bind.sh host OUT                             # the static library, for swift test
 ```
 
 The differential run of all four implementations (Go, Rust, JDK 17 and Docker for the Swift
@@ -194,7 +198,7 @@ sh .github/differential.sh 1 20000 500 /tmp/differential
 
 Cross tests between Go and Swift: Swift tests write vectors that Go reads, and the other way.
 
-- `CBB_INTEROP_OUT=<dir> swift test` writes fresh `swift-records.json`,
+- `CBB_INTEROP_OUT=<dir> swift test -Xlinker -L<core>` writes fresh `swift-records.json`,
   `swift-renewal.json` and `swift-admin.json`; then
   `CBB_INTEROP_OUT=<dir> go test ./internal/group -run 'TestSwift'` reads them.
   Without the variable Go reads the committed copies in `testdata/interop`.
@@ -211,6 +215,7 @@ The app (macOS with Xcode):
 
 ```sh
 mobile/cbbtun/bind.sh ios apps/ios/Cbbtun.xcframework   # the tunnel the app links; needs Go
+sh lite/ffi/bind.sh ios apps/ios/CbbCore                 # the Rust core the kit links; needs Rust
 brew install xcodegen
 cd apps/ios && xcodegen generate   # ClipboardBridge.xcodeproj and Info.plist are not committed
 xcodebuild test -project ClipboardBridge.xcodeproj -scheme ClipboardBridge \

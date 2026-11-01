@@ -37,6 +37,8 @@ for f in $files; do
 	tools/tokens/* | tools/icon/* | apps/design/*) design=true; tools=true ;;
 	tools/site/*) site=true; tools=true ;;
 	tools/*) tools=true ;;
+	# The Rust core's rules, which both phone kits link.
+	lite/core/* | lite/ffi/* | lite/Cargo.toml | lite/Cargo.lock) lite=true; ios=true; android=true ;;
 	lite/*) lite=true ;;
 	apps/ios/*) ios=true; macos=true ;;
 	apps/macos/*) macos=true ;;

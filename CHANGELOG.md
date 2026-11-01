@@ -603,6 +603,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- Both phone apps link the Rust core, the group's rules every member shares: the Swift and
+  Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
+  bindings, and building the Android app, F-Droid's build included, needs the Rust of
+  `cbb.rust` in `apps/android/gradle.properties` with cargo-ndk.
 - The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
   member: each record names its signer and follows that signer's previous one, the Rust
   core decides what a set says, and the old records are refused. A group of an earlier

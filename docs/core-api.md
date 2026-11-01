@@ -2,9 +2,9 @@
 # The core's entry point
 
 For engineers and anyone binding the Rust core into another program: the one call through
-which every program uses the core's rules (`cbb_core::api`, `lite/core/src/api.rs`). The
-phone apps reach it through UniFFI (`lite/ffi`, the function `call`); Go reaches it through
-cgo or wasm, in 0.6. The rules themselves are in
+which every program uses the core's rules (`cbb_core::api`, `lite/core/src/api.rs`). Every
+program reaches it through the same C functions of `lite/ffi`: the phone kits link them, Go
+through cgo or wasm. The rules themselves are in
 [records-v2.md](records-v2.md).
 
 ## Requests and answers
@@ -33,10 +33,11 @@ and always logs them ([errors](reference/errors.md)). The call never panics and 
 bytes, also bytes that are not a request. A change an older caller would misread raises
 `abi`.
 
-The phones reach `call` through UniFFI (`lite/ffi`, `bind.sh`). The same library exports it
-as C functions, declared in `lite/ffi/include/cbb_core.h`, for callers that link C: `cbb_call`
-takes the request's bytes and returns the answer's, which the caller gives back with
-`cbb_free`; `cbb_abi` gives the ABI.
+`lite/ffi` exports `call` as C functions, declared in `lite/ffi/include/cbb_core.h`:
+`cbb_call` takes the request's bytes and returns the answer's, which the caller gives back
+with `cbb_free`; `cbb_abi` gives the ABI. `lite/ffi/bind.sh` builds the library for the
+phones. The Swift kit links it as the module `CCbbCore` (`Core.swift`), the Kotlin kit loads
+`libcbb_ffi` through JNA (`Core.kt`); both check the ABI before each call, as Go does.
 
 Go reaches them in `internal/core`: through cgo under the build tag `cbbcore`, linking
 `libcbb_ffi`, and on Windows, macOS and FreeBSD through the same core built as WebAssembly
