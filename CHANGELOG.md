@@ -930,6 +930,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- `cbb keyboard` on a computer in no group said it cannot be a Bluetooth keyboard, though
+  the keyboard ran: the status left the keyboard out without a group. `cbb keyboard on
+  -layout us` works in the usage's order too, with the flags after the verb.
 - The tray app's buttons draw their icons in the middle: they were text symbols, which
   Windows takes from fallback fonts that set them off centre.
 - A computer takes member connections to its IPv6 link-local address: it closed them at once,

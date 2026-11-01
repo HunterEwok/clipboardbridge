@@ -429,6 +429,7 @@ func (s *Service) status() *control.Status {
 		HoldSetting: s.holdSetting, HoldPriority: s.priorityLocked(s.id), Battery: s.battery}
 	st.Release, st.Update = s.releaseStatus()
 	st.TVs = s.tvStatus() // a TV's remote needs no group
+	st.Keyboard = s.keyboardStatus() // nor does the Bluetooth keyboard
 	if s.id == nil {
 		return st
 	}
@@ -448,7 +449,6 @@ func (s *Service) status() *control.Status {
 	st.Away = s.awayStatus()
 	s.relayNames(st.Away)
 	st.Paste = s.pasteStatusLocked()
-	st.Keyboard = s.keyboardStatus()
 	st.Actions = s.actionStatus()
 	st.Media = s.mediaStatus()
 	return st
