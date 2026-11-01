@@ -59,7 +59,7 @@ The numbers and names never change meaning; new codes are added at the end of th
 | 10 | `body` | a record body is refused: its size, form or a field |
 | 11 | `cert` | a certificate is refused |
 | 12 | `strict` | a signed body is not in the strict canonical form |
-| 13 | `rollback` | the record set is older than the saved one: a signer's highest seq is lower than saved |
+| 13 | `rollback` | the record set is older than the saved one: a signer's whole chain ends below the seq saved |
 | 14 | `saved` | the saved state cannot be read, is of another version or group, or its check with the secret does not match |
 
 ## Signatures already checked
@@ -84,13 +84,17 @@ The saved state is canonical JSON:
 |---|---|
 | `v` | 1, the format's version |
 | `group` | the group's tag |
-| `seqs` | `[{key, seq}]`: the highest seq of each signer among the records that verified |
+| `seqs` | `[{key, seq}]`: for each of the group's signers, the highest seq whose prev chain is held whole down to seq 1 |
 | `sigs` | the entries of the signatures already checked, base64 |
 | `mac` | HMAC-SHA256 with the secret over `cbb saved state v1` and a newline, then the canonical JSON of the other fields |
 
 The core refuses the call (`saved`) when the check does not match, when `v` is another
-version or `group` another group, and (`rollback`) when a signer of `seqs` has no record at
-that seq or above in the set. Its entries of `sigs` are added to the signatures already
+version or `group` another group, and (`rollback`) when a signer of `seqs` has no whole chain
+up to that seq or above in the set: a record taken from the middle of a chain is a rollback
+too. The group's signers are the group CA, the root of a claim one of the group's admins
+signed, and the admins under those roots; a root that only a stranger's claim names is not
+saved, so its records may come and go. A chain may also end at an anchor of one of the
+group's roots' checkpoints, so that a set the checkpoint pruned is no rollback. Its entries of `sigs` are added to the signatures already
 checked only after the check matched. The member shows the refusal with its details and does
 not use the records; the state of the group is not saved, since it comes from the records
 each time.

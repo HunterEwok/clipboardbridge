@@ -312,8 +312,8 @@ fn write_saved(secret: &[u8], s: &Saved) -> Vec<u8> {
 }
 
 /// `evaluate_saved`: evaluate, with the state the member saved after its
-/// last evaluation. It refuses a record set in which a signer's highest
-/// seq is lower than saved, and answers `{"state", "saved"}`, the state
+/// last evaluation. It refuses a record set in which a signer's whole
+/// chain ends below the seq saved, and answers `{"state", "saved"}`, the state
 /// and the new saved state.
 fn evaluate_saved(a: SavedArgs) -> Result<Vec<u8>, Refusal> {
     if a.secret.len() < MIN_SECRET {
@@ -396,6 +396,7 @@ fn canonicalize(a: BodyArgs) -> Result<Vec<u8>, Refusal> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest as _;
 
     fn vectors() -> Value {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/v2-records.json");
@@ -446,6 +447,23 @@ mod tests {
         let refused = ask("canonical_body", value);
         assert_eq!(code(&refused), Code::Body as u64);
         assert!(refused["error"]["message"].as_str().unwrap().contains("version 1"), "{refused}");
+        // A body every receiver would refuse for its size is not written.
+        let revoke = v["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|c| c["records"].as_array().unwrap())
+            .map(|r| base64::engine::general_purpose::STANDARD.decode(r["body"].as_str().unwrap()).unwrap())
+            .find(|b| b.windows(15).any(|w| w == b"\"type\":\"revoke\""))
+            .unwrap();
+        let mut big: Value = serde_json::from_slice(&revoke).unwrap();
+        let keys: Vec<Value> = (0..200u32)
+            .map(|i| base64::engine::general_purpose::STANDARD.encode(Sha256::digest(i.to_be_bytes())).into())
+            .collect();
+        big["keys"] = keys.into();
+        let refused = ask("canonical_body", big);
+        assert_eq!(code(&refused), Code::Body as u64);
+        assert!(refused["error"]["message"].to_string().contains("over"), "{refused}");
         let empty = base64::engine::general_purpose::STANDARD.encode(b"{}");
         assert_eq!(code(&ask("check_body", serde_json::json!({"body": empty}))), Code::Body as u64);
         let cut = base64::engine::general_purpose::STANDARD.encode(b"{\"a\":");
@@ -543,6 +561,127 @@ mod tests {
         let mut short = args.clone();
         short["secret"] = "AAAA".into();
         assert_eq!(code(&ask("evaluate_saved", short)), Code::Request as u64);
+    }
+
+    /// A record taken from the middle of a chain is a rollback too, though
+    /// the chain's highest seq is still held.
+    #[test]
+    fn refuses_a_hole_in_a_chain() {
+        let v = vectors();
+        let secret = base64::engine::general_purpose::STANDARD.encode([7u8; 32]);
+        let mut found = 0;
+        for case in v["cases"].as_array().unwrap() {
+            let recs = case["records"].as_array().unwrap();
+            // A checkpoint's case may drop the record (a_pruned_set_is_no_rollback).
+            if case["name"].as_str().unwrap().starts_with("checkpoint") {
+                continue;
+            }
+            let heads: Vec<(String, i64)> = recs
+                .iter()
+                .map(|r| {
+                    let body = base64::engine::general_purpose::STANDARD.decode(r["body"].as_str().unwrap()).unwrap();
+                    let b: Value = serde_json::from_slice(&body).unwrap();
+                    (b["signer"].as_str().unwrap_or_default().into(), b["seq"].as_i64().unwrap_or(0))
+                })
+                .collect();
+            // A record with the next seq of its signer after it, and no
+            // other record of that seq.
+            let Some(hole) = (0..heads.len()).find(|&i| {
+                let (k, s) = &heads[i];
+                heads.iter().filter(|h| h == &&heads[i]).count() == 1
+                    && heads.iter().any(|(k2, s2)| k2 == k && *s2 == s + 1)
+            }) else {
+                continue;
+            };
+            let mut args = case.clone();
+            args["secret"] = secret.clone().into();
+            let first = ask("evaluate_saved", args.clone());
+            args["saved"] = first["ok"]["saved"].clone();
+            args["records"].as_array_mut().unwrap().remove(hole);
+            assert_eq!(code(&ask("evaluate_saved", args)), Code::Rollback as u64, "{}", case["name"]);
+            found += 1;
+        }
+        assert!(found > 0);
+    }
+
+    /// The set a root's checkpoint prunes evaluates as the full one did,
+    /// and is no rollback.
+    #[test]
+    fn a_pruned_set_is_no_rollback() {
+        let v = vectors();
+        let dec = |s: &Value| base64::engine::general_purpose::STANDARD.decode(s.as_str().unwrap()).unwrap();
+        let mut found = 0;
+        for case in v["cases"].as_array().unwrap() {
+            let bodies: Vec<Value> = case["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| serde_json::from_slice(&dec(&r["body"])).unwrap())
+                .collect();
+            // A root's own checkpoint (no chain); an admin's does not count.
+            let recs = case["records"].as_array().unwrap();
+            let Some(cp) = bodies
+                .iter()
+                .zip(recs)
+                .filter(|(b, r)| b["type"] == "checkpoint" && r["chain"].as_array().is_none_or(|c| c.is_empty()))
+                .map(|(b, _)| b)
+                .max_by_key(|b| b["seq"].as_i64())
+            else {
+                continue;
+            };
+            let heads = cp["heads"].as_array().unwrap();
+            let mut anchors: Vec<Value> = heads.iter().map(|h| h["id"].clone()).collect();
+            anchors.extend(cp["keep"].as_array().into_iter().flatten().cloned());
+            let mut args = case.clone();
+            args["secret"] = base64::engine::general_purpose::STANDARD.encode([7u8; 32]).into();
+            let first = ask("evaluate_saved", args.clone());
+            args["saved"] = first["ok"]["saved"].clone();
+            let kept: Vec<Value> = case["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(&bodies)
+                .filter(|(r, b)| {
+                    let id: Value =
+                        base64::engine::general_purpose::STANDARD.encode(Sha256::digest(dec(&r["body"]))).into();
+                    let below = heads.iter().any(|h| h["key"] == b["signer"] && b["seq"].as_i64() <= h["seq"].as_i64());
+                    !below || anchors.contains(&id)
+                })
+                .map(|(r, _)| r.clone())
+                .collect();
+            if kept.len() == bodies.len() {
+                continue;
+            }
+            args["records"] = kept.into();
+            let again = ask("evaluate_saved", args);
+            assert_eq!(again["ok"]["state"], first["ok"]["state"], "{}: {again}", case["name"]);
+            found += 1;
+        }
+        assert!(found > 0);
+    }
+
+    /// Records under a root that only a stranger's claim names can be taken
+    /// away again: they never counted, so it is no rollback.
+    #[test]
+    fn saves_only_the_groups_signers() {
+        let v = vectors();
+        let case = v["cases"].as_array().unwrap().iter().find(|c| c["name"] == "stranger's claim 2").unwrap();
+        let mut args = case.clone();
+        args["secret"] = base64::engine::general_purpose::STANDARD.encode([7u8; 32]).into();
+        let first = ask("evaluate_saved", args.clone());
+        args["saved"] = first["ok"]["saved"].clone();
+        let recs = args["records"].as_array_mut().unwrap();
+        recs.truncate(recs.len() - 2);
+        let mut again = ask("evaluate_saved", args);
+        let mut first = first;
+        // Only the list of records left out changes.
+        for v in [&mut again, &mut first] {
+            if let Some(s) = v["ok"]["state"].as_object_mut() {
+                s.remove("ignored");
+            }
+        }
+        assert!(again["ok"]["state"].is_object(), "{again}");
+        assert_eq!(again["ok"]["state"], first["ok"]["state"], "{again}");
     }
 
     /// version names the ABI and the core's version.

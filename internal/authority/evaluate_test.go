@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"maps"
+	"math"
 	"math/rand/v2"
 	"sort"
 	"strings"
@@ -549,6 +550,8 @@ func TestNewerVersion(t *testing.T) {
 		sign(body(h, tag), stranger),                                                     // not a key of the group
 		sign(body(w.adminKey("B"), tag), w.keys["B"], w.cas["B"].Raw),                    // a removed admin
 		authority.Record{Body: []byte(`{"v":3, "group":"` + tag + `"}`), Sig: []byte{1}}, // not canonical
+		// A quoted version is not an integer.
+		sign([]byte(`{"group":"`+tag+`","signer":"`+root.String()+`","type":"keys","v":"3"}`), w.roots["root"].Key),
 	)
 	s := w.evalAll(nil)
 	want := []authority.Hash{byRoot.ID(), byAdmin.ID()}
@@ -559,8 +562,8 @@ func TestNewerVersion(t *testing.T) {
 	// The others are left out as unreadable (the one without a signature
 	// has the ID of the root's, which newer lists), and nothing else
 	// changes.
-	if len(s.Ignored) != 4 {
-		t.Fatalf("the four other records should be listed as ignored: %s", mustEncode(t, s))
+	if len(s.Ignored) != 5 {
+		t.Fatalf("the five other records should be listed as ignored: %s", mustEncode(t, s))
 	}
 	for _, i := range s.Ignored {
 		if i.Why != authority.WhyUnreadable {
@@ -570,6 +573,49 @@ func TestNewerVersion(t *testing.T) {
 	s.Newer, s.Ignored = nil, nil
 	if got := mustEncode(t, s); got != before {
 		t.Fatalf("a record of a later version changed the state:\n got %s\nwant %s", got, before)
+	}
+}
+
+// TestStrangersClaim is a claim signed under a root that is not the
+// group's, naming another root that signs a record: neither counts, and
+// the state is the one without them.
+func TestStrangersClaim(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	before := mustEncode(t, w.evalAll(nil))
+	s, err := group.NewRootCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.roots["S"] = s
+	w.admin("X", "S")
+	// The last two records are the stranger's, which the core's tests of
+	// the saved state take away again.
+	w.claim("X", "R9", nil)
+	w.sign("settings R9", "R9", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(0))}, nil)
+	after := w.evalAll(nil)
+	if len(after.Ignored) != 2 {
+		t.Fatalf("the stranger's two records should be listed as ignored: %s", mustEncode(t, after))
+	}
+	after.Ignored = nil
+	if got := mustEncode(t, after); got != before {
+		t.Fatalf("a stranger's claim changed the state:\n got %s\nwant %s", got, before)
+	}
+}
+
+// TestTimesAtTheEnds is a claim first seen at the lowest time a caller
+// can give: the time since is held at its end, not wrapped, and the claim
+// takes effect.
+func TestTimesAtTheEnds(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("B", "phone", phonePowers)
+	c := w.claim("B", "R2", nil)
+	for _, now := range []int64{0, math.MaxInt64} {
+		w.now = now
+		s := w.evalAll(map[authority.Hash]int64{c.ID(): math.MinInt64})
+		if len(s.Claims) != 1 || s.Claims[0].State != "effective" {
+			t.Fatalf("now %d: the claim should take effect: %s", now, mustEncode(t, s))
+		}
 	}
 }
 
