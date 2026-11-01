@@ -2520,7 +2520,7 @@ signed bodies (Conventions):
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `v` | integer | `1` |
+| `v` | integer | `1`, or `2` for a sealed command (below) |
 | `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or `away-off` |
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID (32 of `0`-`9` and `a`-`f`): a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device, or, when they show none, names a device they show (a computer takes a legacy group CA's command that names a `full` member, since each holds that key) |
@@ -2534,6 +2534,7 @@ signed bodies (Conventions):
 | `text` | string | in a `paste` command: the text, not empty, at most 1 MiB of UTF-8 for `paste` and 4 KiB for `type` |
 | `action` | string | in an `action` command: the action's name, 1 to 32 of `a`-`z`, `0`-`9` and `-`, starting with a letter; in no other command |
 | `hub` | object | in a `hub` command: `forwarder` (`endpoint`, `key`) or absent, `endpoints` (at most 8 with the forwarder's) or absent, at least one of the two, and `clients`, at most 256 of `{device, key, psk}` (base64, 32 bytes each, no device twice) |
+| `sealed` | string | in a command of `v` `2` only: the orders, sealed to the receiver (below), base64 |
 
 The exact rule, after the strict form: each field of this table has its JSON type in every
 command. A command is refused without `mode` in `mode` and `paste`, `hub` in `hub`, `kind`
@@ -2575,13 +2576,13 @@ commands, such as one before 0.5, ignores the message, so the sender gives up af
 Each computer keeps a secret for sealed messages in `seal.json` next to its identity (sealed
 by the TPM where it has one, as the WireGuard key) and offers its public key in its hello
 (`seal`, section 4); a root computer records it in the device's record, as it records a
-changed system. Commands sealed to that key come in a later step of 0.6.
+changed system, and a command for it is sealed (below, "Sealed commands").
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
 `action`, `actions-off` or `away-off` command to the group's hubs it is connected to (the
 root and the admins, "Several hubs" in section 11), and to no other member: a command's body,
-a paste's text among it, is signed but not encrypted, and the hubs are the devices the user
-gave admin powers. A `hub` command only goes directly. Senders before 0.6 send it to every
+a paste's text among it, is signed but encrypted only when sealed (below), and the hubs are
+the devices the user gave admin powers. A `hub` command only goes directly. Senders before 0.6 send it to every
 member they are connected to, and a member that is not a hub still passes it on. A member
 that gets a command whose `to` is another device passes it on, unchanged, only when it is
 connected to that device and has not passed that `id` before (it keeps the IDs until the
@@ -2661,6 +2662,33 @@ off already. A member before 0.6 refuses `away-off`, `action` and `actions-off` 
 types. Of the presets, the lite member knows only `reboot`, `cancel-shutdown` and
 `restart`.
 
+### Sealed commands
+
+A sender seals a command's orders to its receiver when the receiver's device record has a
+`seal` key, so that the members in between see only the header:
+
+- The **orders** are the fields `mode`, `hub`, `enter`, `kind`, `text` and `action`, as a JSON
+  object in the strict form of signed bodies, with only those of them the command has.
+- The **associated data** is the header: the context `clipboardbridge command v2`, then
+  `type`, `group`, `by`, `to` and `id`, each of these six strings as its length in 4 bytes and
+  its bytes, then `time_ms` and `expires_ms`, 8 bytes each; every number big-endian.
+- `sealed` is the orders sealed to the `seal` key with that associated data: X-Wing HPKE,
+  the encapsulated key (1120 bytes) and then the ciphertext with its tag (`internal/seal`).
+- The body is the header with `v` `2` and `sealed`, and none of the orders; the signature
+  covers it as any command's.
+
+A receiver refuses a body of `v` `2` without `sealed`, with any of the orders beside it, or
+with an unknown `type`, and one of `v` `1` with `sealed`; `sealed` is base64 in its standard
+form. It checks the signature and the header as for any command, then opens `sealed` with
+its own secret and the header as associated data, and refuses the command when it does not
+open, when the orders are not in the strict form, or when they fail the checks of the table
+for the command's `type`. Its orders then count as those of a command in the open. Sealed
+orders open only under the header they were sealed with, so no other signer can send them
+again under an `id` or a time of its own. The limits of a body (64 KiB, 2 MiB for `paste`)
+hold for the body as sent and for the orders once opened. The members in between pass a
+sealed command on as any other. A receiver still takes a command in the open, as the
+phones and senders before 0.6 send; the lite member refuses a sealed command until it has
+a key of its own. The vectors are `go-sealed-commands.json`.
 
 ## 16. Signed releases
 

@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Sealed commands: a computer seals a command's orders (a paste's text, a hub's keys, a mode
+  or an action) to the receiver's key when its device record has one, so that the members
+  in between see only who sent it to whom; the receiver opens them with its own secret
+  (`v` `2`, docs/protocol.md, section 15, "Sealed commands"), in Go and the Rust core, on
+  shared vectors (`testdata/interop/go-sealed-commands.json`).
 - Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
   and offers it in its hello; a root computer puts it in the device records, the first step
   to commands sealed for their receiver (docs/protocol.md, section 15).

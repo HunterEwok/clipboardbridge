@@ -32,6 +32,9 @@ const NAMED_OTHER: u8 = 2;
 const NAMED_WATCH: u8 = 4;
 const MAX_BODY: usize = 8 << 10;
 const VERSION: i64 = 1;
+/// The version of a command whose orders are sealed to the receiver
+/// (docs/protocol.md, section 15, "Sealed commands").
+const SEALED_VERSION: i64 = 2;
 /// The most bytes of a command's body: a hub command carries up to 256
 /// clients' keys.
 const MAX_COMMAND_BODY: usize = 64 << 10;
@@ -90,6 +93,30 @@ pub struct Command {
     /// defines.
     #[serde(default)]
     pub action: String,
+    /// In a command of version 2, the orders above sealed to the
+    /// receiver's key; [`Command::open`] opens them.
+    #[serde(with = "b64", default)]
+    sealed: Vec<u8>,
+    /// Whether [`Command::open`] took the orders out of the sealed part.
+    #[serde(skip)]
+    pub opened: bool,
+}
+
+/// The orders a sealed command seals: all of a command but its header.
+#[derive(Deserialize)]
+struct Orders {
+    #[serde(default)]
+    mode: String,
+    #[serde(default)]
+    hub: Option<serde_json::Value>,
+    #[serde(default)]
+    enter: bool,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    action: String,
 }
 
 /// The longest name of a quick action.
@@ -122,19 +149,102 @@ impl Command {
         }
         crate::strict::check(data, COMMAND_FIELDS)?;
         let body: Command = serde_json::from_slice(data).context("a command does not decode")?;
-        if body.kind != "paste" && data.len() > MAX_COMMAND_BODY {
+        if data.len() > body.max_body() {
             return Err(Error::msg("the command is too large"));
         }
         body.check()?;
         Ok(body)
     }
 
+    fn max_body(&self) -> usize {
+        if self.kind == "paste" { MAX_PASTE_BODY } else { MAX_COMMAND_BODY }
+    }
+
+    /// A sealed command's associated data, as Go's: its open header, each
+    /// string with its length before it (4 bytes, big-endian) and each
+    /// time in 8 bytes, big-endian, after the context.
+    fn aad(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for f in ["clipboardbridge command v2", &self.kind, &self.group, &self.by, &self.to, &self.id] {
+            out.extend_from_slice(&u32::try_from(f.len()).unwrap_or(u32::MAX).to_be_bytes());
+            out.extend_from_slice(f.as_bytes());
+        }
+        out.extend_from_slice(&self.time_ms.to_be_bytes());
+        out.extend_from_slice(&self.expires_ms.to_be_bytes());
+        out
+    }
+
+    /// Takes the orders of a sealed command out of its sealed part with
+    /// `secret`, this member's secret for sealed messages, and checks them
+    /// as those of a command in the open, as Go's CommandBody.Open. A
+    /// command in the open stays as it is.
+    pub fn open(&mut self, secret: &[u8]) -> Result<()> {
+        if self.v != SEALED_VERSION {
+            return Ok(());
+        }
+        let plain = crate::seal::open(secret, &self.aad(), &self.sealed)
+            .map_err(|_| Error::msg("the sealed command does not open with this device's key"))?;
+        if plain.len() > self.max_body() {
+            return Err(Error::msg("the command is too large"));
+        }
+        crate::strict::check(&plain, &[])?;
+        let o: Orders = serde_json::from_slice(&plain).context("a sealed command's orders do not decode")?;
+        let mut c = self.clone();
+        c.v = VERSION;
+        c.sealed = Vec::new();
+        c.mode = o.mode;
+        c.hub = o.hub;
+        c.enter = o.enter;
+        c.paste_kind = o.kind;
+        c.text = o.text;
+        c.action = o.action;
+        c.check()?;
+        c.v = SEALED_VERSION;
+        c.opened = true;
+        *self = c;
+        Ok(())
+    }
+
+    /// Whether the command's orders are sealed and not yet opened.
+    pub fn sealed(&self) -> bool {
+        self.v == SEALED_VERSION && !self.opened
+    }
+
+    fn has_orders(&self) -> bool {
+        !self.mode.is_empty()
+            || self.hub.is_some()
+            || self.enter
+            || !self.paste_kind.is_empty()
+            || !self.text.is_empty()
+            || !self.action.is_empty()
+    }
+
     fn check(&self) -> Result<()> {
-        if self.v != VERSION {
+        if self.v != VERSION && self.v != SEALED_VERSION {
             return Err(Error::msg(format!("unknown command version {}", self.v)));
         }
         if !certs::is_id(&self.id) {
             return Err(Error::msg("the command has no valid ID"));
+        }
+        if self.v == VERSION && !self.sealed.is_empty() {
+            return Err(Error::msg("a command of version 1 carries a sealed part"));
+        }
+        if self.v == SEALED_VERSION {
+            // Its orders are sealed: none of them in the open, and a type
+            // they are checked for once opened.
+            if self.sealed.is_empty() {
+                return Err(Error::msg("a sealed command has no sealed part"));
+            }
+            if self.has_orders() {
+                return Err(Error::msg("a sealed command carries orders in the open"));
+            }
+            if !matches!(
+                self.kind.as_str(),
+                "mode" | "hub" | "paste" | "paste-off" | "action" | "actions-off" | "away-off"
+            ) {
+                return Err(Error::msg(format!("unknown command type {:?}", self.kind)));
+            }
+            return self.check_header();
         }
         let hub = self.hub.as_ref().is_some_and(|h| !h.is_null());
         let paste = self.enter || !self.paste_kind.is_empty() || !self.text.is_empty();
@@ -164,6 +274,12 @@ impl Command {
             "mode" | "hub" | "paste-off" | "action" | "actions-off" | "away-off" => {}
             k => return Err(Error::msg(format!("unknown command type {k:?}"))),
         }
+        self.check_header()
+    }
+
+    /// Checks a command's open header past its version and ID, as Go's
+    /// checkHeader: the receiver and the signer's device, and the lifetime.
+    fn check_header(&self) -> Result<()> {
         if !certs::is_id(&self.to) {
             return Err(Error::msg("the command names no valid device"));
         }

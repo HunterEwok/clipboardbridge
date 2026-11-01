@@ -463,6 +463,11 @@ impl Service {
             Ok(b) => b,
             Err(e) => return refused("", e.message().to_string()),
         };
+        if body.sealed() {
+            // Its sender found a key for sealed commands in this device's
+            // record, which this version of the lite member does not offer.
+            return refused(&body.id, "this device does not open sealed commands yet".into());
+        }
         if body.time_ms < self.started_ms {
             // It may have been carried out before the restart, which the
             // replay cache does not remember.
