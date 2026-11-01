@@ -464,8 +464,10 @@ impl Service {
         let now = uptime::wall_ms();
         let me = node.identity().id.to_string();
         let (verified, sealed_to_me) = {
-            let rs = node.records().lock().unwrap();
-            (rs.verify_command(c, &me, now), rs.devices().iter().any(|d| d.id == me && !d.seal.is_empty()))
+            let records = node.records();
+            let rs = records.lock().unwrap();
+            let sealed_to_me = rs.devices().iter().any(|d| d.id == me && !d.seal.is_empty());
+            (rs.verify_command(c, &me, now), sealed_to_me)
         };
         let mut body = match verified {
             Ok(b) => b,
