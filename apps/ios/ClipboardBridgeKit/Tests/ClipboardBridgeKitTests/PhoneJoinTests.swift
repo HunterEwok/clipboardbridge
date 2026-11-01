@@ -46,13 +46,14 @@ final class PhoneJoinTests: XCTestCase {
     }
 
     func testSecondPhoneBecomesAdmin() async throws {
-        let rootKey = SoftwareSigner()
-        var root = try PhoneGroup.create(caSigner: rootKey, memberKey: SoftwareSigner().publicKeyDER, name: "First", now: t0)
+        let rootKey = SoftwareSigner(), seal = try CommandTests.sealPublic()
+        var root = try PhoneGroup.create(caSigner: rootKey, memberKey: SoftwareSigner().publicKeyDER, name: "First", seal: seal, now: t0)
         XCTAssertEqual(root.records.rootDevice, root.device)
+        XCTAssertEqual(root.devices.first { $0.id == root.device }?.seal, seal, "the root phone's own key for sealed messages")
 
         // The second phone joins with an admin key and gets its admin CA.
         let second = try Listener(), adminKey = SoftwareSigner()
-        let r = await pair(root, signer: rootKey, second, info: .init(name: "Second", os: "ios", adminKey: adminKey.publicKeyDER))
+        let r = await pair(root, signer: rootKey, second, info: .init(name: "Second", os: "ios", adminKey: adminKey.publicKeyDER, seal: seal))
         let joined = try r.joiner.get()
         let (rootAfter, admitted) = try r.member.get()
         root = rootAfter
@@ -64,6 +65,7 @@ final class PhoneJoinTests: XCTestCase {
         let listed = try XCTUnwrap(root.devices.first { $0.id == second.device })
         XCTAssertEqual(listed.role, "phone")
         XCTAssertTrue(listed.admin)
+        XCTAssertEqual(listed.seal, seal, "a phone's key for sealed messages, from its pairing")
 
         var admin = PhoneGroup.joined(joined)
         XCTAssertFalse(admin.isRoot)

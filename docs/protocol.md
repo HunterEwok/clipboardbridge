@@ -838,7 +838,7 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 | PRS (password) | the six ASCII digits of the code, or a remote invitation's secret (its raw bytes) |
 | CI (channel identifier) | `"clipboardbridge pair v2"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 23 + 1 + 32 + 32 = 88 bytes |
 | sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipboardbridge-pair-v2`, empty context |
-| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"windows"\|"macos"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"` and may say `"os":"none"`; a computer or a lite member adds `"seal"`, its public key for sealed messages (bytes, 1216, as `seal` of the hello, section 4), which the admitting member puts in its device record. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux`, `windows`, `macos` and lite members |
+| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"windows"\|"macos"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"` and may say `"os":"none"`; every joiner adds `"seal"`, its public key for sealed messages (bytes, 1216, as `seal` of the hello, section 4), which the admitting member puts in its device record (a phone puts its own in the record of itself it signs when it makes the group). A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux`, `windows`, `macos` and lite members |
 | ADb (member) | JSON `{"device":"<member device ID>","group":"<group tag>"}` |
 | Ya, Yb | 32-byte X25519 u-coordinates |
 | Tags Ta, Tb | HMAC-SHA-512, 64 bytes |
@@ -2920,7 +2920,8 @@ again under an `id` or a time of its own. The limits of a body (64 KiB, 2 MiB fo
 hold for the body as sent and for the orders once opened. The members in between pass a
 sealed command on as any other. Every sender seals to a receiver whose record has a `seal`
 key: computers, lite members and both phone apps (the kits through the core's
-`seal_command`). So a receiver whose own record has one refuses a `paste` command in the
+`seal_command`), and every one of them has a key of its own, which it opens the commands for
+it with (the phones through the core's `group_command`). So a receiver whose own record has one refuses a `paste` command in the
 open, whose text was read on its way; it takes the other types in the open, as a watch signs
 them (a watch checks what it signs and cannot read sealed orders). A receiver without a key
 in its record takes commands in the open, and a member without a key of its own refuses a

@@ -202,12 +202,14 @@ public enum Commands {
     /// Rust core (RecordSet.check): an admin of the group that may sign its
     /// type signed it now, its by is the signer's device when the records
     /// show it, it is for me in this group, it has not expired and was not
-    /// signed in the future, at nowMS. The caller keeps the replay cache; a
-    /// mode command's mode is not checked against Member.modes here.
-    public static func verify(_ c: Member.Record, records: RecordSet, me: String, nowMS: Int64) throws -> Body {
+    /// signed in the future, at nowMS. A sealed command opens with secret,
+    /// this member's secret for sealed messages (SealKey). The caller keeps
+    /// the replay cache; a mode command's mode is not checked against
+    /// Member.modes here.
+    public static func verify(_ c: Member.Record, records: RecordSet, me: String, nowMS: Int64, secret: Data? = nil) throws -> Body {
         var set = records
         set.nowMS = nowMS
-        return try set.check(command: c, me: me).command
+        return try set.check(command: c, me: me, secret: secret).command
     }
 
     /// The members every command's body has.

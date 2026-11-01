@@ -113,7 +113,7 @@ object Pairing {
         val adminKey: ByteArray? = null,
         /** LITE for a lite member, which only dials and never holds CA keys; null for a full device. */
         val role: String? = null,
-        /** A computer's or lite member's public key for sealed messages, which the phone that admits it puts in its device record (docs/protocol.md, section 15); null from a phone. */
+        /** The joiner's public key for sealed messages, which the phone that admits it puts in its device record (docs/protocol.md, section 15). */
         val seal: ByteArray? = null,
     ) {
         /**
@@ -125,7 +125,7 @@ object Pairing {
             get() {
                 if ((os !in OSES && !(os == "none" && role == LITE)) || name.isEmpty() || name.toByteArray().size > 64 || !printable(name)) return false
                 if (role != null && role != LITE) return false
-                if (seal != null && (isPhone(os) || seal.size != SEAL_KEY_SIZE)) return false
+                if (seal != null && seal.size != SEAL_KEY_SIZE) return false
                 val k = adminKey ?: return true
                 return isPhone(os) && p256PublicKey(k) != null
             }

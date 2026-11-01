@@ -63,9 +63,10 @@ lands in the source tree.
 | `group_taken_over` | the set's arguments, `chain` (the member's own) | `{"claimant"}`: `{device, admin}` of the admin that took the group over from this root by a claim that took effect; `{}` when none did |
 | `group_refused_admin_ca` | the set's arguments, `ca` (base64 DER) | `{"verdict", "why"}` for an admin CA, as for `group_refused` |
 | `group_admin_peer` | the set's arguments, `device`, `chain` | `{"admin"}`: whether the device is the group's root or an admin, which alone may be a hub |
-| `group_command` | the set's arguments, `command` (`{body, sig, chain}`), `me` (the member's device) | `{"command", "signer", "root", "sender", "verified"}`: the command's body as an object, the device that signed it, whether it signed as the root, and the device the limits count it for, `verified` when that device's own key signed; a command refused is code 15 |
+| `group_command` | the set's arguments, `command` (`{body, sig, chain}`), `me` (the member's device), `secret` (optional, base64: the member's secret for sealed messages) | `{"command", "signer", "root", "sender", "verified", "opened"}`: the command's body as an object, with a sealed command's orders opened with `secret` and put in it (`opened`), the device that signed it, whether it signed as the root, and the device the limits count it for, `verified` when that device's own key signed; a command refused is code 15, as is a sealed one without `secret` or one that does not open with it, and a `paste` in the open for a member whose device record has a `seal` key |
 | `group_claim_times` | the set's arguments, `claim_times` (`[{record, ms}]`, from a Welcome) | `{"file"}`: the times earlier than the set's own and not in the future taken |
 | `parse_body` | `kind` (`command`, `credential`, `keys`, `release`, `channel`, `attest-status` or `manifest`), `body` (base64) | `{"kind", "value"}`: the body's fields as an object, once it checks; see "Signed bodies" |
+| `seal_public` | `secret` (base64, 32 random bytes the device keeps) | `{"key"}`: its public key for sealed messages (base64, 1216 bytes), the `seal` its pairing and device record carry |
 | `seal_command` | `body` (base64, a command in the open), `key` (base64, the receiver's `seal` key) | `{"body"}`: the same command with its orders sealed to the key (`v` `2`, `sealed`), canonical, for the sender to sign; see "Signed bodies" |
 | `group_body` | the set's arguments, `body` (a record body as `canonical_body` takes it, with `signer` set) | `{"body"}`: the canonical bytes of the signer's next record, to sign: the group, seq and prev set from the set, and for a removal, a freeze or a claim `seen` from the set, the signer's own previous seq among them |
 
@@ -161,7 +162,10 @@ commands"): it checks the command in the open as `parse_body` does, moves `mode`
 `enter`, `kind`, `text` and `action` into the sealed part with the header as associated data,
 and writes the body with `v` `2` in the canonical form. The phone kits call it for each command
 to a device whose record has a `seal` key; Go seals with its own `group.SealCommand`, and both
-open each other's.
+open each other's. A phone keeps a secret for sealed messages of its own (32 random bytes in
+the keychain, or under a key of the Android Keystore), gives its public key from `seal_public`
+when it makes a group or joins one, and passes the secret to `group_command`, which opens the
+commands sealed to it.
 
 ## Signatures already checked
 

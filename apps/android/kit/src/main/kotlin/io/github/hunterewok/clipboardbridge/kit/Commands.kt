@@ -315,20 +315,29 @@ object Commands {
      * Checks command c for the member self at nowMS (docs/protocol.md,
      * section 15) through the Rust core: an admin of the group that may sign
      * its type signed it, its by is the signer's device, it is for self in
-     * this group and in its lifetime. The caller keeps the replay cache; a
-     * mode command's mode is not checked against [Member.MODES] here.
+     * this group and in its lifetime. A sealed command opens with secret,
+     * this member's secret for sealed messages. The caller
+     * keeps the replay cache; a mode command's mode is not checked against
+     * [Member.MODES] here.
      */
-    fun verify(c: Member.Record, records: RecordSet, self: String, nowMS: Long): Body {
-        val b = parse(c.body)
+    fun verify(c: Member.Record, records: RecordSet, self: String, nowMS: Long, secret: ByteArray? = null): Body {
+        // A sealed command's orders are read once the core opened them.
+        val sealed = runCatching { Wire.parse(c.body)?.optLong("v") }.getOrNull() == SEALED_VERSION
+        val b = if (sealed) null else parse(c.body)
         val saved = records.nowMS
         records.nowMS = nowMS
-        try {
-            records.check(c, self)
+        val checked = try {
+            records.check(c, self, secret)
         } finally {
             records.nowMS = saved
         }
-        return b
+        if (b != null) return b
+        val o = checked.command?.takeIf { checked.opened } ?: throw Refused("the sealed command did not open")
+        return bodyOf(o)
     }
+
+    /** The version of a command whose orders are sealed to its receiver. */
+    private const val SEALED_VERSION = 2L
 
     /** Reads a command's body once the Rust core took it (parse_body), in the strict form of signed bodies, as Go's parseCommandBody. */
     internal fun parse(body: ByteArray): Body =
@@ -337,6 +346,23 @@ object Commands {
         } catch (e: WireTypeException) {
             throw Refused("the command is not valid: ${e.message}")
         }
+
+    /** A command's fields, as its body or the core's opened command gives them. */
+    private fun bodyOf(o: JsonObject): Body =
+        Body(
+            type = o.optString("type") ?: "",
+            group = o.optString("group") ?: "",
+            by = o.optString("by") ?: "",
+            to = o.optString("to") ?: "",
+            id = o.optString("id") ?: "",
+            timeMS = o.optLong("time_ms") ?: 0,
+            expiresMS = o.optLong("expires_ms") ?: 0,
+            mode = o.optString("mode"),
+            enter = o.optBool("enter") ?: false,
+            kind = o.optString("kind"),
+            text = o.optString("text"),
+            action = o.optString("action"),
+        )
 
     private fun parseBody(body: ByteArray): Body {
         // The core decides whether the body is taken; the checks below only read its fields.
@@ -350,20 +376,7 @@ object Commands {
         val o = Wire.parse(body) ?: throw Refused("the command is not valid")
         val type = o.optString("type")
         if (type != "paste" && body.size > MAX_BODY) throw Refused("the command is too large")
-        val b = Body(
-            type = type ?: "",
-            group = o.optString("group") ?: "",
-            by = o.optString("by") ?: "",
-            to = o.optString("to") ?: "",
-            id = o.optString("id") ?: "",
-            timeMS = o.optLong("time_ms") ?: 0,
-            expiresMS = o.optLong("expires_ms") ?: 0,
-            mode = o.optString("mode"),
-            enter = o.optBool("enter") ?: false,
-            kind = o.optString("kind"),
-            text = o.optString("text"),
-            action = o.optString("action"),
-        )
+        val b = bodyOf(o)
         if (o.optLong("v") != VERSION.toLong()) throw Refused("unknown command version")
         if (b.id.length != 32 || b.id.any { it !in "0123456789abcdef" }) throw Refused("the command has no valid ID")
         // As in Go, an empty string is no paste and no action.

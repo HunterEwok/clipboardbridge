@@ -622,18 +622,25 @@ class RecordSet {
         val sender: String,
         /** Whether that device's own key signed it. */
         val verified: Boolean,
+        /** The command's body, with the orders of a sealed one opened. */
+        val command: JsonObject? = null,
+        /** Whether its orders were sealed to this member and opened. */
+        val opened: Boolean = false,
     )
 
     /**
      * Checks command c for the member me (docs/protocol.md, section 15): an
      * admin of the group that may sign its type signed it, its by is the
-     * signer's device, it is for me in this group and in its lifetime. The
-     * caller keeps the replay cache.
+     * signer's device, it is for me in this group and in its lifetime. A
+     * sealed command's orders are opened with secret, this member's secret
+     * for sealed messages; a paste in the open is refused when this
+     * member's device record has a `seal` key. The caller keeps the replay
+     * cache.
      */
-    fun check(c: Member.Record, me: String): CheckedCommand {
+    fun check(c: Member.Record, me: String, secret: ByteArray? = null): CheckedCommand {
         if (groupCA == null) throw Commands.Refused("this device has no records of its group yet")
         val o = try {
-            ask("group_command", "command" to c.toJson(), "me" to JsonPrimitive(me))
+            ask("group_command", "command" to c.toJson(), "me" to JsonPrimitive(me), "secret" to secret?.let { Wire.bytes(it) })
         } catch (r: Core.Refusal) {
             throw Commands.Refused(r.details?.let { "${r.message}: $it" } ?: r.message)
         }
@@ -642,6 +649,8 @@ class RecordSet {
             o.optBool("root") ?: false,
             o.optString("sender") ?: "",
             o.optBool("verified") ?: false,
+            o.optObject("command"),
+            o.optBool("opened") ?: false,
         )
     }
 
