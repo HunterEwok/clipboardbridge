@@ -4,12 +4,19 @@
 package authority_test
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	crand "crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
 	"maps"
+	"math"
 	"math/rand/v2"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +39,7 @@ type world struct {
 	recs    []authority.Record
 	byName  map[string]authority.Record
 	now     int64
+	unknown bool // the member does not know the time
 	seen    map[authority.Hash]int64
 }
 
@@ -141,7 +149,7 @@ func (w *world) adminKey(name string) authority.Hash { return hashOf(w.t, &w.key
 
 func (w *world) eval(recs []authority.Record, firstSeen map[authority.Hash]int64) *authority.State {
 	w.t.Helper()
-	s, err := authority.Evaluate(authority.Input{GroupCA: w.roots["root"].Cert, Group: tag, Records: recs, NowMS: w.now, FirstSeen: firstSeen})
+	s, err := authority.Evaluate(authority.Input{GroupCA: w.roots["root"].Cert, Group: tag, Records: recs, NowMS: w.now, FirstSeen: firstSeen, TimeUnknown: w.unknown})
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -345,6 +353,34 @@ func TestClaimWaitsAndTakesEffect(t *testing.T) {
 	}
 }
 
+// TestTimeUnknown: a member that does not know how long it has held a
+// claim keeps it pending without a time left, however late its clock
+// says it is, unless the root set no delay.
+func TestTimeUnknown(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("B", "phone", phonePowers)
+	c := w.claim("B", "R2", nil)
+	first := map[authority.Hash]int64{c.ID(): 0}
+	w.now, w.unknown = 2*authority.DefaultDelay, true
+	s := w.evalAll(first)
+	if len(s.Roots) != 1 || len(s.Claims) != 1 || s.Claims[0].State != "pending" || s.Claims[0].LeftMS != 0 {
+		t.Fatalf("the claim should wait without a time left: %s", mustEncode(t, s))
+	}
+	w.unknown = false
+	if s = w.evalAll(first); len(s.Roots) != 2 || s.Claims[0].State != "effective" {
+		t.Fatalf("with the time known the claim should take effect: %s", mustEncode(t, s))
+	}
+
+	w = newWorld(t)
+	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(0))}, nil)
+	w.makeAdmin("B", "phone", phonePowers)
+	w.claim("B", "R2", nil)
+	w.unknown = true
+	if s = w.evalAll(nil); len(s.Roots) != 2 || s.Claims[0].State != "effective" {
+		t.Fatalf("without a delay the claim needs no time: %s", mustEncode(t, s))
+	}
+}
+
 func TestSettingsDelay(t *testing.T) {
 	w := newWorld(t)
 	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(0))}, nil)
@@ -435,6 +471,155 @@ func TestClaimedRootSignsEarly(t *testing.T) {
 	}
 }
 
+// TestIgnoredReasons: the state says why each record of the set that
+// does not count is left out.
+func TestIgnoredReasons(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	good := w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(1000))}, nil)
+	// Another signature on the same kind of body.
+	bad := w.sign("settings 2", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(2000))}, nil)
+	w.recs = w.recs[:len(w.recs)-1]
+	forged := authority.Record{Body: bad.Body, Sig: good.Sig}
+	// A record of another group, signed by the root.
+	other := authority.Body{Type: authority.TypeSettings, Group: "fedcba9876543210", Seq: 1, TimeMS: 1, TakeoverDelayMS: ptr(int64(1))}
+	otherRec, err := authority.Sign(other, w.roots["root"].Key, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An admin CA from a root that is not the group's.
+	stranger, err := group.NewRootCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	k := newKey(t)
+	ca, err := stranger.IssueAdmin(group.NewDeviceID(), &k.PublicKey, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	strangerRec, err := authority.Sign(authority.Body{Type: authority.TypeRevoke, Group: tag, Seq: 1, TimeMS: 1, Keys: []authority.Hash{w.adminKey("A")}, Seen: []authority.Seen{{Key: w.signerHash("root"), Seq: 1}}}, k, ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.recs = append(w.recs, forged, otherRec, strangerRec)
+	s := w.evalAll(nil)
+	want := map[authority.Hash]string{forged.ID(): authority.WhySignature, otherRec.ID(): authority.WhyGroup, strangerRec.ID(): authority.WhyIssuer}
+	if len(s.Ignored) != len(want) {
+		t.Fatalf("the state should list the three records: %s", mustEncode(t, s))
+	}
+	for _, i := range s.Ignored {
+		if want[i.Record] != i.Why {
+			t.Errorf("%s is ignored as %q, want %q", i.Record, i.Why, want[i.Record])
+		}
+	}
+}
+
+// TestNewerVersion is a record of a later version: the state lists it for
+// the user to update when a current root or admin signed it, applies
+// nothing of it, and goes on.
+func TestNewerVersion(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	w.makeAdmin("B", "phone", phonePowers)
+	w.sign("remove B", "root", revoke(w.adminKey("B")), nil)
+	before := mustEncode(t, w.evalAll(nil))
+	body := func(signer authority.Hash, group string) []byte {
+		return []byte(`{"group":"` + group + `","signer":"` + signer.String() + `","type":"keys","v":3}`)
+	}
+	sign := func(b []byte, key crypto.Signer, chain ...[]byte) authority.Record {
+		d := sha256.Sum256(b)
+		sig, err := key.Sign(crand.Reader, d[:], crypto.SHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return authority.Record{Body: b, Sig: sig, Chain: chain}
+	}
+	root := w.signerHash("root")
+	byRoot := sign(body(root, tag), w.roots["root"].Key)
+	byAdmin := sign(body(w.adminKey("A"), tag), w.keys["A"], w.cas["A"].Raw)
+	stranger, err := ecdsa.GenerateKey(elliptic.P256(), crand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := authority.PublicKeyHash(&stranger.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.recs = append(w.recs, byRoot, byAdmin,
+		sign(body(root, "fedcba9876543210"), w.roots["root"].Key),                        // another group
+		authority.Record{Body: body(root, tag), Sig: []byte{1}},                          // no signature
+		sign(body(h, tag), stranger),                                                     // not a key of the group
+		sign(body(w.adminKey("B"), tag), w.keys["B"], w.cas["B"].Raw),                    // a removed admin
+		authority.Record{Body: []byte(`{"v":3, "group":"` + tag + `"}`), Sig: []byte{1}}, // not canonical
+		// A quoted version is not an integer.
+		sign([]byte(`{"group":"`+tag+`","signer":"`+root.String()+`","type":"keys","v":"3"}`), w.roots["root"].Key),
+	)
+	s := w.evalAll(nil)
+	want := []authority.Hash{byRoot.ID(), byAdmin.ID()}
+	sort.Slice(want, func(i, j int) bool { return want[i].String() < want[j].String() })
+	if len(s.Newer) != 2 || s.Newer[0] != want[0] || s.Newer[1] != want[1] || s.Stop != "none" {
+		t.Fatalf("the state should list the two signed records of version 3: %s", mustEncode(t, s))
+	}
+	// The others are left out as unreadable (the one without a signature
+	// has the ID of the root's, which newer lists), and nothing else
+	// changes.
+	if len(s.Ignored) != 5 {
+		t.Fatalf("the five other records should be listed as ignored: %s", mustEncode(t, s))
+	}
+	for _, i := range s.Ignored {
+		if i.Why != authority.WhyUnreadable {
+			t.Errorf("%s is ignored as %q, not unreadable", i.Record, i.Why)
+		}
+	}
+	s.Newer, s.Ignored = nil, nil
+	if got := mustEncode(t, s); got != before {
+		t.Fatalf("a record of a later version changed the state:\n got %s\nwant %s", got, before)
+	}
+}
+
+// TestStrangersClaim is a claim signed under a root that is not the
+// group's, naming another root that signs a record: neither counts, and
+// the state is the one without them.
+func TestStrangersClaim(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	before := mustEncode(t, w.evalAll(nil))
+	s, err := group.NewRootCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.roots["S"] = s
+	w.admin("X", "S")
+	// The last two records are the stranger's, which the core's tests of
+	// the saved state take away again.
+	w.claim("X", "R9", nil)
+	w.sign("settings R9", "R9", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(0))}, nil)
+	after := w.evalAll(nil)
+	if len(after.Ignored) != 2 {
+		t.Fatalf("the stranger's two records should be listed as ignored: %s", mustEncode(t, after))
+	}
+	after.Ignored = nil
+	if got := mustEncode(t, after); got != before {
+		t.Fatalf("a stranger's claim changed the state:\n got %s\nwant %s", got, before)
+	}
+}
+
+// TestTimesAtTheEnds is a claim first seen at the lowest time a caller
+// can give: the time since is held at its end, not wrapped, and the claim
+// takes effect.
+func TestTimesAtTheEnds(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("B", "phone", phonePowers)
+	c := w.claim("B", "R2", nil)
+	for _, now := range []int64{0, math.MaxInt64} {
+		w.now = now
+		s := w.evalAll(map[authority.Hash]int64{c.ID(): math.MinInt64})
+		if len(s.Claims) != 1 || s.Claims[0].State != "effective" {
+			t.Fatalf("now %d: the claim should take effect: %s", now, mustEncode(t, s))
+		}
+	}
+}
+
 // TestClaimDisputed is an admin removing a claimant while its claim
 // waits: the group stops until the root decides.
 func TestClaimDisputed(t *testing.T) {
@@ -459,6 +644,180 @@ func TestClaimDisputed(t *testing.T) {
 	w.sign("cancel", "root", authority.Body{Type: authority.TypeResolve, Records: []authority.Hash{c.ID()}}, nil)
 	if s := w.evalAll(first); s.Stop != "none" || len(s.Roots) != 1 || !revoked(s, w.adminKey("B")) {
 		t.Fatalf("after the root cancels the claim A's removal should stand: %s", mustEncode(t, s))
+	}
+}
+
+// checkpoint has the root sign a checkpoint of everything signed so far
+// that keeps the records in keep, and returns it.
+func (w *world) checkpoint(signer string, keep ...authority.Record) authority.Record {
+	var heads []authority.Head
+	for k, n := range w.seq {
+		heads = append(heads, authority.Head{Key: k, Seq: n, ID: w.last[k]})
+	}
+	var ids []authority.Hash
+	for _, r := range keep {
+		ids = append(ids, r.ID())
+	}
+	return w.sign("checkpoint", signer, authority.Body{Type: authority.TypeCheckpoint, Heads: heads, Keep: ids}, nil)
+}
+
+// pruned returns the world's records without those the checkpoint cp
+// lets a member drop.
+func (w *world) pruned(cp authority.Record) []authority.Record {
+	b, err := authority.ParseBody(cp.Body)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	named := map[authority.Hash]bool{}
+	heads := map[authority.Hash]int64{}
+	for _, h := range b.Heads {
+		named[h.ID], heads[h.Key] = true, h.Seq
+	}
+	for _, id := range b.Keep {
+		named[id] = true
+	}
+	var out []authority.Record
+	for _, r := range w.recs {
+		rb, err := authority.ParseBody(r.Body)
+		if err == nil && rb.Group == tag {
+			if h, ok := heads[rb.Signer]; ok && rb.Seq <= h && !named[r.ID()] {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// TestCheckpointEdges: a checkpoint after a takeover, one that keeps too
+// little, one the root voided, two of one seq, and a record that does not
+// verify below a head. The set a counting checkpoint prunes always gives
+// the state of the full set.
+func TestCheckpointEdges(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("B", "phone", phonePowers)
+	// The old root's head is past B's grant.
+	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(authority.DefaultDelay))}, nil)
+	c := w.claim("B", "R2", nil)
+	first := map[authority.Hash]int64{c.ID(): 0}
+	w.now = authority.DefaultDelay
+	w.device("R2", "D9", "full", nil, nil, false)
+	w.device("R2", "D8", "full", nil, nil, false) // the new root's head
+	if s := w.evalAll(first); len(s.Roots) != 2 {
+		t.Fatalf("the claim should take effect: %s", mustEncode(t, s))
+	}
+	keep := []authority.Record{w.byName["device rootphone by root"], w.byName["device B by root"], c}
+
+	// A checkpoint of the new root that does not keep B's grant loses the
+	// path to itself, so it does not count and drops nothing.
+	thin := w.fork()
+	thin.checkpoint("R2")
+	if s := thin.evalAll(first); findDevice(s, w.ids["D9"]) == nil || len(s.Roots) != 2 || s.Checkpoint != nil {
+		t.Fatalf("a checkpoint that does not count dropped records: %s", mustEncode(t, s))
+	}
+
+	// One that keeps the claim and the grant counts: D9, below the head
+	// and not kept, goes, with it and without it.
+	cp := w.checkpoint("R2", keep...)
+	full := w.evalAll(first)
+	if findDevice(full, w.ids["D9"]) != nil || len(full.Roots) != 2 || full.Checkpoint == nil || *full.Checkpoint != cp.ID() {
+		t.Fatalf("the new root's checkpoint should count: %s", mustEncode(t, full))
+	}
+	if got, want := mustEncode(t, w.eval(w.pruned(cp), first)), mustEncode(t, full); got != want {
+		t.Fatalf("the pruned set gives another state:\n got %s\nwant %s", got, want)
+	}
+
+	// A record of the new root below its head that does not verify is
+	// dropped too, not listed as ignored.
+	junk := authority.Record{Body: bytes.Replace(w.byName["device D9 by R2"].Body, []byte(`"time_ms":1`), []byte(`"time_ms":2`), 1), Sig: []byte{1}}
+	w.recs = append(w.recs, junk)
+	if got, want := mustEncode(t, w.evalAll(first)), mustEncode(t, full); got != want {
+		t.Fatalf("a record that does not verify below a head changed the state:\n got %s\nwant %s", got, want)
+	}
+
+	// The root voids its own checkpoint: it no longer counts, and what it
+	// dropped is back.
+	v := newWorld(t)
+	v.device("root", "D9", "full", nil, nil, false)
+	vcp := v.checkpoint("root", v.byName["device rootphone by root"])
+	v.sign("void", "root", authority.Body{Type: authority.TypeResolve, Records: []authority.Hash{vcp.ID()}}, nil)
+	if s := v.evalAll(nil); findDevice(s, v.ids["D9"]) == nil || s.Checkpoint != nil {
+		t.Fatalf("a voided checkpoint dropped records: %s", mustEncode(t, s))
+	}
+
+	// Two checkpoints of one seq are two histories of the root: neither
+	// counts, in any order of the set.
+	f := newWorld(t)
+	f.device("root", "D9", "full", nil, nil, false)
+	g := f.fork()
+	f.checkpoint("root", f.byName["device rootphone by root"])
+	g.checkpoint("root", g.byName["device rootphone by root"], g.byName["device D9 by root"])
+	f.recs = append(f.recs, g.recs[len(g.recs)-1])
+	if s := f.evalAll(nil); s.Stop != "full" || findDevice(s, f.ids["D9"]) == nil || s.Checkpoint != nil {
+		t.Fatalf("two checkpoints of one seq should stop the group and drop nothing: %s", mustEncode(t, s))
+	}
+}
+
+// TestCheckpoint: a root's checkpoint lets members drop the records it
+// covers and does not keep, and the state is the same with them, without
+// them and before the checkpoint, also with a disputed claim waiting.
+func TestCheckpoint(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	w.makeAdmin("B", "phone", phonePowers)
+	w.device("A", "D1", "full", nil, nil, false)
+	d1 := w.device("A", "D1", "full", nil, nil, false)
+	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(1000))}, nil)
+	settings := w.sign("settings 2", "root", authority.Body{Type: authority.TypeSettings, TakeoverDelayMS: ptr(int64(2000))}, nil)
+	c := w.claim("B", "R2", nil)
+	rm := w.sign("A removes B", "A", revoke(w.adminKey("B"), w.members["B"]), nil)
+	first := map[authority.Hash]int64{c.ID(): 0}
+	w.now = 5000
+	before := mustEncode(t, w.evalAll(first))
+	if !strings.Contains(before, `"disputed"`) {
+		t.Fatalf("the claim should be disputed: %s", before)
+	}
+
+	// An admin's checkpoint counts for nothing.
+	w2 := w.fork()
+	bad := w2.checkpoint("A", d1)
+	s := w2.evalAll(first)
+	if len(s.Ignored) != 1 || s.Ignored[0].Record != bad.ID() || s.Ignored[0].Why != authority.WhyPower {
+		t.Fatalf("an admin's checkpoint should be ignored for power: %s", mustEncode(t, s))
+	}
+
+	var keep []authority.Record
+	for _, n := range []string{"device rootphone by root", "device A by root", "device B by root"} {
+		keep = append(keep, w.byName[n])
+	}
+	keep = append(keep, d1, settings, c, rm)
+	cp := w.checkpoint("root", keep...)
+	s = w.evalAll(first)
+	if s.Checkpoint == nil || *s.Checkpoint != cp.ID() {
+		t.Fatalf("the state should name the checkpoint that counts: %s", mustEncode(t, s))
+	}
+	withCP := mustEncode(t, s)
+	s.Checkpoint = nil
+	if got := mustEncode(t, s); got != before {
+		t.Fatalf("the checkpoint changed the state:\n got %s\nwant %s", got, before)
+	}
+	pruned := w.pruned(cp)
+	if len(pruned) != len(w.recs)-2 {
+		t.Fatalf("the checkpoint should let two records go, %d of %d are left", len(pruned), len(w.recs))
+	}
+	if got := mustEncode(t, w.eval(pruned, first)); got != withCP {
+		t.Fatalf("the pruned set gives another state:\n got %s\nwant %s", got, withCP)
+	}
+
+	// A record after the checkpoint chains to it: the root cancels the
+	// claim, and the pruned set says so as the full set does.
+	w.sign("cancel", "root", authority.Body{Type: authority.TypeResolve, Records: []authority.Hash{c.ID()}}, nil)
+	full := w.evalAll(first)
+	if full.Stop != "none" || !revoked(full, w.adminKey("B")) {
+		t.Fatalf("the root's cancel should end the dispute: %s", mustEncode(t, full))
+	}
+	if got, want := mustEncode(t, w.eval(w.pruned(cp), first)), mustEncode(t, full); got != want {
+		t.Fatalf("after the checkpoint the pruned set gives another state:\n got %s\nwant %s", got, want)
 	}
 }
 

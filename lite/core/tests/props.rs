@@ -23,6 +23,8 @@ struct Case {
     group: String,
     now_ms: i64,
     #[serde(default)]
+    time_unknown: bool,
+    #[serde(default)]
     first_seen: Vec<FirstSeen>,
     records: Vec<Record>,
     state: String,
@@ -53,6 +55,8 @@ fn evaluate(c: &Case, records: &[Record]) -> String {
         records,
         now_ms: c.now_ms,
         first_seen: &first_seen,
+        time_unknown: c.time_unknown,
+        sigs: None,
     });
     String::from_utf8(state.encode()).expect("the state is UTF-8")
 }

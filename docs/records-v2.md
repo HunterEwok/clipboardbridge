@@ -90,7 +90,8 @@ SHA-256 over `body`.
 
 | Field | JSON type | Values |
 |-------|-----------|--------|
-| `v` | integer | exactly `2` |
+| `v` | integer | exactly `2`; a body of a later version is kept, never applied ("Records of a later version") |
+| `alg` | string | exactly `es256`: the envelope's `sig` is ECDSA P-256 with SHA-256, DER |
 | `type` | string | one of the types below |
 | `group` | string | the group tag (section 1) |
 | `signer` | string | SHA-256 of the signing key's SubjectPublicKeyInfo, base64: a root's key, or the admin key that the admin CA in `chain` certifies |
@@ -102,6 +103,26 @@ A receiver MUST refuse an envelope whose `signer` is not the hash of the key tha
 verifies with: the key of the admin CA in `chain`, or, with an empty `chain`, the key of a
 root the group may have (the group CA, or the new root of a claim). So one body has one
 signer, and the same body under another signer is not a valid record.
+
+`alg` names the signature algorithm inside the signed bytes, so a later algorithm (a
+post-quantum one, say) comes with a new `v` and can never be mistaken for, or downgraded
+to, this one. A key hash covers the key's SubjectPublicKeyInfo, which names its algorithm.
+A signer's own code refuses to sign with any key that is not P-256.
+
+### Records of a later version
+
+New record types and new fields come only with a new `v`, so a member that meets a body of a
+later version needs an update to read it. A record is **kept** when its body is at most the
+body's size and in the strict and canonical form, its `v` is an integer from 3 to 2^31-1,
+its `group` is the group's tag, and the envelope verifies as this version's does (`sig`
+ECDSA P-256 with SHA-256 over the body) with the key its `signer` names, which must be a root
+on the current path (`chain` empty) or an admin key of a device in the state (`chain` its
+admin CA). So only the group's current roots and admins can raise the signal, and nobody
+else can fill it with junk; a later version keeps signing with this algorithm whatever it
+adds. The member stores a kept record, passes it on in sync as it is and never applies it.
+The state lists the IDs of the kept records in `newer`, sorted, at most 16, and the member's
+status and the apps tell the user to update. Nothing else changes: the group goes on under
+the records the member can read. Any other body that does not read is left out, as before.
 
 A **key hash** is 32 bytes of SHA-256 in base64 (44 characters); a device ID 32 of `0`-`9`
 and `a`-`f`.
@@ -117,6 +138,7 @@ and `a`-`f`.
 | `claim` | `root`, `seen` | an admin's claim to take the group over with a new root |
 | `resolve` | `records` | the current root voids the records it names: a cancelled claim, one side of a conflict, one of two records with one number |
 | `settings` | `takeover_delay_ms` | the root's settings for the group |
+| `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
 
 ### Field rows
 
@@ -137,9 +159,12 @@ and `a`-`f`.
 | `records` | array of strings | `thaw`, `resolve`, one at least | sorted record IDs |
 | `root` | string | `claim` | the new root CA certificate, DER, base64: self-signed, a CA with path length 1, a P-256 key |
 | `takeover_delay_ms` | integer | none | from 0 to 604 800 000 (7 days); absent means 259 200 000 (72 hours) |
+| `heads` | array of objects | `checkpoint`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": 1 or more, "id": the ID of that signer's record with that seq}` |
+| `keep` | array of strings | none | sorted record IDs: the records below the heads that still count |
 
 A field that a type does not list is refused in it (`form/unknown`), and so is a field
-with an empty value (`form/empty`). An envelope's body is at most 8 KiB.
+with an empty value (`form/empty`). An envelope's body is at most 8 KiB, a checkpoint's
+64 KiB.
 
 `seen` names every signer whose records the author held, its own included: the root's key,
 every admin key, and a removed admin's key too. A record that removes or freezes an admin
@@ -167,6 +192,7 @@ those of the newest such record (the highest `seq` of that root) that names it.
 | `thaw` | a root's own key, or an admin with `thaw` and `remove-admins` |
 | `claim` | an admin with `takeover`, under the current root |
 | `resolve`, `settings` | the current root's own key |
+| `checkpoint` | a root's own key |
 
 A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
 names any key its signer may not remove or freeze. The powers the apps and `cbb`
@@ -203,6 +229,39 @@ sibling (another record of its signer with the same `seq`), the records whose `p
 passes through it count for nothing too, so `resolve` ends two histories by naming the first
 record of the branch that goes. Without a sibling only the named record goes, and the
 signer's chain goes on through it.
+
+### Checkpoints
+
+A group's records only grow, and a member keeps at most 1 MiB of them (1024 records). A root's
+own key signs a `checkpoint` so that members may drop what no longer matters: `heads` names,
+for each signer, its newest record the checkpoint covers, and `keep` the records below the
+heads that still count: the newest `device` record of each device, the `revoke`, `freeze` and
+`thaw` records that count, the newest `settings`, every claim not yet decided and the records
+its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
+by themselves when the records pass three quarters of either limit.
+
+A checkpoint leaves out of a set each record of the group whose body reads, of a signer in
+`heads`, with a `seq` at or below that head's, other than the heads and the records in `keep`,
+whether its signature checks or not. In the set it prunes, a prev chain is whole when it
+reaches seq 1 or a record the checkpoint names, so the records after the heads and the records
+in `keep` count without the ones dropped below them.
+
+The state is evaluated on the set as the checkpoint that counts prunes it, so it is the same
+whether a member still holds what the checkpoint leaves out or not. To find that checkpoint,
+the evaluation takes the root's own records of type `checkpoint` of a root of the group (the
+group CA, or the root of a claim that an admin under such a root signed), at most 8 of them:
+the highest `seq` first, then the smallest ID. It evaluates the set each one prunes, and the
+checkpoint counts there when it is a root's record that counts in that evaluation: its root
+on the path, within its cut, its chain whole and not voided. Of those that count, the newest
+counts: a later root on the path, then a higher `seq`, then the smaller ID. A checkpoint that
+does not keep what the path to its own root needs (a claim, the admin record that made the
+claimant an admin) does not count and drops nothing, nor does one a `resolve` voided, nor two
+of one `seq` (two histories of the root). Without one, the set is evaluated whole. The state
+names the checkpoint that counts in `checkpoint`.
+
+A member may delete the records the checkpoint that counts leaves out. A checkpoint that
+leaves out a record that mattered changes the state for every member alike; only a root signs
+one, and the root always wins.
 
 ### Removals and freezes keep what the author saw
 
@@ -268,10 +327,12 @@ and `seen` with what it held, the current root's records among them. A claim:
 - is **pending** from the moment a member first holds it (by its own clock, which counts
   sleep and does not jump: protocol.md, Conventions, "Time"; never the signer's clock) until
   the root's `takeover_delay_ms` (the newest counting `settings` record of the current root;
-  72 hours without one) has passed on that member. Every device tells its user when a claim
-  arrives, and `cbb status` and the apps show it with the time left. Sync and the admins'
-  other powers go on; only the new root waits, and the claimant gets no secrets meanwhile
-  ("Stopping the exchange");
+  72 hours without one) has passed on that member. A member that does not know how long it
+  has held the claim (its clock started again and it kept no time) keeps it pending, without
+  a time left, until it knows; only a delay of 0 needs no time. Every device tells its user
+  when a claim arrives, and `cbb status` and the apps show it with the time left. Sync and
+  the admins' other powers go on; only the new root waits, and the claimant gets no secrets
+  meanwhile ("Stopping the exchange");
 - is **cancelled** for good when the current root's own key signs a `resolve` that names it,
   or a `revoke` of the claimant's admin key, at any time, before or after the delay: the
   root always wins. When that happens after the claim took effect, the new root and every
@@ -342,8 +403,10 @@ what ends it. A user who has lost the root sets the group up again.
 ## The state
 
 The function takes the group CA certificate, the record set, the current time on the
-member's clock and, for each claim's record ID, the time the member first held it, and
-returns the state as one canonical JSON object:
+member's clock or that the member does not know the time, and, for each claim's record ID,
+the time the member first held it (a time after the current one counts as the current one;
+the time since and the time left are held at the ends of a 64-bit integer, never wrapped),
+and returns the state as one canonical JSON object:
 
 | Field | Type | Meaning |
 |-------|------|---------|
@@ -356,6 +419,27 @@ returns the state as one canonical JSON object:
 | `stop` | string | `none`, `secrets` or `full` |
 | `no_secrets_to` | array of strings | sorted device IDs that get no secrets |
 | `nothing_to` | array of strings | sorted device IDs that get nothing |
+| `newer` | array of strings | sorted IDs of the records of a later version the member keeps, at most 16 |
+| `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
+| `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
+
+The reasons in `ignored`, in the order they are decided:
+
+| `why` | The record |
+|-------|------------|
+| `unreadable` | its body is not a record of version 2 |
+| `signature` | its signature or chain does not check |
+| `group` | is of another group |
+| `issuer` | its admin CA is from no root of the group |
+| `history` | its prev chain is broken, on a branch a `resolve` voided, or at or after a second history |
+| `not_root` | a root's own record whose signer is no root on the path |
+| `cut` | a root's record past its root's cut, or an admin record a root's removal, freeze or thaw cut off |
+| `undecided` | an admin record in a conflict between admins |
+| `power` | an admin record its signer had no admin power for, or with an admin CA of a root off the path |
+| `removed` | an admin record a counting admin removal or freeze cut off |
+
+Of two copies of one body left out before the evaluation (the first four reasons) for
+different reasons, the reason first in byte order is kept.
 
 Empty fields are left out, as in signed bodies, so two implementations agree when their
 states are the same bytes. The state does not depend on the order in which records arrived;

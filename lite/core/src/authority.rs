@@ -25,6 +25,16 @@ use crate::strict;
 
 /// The largest record body a member takes (8 KiB).
 pub const MAX_BODY: usize = 8 << 10;
+
+/// The largest body of a checkpoint (64 KiB), which lists the live records
+/// of the whole group.
+pub const MAX_CHECKPOINT_BODY: usize = 64 << 10;
+
+/// The one signature algorithm of version 2: ECDSA P-256 with SHA-256, DER.
+pub const ALG_ES256: &str = "es256";
+
+/// How many records of a later version a state lists.
+pub const MAX_NEWER: usize = 16;
 /// The largest seq a signer gives a record.
 pub const MAX_SEQ: i64 = (1 << 31) - 1;
 /// The longest takeover delay the root may set (7 days), in milliseconds.
@@ -39,6 +49,7 @@ pub const TYPE_THAW: &str = "thaw";
 pub const TYPE_CLAIM: &str = "claim";
 pub const TYPE_RESOLVE: &str = "resolve";
 pub const TYPE_SETTINGS: &str = "settings";
+pub const TYPE_CHECKPOINT: &str = "checkpoint";
 
 pub const POWER_ADMIT: &str = "admit";
 pub const POWER_RENEW: &str = "renew";
@@ -121,6 +132,16 @@ pub struct Seen {
     pub seq: i64,
 }
 
+/// One entry of a checkpoint's heads: a signer's newest record the
+/// checkpoint covers.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Head {
+    pub key: Hash,
+    pub seq: i64,
+    pub id: Hash,
+}
+
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -130,6 +151,7 @@ fn is_false(b: &bool) -> bool {
 #[serde(deny_unknown_fields)]
 pub struct Body {
     pub v: i64,
+    pub alg: String,
     #[serde(rename = "type")]
     pub kind: String,
     pub group: String,
@@ -175,9 +197,14 @@ pub struct Body {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub takeover_delay_ms: Option<i64>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub heads: Vec<Head>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keep: Vec<Hash>,
 }
 
-const COMMON: [&str; 6] = ["v", "type", "group", "signer", "seq", "time_ms"];
+const COMMON: [&str; 7] = ["v", "alg", "type", "group", "signer", "seq", "time_ms"];
 
 /// The fields beyond those every record has that a type may carry.
 fn allowed(kind: &str) -> Option<&'static [&'static str]> {
@@ -200,6 +227,7 @@ fn allowed(kind: &str) -> Option<&'static [&'static str]> {
         TYPE_THAW | TYPE_RESOLVE => &["records"],
         TYPE_CLAIM => &["root", "seen"],
         TYPE_SETTINGS => &["takeover_delay_ms"],
+        TYPE_CHECKPOINT => &["heads", "keep"],
         _ => return None,
     })
 }
@@ -230,6 +258,8 @@ impl Body {
         add(!self.records.is_empty(), "records");
         add(!self.root.is_empty(), "root");
         add(self.takeover_delay_ms.is_some(), "takeover_delay_ms");
+        add(!self.heads.is_empty(), "heads");
+        add(!self.keep.is_empty(), "keep");
         n
     }
 
@@ -240,6 +270,10 @@ impl Body {
         let v = serde_json::to_value(self).map_err(|_| Error::msg("a record body does not encode"))?;
         let mut out = Vec::new();
         strict::write_canonical(&mut out, &v);
+        // Never bytes to sign that every receiver refuses for their size.
+        if out.len() > MAX_BODY {
+            return Err(Error::msg(format!("a record body of {} bytes is over {MAX_BODY}", out.len())));
+        }
         Ok(out)
     }
 
@@ -247,12 +281,20 @@ impl Body {
     /// field its type does not know and none empty, and each field against
     /// its row (docs/records-v2.md, "Field rows").
     pub fn parse(data: &[u8]) -> Result<Body> {
-        if data.len() > MAX_BODY {
-            return Err(Error::msg(format!("a record body of {} bytes is over {MAX_BODY}", data.len())));
+        if data.len() > MAX_CHECKPOINT_BODY {
+            return Err(Error::msg(format!("a record body of {} bytes is over {MAX_CHECKPOINT_BODY}", data.len())));
         }
         strict::check_canonical(data, &COMMON)?;
         let b: Body = serde_json::from_slice(data).map_err(|e| Error::msg(format!("a record body: {e}")))?;
         b.check()?;
+        if data.len() > b.max_body() {
+            return Err(Error::msg(format!(
+                "a {} record body of {} bytes is over {}",
+                b.kind,
+                data.len(),
+                b.max_body()
+            )));
+        }
         if b.encode()? != data {
             return Err(Error::msg("a record body has an empty field or a value not in its one form"));
         }
@@ -265,12 +307,22 @@ impl Body {
         self.commands.sort();
         self.keys.sort();
         self.records.sort();
+        self.keep.sort();
+        self.heads.sort_by_key(|h| h.key);
         self.seen.sort_by_key(|s| s.key);
+    }
+
+    /// The largest body of the body's type.
+    pub fn max_body(&self) -> usize {
+        if self.kind == TYPE_CHECKPOINT { MAX_CHECKPOINT_BODY } else { MAX_BODY }
     }
 
     fn check(&self) -> Result<()> {
         if self.v != 2 {
             return Err(Error::msg(format!("a record of version {}", self.v)));
+        }
+        if self.alg != ALG_ES256 {
+            return Err(Error::msg(format!("a record signed with {:?}", self.alg)));
         }
         let allowed =
             allowed(&self.kind).ok_or_else(|| Error::msg(format!("an unknown record type {:?}", self.kind)))?;
@@ -308,6 +360,20 @@ impl Body {
                     return Err(Error::msg("a claim needs root and seen"));
                 }
                 check_seen(&self.seen)
+            }
+            TYPE_CHECKPOINT => {
+                if self.heads.is_empty() {
+                    return Err(Error::msg("a checkpoint needs heads"));
+                }
+                for (i, h) in self.heads.iter().enumerate() {
+                    if h.seq < 1 || h.seq > MAX_SEQ {
+                        return Err(Error::msg(format!("a head's seq {} is not from 1 to {MAX_SEQ}", h.seq)));
+                    }
+                    if i > 0 && self.heads[i - 1].key >= h.key {
+                        return Err(Error::msg("heads is not sorted by key, each once"));
+                    }
+                }
+                sorted_hashes(&self.keep, "keep")
             }
             _ => match self.takeover_delay_ms {
                 Some(d) if !(0..=MAX_DELAY).contains(&d) => {
@@ -407,6 +473,85 @@ impl Record {
     }
 }
 
+/// The most signatures a SigCache holds; when it is full it starts again.
+pub const MAX_CACHE: usize = 8192;
+
+/// Signatures already checked: an entry is a hash over the signer's key
+/// hash, the body's hash and the signature, kept only for a signature that
+/// verified, so that evaluating the same records again checks each
+/// signature once. It is safe to share between threads and evaluations.
+pub struct SigCache {
+    seen: spin::Mutex<BTreeSet<[u8; 32]>>,
+}
+
+impl Default for SigCache {
+    fn default() -> SigCache {
+        SigCache::new()
+    }
+}
+
+impl SigCache {
+    pub const fn new() -> SigCache {
+        SigCache { seen: spin::Mutex::new(BTreeSet::new()) }
+    }
+
+    fn entry(key: &Cert, data: &[u8], sig: &[u8]) -> [u8; 32] {
+        let mut m = Vec::with_capacity(16 + 32 + 32 + sig.len());
+        m.extend_from_slice(b"cbb sig cache v1");
+        m.extend_from_slice(&key_hash_of(key).0);
+        m.extend_from_slice(&sha256(data));
+        m.extend_from_slice(sig);
+        sha256(&m)
+    }
+
+    /// Reports whether sig over data verifies with key, from the cache when
+    /// it was checked before.
+    pub fn verifies(&self, key: &Cert, data: &[u8], sig: &[u8]) -> bool {
+        let e = SigCache::entry(key, data, sig);
+        if self.seen.lock().contains(&e) {
+            return true;
+        }
+        let ok = key.verifies(data, sig);
+        if ok {
+            self.add([e]);
+        }
+        ok
+    }
+
+    /// The entries, sorted, to save with the member's state.
+    pub fn entries(&self) -> Vec<[u8; 32]> {
+        self.seen.lock().iter().copied().collect()
+    }
+
+    /// Adds saved entries. Only entries from the member's own saved state,
+    /// checked with its secret, may come here: an entry stands for a
+    /// signature that verified.
+    pub fn add(&self, entries: impl IntoIterator<Item = [u8; 32]>) {
+        let mut seen = self.seen.lock();
+        for e in entries {
+            if seen.len() >= MAX_CACHE {
+                seen.clear();
+            }
+            seen.insert(e);
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.seen.lock().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+fn verifies(sigs: Option<&SigCache>, key: &Cert, data: &[u8], sig: &[u8]) -> bool {
+    match sigs {
+        Some(c) => c.verifies(key, data, sig),
+        None => key.verifies(data, sig),
+    }
+}
+
 /// A record whose body was read and whose signature verifies with the key
 /// its body names.
 #[derive(Clone, Debug)]
@@ -420,8 +565,9 @@ pub struct Signed {
 
 /// Reads r's body and checks its signature: with an admin CA in the chain,
 /// the signer is that CA's key; with none, a root the group may have, which
-/// root_key finds by the signer.
-pub fn verify<'a>(r: &Record, root_key: impl Fn(&Hash) -> Option<&'a Cert>) -> Result<Signed> {
+/// root_key finds by the signer. sigs, when given, holds signatures
+/// already checked.
+pub fn verify<'a>(r: &Record, root_key: impl Fn(&Hash) -> Option<&'a Cert>, sigs: Option<&SigCache>) -> Result<Signed> {
     let body = Body::parse(&r.body)?;
     let (key, admin_ca) = match r.chain.as_slice() {
         [] => (
@@ -440,7 +586,7 @@ pub fn verify<'a>(r: &Record, root_key: impl Fn(&Hash) -> Option<&'a Cert>) -> R
     if key_hash_of(&key) != body.signer {
         return Err(Error::msg("a record's signer is not the key it is checked with"));
     }
-    if !key.verifies(&r.body, &r.sig) {
+    if !verifies(sigs, &key, &r.body, &r.sig) {
         return Err(Error::msg("a record's signature does not verify"));
     }
     Ok(Signed { record: r.clone(), body, id: r.id(), admin_ca })
@@ -457,6 +603,12 @@ pub struct Input<'a> {
     /// claim missing from it was first held now.
     pub now_ms: i64,
     pub first_seen: &'a BTreeMap<Hash, i64>,
+    /// The member does not know how long it has held its claims: its clock
+    /// started again and it kept no time. No claim then takes effect by
+    /// waiting (docs/records-v2.md, "Handing the group over").
+    pub time_unknown: bool,
+    /// Signatures already checked, when the caller keeps them.
+    pub sigs: Option<&'a SigCache>,
 }
 
 /// The group's state (docs/records-v2.md, "The state").
@@ -478,7 +630,50 @@ pub struct State {
     pub no_secrets_to: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub nothing_to: Vec<String>,
+    /// Records of a later version: the member keeps them and tells its
+    /// user to update.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub newer: Vec<Hash>,
+    /// The records that do not count and why.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ignored: Vec<Ignored>,
+    /// The root's checkpoint that counts: a member may drop the records it
+    /// leaves out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<Hash>,
 }
+
+/// A record of the set that does not count, with why: one of the WHY_
+/// constants.
+#[derive(Clone, Serialize, PartialEq, Debug)]
+pub struct Ignored {
+    pub record: Hash,
+    pub why: &'static str,
+}
+
+/// How many records a state lists in ignored.
+pub const MAX_IGNORED: usize = 64;
+
+/// Its body is not a record of version 2.
+pub const WHY_UNREADABLE: &str = "unreadable";
+/// Its signature or chain does not check.
+pub const WHY_SIGNATURE: &str = "signature";
+/// It is of another group.
+pub const WHY_GROUP: &str = "group";
+/// Its admin CA is from no root of the group.
+pub const WHY_ISSUER: &str = "issuer";
+/// Its signer is no root on the path.
+pub const WHY_NOT_ROOT: &str = "not_root";
+/// Its prev chain is broken, on a voided branch or at a second history.
+pub const WHY_HISTORY: &str = "history";
+/// A root's removal, freeze or thaw cut it off, or it is past its root's cut.
+pub const WHY_CUT: &str = "cut";
+/// Its signer was no admin with the power it needs.
+pub const WHY_POWER: &str = "power";
+/// An admin's removal or freeze that counts cut it off.
+pub const WHY_REMOVED: &str = "removed";
+/// It is in a conflict between admins.
+pub const WHY_UNDECIDED: &str = "undecided";
 
 /// One device of the state.
 #[derive(Clone, Serialize, PartialEq, Debug, Default)]
@@ -541,25 +736,106 @@ impl State {
 /// Turns a record set into the group's state. Records that do not verify
 /// are dropped; the result depends only on the set, never on its order.
 pub fn evaluate(input: &Input) -> State {
-    let e = Evaluation::new(input);
-    let mut path = vec![key_hash_of(input.group_ca)];
-    let mut cuts = BTreeMap::new();
-    let mut earlier = Vec::new();
-    loop {
-        let mut ep = Epoch::new(&e, path.clone(), cuts.clone());
-        match ep.decide_claims(input.now_ms, input.first_seen) {
-            Some((next, cut)) => {
-                earlier.append(&mut ep.claims);
-                cuts.insert(*path.last().unwrap_or(&Hash::default()), cut);
-                path.push(next);
-            }
-            None => {
-                earlier.append(&mut ep.claims);
-                ep.claims = earlier;
-                return ep.state();
-            }
+    evaluate_seqs(input).0
+}
+
+/// evaluate, and for each signer of the group the highest seq whose chain
+/// is held whole down to seq 1, which a member saves to notice a record
+/// set rolled back (see Evaluation::seqs).
+pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
+    let group_ca = key_hash_of(input.group_ca);
+    let full = Evaluation::new(input, BTreeSet::new());
+    let seqs = full.seqs(group_ca);
+    // The set a root's checkpoint prunes is evaluated as if the member had
+    // dropped what it leaves out; the checkpoint that counts is the newest
+    // that still counts there (docs/records-v2.md, "Checkpoints").
+    let mut best: Option<((usize, i64, Hash), State)> = None;
+    for c in full.checkpoints(group_ca) {
+        let (c, id) = (full.recs[c].b(), full.recs[c].s.id);
+        let records = prune(input.records, input.group, c);
+        let pruned = Input { records: &records, ..*input };
+        let e = Evaluation::new(&pruned, anchors_of(c));
+        let ep = e.run(&pruned);
+        let Some(i) = e.recs.iter().position(|r| r.s.id == id) else { continue };
+        if !ep.root_record(i) {
+            continue;
+        }
+        let key = (ep.on_path.get(&c.signer).copied().unwrap_or(0), c.seq, id);
+        let better = match &best {
+            None => true,
+            Some((b, _)) => key.0 > b.0 || key.0 == b.0 && (key.1 > b.1 || key.1 == b.1 && key.2 < b.2),
+        };
+        if better {
+            let mut state = ep.finish(&pruned);
+            state.checkpoint = Some(id);
+            best = Some((key, state));
         }
     }
+    let state = match best {
+        Some((_, state)) => state,
+        None => full.run(input).finish(input),
+    };
+    (state, seqs)
+}
+
+/// How many of a set's checkpoints the evaluation tries: those of the
+/// highest seq, then the smallest ID.
+pub const MAX_CHECKPOINTS: usize = 8;
+
+/// Leaves out of a set what checkpoint c drops: each record of this group
+/// whose body reads, at or below its signer's head, that is neither a head
+/// nor kept, whether or not its signature checks.
+fn prune(records: &[Record], group: &str, c: &Body) -> Vec<Record> {
+    let heads: BTreeMap<Hash, &Head> = c.heads.iter().map(|h| (h.key, h)).collect();
+    let anchors = anchors_of(c);
+    records
+        .iter()
+        .filter(|r| match Body::parse(&r.body) {
+            Ok(b) if b.group == group => {
+                !matches!(heads.get(&b.signer), Some(h) if b.seq <= h.seq && !anchors.contains(&r.id()))
+            }
+            _ => true,
+        })
+        .cloned()
+        .collect()
+}
+
+/// The IDs of the records of a later version for this group that a
+/// current root or admin of the state signed, sorted, at most MAX_NEWER
+/// (docs/records-v2.md, "Records of a later version").
+fn newer(input: &Input, state: &State, roots: &BTreeMap<Hash, Cert>) -> Vec<Hash> {
+    let admins: BTreeSet<Hash> = state.devices.iter().filter_map(|d| d.admin).collect();
+    let mut ids = BTreeSet::new();
+    for r in input.records {
+        if r.body.len() > MAX_BODY || crate::strict::check_canonical(&r.body, &["v", "group", "signer"]).is_err() {
+            continue;
+        }
+        let Ok(serde_json::Value::Object(m)) = serde_json::from_slice::<serde_json::Value>(&r.body) else {
+            continue;
+        };
+        let group = m.get("group").and_then(|g| g.as_str());
+        let v = m.get("v").and_then(|v| v.as_i64());
+        if group != Some(input.group) || !v.is_some_and(|v| v > 2 && v <= MAX_SEQ) {
+            continue;
+        }
+        let Some(Ok(signer)) = m.get("signer").map(|s| serde_json::from_value::<Hash>(s.clone())) else {
+            continue;
+        };
+        let key = match r.chain.as_slice() {
+            [] if state.roots.contains(&signer) => roots.get(&signer).cloned(),
+            [ca] if admins.contains(&signer) => Cert::parse(ca).ok().filter(|ca| key_hash_of(ca) == signer),
+            _ => None,
+        };
+        if key.is_some_and(|k| verifies(input.sigs, &k, &r.body, &r.sig)) {
+            ids.insert(r.id());
+        }
+    }
+    ids.into_iter().take(MAX_NEWER).collect()
+}
+
+/// The IDs a checkpoint names: its heads and keep.
+fn anchors_of(b: &Body) -> BTreeSet<Hash> {
+    b.heads.iter().map(|h| h.id).chain(b.keep.iter().copied()).collect()
 }
 
 /// A verified record with the root that issued its admin CA.
@@ -578,6 +854,11 @@ impl Rec {
 }
 
 struct Evaluation {
+    /// The heads and keep of the checkpoint it prunes by, where a prev
+    /// chain may end.
+    anchors: BTreeSet<Hash>,
+    /// Why records were left out before the epochs, by ID.
+    failed: BTreeMap<Hash, &'static str>,
     roots: BTreeMap<Hash, Cert>,
     recs: Vec<Rec>,
     by_sig: BTreeMap<Hash, Vec<usize>>,
@@ -585,7 +866,7 @@ struct Evaluation {
 }
 
 impl Evaluation {
-    fn new(input: &Input) -> Evaluation {
+    fn new(input: &Input, anchors: BTreeSet<Hash>) -> Evaluation {
         let mut roots = BTreeMap::new();
         roots.insert(key_hash_of(input.group_ca), input.group_ca.clone());
         // The new roots of claims are the only other roots a record may be
@@ -604,19 +885,37 @@ impl Evaluation {
                 }
             }
         }
-        let mut e = Evaluation { roots, recs: Vec::new(), by_sig: BTreeMap::new(), devices: BTreeMap::new() };
+        let mut e = Evaluation {
+            anchors,
+            failed: BTreeMap::new(),
+            roots,
+            recs: Vec::new(),
+            by_sig: BTreeMap::new(),
+            devices: BTreeMap::new(),
+        };
         // One body may come with more than one valid admin CA (an admin key
         // certified again); the smallest DER is kept, whatever the order.
         let mut by_id: BTreeMap<Hash, Rec> = BTreeMap::new();
         for r in input.records {
-            let Ok(s) = verify(r, |h| e.roots.get(h)) else { continue };
+            let s = match verify(r, |h| e.roots.get(h), input.sigs) {
+                Ok(s) => s,
+                Err(_) => {
+                    let why = if Body::parse(&r.body).is_err() { WHY_UNREADABLE } else { WHY_SIGNATURE };
+                    e.fail(r.id(), why);
+                    continue;
+                }
+            };
             if s.body.group != input.group {
+                e.fail(s.id, WHY_GROUP);
                 continue;
             }
             let issuer = match &s.admin_ca {
                 Some(ca) => match e.issuer_of(ca) {
                     Some(h) => Some(h),
-                    None => continue,
+                    None => {
+                        e.fail(s.id, WHY_ISSUER);
+                        continue;
+                    }
                 },
                 None => None,
             };
@@ -638,6 +937,123 @@ impl Evaluation {
             e.recs.push(x);
         }
         e
+    }
+
+    /// Notes why a record was left out; of two copies of one body left out
+    /// for different reasons, the reason first in byte order is kept,
+    /// whatever the order of the set.
+    fn fail(&mut self, id: Hash, why: &'static str) {
+        let old = self.failed.entry(id).or_insert(why);
+        if why < *old {
+            *old = why;
+        }
+    }
+
+    /// The highest seq of each signer whose prev chain is held whole down
+    /// to seq 1. Only the group's signers count: the group CA, the root of
+    /// a claim that one of the group's admins signed, and the admins under
+    /// those roots; a root named in a claim nobody of the group signed
+    /// could come and go with records that never counted. A whole chain,
+    /// not the highest seq held, so that a record missing from the middle
+    /// of a chain lowers it.
+    fn seqs(&self, group_ca: Hash) -> BTreeMap<Hash, i64> {
+        let roots = self.group_roots(group_ca);
+        // A root's checkpoint lets a chain end at its anchors, so that a
+        // set pruned by it is not taken for a rollback.
+        let anchors: BTreeSet<Hash> = self
+            .recs
+            .iter()
+            .filter(|r| r.b().kind == TYPE_CHECKPOINT && !r.admin() && roots.contains(&r.b().signer))
+            .flat_map(|r| anchors_of(r.b()))
+            .collect();
+        let mut seqs = BTreeMap::new();
+        for (signer, rs) in &self.by_sig {
+            let by_id: BTreeMap<Hash, usize> = rs.iter().map(|&i| (self.recs[i].s.id, i)).collect();
+            for &i in rs {
+                let r = &self.recs[i];
+                let ours = match r.issuer {
+                    Some(h) => roots.contains(&h),
+                    None => !r.admin() && roots.contains(signer),
+                };
+                if ours && self.whole(i, &by_id, &anchors) {
+                    let s = seqs.entry(*signer).or_insert(0);
+                    *s = r.b().seq.max(*s);
+                }
+            }
+        }
+        seqs
+    }
+
+    /// Reports whether i's prev chain down to seq 1, or to a record whose ID
+    /// is one of anchors, is held, each step one seq lower.
+    fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>, anchors: &BTreeSet<Hash>) -> bool {
+        let mut steps = 0;
+        while self.recs[i].b().seq > 1 && !anchors.contains(&self.recs[i].s.id) {
+            let Some(&p) = self.recs[i].b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
+            if self.recs[p].b().seq != self.recs[i].b().seq - 1 || steps > MAX_SEQ {
+                return false;
+            }
+            i = p;
+            steps += 1;
+        }
+        true
+    }
+
+    /// Turns the evaluation into its last epoch, with the claims of the
+    /// roots before the current one.
+    fn run(&self, input: &Input) -> Epoch<'_> {
+        let mut path = vec![key_hash_of(input.group_ca)];
+        let mut cuts = BTreeMap::new();
+        let mut earlier = Vec::new();
+        loop {
+            let mut ep = Epoch::new(self, path.clone(), cuts.clone());
+            match ep.decide_claims(input.now_ms, input.first_seen, input.time_unknown) {
+                Some((next, cut)) => {
+                    earlier.append(&mut ep.claims);
+                    cuts.insert(*path.last().unwrap_or(&Hash::default()), cut);
+                    path.push(next);
+                }
+                None => {
+                    earlier.append(&mut ep.claims);
+                    ep.claims = earlier;
+                    return ep;
+                }
+            }
+        }
+    }
+
+    /// The roots of the group: the group CA, and the root of each claim an
+    /// admin under one of them signed.
+    fn group_roots(&self, group_ca: Hash) -> BTreeSet<Hash> {
+        let mut roots = BTreeSet::from([group_ca]);
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for r in &self.recs {
+                if r.b().kind == TYPE_CLAIM && r.issuer.is_some_and(|h| roots.contains(&h)) {
+                    grew |= roots.insert(claim_root(r.b()));
+                }
+            }
+        }
+        roots
+    }
+
+    /// The checkpoints the evaluation tries, by index: a root's own, of a
+    /// root of the group, at most MAX_CHECKPOINTS.
+    fn checkpoints(&self, group_ca: Hash) -> Vec<usize> {
+        let roots = self.group_roots(group_ca);
+        let mut cs: Vec<usize> = (0..self.recs.len())
+            .filter(|&i| {
+                let r = &self.recs[i];
+                !r.admin() && r.b().kind == TYPE_CHECKPOINT && roots.contains(&r.b().signer)
+            })
+            .collect();
+        cs.sort_by(|&a, &b| {
+            let (ra, rb) = (&self.recs[a], &self.recs[b]);
+            rb.b().seq.cmp(&ra.b().seq).then(ra.s.id.cmp(&rb.s.id))
+        });
+        cs.truncate(MAX_CHECKPOINTS);
+        cs
     }
 
     /// Finds the root that issued an admin CA.
@@ -669,6 +1085,8 @@ struct Epoch<'a> {
     forked: BTreeMap<Hash, i64>,
     admins: BTreeMap<Hash, usize>,
     label: Vec<Label>,
+    /// Why the labelling put a record out.
+    why: Vec<&'static str>,
     revoked: BTreeSet<Hash>,
     frozen: BTreeSet<Hash>,
     conflicts: Vec<Conflict>,
@@ -693,6 +1111,7 @@ impl<'a> Epoch<'a> {
             forked: BTreeMap::new(),
             admins: BTreeMap::new(),
             label: vec![Label::Unlabelled; n],
+            why: vec![""; n],
             revoked: BTreeSet::new(),
             frozen: BTreeSet::new(),
             conflicts: Vec::new(),
@@ -740,7 +1159,7 @@ impl<'a> Epoch<'a> {
         let mut v = BTreeSet::new();
         for &i in rs {
             let r = self.r(i);
-            if r.admin() || r.b().kind != TYPE_RESOLVE || !self.whole(i, &by_id) {
+            if r.admin() || r.b().kind != TYPE_RESOLVE || !self.whole(i, &by_id, &self.e.anchors) {
                 continue;
             }
             v.extend(r.b().records.iter().copied());
@@ -748,19 +1167,10 @@ impl<'a> Epoch<'a> {
         v
     }
 
-    /// Reports whether i's prev chain down to seq 1 is held, each step one
-    /// seq lower.
-    fn whole(&self, mut i: usize, by_id: &BTreeMap<Hash, usize>) -> bool {
-        let mut steps = 0;
-        while self.r(i).b().seq > 1 {
-            let Some(&p) = self.r(i).b().prev.as_ref().and_then(|p| by_id.get(p)) else { return false };
-            if self.r(p).b().seq != self.r(i).b().seq - 1 || steps > MAX_SEQ {
-                return false;
-            }
-            i = p;
-            steps += 1;
-        }
-        true
+    /// Reports whether i's prev chain down to seq 1, or to a record whose ID
+    /// is one of anchors, is held, each step one seq lower.
+    fn whole(&self, i: usize, by_id: &BTreeMap<Hash, usize>, anchors: &BTreeSet<Hash>) -> bool {
+        self.e.whole(i, by_id, anchors)
     }
 
     /// Finds which of one signer's records count: whole chains, not on a
@@ -776,14 +1186,14 @@ impl<'a> Epoch<'a> {
             if self.voided.contains(&r.s.id) && by_seq[&r.b().seq] > 1 {
                 return true;
             }
-            if r.b().seq == 1 {
+            if r.b().seq == 1 || self.e.anchors.contains(&r.s.id) {
                 return false;
             }
             i = by_id[r.b().prev.as_ref().unwrap_or(&Hash::default())];
         };
         let mut live: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
         for &i in rs {
-            if self.whole(i, &by_id) && !dead(i) {
+            if self.whole(i, &by_id, &self.e.anchors) && !dead(i) {
                 live.entry(self.r(i).b().seq).or_default().push(i);
             }
         }
@@ -929,6 +1339,7 @@ impl<'a> Epoch<'a> {
             } else if r.admin() && self.counted[i] {
                 if !self.permitted(i) {
                     self.label[i] = Label::Out;
+                    self.why[i] = WHY_POWER;
                 }
                 admin_recs.push(i);
             }
@@ -936,11 +1347,14 @@ impl<'a> Epoch<'a> {
         // A root's removal or freeze puts what it cuts off out for good,
         // and a root's thaw puts out the admin freezes it names.
         for &b in &admin_recs {
-            if self.r(b).b().kind == TYPE_FREEZE && thawed.contains(&self.r(b).s.id) {
-                self.label[b] = Label::Out;
+            if self.label[b] == Label::Out {
+                continue;
             }
-            if root_acts.iter().any(|&a| self.cuts_off(a, b)) {
+            if self.r(b).b().kind == TYPE_FREEZE && thawed.contains(&self.r(b).s.id)
+                || root_acts.iter().any(|&a| self.cuts_off(a, b))
+            {
                 self.label[b] = Label::Out;
+                self.why[b] = WHY_CUT;
             }
         }
         let mut attackers: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -970,6 +1384,7 @@ impl<'a> Epoch<'a> {
                 for &a in attackers.get(&b).map_or(&[][..], |v| v.as_slice()) {
                     if self.label[a] == Label::In {
                         self.label[b] = Label::Out;
+                        self.why[b] = WHY_REMOVED;
                         changed = true;
                         break;
                     }
@@ -1027,6 +1442,54 @@ impl<'a> Epoch<'a> {
             self.conflicts.push(c);
             self.stop_full = true;
         }
+    }
+
+    /// Lists the records of the set that do not count, with why, sorted by
+    /// ID, at most MAX_IGNORED; the records of a later version are in newer
+    /// instead.
+    fn ignored(&self, newer: &[Hash]) -> Vec<Ignored> {
+        let mut why = self.e.failed.clone();
+        for i in self.all() {
+            let id = self.r(i).s.id;
+            why.remove(&id);
+            if let Some(w) = self.why_not(i) {
+                why.insert(id, w);
+            }
+        }
+        for id in newer {
+            why.remove(id);
+        }
+        let mut out: Vec<Ignored> = why.into_iter().map(|(record, why)| Ignored { record, why }).collect();
+        out.truncate(MAX_IGNORED);
+        out
+    }
+
+    /// Why record i does not count in this epoch; None when it counts.
+    fn why_not(&self, i: usize) -> Option<&'static str> {
+        let r = self.r(i);
+        let effective = |id: Hash| self.claims.iter().any(|c| c.record == id && c.state == "effective");
+        Some(if self.counts(i) || r.b().kind == TYPE_CLAIM && effective(r.s.id) {
+            // A claim that took effect counted under the root before.
+            return None;
+        } else if !self.counted[i] {
+            WHY_HISTORY
+        } else if !r.admin() {
+            if self.on_path.contains_key(&r.b().signer) { WHY_CUT } else { WHY_NOT_ROOT }
+        } else if self.label[i] == Label::Undecided {
+            WHY_UNDECIDED
+        } else if !self.why[i].is_empty() {
+            self.why[i]
+        } else {
+            WHY_POWER
+        })
+    }
+
+    /// The state, with the records of a later version and those left out.
+    fn finish(&self, input: &Input) -> State {
+        let mut state = self.state();
+        state.newer = newer(input, &state, &self.e.roots);
+        state.ignored = self.ignored(&state.newer);
+        state
     }
 
     /// Reports whether record i counts: a root's record in this epoch, or
@@ -1097,7 +1560,7 @@ impl<'a> Epoch<'a> {
 
     /// Looks at the claims under the current root and returns the next
     /// root and the current root's cut when one takes effect.
-    fn decide_claims(&mut self, now: i64, first_seen: &BTreeMap<Hash, i64>) -> Option<(Hash, i64)> {
+    fn decide_claims(&mut self, now: i64, first_seen: &BTreeMap<Hash, i64>, unknown: bool) -> Option<(Hash, i64)> {
         let mut delay = DEFAULT_DELAY;
         let mut settings: Option<usize> = None;
         for &i in self.of(&self.cur) {
@@ -1215,8 +1678,11 @@ impl<'a> Epoch<'a> {
         let r = self.r(c);
         let mut cl = self.claim(c, "pending");
         let seen = first_seen.get(&r.s.id).copied().filter(|&s| s <= now).unwrap_or(now);
-        if self.label[c] != Label::In || self.root_frozen(&r.b().signer) || now - seen < delay {
-            cl.left_ms = (delay - (now - seen)).max(0);
+        let waits = unknown && delay > 0;
+        // Saturating: a caller's times are any i64.
+        let elapsed = now.saturating_sub(seen);
+        if self.label[c] != Label::In || self.root_frozen(&r.b().signer) || waits || elapsed < delay {
+            cl.left_ms = if unknown { 0 } else { delay.saturating_sub(elapsed).max(0) };
             self.claims.push(cl);
             self.pending = Some(r.b().signer);
             return None;
@@ -1361,6 +1827,7 @@ mod tests {
             }
             let want = c["state"].as_str().unwrap();
             let mut rs = records.clone();
+            let cache = SigCache::new();
             for order in 0..4 {
                 if order == 1 {
                     rs.reverse();
@@ -1374,6 +1841,8 @@ mod tests {
                     records: &rs,
                     now_ms: c["now_ms"].as_i64().unwrap(),
                     first_seen: &first_seen,
+                    time_unknown: c["time_unknown"].as_bool().unwrap_or(false),
+                    sigs: if order % 2 == 0 { Some(&cache) } else { None },
                 };
                 let got = evaluate(&input).encode();
                 assert_eq!(core::str::from_utf8(&got).unwrap(), want, "{name}, order {order}");
@@ -1390,16 +1859,22 @@ mod tests {
         for c in v["cases"].as_array().unwrap() {
             let records: Vec<Record> = serde_json::from_value(c["records"].clone()).unwrap();
             for r in records {
-                let b = Body::parse(&r.body).unwrap();
+                // The bodies of a later version have no alg and do not read.
+                let Ok(b) = Body::parse(&r.body) else {
+                    assert!(!r.body.windows(5).any(|w| w == br#""alg""#), "{}", c["name"]);
+                    continue;
+                };
                 assert_eq!(b.encode().unwrap(), r.body);
                 n += 1;
             }
         }
         assert!(n > 0);
-        let good = r#"{"device":"0123456789abcdef0123456789abcdef","group":"g","key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","name":"Laptop","role":"full","seq":1,"signer":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","time_ms":1,"type":"device","v":2}"#;
+        let good = r#"{"alg":"es256","device":"0123456789abcdef0123456789abcdef","group":"g","key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","name":"Laptop","role":"full","seq":1,"signer":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","time_ms":1,"type":"device","v":2}"#;
         Body::parse(good.as_bytes()).unwrap();
         for bad in [
             good.replace(r#"{"#, r#"{"aaa":1,"#),
+            good.replace(r#""alg":"es256""#, r#""alg":"es384""#),
+            good.replace(r#""alg":"es256","#, ""),
             good.replace(r#""device""#, r#""commands":[],"device""#),
             good.replace(r#""key""#, r#""holds_root":false,"key""#),
             good.replace(r#""v":2"#, r#""v":1"#),

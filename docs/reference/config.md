@@ -88,6 +88,7 @@ These change nothing in a normal installation. How the tests use them is in
 | `CBB_VERDICTS` | the verdict tests of all four implementations (`TestVerdicts`, `records::verdicts`, `VerdictTest`, `VerdictTests`) | A corpus of `tools/difffuzz gen` to write the verdicts on ([differential fuzzing](../differential.md)); without it each runs on a small corpus of its own. |
 | `CBB_VERDICTS_OUT` | the same tests | The file the verdicts go to, one line per case. |
 | `CBB_UPDATE_VECTORS` | the lite core's keyboard tests | `1` writes the keyboard layouts' vectors again (`cargo test -p clipboardbridge-core keyboard`). |
+| `CBB_SOURCE` | the Rust core's build | The commit the core is built from, which its `version` call names ([the core's entry point](../core-api.md)); empty when unset. |
 | `CBB_WRITE_INTEROP` | the Swift kit's certificate tests | Writes the certificates that Go's `TestSwiftCertificates` checks. |
 | `CBB_SWIFT_INTEROP` | Go's interop tests | The `clipboardbridge-interop` tool, which plays the phone in Go tests over plain TCP. |
 | `CBB_SWIFT_INTEROP_TLS` | Go's interop tests, on macOS | The same tool for the tests over real TLS, with a key in the keychain. |

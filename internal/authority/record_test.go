@@ -88,6 +88,8 @@ func TestSignVerify(t *testing.T) {
 		{Type: authority.TypeResolve, Group: tag, Seq: 1, Records: []authority.Hash{{5}, {6}}},
 		{Type: authority.TypeSettings, Group: tag, Seq: 1, TakeoverDelayMS: ptr(int64(0))},
 		{Type: authority.TypeSettings, Group: tag, Seq: 1},
+		{Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{2}, Seq: 4, ID: authority.Hash{7}}, {Key: authority.Hash{1}, Seq: 1, ID: authority.Hash{8}}}},
+		bigCheckpoint(),
 	}
 	for _, b := range bodies {
 		for _, admin := range []bool{false, true} {
@@ -171,6 +173,8 @@ func TestParseBodyRefuses(t *testing.T) {
 		"holds_root false":           strings.Replace(good, `"key"`, `"holds_root":false,"key"`, 1),
 		"not canonical":              strings.Replace(good, `{`, `{ `, 1),
 		"version 1":                  strings.Replace(good, `"v":2`, `"v":1`, 1),
+		"another algorithm":          strings.Replace(good, `"alg":"es256"`, `"alg":"es384"`, 1),
+		"no algorithm":               strings.Replace(good, `"alg":"es256",`, ``, 1),
 		"seq 0":                      strings.Replace(good, `"seq":1`, `"seq":0`, 1),
 		"seq 2 without prev":         strings.Replace(good, `"seq":1`, `"seq":2`, 1),
 		"an unknown role":            strings.Replace(good, `"role":"full"`, `"role":"linux"`, 1),
@@ -190,6 +194,15 @@ func TestParseBodyRefuses(t *testing.T) {
 	}
 }
 
+// bigCheckpoint is a checkpoint over MaxBody and under MaxCheckpointBody.
+func bigCheckpoint() authority.Body {
+	b := authority.Body{Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{1}, Seq: 1, ID: authority.Hash{2}}}}
+	for i := 0; i < 400; i++ {
+		b.Keep = append(b.Keep, authority.Hash{byte(i), byte(i >> 8)})
+	}
+	return b
+}
+
 func TestSignRefuses(t *testing.T) {
 	f := newFixture(t)
 	for name, b := range map[string]authority.Body{
@@ -203,13 +216,28 @@ func TestSignRefuses(t *testing.T) {
 			b.Admin, b.Powers = b.Key, []string{"everything"}
 			return b
 		}(),
-		"a delay over 7 days":  {Type: authority.TypeSettings, Group: tag, Seq: 1, TakeoverDelayMS: ptr(int64(authority.MaxDelay + 1))},
-		"a negative delay":     {Type: authority.TypeSettings, Group: tag, Seq: 1, TakeoverDelayMS: ptr(int64(-1))},
-		"revoke without seen":  {Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{1}}},
-		"a claim without root": {Type: authority.TypeClaim, Group: tag, Seq: 1, Seen: []authority.Seen{{Key: authority.Hash{1}}}},
-		"seen twice":           {Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{1}}, Seen: []authority.Seen{{Key: authority.Hash{1}}, {Key: authority.Hash{1}, Seq: 2}}},
-		"keys twice":           {Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{1}, {1}}, Seen: []authority.Seen{{Key: authority.Hash{1}}}},
-		"an unknown type":      {Type: "root", Group: tag, Seq: 1},
+		"a delay over 7 days":        {Type: authority.TypeSettings, Group: tag, Seq: 1, TakeoverDelayMS: ptr(int64(authority.MaxDelay + 1))},
+		"a negative delay":           {Type: authority.TypeSettings, Group: tag, Seq: 1, TakeoverDelayMS: ptr(int64(-1))},
+		"revoke without seen":        {Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{1}}},
+		"a claim without root":       {Type: authority.TypeClaim, Group: tag, Seq: 1, Seen: []authority.Seen{{Key: authority.Hash{1}}}},
+		"seen twice":                 {Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{1}}, Seen: []authority.Seen{{Key: authority.Hash{1}}, {Key: authority.Hash{1}, Seq: 2}}},
+		"keys twice":                 {Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{1}, {1}}, Seen: []authority.Seen{{Key: authority.Hash{1}}}},
+		"an unknown type":            {Type: "root", Group: tag, Seq: 1},
+		"a checkpoint without heads": {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Keep: []authority.Hash{{1}}},
+		"a head with seq 0":          {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{1}, ID: authority.Hash{2}}}},
+		"heads twice":                {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{1}, Seq: 1}, {Key: authority.Hash{1}, Seq: 2}}},
+		"a device over 8 KiB": func() authority.Body {
+			b := deviceBody(t)
+			b.Proof = strings.Repeat("a", authority.MaxBody)
+			return b
+		}(),
+		"a checkpoint over 64 KiB": func() authority.Body {
+			b := bigCheckpoint()
+			for len(b.Keep)*40 < authority.MaxCheckpointBody {
+				b.Keep = append(b.Keep, authority.Hash{byte(len(b.Keep)), byte(len(b.Keep) >> 8), 1})
+			}
+			return b
+		}(),
 	} {
 		if _, err := authority.Sign(b, f.root.Key, nil); err == nil {
 			t.Errorf("%s: signed", name)

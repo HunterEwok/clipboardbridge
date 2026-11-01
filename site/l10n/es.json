@@ -193,6 +193,8 @@
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "las cuatro implementaciones leen igual los cuerpos y conjuntos de registros modificados, en CI y cada noche",
   "Group records, version 2": "Registros del grupo, versión 2",
   "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "el próximo formato de los registros de autoridad del grupo y la única regla que los evalúa, para 0.6",
+  "The core's entry point": "El punto de entrada del núcleo",
+  "the one call, bytes in and bytes out, through which the phones and Go use the Rust core's rules, and its error codes": "la única llamada, bytes de entrada y bytes de salida, por la que los teléfonos y Go usan las reglas del núcleo en Rust, y sus códigos de error",
   "Security policy": "Política de seguridad",
   "Set up in three steps": "Listo en tres pasos",
   "Settings and environment variables": "Ajustes y variables de entorno",
