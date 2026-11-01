@@ -80,7 +80,10 @@ const canary = "cbb-bench-canary"
 // name is cb-<ID>.local), so only the run's marker is looked for.
 func captures(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	const p = "fleet/S1-internet-path/"
+	// The forwarder logs the most with CBB_DEBUG=1, which only adds counts.
+	f.serverEnv = []string{"CBB_DEBUG=1"}
 	a := newAwayGroup(ctx, r, f, "fleet/S1-internet-path", 2)
+	f.serverEnv = nil
 	if a == nil {
 		return
 	}
@@ -194,6 +197,62 @@ func captures(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 		return leaks("member connections at home", seen)
 	})
 	failClosed(ctx, r, a, c, words)
+	r.Do("fleet/S18-forwarder-keeps-nothing", func() error {
+		id, _, err := statusIDs(ctx, c)
+		if err != nil {
+			return err
+		}
+		secret := append(append([]string{}, words...), id)
+		for _, d := range []*Device{hub, home, c} {
+			ip, err := fleetIP(ctx, d)
+			if err != nil {
+				return err
+			}
+			secret = append(secret, ip)
+		}
+		for _, ip := range a.in.ips {
+			secret = append(secret, ip)
+		}
+		return serverKeepsNothing(ctx, a.fwd, fwdState, []string{"forwarder.pem", "forward-state.json"}, secret)
+	})
+}
+
+// serverKeepsNothing (S18, the fleet's part) checks that a forwarder or relay
+// d keeps in dir, its state directory, only the files keep and its log,
+// and that none of them, nor anything under /var/log, holds one of words:
+// the group's tag, device IDs, the run's marker, addresses.
+func serverKeepsNothing(ctx context.Context, d *Device, dir string, keep, words []string) error {
+	out, err := Run(ctx, d, "ls -A "+dir, "")
+	if err != nil {
+		return err
+	}
+	allowed := map[string]bool{"log": true}
+	for _, k := range keep {
+		allowed[k] = true
+	}
+	for _, name := range strings.Fields(out) {
+		if !allowed[name] {
+			return fmt.Errorf("%s keeps %s in %s, besides its keys and log: %q", d.Name, name, dir, out)
+		}
+	}
+	if n, err := Run(ctx, d, "wc -l < "+dir+"/log", ""); err != nil || strings.TrimSpace(n) == "0" {
+		return fmt.Errorf("%s's log is empty or unreadable (%v), so a search of it proves nothing", d.Name, err)
+	}
+	var hits []string
+	for _, w := range words {
+		if w == "" {
+			continue
+		}
+		// grep -F with the word as data; exit 1 means no match.
+		got, err := runOut(ctx, d, "grep -rlF -e '"+w+"' "+dir+" /var/log", time.Minute)
+		if err == nil {
+			hits = append(hits, fmt.Sprintf("%q in %s", w, strings.Join(strings.Fields(got), ", ")))
+		}
+	}
+	if len(hits) > 0 {
+		return fmt.Errorf("%s keeps %s", d.Name, strings.Join(hits, "; "))
+	}
+	return nil
 }
 
 // failClosed (S9): with the hub's WireGuard port blocked on the way, the

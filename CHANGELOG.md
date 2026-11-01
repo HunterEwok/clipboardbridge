@@ -67,7 +67,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   members beside avahi-daemon, which keeps working, ignoring another group's member (D1);
   and what the wire shows: nothing of the group in the clear on the internet's router while
   an away client syncs, and at home only TLS 1.3 with no copied text in the clear (S1, S2), and
-  nothing sent anywhere but to the servers once the tunnel breaks (S9).
+  nothing sent anywhere but to the servers once the tunnel breaks (S9); and the forwarder and the relay, with
+  `CBB_DEBUG=1`, keeping only their keys, state and log, none of which names the group, a device,
+  an address or a copy (S18, but for `systemd-analyze`).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
