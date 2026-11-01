@@ -352,6 +352,13 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpResolve:
+		who, err := s.resolveHistories()
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Name: strings.Join(who, ", "), Done: true}, nil)
 	case control.OpFreeze, control.OpThaw:
 		name, err := s.freeze(m.Name, m.Op == control.OpFreeze)
 		if err != nil {

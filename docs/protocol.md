@@ -1594,6 +1594,15 @@ A member gives a key's next record the seq one above its highest record that is 
 voided branch (of two records with one seq, the one with the lower ID), and signs nothing
 but a root's `resolve` with a key the state names in a conflict of two histories.
 
+A device keeps a log of the records it signed. When the root's `resolve` voids both
+histories of its key, it signs again, in their order, the voided records of that log that
+admit, remove, freeze, thaw or set (`device`, `revoke`, `freeze`, `thaw`, `hubs`,
+`settings`); the voided records it did not sign, as a thief's or its own from before a backup
+was restored, stay void, and its user does again what was theirs. Before a record its user
+asks for, a computer waits up to 10 seconds until it holds another member's records (a
+hello with its digest, or the records a member sent), so that a device brought back from
+a backup rarely signs a seq again; when no member answers, it signs anyway and logs it.
+
 #### Checkpoints
 
 A group's records only grow, and a member keeps at most 1 MiB of them (1024 records). A root's

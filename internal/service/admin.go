@@ -103,6 +103,7 @@ func (s *Service) makeAdmin(target string, allowFileKey bool) (string, error) {
 		}
 		s.mu.Unlock()
 	}
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(peer.ID), Name: d.Name, Role: group.RoleFull,
 		OS: d.OS, Key: &peer.Key, Admin: &adminKey, Store: store, Kind: kind, Proof: proof})
 	if err != nil {
@@ -429,6 +430,7 @@ func (s *Service) setTakeoverDelay(value string) error {
 		return errors.New("only the group's root sets how long a claim waits")
 	}
 	ms := d.Milliseconds()
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordSettings, TakeoverDelayMS: &ms})
 	if err != nil {
 		return err
@@ -472,6 +474,7 @@ func (s *Service) setHubs(targets []string) error {
 		}
 		ids = append(ids, d.ID)
 	}
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordHubs, Hubs: ids})
 	if err != nil {
 		return err
@@ -537,6 +540,7 @@ func (s *Service) takeOver(target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.awaitRecords(next)
 	r, err := s.signRecord(next, group.RecordBody{Type: group.RecordClaim, Root: newRoot.Cert.Raw})
 	if err != nil {
 		return "", err

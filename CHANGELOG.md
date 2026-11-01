@@ -10,6 +10,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - A key that signed two histories signs nothing until the group's root resolves them; once
   the root voids both branches, the key goes on from the record below the fork, and what it
   signs counts (docs/protocol.md, section 10, "Going on after two histories").
+- `cbb resolve`: on the group's root computer, voids both histories of every key that signed
+  two; the admin computer whose key it was signs again by itself what it signed since its
+  last backup (`signed.json` in the state directory keeps its log).
+- Before a record its user asks for, a computer waits up to 10 seconds for another member's
+  records, so that one brought back from a backup does not sign a number it signed already.
 
 - The computers apply the group's stop when its records show a likely thief (docs/protocol.md,
   section 10, "Stopping the exchange"): while two admins act against each other, two claims

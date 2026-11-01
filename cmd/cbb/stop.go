@@ -30,7 +30,7 @@ func stopLines(st *control.Status) []string {
 		case "claims":
 			out = append(out, fmt.Sprintf("Two claims to take the group over (%s): the root cancels one or both by removing its admin.", who))
 		case "two_histories":
-			out = append(out, fmt.Sprintf("%s signed two histories with one key, as a stolen key or a device brought back from a backup would: the group's root decides which goes.", who))
+			out = append(out, fmt.Sprintf("%s signed two histories with one key, as a stolen key or a device brought back from a backup would: the group's root voids both (cbb resolve on a root computer, or on the root phone), and the device signs its records again.", who))
 		default:
 			out = append(out, fmt.Sprintf("A conflict of kind %s (%s): the root decides.", c.Kind, who))
 		}

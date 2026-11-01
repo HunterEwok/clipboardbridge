@@ -232,6 +232,11 @@ type Service struct {
 	unreached map[group.DeviceID]bool
 
 	listMu sync.Mutex // one ensureListed at a time, so a device is recorded once
+
+	// signedMu guards the log of the records this device signed
+	// (signed.json, resign.go), and lets one resignVoided run at a time.
+	signedMu sync.Mutex
+	resignMu sync.Mutex
 	// attMu guards the revocation list and the evidence of the connected
 	// peers (evidence.go); taken alone.
 	attMu       sync.Mutex

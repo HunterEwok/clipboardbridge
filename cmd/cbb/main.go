@@ -56,6 +56,7 @@ Commands:
                           they serve, before the others (on the root, or an admin that may be a hub).
   freeze <name or ID>     Stop an admin computer, as a stolen one, until the root decides.
   unfreeze <name or ID>   Make a frozen admin computer an admin again (on the group's root).
+  resolve                 Void both histories of a key that signed two (on the group's root).
   global [on|off]         Show, or turn on or off, sync over the internet on this device.
   global hub address:port Make this device the group's hub for sync over the internet.
   global relay address:port
@@ -152,6 +153,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdHubs(rest, stdout, stderr)
 	case "freeze", "unfreeze":
 		return cmdFreeze(rest, cmd == "freeze", stdout, stderr)
+	case "resolve":
+		return cmdResolve(rest, stdout, stderr)
 	case "admin":
 		return cmdAdmin(rest, stdout, stderr)
 	case "new":

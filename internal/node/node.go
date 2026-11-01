@@ -286,6 +286,12 @@ type Node struct {
 
 	rejoinMu sync.Mutex // one Rejoin at a time
 
+	// synced is set once a member's hello carried this member's records
+	// digest; recsAt is the uptime of the last records a member sent
+	// (Synced).
+	synced atomic.Bool
+	recsAt atomic.Int64
+
 	mu        sync.Mutex
 	conns     map[group.DeviceID]*conn
 	waiting   map[string]waiter  // the commands sent, by ID, until their result
@@ -592,7 +598,9 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 			if st == nil {
 				return nil
 			}
-			if mine := st.Digest(); mine != "" && mine != extra.Records {
+			if mine := st.Digest(); mine == extra.Records {
+				n.synced.Store(true)
+			} else if mine != "" {
 				for _, chunk := range chunkRecords(st.All()) {
 					if err := write(&message{Type: typeRecs, Records: chunk}); err != nil {
 						return err
@@ -600,6 +608,7 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 				}
 			}
 		case m.Type == typeRecs && st != nil && len(m.Records) > 0:
+			n.recsAt.Store(int64(n.cfg.Uptime()))
 			if fresh := st.Add(id, m.Records); len(fresh) > 0 {
 				n.sendRecords(fresh, nil)
 				st.Settle(fresh)
@@ -799,6 +808,24 @@ func (n *Node) renewPeer(c *conn) {
 	}
 }
 
+// recordsSettle is how long after the last records a member sent this
+// member counts as holding them all: a member sends all its records at
+// once when the digests differ.
+const recordsSettle = time.Second
+
+// Synced reports whether this member holds the records of another member
+// since it started: a member's hello carried the same digest, or a member
+// sent its records and recordsSettle passed. A device brought back from a
+// backup holds old records until then, and a record it signed before would
+// take a seq it signed already (docs/protocol.md, section 10, "Two numbers").
+func (n *Node) Synced() bool {
+	if n.synced.Load() {
+		return true
+	}
+	at := n.recsAt.Load()
+	return at != 0 && n.cfg.Uptime()-time.Duration(at) >= recordsSettle
+}
+
 // offerRecords sends every record to the peer of c when its digest differs
 // from this member's and this member has any.
 func (n *Node) offerRecords(c *conn, digest string) {
@@ -806,7 +833,11 @@ func (n *Node) offerRecords(c *conn, digest string) {
 	if st == nil {
 		return
 	}
-	if mine := st.Digest(); mine == "" || mine == digest {
+	mine := st.Digest()
+	if mine == digest {
+		n.synced.Store(true)
+	}
+	if mine == "" || mine == digest {
 		return
 	}
 	for _, chunk := range chunkRecords(st.All()) {
@@ -1751,6 +1782,7 @@ func (c *conn) reader() error {
 				c.n.cfg.Logf("node: the evidence from %s: %v", c.id, err)
 			}
 		case typeRecs:
+			c.n.recsAt.Store(int64(c.n.cfg.Uptime()))
 			if st := c.n.cfg.Records; st != nil && len(m.Records) > 0 {
 				if fresh := st.Add(c.id, m.Records); len(fresh) > 0 {
 					c.n.sendRecords(fresh, c)

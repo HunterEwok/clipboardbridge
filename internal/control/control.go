@@ -42,6 +42,7 @@ const (
 	OpRename      = "rename"         // client → service: give the device Name names the name NewName
 	OpFreeze      = "freeze"         // client → service: freeze the admin computer Name names
 	OpThaw        = "thaw"           // client → service: on the root, unfreeze the admin computer Name names
+	OpResolve     = "resolve"        // client → service: on the root, void both histories of every key that signed two; Name answers whose
 	OpAway        = "away"           // client → service: Name "on", "off", "hub", "move" (to Device) or "relay": sync away from home
 	OpHolder      = "holder"         // client → service: Name "auto", "first", "fallback" or "never": the holder setting
 	OpMode        = "mode"           // client → service: Name "own", "shared", "receive" or "send": the sync mode

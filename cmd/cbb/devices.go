@@ -262,3 +262,24 @@ func cmdTakeover(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "Then it removes the old root and makes a new iPhone CA: iPhones that use the shortcut pair again with cbb pair -phone.")
 	return 0
 }
+
+// cmdResolve, on the group's root, voids both histories of every key that
+// signed two.
+func cmdResolve(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "cbb: usage: cbb resolve; on the group's root, it voids both histories of every key that signed two (cbb status shows them)")
+		return 2
+	}
+	c, err := control.DialFor(control.OpResolve)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	m, err := c.Do(&control.Message{Header: control.Header{Op: control.OpResolve}})
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "Voided both histories of %s: each goes on from the record before them, and signs again what it still needs.\n"+
+		"Check that the group's devices are the ones you expect (cbb status): records signed with a stolen key are gone too.\n", m.Name)
+	return 0
+}

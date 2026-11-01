@@ -905,7 +905,45 @@ var ErrRecordsOnly = errors.New("group: the group was taken over from this root;
 // (docs/protocol.md, section 10, "Two numbers"), the key goes on from the
 // record below the fork, and what it signs counts.
 func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
-	ps := s.bodies()
+	own, dead := s.branches(signer)
+	var seq int64
+	var prev KeyHash
+	// Of two records with one seq, which only a key that signed two
+	// histories has, the lower ID, so that every member gives the same.
+	for _, p := range own {
+		if !dead(p) && (p.b.Seq > seq || p.b.Seq == seq && bytes.Compare(p.id[:], prev[:]) < 0) {
+			seq, prev = p.b.Seq, p.id
+		}
+	}
+	if seq == 0 {
+		return 1, nil
+	}
+	return seq + 1, &prev
+}
+
+// Voided returns the records of signer that are on a branch a root's
+// resolve voided, by seq: what its device may sign again once the root
+// voided both of its histories.
+func (s *Records) Voided(signer KeyHash) []Record {
+	own, dead := s.branches(signer)
+	var ps []parsed
+	for _, p := range own {
+		if dead(p) {
+			ps = append(ps, p)
+		}
+	}
+	sort.Slice(ps, func(i, j int) bool { return ps[i].b.Seq < ps[j].b.Seq })
+	out := make([]Record, len(ps))
+	for i, p := range ps {
+		out[i] = p.r
+	}
+	return out
+}
+
+// branches returns the records of signer, by ID, and whether one is on a
+// voided branch: its prev chain, as far as the set holds it, passes
+// through a record that a root's resolve names and that has a sibling.
+func (s *Records) branches(signer KeyHash) (map[KeyHash]parsed, func(parsed) bool) {
 	roots := map[KeyHash]bool{}
 	for _, k := range s.State().Roots {
 		roots[k] = true
@@ -913,7 +951,7 @@ func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
 	voided := map[KeyHash]bool{}
 	byID := map[KeyHash]parsed{}
 	bySeq := map[int64]int{}
-	for _, p := range ps {
+	for _, p := range s.bodies() {
 		if p.b.Type == RecordResolve && roots[p.b.Signer] && len(p.r.Chain) == 0 {
 			for _, id := range p.b.Records {
 				voided[id] = true
@@ -924,8 +962,6 @@ func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
 			bySeq[p.b.Seq]++
 		}
 	}
-	// A record is on a voided branch when its prev chain, as far as the
-	// set holds it, passes through a voided record with a sibling.
 	dead := func(p parsed) bool {
 		for steps := 0; steps <= authority.MaxSeq; steps++ {
 			if voided[p.id] && bySeq[p.b.Seq] > 1 {
@@ -942,19 +978,7 @@ func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
 		}
 		return false
 	}
-	var seq int64
-	var prev KeyHash
-	// Of two records with one seq, which only a key that signed two
-	// histories has, the lower ID, so that every member gives the same.
-	for _, p := range byID {
-		if !dead(p) && (p.b.Seq > seq || p.b.Seq == seq && bytes.Compare(p.id[:], prev[:]) < 0) {
-			seq, prev = p.b.Seq, p.id
-		}
-	}
-	if seq == 0 {
-		return 1, nil
-	}
-	return seq + 1, &prev
+	return byID, dead
 }
 
 // ErrTwoHistories is what Sign returns for a key that signed two histories
