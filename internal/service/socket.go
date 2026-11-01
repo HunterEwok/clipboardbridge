@@ -428,7 +428,7 @@ func (s *Service) status() *control.Status {
 	st := &control.Status{Role: string(s.cfg.Role), OS: s.cfg.OS, Version: version.String(), Holder: s.holder,
 		HoldSetting: s.holdSetting, HoldPriority: s.priorityLocked(s.id), Battery: s.battery}
 	st.Release, st.Update = s.releaseStatus()
-	st.TVs = s.tvStatus() // a TV's remote needs no group
+	st.TVs = s.tvStatus()            // a TV's remote needs no group
 	st.Keyboard = s.keyboardStatus() // nor does the Bluetooth keyboard
 	if s.id == nil {
 		return st
