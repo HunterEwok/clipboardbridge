@@ -277,13 +277,13 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     - A temporary guest: a device record with an end date, after which the device leaves the
       group without being removed by hand.
 - **46.** **Planned for 0.7.** Sync away from home through networks that block VPNs, on
-    every member, the lite member included. The ways through are equal options that the
-    user or the server's operator picks, and more may join them: VLESS behind the server's
-    own web server (XHTTP inside the TLS of a real site, which the site's nginx passes to
-    the forwarder; the project's forwarder at cbb.tools runs it), VLESS with REALITY for
-    forwarders without a web server, and AmneziaWG. Every client speaks each of them; on the
-    lite member VLESS comes first, then AmneziaWG and the blind relay
-    ([below](#vless-behind-a-web-server)).
+    every member, the lite member included. There are two ways, equal options that the user
+    or the server's operator picks, and more may join them: VLESS and AmneziaWG. VLESS comes
+    in two kinds: with the site's real certificate, behind the server's own web server
+    (XHTTP, which the site's nginx passes to the forwarder; the project's forwarder at
+    cbb.tools runs it), or with REALITY, for forwarders without a web server. Every client
+    speaks each of them; on the lite member VLESS comes first, then AmneziaWG and the blind
+    relay ([below](#vless-behind-a-web-server)).
 
 ## Devices that are hard to type into
 
@@ -566,10 +566,11 @@ Item 46, decided by the owner on 2026-11-01, for 0.7. Today VLESS runs only insi
 another site's TLS. A server that already serves a site on 443, as cbb.tools does with
 nginx, cannot do that, and the lite member cannot speak REALITY at all: REALITY needs a
 browser's ClientHello and its own check inside the session ID, which rustls does not
-make. VLESS behind a web server joins REALITY and AmneziaWG as an equal option, not a
-replacement: the user or the server's operator picks the way that their network lets
-through, and more ways may join them later. REALITY suits forwarders that people run on
-servers of their own without a site.
+make. So VLESS gets a second kind beside REALITY, with the site's real certificate behind
+a web server; neither replaces the other. VLESS and AmneziaWG stay two equal ways, and the
+user or the server's operator picks the one their network lets through; more ways may
+join them later. REALITY suits forwarders that people run on servers of their own without
+a site.
 
 - **The transport.** VLESS over XHTTP over TLS, as cbb.tools' nginx already passes VLESS
   for other uses. The web server (nginx) ends the TLS with the site's own certificate and
