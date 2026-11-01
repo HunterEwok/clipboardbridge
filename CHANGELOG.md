@@ -8,6 +8,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The core's entry point reads a remote invitation (`read_invite`, docs/core-api.md): the
+  invitation, or the stable reason it is refused, for the phones to use later.
 - Sealed commands: a computer seals a command's orders (a paste's text, a hub's keys, a mode
   or an action) to the receiver's key when its device record has one, so that the members
   in between see only who sent it to whom; the receiver opens them with its own secret
