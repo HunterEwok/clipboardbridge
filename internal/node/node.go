@@ -38,6 +38,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
+	"github.com/HunterEwok/clipboardbridge/internal/seal"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
@@ -140,6 +141,11 @@ type Config struct {
 	// Releases, if set, keeps the newest signed release, which goes to
 	// every peer whose hello names an older one.
 	Releases ReleaseStore
+
+	// SealKey, if set, is this member's public key for sealed messages
+	// (internal/seal), which its hello offers so that the group's root or
+	// an admin puts it in its device record (docs/protocol.md, section 15).
+	SealKey []byte
 
 	// TunnelKey, if set, is this member's WireGuard public key, which its
 	// hello offers the group's hubs, with TunnelPSK, its own preshared key.
@@ -258,6 +264,9 @@ type Peer struct {
 	Actions []string
 	// Media tells that its hello says it serves content.
 	Media bool
+	// Seal is the public key for sealed messages its hello offers, of the
+	// right size; nil when it offers none.
+	Seal  []byte
 	Since time.Duration // uptime when the connection started
 	// Local is this end's address of the connection; invalid when it is
 	// not an IP connection.
@@ -729,11 +738,11 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, device, mode, store, acts, media := c.peerAdminKey, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
+			adminKey, device, mode, store, acts, media, sealKey := c.peerAdminKey, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia, c.peerSeal
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), Chain: c.peerChain, AdminKey: adminKey,
-				Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
+				Mode: mode, KeyStore: store, Actions: acts, Media: media, Seal: sealKey, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -1274,6 +1283,7 @@ type conn struct {
 	peerKeyStore string   // where its hello says its keys live; "" when it says neither
 	peerActions  []string // the quick actions its hello says are on
 	peerMedia    bool     // its hello says it serves content
+	peerSeal     []byte   // the key for sealed messages its hello offers
 	certSent     bool     // a renewed certificate was queued for the peer
 	sayBye       bool
 	done         chan struct{} // closed to end the connection
@@ -1456,6 +1466,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 		if k := c.n.tunnelKey.Load(); k != nil {
 			out.TunnelKey, out.TunnelPSK = k[0], k[1]
 		}
+		out.Seal = c.n.cfg.SealKey
 		data, err := encode(out)
 		if err != nil {
 			return nil, err
@@ -1631,6 +1642,10 @@ func (c *conn) reader() error {
 				c.peerDevice = extra.Device.Clean()
 			}
 			c.peerAdminKey, c.peerPhoneCA = extra.AdminKey, extra.PhoneCA
+			c.peerSeal = nil
+			if len(extra.Seal) == seal.PublicKeySize {
+				c.peerSeal = extra.Seal
+			}
 			c.peerKeyStore = ""
 			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware || extra.KeyStore == group.StoreRootless {
 				c.peerKeyStore = extra.KeyStore
