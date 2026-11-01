@@ -35,7 +35,7 @@ object Bench {
         Socket(host, port).use { s ->
             s.soTimeout = 10 * 60 * 1000
             val req = buildJsonObject {
-                for ((k, v) in fields) put(k, if (v is Number) JsonPrimitive(v) else JsonPrimitive(v.toString()))
+                for ((k, v) in fields) put(k, when (v) { is Number -> JsonPrimitive(v); is Boolean -> JsonPrimitive(v); else -> JsonPrimitive(v.toString()) })
             }
             val w = OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8)
             w.write(req.toString() + "\n")
@@ -55,6 +55,19 @@ object Bench {
 
     /** Starts another member in no group; its name. */
     fun add(): String = call("op" to "add").str("dev")!!
+
+    /**
+     * Starts another member in no group with a UDP port for a hub's tunnel,
+     * the same number on the emulator's host and in the member; its name and
+     * the port, which this emulator dials at 10.0.2.2.
+     */
+    fun addHub(): Pair<String, Int> {
+        val a = call("op" to "add", "udp" to true)
+        return a.str("dev")!! to a["port"]!!.jsonPrimitive.content.toInt()
+    }
+
+    /** This computer's loopback as the emulator dials it. */
+    const val HOST = "10.0.2.2"
 
     /** The member's port as this emulator dials it. */
     fun addr(dev: String): String = call("op" to "addr", "dev" to dev).str("addr")!!

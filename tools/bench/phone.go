@@ -55,7 +55,7 @@ func Phone(ctx context.Context, r *Report, cbb, android string, timeout time.Dur
 	defer ln.Close()
 	go h.serve(ctx, ln)
 	if r.Do("phone/member", func() error {
-		_, err := h.add(ctx)
+		_, _, err := h.add(ctx, false)
 		return err
 	}) != nil {
 		return
@@ -167,10 +167,12 @@ type phoneHelper struct {
 	nextJob int
 }
 
-// phoneRequest is what a test asks: op is add, run, copy, arrives, start,
-// output or stop.
+// phoneRequest is what a test asks: op is add, addr, run, copy, arrives,
+// start, output or stop. add with udp also publishes a UDP port, the same
+// number on this computer and in the container, for a hub's tunnel.
 type phoneRequest struct {
 	Op      string `json:"op"`
+	UDP     bool   `json:"udp,omitempty"`
 	Dev     string `json:"dev,omitempty"`
 	Cmd     string `json:"cmd,omitempty"`
 	Text    string `json:"text,omitempty"`
@@ -181,6 +183,7 @@ type phoneRequest struct {
 type phoneAnswer struct {
 	Dev   string `json:"dev,omitempty"`
 	Addr  string `json:"addr,omitempty"`
+	Port  int    `json:"port,omitempty"`
 	Out   string `json:"out,omitempty"`
 	ID    string `json:"id,omitempty"`
 	Done  bool   `json:"done,omitempty"`
@@ -247,20 +250,34 @@ func (h *phoneHelper) member(name string) (*Device, error) {
 	return nil, fmt.Errorf("no member named %q in this run", name)
 }
 
-// add starts a member in no group with its member port on the loopback.
-func (h *phoneHelper) add(ctx context.Context) (*Device, error) {
-	d, err := h.f.AddWith(ctx, h.f.net, []string{"-p", "127.0.0.1::8764"})
+// add starts a member in no group with its member port on the loopback;
+// with udp, also a free UDP port, the same number on this computer and in
+// the container, which it returns: a hub there offers the emulator its
+// tunnel at 10.0.2.2 and that port.
+func (h *phoneHelper) add(ctx context.Context, udp bool) (*Device, int, error) {
+	run := []string{"-p", "127.0.0.1::8764"}
+	udpPort := 0
+	if udp {
+		c, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			return nil, 0, err
+		}
+		udpPort = c.LocalAddr().(*net.UDPAddr).Port
+		c.Close()
+		run = append(run, "-p", fmt.Sprintf("127.0.0.1:%d:%d/udp", udpPort, udpPort))
+	}
+	d, err := h.f.AddWith(ctx, h.f.net, run)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	out, err := docker(ctx, "port", d.Container, "8764/tcp")
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	first := strings.TrimSpace(strings.SplitN(out, "\n", 2)[0])
 	_, port, err := net.SplitHostPort(first)
 	if err != nil {
-		return nil, fmt.Errorf("docker port %s gave %q: %w", d.Container, out, err)
+		return nil, 0, fmt.Errorf("docker port %s gave %q: %w", d.Container, out, err)
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -269,7 +286,7 @@ func (h *phoneHelper) add(ctx context.Context) (*Device, error) {
 	}
 	h.members = append(h.members, d)
 	h.addrs[d.Name] = net.JoinHostPort(emulatorHost, port)
-	return d, nil
+	return d, udpPort, nil
 }
 
 func (h *phoneHelper) do(ctx context.Context, req phoneRequest, a *phoneAnswer) error {
@@ -279,11 +296,11 @@ func (h *phoneHelper) do(ctx context.Context, req phoneRequest, a *phoneAnswer) 
 	}
 	switch req.Op {
 	case "add":
-		d, err := h.add(ctx)
+		d, udp, err := h.add(ctx, req.UDP)
 		if err != nil {
 			return err
 		}
-		a.Dev = d.Name
+		a.Dev, a.Port = d.Name, udp
 		h.mu.Lock()
 		a.Addr = h.addrs[d.Name]
 		h.mu.Unlock()

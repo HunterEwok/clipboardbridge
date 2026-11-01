@@ -184,7 +184,7 @@ class GroupTest {
     fun a7_quickActions() {
         val pc = idOf(Bench.PC)
         Bench.run(Bench.PC, "cbb action enable restart -any-key -yes")
-        val pid = { Bench.run(Bench.PC, "pgrep -o -f 'cbb service'").trim() }
+        val pid = { Bench.run(Bench.PC, "pgrep -o -f '^cbb service'").trim() }
         val before = pid()
         assertTrue("restart refused: ${model.message}", runBlocking { model.runAction(pc, "restart") })
         until(30, "the service on ${Bench.PC} restarted") { runCatching { pid() }.getOrDefault(before).let { it.isNotEmpty() && it != before } }
@@ -197,13 +197,7 @@ class GroupTest {
     @Test
     fun a8_renameAndRemove() {
         val second = Bench.add()
-        compose.onNodeWithContentDescription(str(R.string.add_device)).performClick()
-        val (code, pairing) = Bench.pairCode(second)
-        compose.onNode(hasSetTextAction()).performTextInput(code)
-        compose.onNodeWithText(str(R.string.add)).performClick()
-        val out = pairing.finish(90)
-        assertTrue("cbb pair on $second did not join:\n$out", out.contains("Joined the group."))
-        until(30, "$second in the phone's devices") { model.group.devices.any { it.name == second } }
+        admit(second)
         // A6: one notification that it joined.
         val joined = context.getString(R.string.event_added, second)
         until(30, "a notification \"$joined\"; there are ${notifications()}") {
@@ -230,6 +224,17 @@ class GroupTest {
         }
         // A6: never the clipboard's text.
         assertFalse("a notification shows a copy: ${notifications()}", notifications().any { it.contains("cbb-bench phone") })
+    }
+
+    /** Admits a member in no group from Home's add button, by its QR code's text. */
+    private fun admit(dev: String) {
+        compose.onNodeWithContentDescription(str(R.string.add_device)).performClick()
+        val (code, pairing) = Bench.pairCode(dev)
+        compose.onNode(hasSetTextAction()).performTextInput(code)
+        compose.onNodeWithText(str(R.string.add)).performClick()
+        val out = pairing.finish(90)
+        assertTrue("cbb pair on $dev did not join:\n$out", out.contains("Joined the group."))
+        until(30, "$dev in the phone's devices") { model.group.devices.any { it.name == dev } }
     }
 
     /** The texts of the app's notifications that show now. */
@@ -293,6 +298,51 @@ class GroupTest {
             sensitive = clipboard().primaryClip?.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true
         }
         assertTrue("the secret is not marked sensitive on the phone", sensitive)
+    }
+
+    /**
+     * W42 and W5: a computer the phone made an admin is the hub; with sync
+     * away from home on, the phone, which finds no hub on its network (the
+     * emulator sees no mDNS), reaches it through the tunnel in the app's
+     * process; the app and cbb global say where it stands, also while the
+     * hub does not answer.
+     */
+    @Test
+    fun c1_awayThroughHub() {
+        val (hub, udp) = Bench.addHub()
+        admit(hub)
+        runBlocking { model.makeAdmin(idOf(hub)) }
+        assertEquals("making it an admin says ${model.message}", R.string.made_admin, model.message?.text)
+        Bench.run(hub, "cbb global on", stdin = "yes\n")
+        // The hub learns that it is an admin over its connection to the phone.
+        until(60, "$hub takes cbb global hub") {
+            runCatching { Bench.run(hub, "cbb global hub -port $udp -firewall no ${Bench.HOST}:$udp") }.isSuccess
+        }
+        val global = Bench.run(hub, "cbb global")
+        assertTrue("cbb global on $hub:\n$global", global.contains("this device is the hub, on UDP port $udp") && global.contains("${Bench.HOST}:$udp"))
+        assertEquals("off before it is turned on", AwayFromHome.Status.OFF, model.away?.status ?: AwayFromHome.Status.OFF)
+        runBlocking { model.setAway(true) }
+        assertEquals("turning it on says ${model.awayNote}", null, model.awayNote)
+        val status = { runBlocking { model.refresh() }; model.away }
+        until(120, "the phone connected through $hub's tunnel; the app says ${model.away}") { status()?.status == AwayFromHome.Status.CONNECTED }
+        val text = "cbb-bench phone W42 through the tunnel ${System.currentTimeMillis()}"
+        Bench.copy(hub, text)
+        until(30, "$hub's copy on the phone; it has ${clip()}") {
+            runBlocking { model.sync() }
+            clip() == text
+        }
+        // W5: the hub stops answering; the app says it is trying, and why.
+        Bench.run(hub, "pkill -STOP -f '^cbb service'")
+        try {
+            until(180, "the app says it cannot reach $hub; it says ${model.away}") {
+                status().let { it?.status == AwayFromHome.Status.CONNECTING && it.error != null }
+            }
+        } finally {
+            Bench.run(hub, "pkill -CONT -f '^cbb service'")
+        }
+        until(120, "the phone through the tunnel again; the app says ${model.away}") { status()?.status == AwayFromHome.Status.CONNECTED }
+        runBlocking { model.setAway(false) }
+        assertEquals("off again", AwayFromHome.Status.OFF, status()?.status ?: AwayFromHome.Status.OFF)
     }
 }
 
