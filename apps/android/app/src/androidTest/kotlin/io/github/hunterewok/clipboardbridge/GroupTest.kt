@@ -253,8 +253,11 @@ class GroupTest {
         // Settles what earlier tests left, so the send screen finds the group connected.
         runBlocking { model.sync() }
         setClip(text)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { model.message = null }
         // What the widget's and the tile's PendingIntent start.
         context.startActivity(SendActivity.intent(context))
+        until(30, "the send screen says what it did") { model.message != null }
+        assertEquals("the send screen says ${model.message}", R.string.sent, model.message?.text)
         Bench.arrives(Bench.PC, text)
     }
 
@@ -269,7 +272,7 @@ class GroupTest {
         var saved = ""
         try {
             until(60, "${Bench.PC} saves the phone's file") {
-                saved = runCatching { Bench.run(Bench.PC, "rm -rf /tmp/o11 && cbb paste -o /tmp/o11 2>&1; find /tmp/o11 -type f -exec cat {} +") }
+                saved = runCatching { Bench.run(Bench.PC, "rm -rf /tmp/o11 && mkdir /tmp/o11 && cbb paste -o /tmp/o11 2>&1; find /tmp/o11 -type f -exec cat {} +") }
                     .getOrElse { it.toString() }
                 saved.contains("from the phone $stamp")
             }
@@ -335,8 +338,16 @@ class GroupTest {
 
             // A computer away (the fleet sees no mDNS from the emulator) reaches the phone through the forwarder.
             Bench.run(Bench.PC, "cbb global on", stdin = "yes\n")
-            until(120, "${Bench.PC} connected to the phone hub:\n${runCatching { Bench.run(Bench.PC, "cbb global") }.getOrDefault("")}") {
-                Bench.run(Bench.PC, "cbb global").contains("connected to the hub")
+            var global = ""
+            try {
+                until(120, "${Bench.PC} connected to the phone hub") {
+                    // The computer connects again for its hello to carry its tunnel key; the phone dials it.
+                    runBlocking { model.sync() }
+                    global = runCatching { Bench.run(Bench.PC, "cbb global") }.getOrElse { it.toString() }
+                    global.contains("connected to the hub")
+                }
+            } catch (e: AssertionError) {
+                throw AssertionError("${e.message}:\n$global\nthe app says ${model.hub}\n${Bench.PC}'s log:\n${Bench.logs(Bench.PC)}")
             }
 
             // G14: an invitation the phone makes and serves, used by a new computer.

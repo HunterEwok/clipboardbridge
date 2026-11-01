@@ -189,7 +189,7 @@ type phoneForwarder struct {
 }
 
 // phoneRequest is what a test asks: op is add, addr, forwarder, run, copy,
-// arrives, start, output or stop. add with udp also publishes a UDP port, the same
+// arrives, logs, start, output or stop. add with udp also publishes a UDP port, the same
 // number on this computer and in the container, for a hub's tunnel.
 type phoneRequest struct {
 	Op      string `json:"op"`
@@ -361,6 +361,10 @@ func (h *phoneHelper) do(ctx context.Context, req phoneRequest, a *phoneAnswer) 
 		return Copy(ctx, d, req.Text)
 	case "arrives":
 		return arrives(ctx, d, req.Text, timeout)
+	case "logs":
+		// The service's log, the container's, for a test's failure message.
+		a.Out, err = docker(ctx, "logs", "--tail", "60", d.Container)
+		return err
 	}
 	return fmt.Errorf("no op %q", req.Op)
 }

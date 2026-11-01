@@ -85,6 +85,9 @@ object Bench {
     fun run(dev: String, cmd: String, stdin: String = "", seconds: Int = 0): String =
         call("op" to "run", "dev" to dev, "cmd" to cmd, "text" to stdin, "seconds" to seconds).str("out").orEmpty()
 
+    /** The last lines of the member's service log, for a failure's message. */
+    fun logs(dev: String): String = runCatching { call("op" to "logs", "dev" to dev).str("out").orEmpty() }.getOrElse { it.toString() }
+
     /** Copies text on the member as its user would. */
     fun copy(dev: String, text: String) {
         call("op" to "copy", "dev" to dev, "text" to text)
