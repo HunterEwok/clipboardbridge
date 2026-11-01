@@ -137,7 +137,8 @@ val bindCore = tasks.register<Exec>("bindCore") {
     environment("RUSTUP_TOOLCHAIN", rustPinned)
     withPinnedNdk()
 }
-android.sourceSets.getByName("main").jniLibs.srcDir(coreLibs.map { it.dir("jniLibs") })
+// The source set takes a folder, not a provider; preBuild builds what goes in it.
+android.sourceSets.getByName("main").jniLibs.srcDir(coreLibs.get().dir("jniLibs").asFile)
 tasks.named("preBuild") { dependsOn(bindCore) }
 
 dependencies {
