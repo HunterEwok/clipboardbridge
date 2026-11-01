@@ -544,17 +544,22 @@ public struct RecordSet: Codable, Equatable, Sendable {
         public var sender: String
         /// Whether that device's own key signed it.
         public var verified: Bool?
+        /// Whether its orders were sealed to this member and opened.
+        public var opened: Bool?
     }
 
     /// Checks command c for the member me (docs/protocol.md, section 15):
     /// an admin of the group that may sign its type signed it, its by is
     /// the signer's device, it is for me in this group and in its
-    /// lifetime. The caller keeps the replay cache.
-    public func check(command c: Member.Record, me: String) throws -> CheckedCommand {
+    /// lifetime. A sealed command's orders are opened with secret, this
+    /// member's secret for sealed messages; a paste in the open is refused
+    /// when this member's device record has a `seal` key. The caller keeps
+    /// the replay cache.
+    public func check(command c: Member.Record, me: String, secret: Data? = nil) throws -> CheckedCommand {
         guard groupCA != nil else { throw Commands.Refused(reason: "this device has no records of its group yet") }
-        struct Extra: Encodable { var command: Member.Record, me: String }
+        struct Extra: Encodable { var command: Member.Record, me: String, secret: Data? }
         do {
-            return try ask("group_command", Extra(command: c, me: me))
+            return try ask("group_command", Extra(command: c, me: me, secret: secret))
         } catch let r as Core.Refusal {
             throw Commands.Refused(reason: r.details.map { "\(r.message): \($0)" } ?? r.message)
         }

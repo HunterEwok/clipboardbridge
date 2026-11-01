@@ -86,11 +86,30 @@ fn seal_command(a: SealArgs) -> core::result::Result<Vec<u8>, Refusal> {
     Ok(json(super::body_answer(&body)))
 }
 
+/// The arguments of `seal_public`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PublicArgs {
+    #[serde(with = "b64")]
+    secret: Vec<u8>,
+}
+
+/// `seal_public`: the public key for sealed messages of `secret` (32
+/// random bytes the caller keeps), as `{"key": ...}`, the `seal` its
+/// hello, pairing and device record carry.
+fn seal_public(a: PublicArgs) -> core::result::Result<Vec<u8>, Refusal> {
+    let key = crate::seal::public_key(&a.secret).map_err(|e| refuse(Code::Request, e))?;
+    let mut m = Map::new();
+    m.insert("key".into(), Value::String(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, key)));
+    Ok(json(Value::Object(m)))
+}
+
 /// Runs a call over a signed body; None for an op that is not one.
 pub(super) fn dispatch(op: &str, args: &Value) -> Option<core::result::Result<Vec<u8>, Refusal>> {
     Some(match op {
         "parse_body" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(parse_body),
         "seal_command" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(seal_command),
+        "seal_public" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(seal_public),
         _ => return None,
     })
 }
@@ -153,6 +172,19 @@ mod tests {
         assert!(c.open(&secret).is_err());
         assert_eq!(seal(&sealed, &public)["error"]["name"], "signed");
         assert_eq!(seal(body, &[1, 2, 3])["error"]["name"], "signed");
+    }
+
+    /// `seal_public` gives the public key of a secret, the one the Go
+    /// vectors carry, and refuses a secret of the wrong size.
+    #[test]
+    fn seal_public_key() {
+        let v = vectors("go-sealed-commands.json");
+        let ask_key = |secret: &[u8]| -> Value {
+            let req = format!(r#"{{"abi":1,"op":"seal_public","args":{{"secret":"{}"}}}}"#, STANDARD.encode(secret));
+            serde_json::from_slice(&call(req.as_bytes())).unwrap()
+        };
+        assert_eq!(bytes(&ask_key(&bytes(&v["secret"]))["ok"]["key"]), bytes(&v["public"]));
+        assert_eq!(ask_key(&[1, 2, 3])["error"]["name"], "request");
     }
 
     /// Each case of the strict vectors of these kinds through the call.
