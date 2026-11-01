@@ -121,6 +121,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
   text arrives exactly, 1 MiB pasted and 4 KiB typed, the clipboard's own text comes back and
   nothing is copied to the group (T3, T5); a secret paste is in no log (T11); the log of
   pastes names each one without its text (T12).
+- The bench's `desktop` suite also checks each device's log, the Windows service's log
+  rotated past 1 MiB (I21); `cbb copy` on purpose in every mode (M2); one Linux agent per
+  session and a restarted one (H2); tmux's copy and paste keys (H3); and a large copy's
+  progress in `cbb status` (O13).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built

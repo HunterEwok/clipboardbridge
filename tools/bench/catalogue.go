@@ -59,6 +59,7 @@ var automated = map[string][]string{
 	// The desktops' own clipboards.
 	"Y24": {"desktop"}, "Y25": {"desktop"}, "Y31": {"desktop"}, "Y32": {"desktop"},
 	"T3": {"desktop"}, "T5": {"desktop"}, "T11": {"desktop"}, "T12": {"desktop"},
+	"I21": {"desktop"}, "M2": {"desktop"}, "H2": {"desktop"}, "H3": {"desktop"}, "O13": {"desktop"},
 	// The time-scaled build.
 	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
 	"Y13": {"time"}, "W39": {"time"}, "W12": {"time"}, "K5": {"time"},
