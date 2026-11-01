@@ -291,6 +291,12 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     asks to add it; a card then gives the steps to Settings, Accessibility, Touch, Back Tap,
     Double Tap. The file names the release bundle identifier, so it waits for TestFlight; a
     copy for a Personal Team build tests it before.
+- **48.** **Planned for 0.7.** The full name wherever a user reads it without typing it:
+    the apps on the phones, the watches and the computers say "Clipboard Bridge" in their
+    names, titles, menus, notifications, Shortcuts and Siri actions and the Mac's
+    application bundle (today the iPhone's home screen, its Shortcuts actions and Siri
+    phrases and `/Applications/CBB.app` say "CBB"). What a user types stays short: the
+    command `cbb`, its subcommands and the paths.
 
 ## Devices that are hard to type into
 
