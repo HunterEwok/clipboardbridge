@@ -294,6 +294,37 @@ func invitations(ctx context.Context, r *Report, f *Fleet, timeout time.Duration
 		}
 		return refusedJoin(ctx, d, inv.text, "pairing window is closed")
 	})
+	// S7: the invitation file is a secret: only its owner reads it on the
+	// hub, the joiner's copy is deleted once used, the hub's once cbb invite
+	// ends, and its text joins no one after.
+	r.Do("fleet/S7-invitation-file", func() error {
+		inv, err := openInvitation(ctx, a, "secret", "", "yes\n")
+		if err != nil {
+			return err
+		}
+		defer inv.cancel(ctx)
+		if mode, err := Run(ctx, a.hub, "stat -c %a "+inv.file, ""); err != nil || strings.TrimSpace(mode) != "600" {
+			return fmt.Errorf("the invitation file on %s has mode %q, not 600 (%v)", a.hub.Name, strings.TrimSpace(mode), err)
+		}
+		m, err := joiner()
+		if err != nil {
+			return err
+		}
+		file := "/tmp/cbbbench-secret-invitation"
+		if _, err := Run(ctx, m, "umask 077 && cat > "+file, inv.text+"\n"); err != nil {
+			return err
+		}
+		if _, err := RunFor(ctx, m, "cbb pair -invite "+file, "yes\n", 3*time.Minute); err != nil {
+			return err
+		}
+		if left, _ := Run(ctx, m, "ls "+file+" 2>/dev/null; true", ""); strings.TrimSpace(left) != "" {
+			return fmt.Errorf("%s kept the used invitation file", m.Name)
+		}
+		if err := inv.ended(ctx, 30*time.Second); err != nil {
+			return err
+		}
+		return refusedJoin(ctx, d, inv.text, "pairing window is closed")
+	})
 	r.Do("fleet/G13-hub-off", func() error {
 		inv, err := openInvitation(ctx, a, "off", "", "yes\n")
 		if err != nil {
