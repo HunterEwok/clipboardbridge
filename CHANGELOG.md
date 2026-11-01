@@ -7,6 +7,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ## [Unreleased]
 
 ### Added
+- The phones seal their commands too: a paste, a mode, an action or a hub command to a device
+  whose record has a key for sealed messages carries its orders sealed to that key, through
+  the core's new `seal_command` (docs/core-api.md). A computer or a lite member sends its key
+  in its pairing info, so a phone records it as it admits the device, and keeps it when it
+  signs the record again; the core's devices list gives it (`seal`). A receiver whose record
+  has a key refuses a paste in the open (docs/protocol.md, section 15, "Sealed commands").
 - The apps show what stops the group: the phones on Home, the Mac app and the tray app above
   the devices, in a card that says what is stopped, why, and who decides (a claim to take the
   group over with the time left, two admins acting against each other, a key that signed

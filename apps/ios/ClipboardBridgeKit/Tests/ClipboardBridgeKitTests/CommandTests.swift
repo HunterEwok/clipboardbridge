@@ -85,6 +85,33 @@ final class CommandTests: XCTestCase {
         XCTAssertNil(off.text)
     }
 
+    /// The public key of testdata/interop/go-sealed-commands.json, whose
+    /// secret Go opens the commands with.
+    static func sealPublic() throws -> Data {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct V: Decodable { var `public`: Data }
+        return try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-sealed-commands.json"))).public
+    }
+
+    /// A command to a device whose record has a key for sealed messages
+    /// carries its orders sealed, through the core: the header stays, the
+    /// text is gone, and the core takes the body as a command.
+    func testSealedCommand() throws {
+        let key = try Self.sealPublic()
+        let c = try Commands.paste(to: pc, text: "a secret <text>", kind: "secret", group: "tag", by: pc, now: now, signer: SoftwareSigner(),
+                                   seal: key)
+        let text = String(decoding: c.body, as: UTF8.self)
+        XCTAssertFalse(text.contains("a secret"))
+        XCTAssertTrue(text.contains("\"sealed\":") && text.contains("\"v\":2"), text)
+        XCTAssertNil(Core.bodyRefusal("command", c.body))
+        let b = try JSONDecoder().decode(Commands.Body.self, from: c.body)
+        XCTAssertEqual(b.type, "paste")
+        XCTAssertEqual(b.to, pc)
+        XCTAssertNil(b.text)
+        XCTAssertThrowsError(try Commands.paste(to: pc, text: "x", group: "tag", by: pc, now: now, signer: SoftwareSigner(), seal: Data([1, 2, 3])))
+    }
+
     /// A command for a member this one is not connected to goes through
     /// one that is, and the result comes back, once.
     func testCommandPassedOn() async throws {
@@ -204,8 +231,11 @@ final class CommandTests: XCTestCase {
             try Commands.pasteOff(to: pc, group: tag, by: by, now: now, signer: root),
             try Commands.action(to: pc, name: "lock", group: tag, by: adminBy, now: now, signer: admin, adminCA: adminCA),
             try Commands.actionsOff(to: pc, group: tag, by: by, now: now, signer: root),
+            try Commands.paste(to: pc, text: "sealed <text>", group: tag, by: adminBy, now: now, signer: admin, adminCA: adminCA,
+                               seal: try Self.sealPublic()),
         ])
-        for c in out.commands { XCTAssertNoThrow(try Commands.verify(c, records: set, me: pc, nowMS: Records.ms(now))) }
+        // The last one is sealed, for Go to open: a phone opens none.
+        for c in out.commands.dropLast() { XCTAssertNoThrow(try Commands.verify(c, records: set, me: pc, nowMS: Records.ms(now))) }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         try (enc.encode(out) + Data("\n".utf8)).write(to: URL(fileURLWithPath: dir).appendingPathComponent("swift-command.json"))

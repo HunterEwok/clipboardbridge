@@ -418,7 +418,7 @@ func (s *Service) publish(nd *node.Node, rs ...group.Record) {
 }
 
 // recordDevice records a device this member admitted, if it is an admin.
-func (s *Service) recordDevice(dev group.DeviceID, name, role, os string, key group.KeyHash) {
+func (s *Service) recordDevice(dev group.DeviceID, name, role, os string, key group.KeyHash, sealKey []byte) {
 	s.mu.Lock()
 	id, nd := s.id, s.nd
 	s.mu.Unlock()
@@ -432,7 +432,10 @@ func (s *Service) recordDevice(dev group.DeviceID, name, role, os string, key gr
 		name = defaultName(role, dev)
 	}
 	s.awaitRecords(id)
-	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(dev), Name: name, Role: role, OS: os, Key: &key})
+	if seal.CheckPublicKey(sealKey) != nil {
+		sealKey = nil
+	}
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(dev), Name: name, Role: role, OS: os, Key: &key, Seal: sealKey})
 	if err != nil {
 		s.logf("cbb: recording %s in the devices list: %v", dev, err)
 		return
@@ -446,7 +449,7 @@ func (s *Service) recordAdmitted(res *pair.Result) {
 	if res.Info.Role == pair.RoleLite {
 		role = group.RoleLite
 	}
-	s.recordDevice(res.Device, res.Info.Name, role, res.Info.OS, group.KeyHashOf(res.Cert))
+	s.recordDevice(res.Device, res.Info.Name, role, res.Info.OS, group.KeyHashOf(res.Cert), res.Info.Seal)
 }
 
 // recordPhone records an iPhone that paired for the shortcut.
@@ -455,7 +458,7 @@ func (s *Service) recordPhone(phoneID string) {
 	if err != nil {
 		return
 	}
-	s.recordDevice(group.DeviceID(phoneID), "iPhone", group.RoleShortcut, group.OSiOS, group.PhoneKeyHash(raw))
+	s.recordDevice(group.DeviceID(phoneID), "iPhone", group.RoleShortcut, group.OSiOS, group.PhoneKeyHash(raw), nil)
 }
 
 // defaultName names a device that has no valid name: its role and the start

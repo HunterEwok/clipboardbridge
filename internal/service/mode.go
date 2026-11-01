@@ -139,9 +139,21 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 	if err == nil {
 		from.key, from.verified = s.records.CommandSender(c, body.By)
 	}
+	sealedToMe := false
+	for _, d := range s.records.Devices() {
+		if d.ID == id.ID {
+			sealedToMe = len(d.Seal) > 0
+		}
+	}
 	s.recMu.Unlock()
 	if err == nil {
 		err = body.Open(secret)
+	}
+	if err == nil && body.Type == group.CommandPaste && !body.Opened && sealedToMe {
+		// The records give this device a key for sealed messages, so every
+		// sender seals a paste to it: one in the open was read on its way
+		// (docs/protocol.md, section 15, "Sealed commands").
+		err = errors.New("a paste for this device must be sealed to its key, and this one came in the open")
 	}
 	if err != nil {
 		return refused(err)
