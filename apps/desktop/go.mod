@@ -17,6 +17,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/tetratelabs/wazero v1.12.0 // indirect
 )
 
 // The app speaks the service's control socket with the service's own code.

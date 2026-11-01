@@ -192,7 +192,7 @@
   "Differential fuzzing": "डिफ़रेंशियल फ़ज़िंग",
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "चारों कार्यान्वयन बदले गए बॉडी और रिकॉर्ड सेट एक जैसे पढ़ते हैं, CI में और हर रात",
   "Group records, version 2": "समूह के रिकॉर्ड, संस्करण 2",
-  "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "समूह के अधिकार रिकॉर्ड का अगला प्रारूप और उन्हें परखने वाला एक नियम, 0.6 के लिए",
+  "why the group's authority records moved to version 2 in 0.6 and how they are tested; the rules are in protocol.md, section 10": "समूह के अधिकार रिकॉर्ड 0.6 में संस्करण 2 पर क्यों गए और उनकी जाँच कैसे होती है; नियम protocol.md के खंड 10 में हैं",
   "The core's entry point": "कोर का प्रवेश बिंदु",
   "the one call, bytes in and bytes out, through which the phones and Go use the Rust core's rules, and its error codes": "एकमात्र कॉल, बाइट अंदर और बाइट बाहर, जिससे फ़ोन और Go, Rust कोर के नियमों का उपयोग करते हैं, और इसके त्रुटि कोड",
   "Security policy": "सुरक्षा नीति",

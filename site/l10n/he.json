@@ -193,7 +193,7 @@
   "Differential fuzzing": "פאזינג דיפרנציאלי",
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "ארבעת המימושים קוראים באותו אופן גופים וקבוצות רשומות ששונו, ב-CI ובכל לילה",
   "Group records, version 2": "רשומות הקבוצה, גרסה 2",
-  "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "המבנה הבא של רשומות הסמכות של הקבוצה והכלל היחיד שמחשב אותן, עבור 0.6",
+  "why the group's authority records moved to version 2 in 0.6 and how they are tested; the rules are in protocol.md, section 10": "מדוע רשומות הסמכות של הקבוצה עברו לגרסה 2 ב-0.6 ואיך הן נבדקות; הכללים נמצאים ב-protocol.md, סעיף 10",
   "The core's entry point": "נקודת הכניסה של הליבה",
   "the one call, bytes in and bytes out, through which the phones and Go use the Rust core's rules, and its error codes": "הקריאה היחידה, בתים נכנסים ובתים יוצאים, שדרכה הטלפונים ו-Go משתמשים בכללי הליבה ב-Rust, וקודי השגיאה שלה",
   "Security policy": "מדיניות אבטחה",
