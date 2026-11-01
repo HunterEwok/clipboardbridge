@@ -699,6 +699,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- `cbb global` no longer repeats that the device keeps its keys in files each time it
+  shows the status; `cbb global on` says it once, when the user agrees.
 - Remote paste on the phones: with the text left empty, Paste sends what the phone's
   clipboard holds, and the button that put the clipboard in the field is gone.
 - On a Mac the service and the agent write their own logs, as on Windows:

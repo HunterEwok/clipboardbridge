@@ -469,9 +469,8 @@ func writeAway(w io.Writer, a *control.Away) {
 	if a.VLESS && !a.Hub {
 		fmt.Fprintln(w, "  VLESS: the tunnel goes inside VLESS to the hub's forwarder, which looks like HTTPS to a well-known site.")
 	}
-	if a.KeysInFile {
-		fmt.Fprintln(w, "  This device keeps its keys in files, not in a security chip.")
-	}
+	// Where the keys are is said once, when the user turns it on (keysWarning),
+	// not every time the status is shown.
 	if a.Error != "" {
 		fmt.Fprintf(w, "  Problem: %s.\n", a.Error)
 		if a.Detail != "" && debugErrors() {
