@@ -56,6 +56,15 @@ lands in the source tree.
 | `check_body` | `{"body"}`, base64 | `{"body"}` as it came, once its size, canonical form and fields check |
 | `canonicalize` | `{"body"}`, base64 | `{"body"}`: the strict canonical form of a signed body of version 2 |
 | `check_member` | `chain` (the peer's certificates as it sent them, leaf first, base64 DER), `trusted` (the roots the member trusts, the current root first), `usage` (`"server"` for a member this one dialed, `"client"` for one that dialed it), `now_ms` | `{"device", "used"}`: the device the leaf names and the certificates the records then judge, base64: the leaf and the admin CA that issued it, if one did, wherever the peer put it; see "Member chains" |
+| `group_add` | the set's arguments (see "The record set"), `records` | `{"file", "fresh", "errors"}`: the new file, the records it did not hold before, and why it left others out (optional) |
+| `group_view` | the set's arguments | `{"state", "devices", "path", "root_member", "hub_order", "digest", "claim_times", "records"}`: see "The record set" |
+| `group_refused` | the set's arguments, `chain` (a chain `check_member` took, leaf first) | `{"verdict", "why", "claimant"}`: `ok`, `not_listed` (the set does not name the device yet), `taken_over` (the root's own device that a claim took the group over from, whose connection carries records only; `claimant` is `{device, admin}`) or `refused`, with the reason for the log |
+| `group_taken_over` | the set's arguments, `chain` (the member's own) | `{"claimant"}`: `{device, admin}` of the admin that took the group over from this root by a claim that took effect; `{}` when none did |
+| `group_refused_admin_ca` | the set's arguments, `ca` (base64 DER) | `{"verdict", "why"}` for an admin CA, as for `group_refused` |
+| `group_admin_peer` | the set's arguments, `device`, `chain` | `{"admin"}`: whether the device is the group's root or an admin, which alone may be a hub |
+| `group_command` | the set's arguments, `command` (`{body, sig, chain}`), `me` (the member's device) | `{"command", "signer", "root", "sender", "verified"}`: the command's body as an object, the device that signed it, whether it signed as the root, and the device the limits count it for, `verified` when that device's own key signed; a command refused is code 15 |
+| `group_claim_times` | the set's arguments, `claim_times` (`[{record, ms}]`, from a Welcome) | `{"file"}`: the times earlier than the set's own and not in the future taken |
+| `group_body` | the set's arguments, `body` (a record body as `canonical_body` takes it, with `signer` set) | `{"body"}`: the canonical bytes of the signer's next record, to sign: the group, seq and prev set from the set, and for a removal, a freeze or a claim `seen` from the set, the signer's own previous seq among them |
 
 The arguments of `evaluate` are a case of `testdata/interop/v2-records.json` as it is.
 
@@ -79,6 +88,7 @@ The numbers and names never change meaning; new codes are added at the end of th
 | 12 | `strict` | a signed body is not in the strict canonical form |
 | 13 | `rollback` | the record set is older than the saved one: a signer's whole chain ends below the seq saved |
 | 14 | `saved` | the saved state cannot be read, is of another version or group, or its check with the secret does not match |
+| 15 | `command` | a command is refused: its signer, its target, its time or its limits |
 
 ## Member chains
 
@@ -92,6 +102,40 @@ years behind still connects. A chain it refuses is code 11 (`cert`). Whether the
 admit the device, and whether it is the device discovery found, are the caller's to check.
 `testdata/interop/member-chains.json`, written by Go from crypto/tls's chain building, holds the
 cases both give the same answer.
+
+## The record set
+
+The calls whose names start with `group_` work on the set of records a member keeps, which the
+phones store as the records file the lite member writes (`cbb_core::group::Records`):
+`{"v": 2, "records": [{body, sig, chain}], "first_seen": [{record, ms}]}`. The caller keeps the
+file and passes it in each call, base64; a call that changes the set answers the new file,
+which the caller saves in place of the old one. So the phones hold no rule of the group in
+their own code, and every member gives the same answers for the same records.
+
+The set's arguments, which every such call takes:
+
+| Field | Meaning |
+|---|---|
+| `group_ca` | the group CA, base64 DER |
+| `now_ms` | the member's clock that counts sleep |
+| `file` | the records file, base64; left out for an empty set |
+| `group` | optional: the group's tag where it is not the CA's own, for the vectors |
+
+The set keeps a record that verifies under one of the group's roots and names the group, and a
+record of a later version, which it passes on and never applies (records-v2.md); it keeps at
+most the records records-v2.md allows. `group_view` answers:
+
+| Field | Meaning |
+|---|---|
+| `state` | the group's state, as `evaluate` gives it for the records the set keeps |
+| `devices` | `[{device, name, role, os, key, store, kind, proof, admin, admin_key, powers, commands, frozen, freezes, keys}]`: the devices list the apps show; `key` and `keys` base64; `freezes`, for a frozen admin, the IDs of the freezes a thaw names |
+| `path` | the roots' certificates on the path, the group CA first, base64 DER |
+| `root_member` | `{device, key}`: the device that holds the root key, when the set names one |
+| `hub_order` | the devices that may be hubs, in the order members try them |
+| `digest` | the set's digest, which a hello carries; left out for an empty set |
+| `claim_times` | `[{record, ms}]`: when the set first held each claim, which a Welcome passes on |
+| `known` | every device ID a device record names, counted or not: IDs a new device must not take |
+| `records` | the number of records the set holds |
 
 ## Signatures already checked
 
