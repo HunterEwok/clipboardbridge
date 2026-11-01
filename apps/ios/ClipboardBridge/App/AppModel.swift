@@ -862,7 +862,9 @@ final class AppModel: ObservableObject {
     /// ShowErrorDetails default when it is set (in Xcode, the launch
     /// argument -ShowErrorDetails YES or NO).
     nonisolated static var showsErrorDetails: Bool {
-        if let set = UserDefaults.standard.object(forKey: "ShowErrorDetails") as? Bool { return set }
+        // bool(forKey:) reads YES and NO given as text too, as the launch
+        // argument gives them.
+        if UserDefaults.standard.object(forKey: "ShowErrorDetails") != nil { return UserDefaults.standard.bool(forKey: "ShowErrorDetails") }
         #if DEBUG
         return true
         #else
