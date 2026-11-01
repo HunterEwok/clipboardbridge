@@ -25,16 +25,20 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.ConscryptMode
 
 /**
  * The app's screens before a group, driven as a person would on Robolectric
  * (docs/testbench-catalogue.md, A2, A9, A14, A15, U12): the Start screen,
  * Settings with the colours and themes kept in the settings, the error
  * details switch behind seven taps on the version, and Russian. A group needs
- * the Keystore and a computer, which the bench's devices give.
+ * the Keystore and a computer, which the bench's devices give. The screens
+ * need no TLS, so Robolectric's Conscrypt, whose native library a runner may
+ * not load, stays off.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
+@ConscryptMode(ConscryptMode.Mode.OFF)
 class ScreensTest {
     @get:Rule val compose = createComposeRule()
 

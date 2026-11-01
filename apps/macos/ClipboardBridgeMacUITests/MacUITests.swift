@@ -27,12 +27,14 @@ final class MacUITests: XCTestCase {
     func testStoppedService() {
         var app = launch(["-ShowErrorDetails", "NO"])
         XCTAssertTrue(app.staticTexts["The service does not answer"].waitForExistence(timeout: 30))
-        XCTAssertTrue(text(app, equal: Self.plain).waitForExistence(timeout: 10), "with details off the notice is not the plain message")
+        XCTAssertTrue(text(app, equal: Self.plain).waitForExistence(timeout: 10), "with details off the notice is not the plain message in \(app.debugDescription)")
         app.terminate()
 
         app = launch(["-ShowErrorDetails", "YES"])
-        let detailed = app.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@ OR label BEGINSWITH %@", Self.plain + "\n\n", Self.plain + "\n\n")).firstMatch
-        XCTAssertTrue(detailed.waitForExistence(timeout: 30), "with details on the notice has no error underneath")
+        // The notice's text is selectable, which may make it a text view
+        // rather than a static text.
+        let detailed = app.descendants(matching: .any).matching(NSPredicate(format: "value BEGINSWITH %@ OR label BEGINSWITH %@", Self.plain + "\n\n", Self.plain + "\n\n")).firstMatch
+        XCTAssertTrue(detailed.waitForExistence(timeout: 30), "with details on the notice has no error underneath in \(app.debugDescription)")
         XCTAssertFalse(text(app, equal: Self.plain).exists, "with details on the plain message shows alone")
         app.terminate()
     }
@@ -65,10 +67,11 @@ final class MacUITests: XCTestCase {
         app.terminate()
     }
 
-    /// A text whose value or label is exactly this; a query by a long string
+    /// An element, a static text or the selectable text view, whose value or
+    /// label is exactly this; a query by a long string
     /// as the identifier is refused past 128 characters.
     private func text(_ app: XCUIApplication, equal: String) -> XCUIElement {
-        app.staticTexts.matching(NSPredicate(format: "value == %@ OR label == %@", equal, equal)).firstMatch
+        app.descendants(matching: .any).matching(NSPredicate(format: "value == %@ OR label == %@", equal, equal)).firstMatch
     }
 
     /// The app's Russian text for an English one, from its string catalog,
