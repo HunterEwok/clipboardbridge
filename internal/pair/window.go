@@ -539,6 +539,10 @@ func (w *Window) serve(ctx context.Context, conn *tls.Conn, memberFirst bool) (r
 	return res, true, nil
 }
 
+// welcomeRoom is what a Welcome leaves in its frame for the frame's other
+// fields and the CA keys that may follow.
+const welcomeRoom = 4 << 10
+
 func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	wel := &Welcome{Cert: cert.Raw, GroupCA: w.admin.GroupCA.Cert.Raw}
 	// An admin that is not the root issues from its admin CA.
@@ -548,10 +552,20 @@ func (w *Window) welcome(cert *x509.Certificate, keys bool) (*Welcome, error) {
 	for _, r := range w.admin.Roots {
 		wel.Roots = append(wel.Roots, r.Raw)
 	}
-	if len(wel.Roots) > 0 && w.records != nil {
+	// The group's records let the new device take its peers at once: in
+	// records v:2 a member is taken only when a device record names it.
+	// A group handed over needs them, or the new device refuses the
+	// Welcome; any other leaves them out when they do not fit in a frame,
+	// and the new device gets them over records-only connections.
+	if w.records != nil {
 		wel.Records = w.records()
 		if w.claims != nil {
 			wel.ClaimTimes = w.claims()
+		}
+		if len(wel.Roots) == 0 {
+			if data, err := json.Marshal(wel); err != nil || len(data) > maxFrame-welcomeRoom {
+				wel.Records, wel.ClaimTimes = nil, nil
+			}
 		}
 	}
 	if !keys {

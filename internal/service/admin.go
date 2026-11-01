@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
@@ -397,6 +398,31 @@ func (s *Service) findDevice(target string) (control.Device, error) {
 // the old root's key and the lost root's own key, keeping every device the
 // old root admitted and every other admin, records itself as the group's
 // root, and replaces the iPhone CA, which the lost root held.
+// setTakeoverDelay signs, on the group's root, a settings record with how
+// long an admin's claim waits on each member before it takes effect: a
+// duration from 0 to 7 days (docs/records-v2.md, "Handing the group
+// over").
+func (s *Service) setTakeoverDelay(value string) error {
+	d, err := time.ParseDuration(strings.TrimSpace(value))
+	if err != nil || d < 0 || d.Milliseconds() > authority.MaxDelay {
+		return errors.New("the takeover delay is a duration from 0s to 168h, as 72h")
+	}
+	s.mu.Lock()
+	id, nd := s.id, s.nd
+	s.mu.Unlock()
+	if id == nil || !id.IsRoot() {
+		return errors.New("only the group's root sets how long a claim waits")
+	}
+	ms := d.Milliseconds()
+	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordSettings, TakeoverDelayMS: &ms})
+	if err != nil {
+		return err
+	}
+	s.publish(nd, r)
+	s.logf("cbb: a claim to take the group over now waits %v on each member", d)
+	return nil
+}
+
 func (s *Service) takeOver(target string) (string, error) {
 	if err := s.keysAllowed(); err != nil {
 		return "", err

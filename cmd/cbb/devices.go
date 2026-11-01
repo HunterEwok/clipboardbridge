@@ -145,6 +145,25 @@ func cmdRename(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// cmdTakeoverDelay sets, on the group's root, how long an admin's claim to
+// take the group over waits on each member.
+func cmdTakeoverDelay(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 || helpFlag(args[0]) {
+		fmt.Fprintln(stderr, "cbb: usage: cbb takeover-delay <duration>, from 0s to 168h, as 72h")
+		return 2
+	}
+	c, err := control.DialFor(control.OpDelay)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	defer c.Close()
+	if _, err := c.Do(&control.Message{Header: control.Header{Op: control.OpDelay, Value: args[0]}}); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "A claim to take the group over now waits %s on each member, from when it first holds the claim.\n", args[0])
+	return 0
+}
+
 // helpFlag reports whether a command's only argument asks for its usage,
 // which no device's name or ID can be taken for.
 func helpFlag(arg string) bool {

@@ -623,6 +623,25 @@ func (s *Records) refusedChain(chain []*x509.Certificate) error {
 	return nil
 }
 
+// RefusedAdminCA returns why an admin CA is not taken, nil when it is
+// (docs/records-v2.md, "Certificates"): it is under a root on the path,
+// its key is not revoked, and a device record that counts names it as an
+// admin key; one whose record has not reached this member yet is refused
+// with ErrNotListed.
+func (s *Records) RefusedAdminCA(ca *x509.Certificate) error {
+	k := KeyHashOf(ca)
+	if s.Revoked(k) {
+		return errors.New("group: the admin CA's key was removed from the group")
+	}
+	if !signedByAny(ca, s.path()) {
+		return errors.New("group: the admin CA is not from a root of the group")
+	}
+	if _, ok := s.adminDevice(k); !ok {
+		return ErrNotListed
+	}
+	return nil
+}
+
 // ErrNotListed is what Refused returns for a chain that no device record
 // that counts names; errors.Is(ErrNotListed, ErrRecordsOnly) holds, so the
 // connection carries records only.

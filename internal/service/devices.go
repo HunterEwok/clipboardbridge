@@ -106,23 +106,25 @@ func (s *Service) settleRecords(fresh []group.Record) {
 			revoked, rooted = true, true
 		}
 	}
-	// A root record may not count yet when it comes: a takeover's root
-	// record counts once the records that make its signer an admin are in,
-	// and those may come later from another peer. So the roots are checked
-	// after every record that can change them.
+	// A claim may not count yet when it comes: it counts once the records
+	// that make its signer an admin are in, and those may come later from
+	// another peer. So the roots are checked after every record that can
+	// change them. An admin CA that came before the device record naming
+	// its key is tried again with any new records.
+	s.mu.Lock()
+	var err error
 	if rooted || revoked {
-		s.mu.Lock()
-		err := s.adoptRootsLocked()
-		pending := s.pendingAdminCA
-		s.pendingAdminCA = nil
-		s.mu.Unlock()
-		if err != nil {
-			s.logf("cbb: trusting the group's new root: %v", err)
-		}
-		if pending != nil {
-			if err := s.becomeAdmin(pending); err != nil {
-				s.logf("cbb: an admin CA that came before its records: %v", err)
-			}
+		err = s.adoptRootsLocked()
+	}
+	pending := s.pendingAdminCA
+	s.pendingAdminCA = nil
+	s.mu.Unlock()
+	if err != nil {
+		s.logf("cbb: trusting the group's new root: %v", err)
+	}
+	if pending != nil {
+		if err := s.becomeAdmin(pending); err != nil {
+			s.logf("cbb: an admin CA that came before its records: %v", err)
 		}
 	}
 	if revoked || rooted {
@@ -270,6 +272,17 @@ func (s *Service) allow(_ group.DeviceID, chain []*x509.Certificate) error {
 		}
 	}
 	return err
+}
+
+// refusedAdminCA returns why the records refuse an admin CA, nil when they
+// take it or there are none (group.Records.RefusedAdminCA).
+func (s *Service) refusedAdminCA(ca *x509.Certificate) error {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.records == nil {
+		return nil
+	}
+	return s.records.RefusedAdminCA(ca)
 }
 
 // signRecord signs the next record of this member's signer: the root's
@@ -677,6 +690,15 @@ func (s *Service) rename(target, name string) (string, error) {
 	}
 	if rec.Name == name {
 		return rec.Name, nil
+	}
+	// A device record that names an admin key, or of a phone or a watch,
+	// counts only from a root's own key (docs/records-v2.md, "Who signs
+	// what"), and so does the root's own device's.
+	s.recMu.Lock()
+	rootDevice := s.records.RootDevice()
+	s.recMu.Unlock()
+	if !id.IsRoot() && (rec.AdminKey != nil || rec.Role == group.RolePhone || rec.Role == group.RoleWatch || rec.ID == rootDevice) {
+		return "", fmt.Errorf("only the group's root renames %s: it is an admin, a phone or a watch, or the root's own device", rec.Name)
 	}
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(rec.ID), Name: name, Role: rec.Role,
 		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Powers: rec.Powers, Commands: rec.Commands, Store: rec.Store, Kind: rec.Kind, Proof: rec.Proof, Seal: rec.Seal})

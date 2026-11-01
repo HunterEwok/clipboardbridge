@@ -50,6 +50,8 @@ Commands:
                           Give a device of the group another name (on an admin).
   admin <name or ID>      Make a computer an admin of the group (on the group's root).
   takeover <name or ID>   Claim the group from its lost root computer (on an admin); it waits.
+  takeover-delay <duration>
+                          Set how long such a claim waits, 0s to 168h (on the root; 72h by default).
   freeze <name or ID>     Stop an admin computer, as a stolen one, until the root decides.
   unfreeze <name or ID>   Make a frozen admin computer an admin again (on the group's root).
   global [on|off]         Show, or turn on or off, sync over the internet on this device.
@@ -142,6 +144,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdInstall(rest, stdout, stderr)
 	case "takeover":
 		return cmdTakeover(rest, stdout, stderr)
+	case "takeover-delay":
+		return cmdTakeoverDelay(rest, stdout, stderr)
 	case "freeze", "unfreeze":
 		return cmdFreeze(rest, cmd == "freeze", stdout, stderr)
 	case "admin":

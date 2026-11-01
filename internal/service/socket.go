@@ -332,6 +332,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Name: name, Done: true}, nil)
+	case control.OpDelay:
+		if err := s.setTakeoverDelay(m.Value); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
 	case control.OpRename:
 		name, err := s.rename(m.Name, m.NewName)
 		if err != nil {
