@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 
 private let awayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "away")
 private let relayLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "relay")
+private let browseLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "browse")
 private let hubLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "hub")
 private let modeLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "mode")
 private let keysLog = Logger(subsystem: "io.github.hunterewok.clipboardbridge", category: "keys")
@@ -961,7 +962,7 @@ final class LiveGroup: GroupController {
             serve: { t, peer in try await node.serve(t, peer: peer) },
             elsewhere: { relay.found($0) },
             log: { what, error in relayLog.error("\(what, privacy: .public): \(error.map { String(reflecting: $0) } ?? "", privacy: .public)") })
-        let browser = BonjourBrowser { found in relay.update(found) }
+        let browser = BonjourBrowser(log: { browseLog.notice("\($0, privacy: .public)") }) { found in relay.update(found) }
         let dialer = MemberDialer(node: node, group: g.tag,
                                   dial: browser.dialer(identity: id, chain: Self.chain(g), roots: g.trusted) { relay.addresses[$0] ?? [] })
         relay.dialer = dialer
@@ -1066,6 +1067,13 @@ final class LiveGroup: GroupController {
     func setForeground(_ on: Bool) {
         foreground = on
         refreshHub()
+        // Back at the front without a computer: iOS may have ended the
+        // browsing in the background, so it starts again.
+        if on, let node, let browser {
+            Task {
+                if await node.connected.isEmpty { browser.restart() }
+            }
+        }
     }
 
     /// Makes this phone the group's hub, or stops it being the hub. A hub

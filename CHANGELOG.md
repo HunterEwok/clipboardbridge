@@ -838,6 +838,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The phone app finds the computers again when iOS stopped its browsing: on the first launch,
+  where it browses before the user allows the local network, and in the background. A browser
+  that waits or fails starts again (after 1 s, doubling to 30 s), and the app browses again
+  when it comes back to the front without a computer connected.
 - A computer that signs two group records in one pass, or at the same moment, gives them
   consecutive numbers: before, both could take one number, which reads as two histories of
   the signer and, for the root, stops the group.
