@@ -99,12 +99,12 @@ func (s *Service) settleRecords(fresh []group.Record) {
 			continue
 		}
 		// A freeze refuses devices as a revocation does; a resolve or a
-		// checkpoint may undo either, and a claim, a resolve or a settings
-		// record may change the root.
+		// checkpoint may undo either, and a claim, a resolve, a settings or
+		// a recovery record may change the root.
 		switch b.Type {
 		case group.RecordRevoke, group.RecordFreeze, group.RecordThaw:
 			revoked = true
-		case group.RecordClaim, group.RecordResolve, group.RecordSettings, group.RecordCheckpoint:
+		case group.RecordClaim, group.RecordResolve, group.RecordSettings, group.RecordCheckpoint, group.RecordRecovery:
 			revoked, rooted = true, true
 		}
 	}

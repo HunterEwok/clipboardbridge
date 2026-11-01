@@ -140,6 +140,7 @@ and `a`-`f`.
 | `settings` | `takeover_delay_ms` | the root's settings for the group |
 | `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
 | `hubs` | `hubs` | the user's main hubs for sync away from home, in the order they serve |
+| `recovery` | `admin` | names the group's recovery key, an offline admin key that may only claim the group ("The recovery key") |
 
 ### Field rows
 
@@ -150,7 +151,7 @@ and `a`-`f`.
 | `role` | string | `device` | `full`, `phone`, `lite`, `watch` or `shortcut` |
 | `os` | string | none | `linux`, `windows`, `macos`, `ios`, `android`, `watchos`, `wearos` or `none` |
 | `key` | string | `device` | a key hash: the member key (for a watch, its admin key; for `shortcut`, the phone ID) |
-| `admin` | string | none | a key hash: the admin key its admin CA certifies; only in a record a root's own key signed |
+| `admin` | string | `recovery` | a key hash: the admin key its admin CA certifies; only in a record a root's own key signed |
 | `powers` | array of strings | none | sorted; from `admit`, `renew`, `remove`, `remove-admins`, `freeze`, `thaw`, `takeover`, `hub`; only with `admin` |
 | `commands` | array of strings | none | sorted; the command types (section 15) the admin may sign; only with `admin` |
 | `store`, `kind`, `proof` | string | none | as in section 17 |
@@ -197,6 +198,7 @@ those of the newest such record (the highest `seq` of that root) that names it.
 | `resolve`, `settings` | the current root's own key |
 | `checkpoint` | a root's own key |
 | `hubs` | a root's own key, or an admin with `hub` |
+| `recovery` | a root's own key |
 
 A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
 names any key its signer may not remove or freeze. The powers the apps and `cbb`
@@ -240,7 +242,7 @@ A group's records only grow, and a member keeps at most 1 MiB of them (1024 reco
 own key signs a `checkpoint` so that members may drop what no longer matters: `heads` names,
 for each signer, its newest record the checkpoint covers, and `keep` the records below the
 heads that still count: the newest `device` record of each device, the `revoke`, `freeze` and
-`thaw` records that count, the newest `settings`, the `hubs` record that counts, every claim not yet decided and the records
+`thaw` records that count, the newest `settings`, the `hubs` record that counts, the `recovery` record that counts, every claim not yet decided and the records
 its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
 by themselves when the records pass three quarters of either limit.
 
@@ -427,6 +429,29 @@ once a new root removes it, nothing it signs counts under that root. What it can
 the root, by pretending it had not seen a record or by removing the claimant under its old
 admin CA, is stop the group: never take it.
 
+### The recovery key
+
+A recovery key lets the user take the group back when every phone with the root or
+`takeover` is lost: an offline key, printed or on a hardware key, kept away from the devices.
+The root's own key issues it an admin CA, as for an admin, and signs a `recovery` record whose
+`admin` is its key hash. It has no device and no `device` record.
+
+Of the `recovery` records that count (a root's own key on the path signed them, within its
+cut), the newest counts. The key it names is an admin key with only `takeover` and no
+commands, unless a `device` record of a root names the same key as an admin, whose powers
+then hold. So the recovery key signs one thing that counts, a `claim`, with its admin CA as
+the chain; every other record it signs is `ignored` with `power`. Its claim is a claim as
+above: it waits the root's `takeover_delay_ms`, the root cancels it with a `resolve` or a
+`revoke` of the key, a counting admin removal or freeze of the key disputes it, and one claim
+at a time holds.
+
+A newer `recovery` record replaces the older one: the key the older one named is no admin
+any more, and its claims do not count. A `revoke` of the key removes it (a root's own key, or
+an admin with `remove-admins`, as for any admin key). The state names the key in `recovery`
+while it is neither removed nor frozen.
+
+The apps make the key and sign the record later; 0.6 has the record and its rules.
+
 ### Certificates
 
 A member certificate is taken when its chain verifies to a root on the path (section 2 and
@@ -480,6 +505,7 @@ and returns the state as one canonical JSON object:
 | `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
 | `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
 | `hubs` | array of strings | the main hubs of the `hubs` record that counts ("The hubs table"): its devices that are in `devices` with the role `full` or `phone`, in its order |
+| `recovery` | string | the key hash of the recovery key ("The recovery key"), while it is neither removed nor frozen |
 
 The reasons in `ignored`, in the order they are decided:
 
@@ -518,7 +544,9 @@ beyond) and check the same bytes.
   a removed admin's later `device` and `claim` records, freezes that cross, a `resolve` of each
   kind; and each limit: 262 devices, 65 admin keys, 16 handovers, a set of 1033 records, then
   the same with the root's checkpoint; and the hubs table: an admin's, an admin's without
-  `hub`, a later admin's, the root's, and one naming a removed device. (The 1 MiB limit has a Go test only: its set would be
+  `hub`, a later admin's, the root's, and one naming a removed device; and the recovery key:
+  its claim waiting the delay, taking effect and cancelled, a delay the root set, its other
+  records, a removed key, a key replaced, and a `recovery` record an admin signed. (The 1 MiB limit has a Go test only: its set would be
   over a megabyte of vectors.)
 - `testdata/interop/strict-generated.json` and `strict-files.json` written again from the
   tables above, with the canonical-form and unknown-field vectors.
