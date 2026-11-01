@@ -900,12 +900,54 @@ func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool)
 var ErrRecordsOnly = errors.New("group: the group was taken over from this root; its connection carries records only")
 
 // Next returns the seq and prev of the next record the key signer signs:
-// one above its newest record in the set.
+// one above its newest record in the set that is on no branch a root's
+// resolve voided. So once the root voids both histories of a key
+// (docs/protocol.md, section 10, "Two numbers"), the key goes on from the
+// record below the fork, and what it signs counts.
 func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
+	ps := s.bodies()
+	roots := map[KeyHash]bool{}
+	for _, k := range s.State().Roots {
+		roots[k] = true
+	}
+	voided := map[KeyHash]bool{}
+	byID := map[KeyHash]parsed{}
+	bySeq := map[int64]int{}
+	for _, p := range ps {
+		if p.b.Type == RecordResolve && roots[p.b.Signer] && len(p.r.Chain) == 0 {
+			for _, id := range p.b.Records {
+				voided[id] = true
+			}
+		}
+		if p.b.Signer == signer {
+			byID[p.id] = p
+			bySeq[p.b.Seq]++
+		}
+	}
+	// A record is on a voided branch when its prev chain, as far as the
+	// set holds it, passes through a voided record with a sibling.
+	dead := func(p parsed) bool {
+		for steps := 0; steps <= authority.MaxSeq; steps++ {
+			if voided[p.id] && bySeq[p.b.Seq] > 1 {
+				return true
+			}
+			if p.b.Prev == nil {
+				return false
+			}
+			q, ok := byID[*p.b.Prev]
+			if !ok {
+				return false
+			}
+			p = q
+		}
+		return false
+	}
 	var seq int64
 	var prev KeyHash
-	for _, p := range s.bodies() {
-		if p.b.Signer == signer && p.b.Seq > seq {
+	// Of two records with one seq, which only a key that signed two
+	// histories has, the lower ID, so that every member gives the same.
+	for _, p := range byID {
+		if !dead(p) && (p.b.Seq > seq || p.b.Seq == seq && bytes.Compare(p.id[:], prev[:]) < 0) {
 			seq, prev = p.b.Seq, p.id
 		}
 	}
@@ -913,6 +955,22 @@ func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
 		return 1, nil
 	}
 	return seq + 1, &prev
+}
+
+// ErrTwoHistories is what Sign returns for a key that signed two histories
+// the root has not resolved yet: a record it signed now would count for
+// nothing (docs/protocol.md, section 10, "Two numbers").
+var ErrTwoHistories = errors.New("group: this key signed two histories; the group's root must resolve them before it signs again")
+
+// TwoHistories reports whether the state names signer in a conflict of two
+// histories.
+func (s *Records) TwoHistories(signer KeyHash) bool {
+	for _, c := range s.State().Conflicts {
+		if c.Kind == authority.ConflictTwoHistories && slices.Contains(c.Signers, signer) {
+			return true
+		}
+	}
+	return false
 }
 
 // Seen returns, for every signer of the set, the highest seq the set holds
@@ -940,6 +998,11 @@ func (s *Records) Sign(body RecordBody, key crypto.Signer, adminCA *x509.Certifi
 	signer, err := authority.PublicKeyHash(key.Public())
 	if err != nil {
 		return Record{}, err
+	}
+	// A root ends its own two histories with a resolve, which counts
+	// whatever forks its chain has; nothing else of a forked key counts.
+	if body.Type != RecordResolve && s.TwoHistories(signer) {
+		return Record{}, ErrTwoHistories
 	}
 	body.Group = s.tag
 	body.Seq, body.Prev = s.Next(signer)

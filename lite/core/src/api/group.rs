@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use super::{Code, Refusal, b64_value, bad_args, json, refuse};
-use crate::authority::{Hash, Record, Seen, TYPE_CLAIM, TYPE_FREEZE, TYPE_REVOKE};
+use crate::authority::{Hash, Record, Seen, TYPE_CLAIM, TYPE_FREEZE, TYPE_RESOLVE, TYPE_REVOKE};
 use crate::certs::{Cert, KeyHash, b64};
 use crate::error::Error;
 use crate::group::{ClaimTime, Device, Records, Refusal as Verdict};
@@ -372,6 +372,16 @@ fn body(a: BodyArgs) -> Result<Vec<u8>, Refusal> {
             serde_json::from_value(v)
                 .map_err(|e| refuse(Code::Body, Error::with("The record's signer does not read.", e)))
         })?;
+    let kind = String::from(b.get("type").and_then(Value::as_str).unwrap_or_default());
+    let kind = kind.as_str();
+    // A root ends its own two histories with a resolve, which counts
+    // whatever forks its chain has; nothing else of a forked key counts.
+    if kind != TYPE_RESOLVE && s.two_histories(&signer) {
+        return Err(refuse(
+            Code::Body,
+            Error::msg("This key signed two histories; the group's root must resolve them before it signs again."),
+        ));
+    }
     let (seq, prev) = s.next_for(&signer);
     b.insert("group".into(), Value::from(s.tag()));
     b.insert("seq".into(), Value::from(seq));
@@ -379,7 +389,6 @@ fn body(a: BodyArgs) -> Result<Vec<u8>, Refusal> {
         Some(p) => b.insert("prev".into(), b64_value(&p.0)),
         None => b.remove("prev"),
     };
-    let kind = b.get("type").and_then(Value::as_str).unwrap_or_default();
     if [TYPE_REVOKE, TYPE_FREEZE, TYPE_CLAIM].contains(&kind) {
         let mut seen = s.seen();
         if !seen.iter().any(|e| e.key == signer) {

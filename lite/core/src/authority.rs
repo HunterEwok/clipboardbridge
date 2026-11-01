@@ -38,6 +38,11 @@ pub const ALG_ES256: &str = "es256";
 pub const MAX_NEWER: usize = 16;
 /// The largest seq a signer gives a record.
 pub const MAX_SEQ: i64 = (1 << 31) - 1;
+
+/// The kinds of a conflict (docs/protocol.md, section 10, "The state").
+pub const CONFLICT_ADMINS: &str = "admins";
+pub const CONFLICT_CLAIMS: &str = "claims";
+pub const CONFLICT_TWO_HISTORIES: &str = "two_histories";
 /// The longest takeover delay the root may set (7 days), in milliseconds.
 pub const MAX_DELAY: i64 = 7 * 24 * 3600 * 1000;
 /// The takeover delay without a settings record (72 hours).
@@ -1648,7 +1653,7 @@ impl<'a> Epoch<'a> {
             by_root.entry(find(&parent, r)).or_default().push(r);
         }
         for rs in by_root.values() {
-            let mut c = Conflict { kind: "admins", records: Vec::new(), signers: Vec::new() };
+            let mut c = Conflict { kind: CONFLICT_ADMINS, records: Vec::new(), signers: Vec::new() };
             for &r in rs {
                 c.records.push(self.r(r).s.id);
                 if !c.signers.contains(&self.r(r).b().signer) {
@@ -1734,7 +1739,7 @@ impl<'a> Epoch<'a> {
         for (signer, seq) in forked {
             let records =
                 self.of(&signer).iter().filter(|&&i| self.r(i).b().seq == seq).map(|&i| self.r(i).s.id).collect();
-            self.conflicts.push(Conflict { kind: "two_histories", records, signers: vec![signer] });
+            self.conflicts.push(Conflict { kind: CONFLICT_TWO_HISTORIES, records, signers: vec![signer] });
             if self.on_path.contains_key(&signer) {
                 self.stop_full = true;
             }
@@ -1866,7 +1871,7 @@ impl<'a> Epoch<'a> {
             }
         }
         if first.len() > 1 {
-            let mut conflict = Conflict { kind: "claims", records: Vec::new(), signers: Vec::new() };
+            let mut conflict = Conflict { kind: CONFLICT_CLAIMS, records: Vec::new(), signers: Vec::new() };
             for &r in &first {
                 let cl = self.claim(r, "competing");
                 self.claims.push(cl);
@@ -1882,7 +1887,7 @@ impl<'a> Epoch<'a> {
             let cl = self.claim(c, "disputed");
             self.claims.push(cl);
             let mut conflict =
-                Conflict { kind: "claims", records: vec![self.r(c).s.id], signers: vec![self.r(c).b().signer] };
+                Conflict { kind: CONFLICT_CLAIMS, records: vec![self.r(c).s.id], signers: vec![self.r(c).b().signer] };
             for &r in ds {
                 conflict.records.push(self.r(r).s.id);
                 if !conflict.signers.contains(&self.r(r).b().signer) {

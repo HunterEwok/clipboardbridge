@@ -764,13 +764,58 @@ impl Records {
     }
 
     /// The seq and prev of the next record the key signer signs: one past
-    /// the highest seq of its records in the set, after that record's ID;
-    /// 1 and none when the set holds none of its records.
+    /// the highest seq of its records in the set that is on no branch a
+    /// root's resolve voided, after that record's ID; 1 and none when the
+    /// set holds none. So once the root voids both histories of a key
+    /// (docs/protocol.md, section 10, "Two numbers"), the key goes on from
+    /// the record below the fork, and what it signs counts.
     pub fn next_for(&self, signer: &Hash) -> (i64, Option<Hash>) {
-        self.bodies()
-            .filter(|(_, b)| b.signer == *signer)
-            .max_by_key(|(_, b)| b.seq)
-            .map_or((1, None), |(id, b)| (b.seq.saturating_add(1), Some(id)))
+        let roots = self.state().roots;
+        let mut voided: BTreeMap<Hash, ()> = BTreeMap::new();
+        let mut by_id: BTreeMap<Hash, Body> = BTreeMap::new();
+        let mut by_seq: BTreeMap<i64, usize> = BTreeMap::new();
+        for r in self.recs.values() {
+            let Ok(b) = Body::parse(&r.body) else { continue };
+            if b.kind == authority::TYPE_RESOLVE && r.chain.is_empty() && roots.contains(&b.signer) {
+                for id in &b.records {
+                    voided.insert(*id, ());
+                }
+            }
+            if b.signer == *signer {
+                let n = by_seq.entry(b.seq).or_insert(0usize);
+                *n = n.saturating_add(1);
+                by_id.insert(r.id(), b);
+            }
+        }
+        // A record is on a voided branch when its prev chain, as far as the
+        // set holds it, passes through a voided record with a sibling.
+        let dead = |mut id: Hash| {
+            for _ in 0..=authority::MAX_SEQ {
+                let Some(b) = by_id.get(&id) else { return false };
+                if voided.contains_key(&id) && by_seq.get(&b.seq).copied().unwrap_or(0) > 1 {
+                    return true;
+                }
+                match b.prev {
+                    Some(p) => id = p,
+                    None => return false,
+                }
+            }
+            false
+        };
+        by_id
+            .iter()
+            .filter(|(id, _)| !dead(**id))
+            // Of two records with one seq, which only a key that signed two
+            // histories has, the lower ID, so that every member gives the same.
+            .max_by(|(ia, a), (ib, b)| a.seq.cmp(&b.seq).then_with(|| ib.cmp(ia)))
+            .map_or((1, None), |(id, b)| (b.seq.saturating_add(1), Some(*id)))
+    }
+
+    /// Whether the state names signer in a conflict of two histories: a
+    /// record it signed now would count for nothing until the root resolves
+    /// them.
+    pub fn two_histories(&self, signer: &Hash) -> bool {
+        self.state().conflicts.iter().any(|c| c.kind == authority::CONFLICT_TWO_HISTORIES && c.signers.contains(signer))
     }
 
     /// The group's tag, which every record of the set names.
@@ -953,6 +998,27 @@ mod tests {
             n += 1;
         }
         assert!(n >= 5, "only {n} cases compared");
+    }
+
+    /// The seq and prev the set gives a key's next record, and whether the
+    /// key signed two histories, as Go's TestNextVectors wrote them: once
+    /// the root voids both histories, the key goes on below the fork.
+    #[test]
+    fn next_vectors() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/v2-next.json");
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let cases = v["cases"].as_array().unwrap();
+        assert!(cases.len() >= 4);
+        for c in cases {
+            let name = c["name"].as_str().unwrap();
+            let rs: Vec<Record> = serde_json::from_value(c["records"].clone()).unwrap();
+            let s = set_of(c, &rs);
+            assert_eq!(s.len(), rs.len(), "{name}");
+            let signer: Hash = serde_json::from_value(c["signer"].clone()).unwrap();
+            let prev: Option<Hash> = c.get("prev").map(|p| serde_json::from_value(p.clone()).unwrap());
+            assert_eq!(s.two_histories(&signer), c["two_histories"].as_bool().unwrap(), "{name}");
+            assert_eq!(s.next_for(&signer), (c["seq"].as_i64().unwrap(), prev), "{name}");
+        }
     }
 
     /// The hubs table's main hubs that may be hubs come first in the order

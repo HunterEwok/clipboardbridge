@@ -920,7 +920,7 @@ func (ep *epoch) conflictsOf(undec []*rec, attackers map[*rec][]*rec) {
 		byRoot[find(r)] = append(byRoot[find(r)], r)
 	}
 	for _, rs := range byRoot {
-		c := Conflict{Kind: "admins"}
+		c := Conflict{Kind: ConflictAdmins}
 		signers := map[Hash]bool{}
 		for _, r := range rs {
 			c.Records = append(c.Records, r.ID)
@@ -975,7 +975,7 @@ func (ep *epoch) collect() {
 		}
 	}
 	for signer := range ep.forked {
-		c := Conflict{Kind: "two_histories", Signers: []Hash{signer}}
+		c := Conflict{Kind: ConflictTwoHistories, Signers: []Hash{signer}}
 		for _, r := range ep.e.bySig[signer] {
 			if r.Body.Seq == ep.forked[signer] {
 				c.Records = append(c.Records, r.ID)
@@ -1084,7 +1084,7 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 	}
 	live = first
 	if len(live) > 1 {
-		c := Conflict{Kind: "claims"}
+		c := Conflict{Kind: ConflictClaims}
 		for _, r := range live {
 			ep.claims = append(ep.claims, Claim{Record: r.ID, Claimant: r.Body.Signer, Root: claimRoot(r), State: "competing"})
 			c.Records = append(c.Records, r.ID)
@@ -1102,7 +1102,7 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 	if ds := disputes[c]; len(ds) > 0 {
 		cl.State = "disputed"
 		ep.claims = append(ep.claims, cl)
-		conflict := Conflict{Kind: "claims", Records: []Hash{c.ID}, Signers: []Hash{c.Body.Signer}}
+		conflict := Conflict{Kind: ConflictClaims, Records: []Hash{c.ID}, Signers: []Hash{c.Body.Signer}}
 		for _, r := range ds {
 			conflict.Records = append(conflict.Records, r.ID)
 			if !contains(conflict.Signers, r.Body.Signer) {
@@ -1264,6 +1264,13 @@ type Ignored struct {
 	Record Hash   `json:"record"`
 	Why    string `json:"why"`
 }
+
+// The kinds of a Conflict (docs/protocol.md, section 10, "The state").
+const (
+	ConflictAdmins       = "admins"
+	ConflictClaims       = "claims"
+	ConflictTwoHistories = "two_histories"
+)
 
 // Conflict is a conflict of the state.
 type Conflict struct {

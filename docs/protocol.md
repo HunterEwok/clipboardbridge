@@ -1587,6 +1587,13 @@ passes through it count for nothing too, so `resolve` ends two histories by nami
 record of the branch that goes. Without a sibling only the named record goes, and the
 signer's chain goes on through it.
 
+**Going on after two histories.** The root may void both branches, naming both records of
+seq k. The signer's next record then has seq k and `prev` the record of seq k - 1, a third
+record of that seq and the only one that counts, so the signer goes on below the fork.
+A member gives a key's next record the seq one above its highest record that is on no
+voided branch (of two records with one seq, the one with the lower ID), and signs nothing
+but a root's `resolve` with a key the state names in a conflict of two histories.
+
 #### Checkpoints
 
 A group's records only grow, and a member keeps at most 1 MiB of them (1024 records). A root's
