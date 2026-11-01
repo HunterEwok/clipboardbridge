@@ -235,6 +235,11 @@ static int run(int argc, char **argv)
     link_open();            // the Pi's UART, at NextPi's speed
     link_open_esp(115200UL); // the ESP's, at its stock speed
     link_use(LINK_ESP);
+    // A run that ended without its hang-up can leave the ESP in passthrough,
+    // where AT would go to the old connection: leave it first.
+    wait_frames(60);
+    link_send_str("+++");
+    wait_frames(60);
     if (esp_command("AT", "OK", 2) && esp_command("AT", "OK", 2)) {
         return fail("the Wi-Fi module does not answer", line);
     }
