@@ -7,6 +7,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ## [Unreleased]
 
 ### Added
+- A `handover` record: the group's root hands the group to an admin, whose claim then takes
+  effect at once instead of after the delay, for moving the root to a new phone or from a
+  computer to a phone. A `recovery` record carries the recovery key's admin CA (`cert`), so a
+  computer of the group claims with the key alone; a device holding the recovery key gets a
+  connection that carries records only, to bring its claim (docs/protocol.md, section 10).
 - The phones seal their commands too: a paste, a mode, an action or a hub command to a device
   whose record has a key for sealed messages carries its orders sealed to that key, through
   the core's new `seal_command` (docs/core-api.md). A computer or a lite member sends its key
