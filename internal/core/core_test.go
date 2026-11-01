@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -71,5 +72,32 @@ func TestDo(t *testing.T) {
 	}
 	if empty, err := Call(nil); err != nil || len(empty) == 0 {
 		t.Fatalf("an empty request: %q, %v", empty, err)
+	}
+}
+
+// TestConcurrent calls the core from many goroutines at once, as the
+// service's connections do.
+func TestConcurrent(t *testing.T) {
+	if !linked {
+		t.Skip("the core is not linked")
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 16)
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 20 {
+				if v, err := CoreVersion(); err != nil || v.ABI != ABI {
+					errs <- errors.Join(errors.New("a version call failed"), err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
 	}
 }

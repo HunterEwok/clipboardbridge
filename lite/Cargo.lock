@@ -446,6 +446,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "clipboardbridge-wasm"
+version = "0.1.0"
+dependencies = [
+ "clipboardbridge-core",
+ "getrandom 0.4.3",
+]
+
+[[package]]
 name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -17,9 +17,9 @@ import "unsafe"
 
 const linked = true
 
-func abi() int { return int(C.cbb_abi()) }
+func abi() (int, error) { return int(C.cbb_abi()), nil }
 
-func call(request []byte) []byte {
+func call(request []byte) ([]byte, error) {
 	var n C.size_t
 	var p *C.uint8_t
 	if len(request) == 0 {
@@ -28,5 +28,5 @@ func call(request []byte) []byte {
 		p = C.cbb_call((*C.uint8_t)(unsafe.Pointer(&request[0])), C.size_t(len(request)), &n)
 	}
 	defer C.cbb_free(p, n)
-	return C.GoBytes(unsafe.Pointer(p), C.int(n))
+	return C.GoBytes(unsafe.Pointer(p), C.int(n)), nil
 }

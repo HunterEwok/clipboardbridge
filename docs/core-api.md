@@ -38,6 +38,12 @@ as C functions, declared in `lite/ffi/include/cbb_core.h`, for callers that link
 takes the request's bytes and returns the answer's, which the caller gives back with
 `cbb_free`; `cbb_abi` gives the ABI.
 
+Go reaches them in `internal/core`: through cgo under the build tag `cbbcore`, linking
+`libcbb_ffi`, and on Windows, macOS and FreeBSD through the same core built as WebAssembly
+(`lite/wasm`, `cbb_call` and its memory functions), run by wazero under the tag `cbbwasm`. `lite/wasm/build.sh` builds the module and writes the
+`go build -overlay` file that lays it over `internal/core/cbb_core.wasm`, so no build output
+lands in the source tree.
+
 ## Operations
 
 | `op` | `args` | `ok` |

@@ -9,8 +9,15 @@
 //	(cd lite && cargo build --locked --release -p clipboardbridge-ffi)
 //	go test -tags cbbcore ./internal/core
 //
-// Without the tag Call says the core is not linked; the builds for Windows,
-// macOS and FreeBSD will run the same core as WebAssembly instead.
+// The builds for Windows, macOS and FreeBSD run the same core as
+// WebAssembly under wazero instead, under the tag cbbwasm, with the module
+// built and laid over cbb_core.wasm here by an overlay, so that it never
+// lands in the source tree:
+//
+//	sh lite/wasm/build.sh
+//	go test -overlay lite/target/cbb-core-overlay.json -tags cbbwasm ./internal/core
+//
+// Without either tag Call says the core is not linked.
 package core
 
 import (
@@ -33,10 +40,14 @@ func Call(request []byte) ([]byte, error) {
 	if !linked {
 		return nil, ErrUnavailable
 	}
-	if got := abi(); got != ABI {
+	got, err := abi()
+	if err != nil {
+		return nil, err
+	}
+	if got != ABI {
 		return nil, fmt.Errorf("core: the linked core speaks ABI %d, not %d", got, ABI)
 	}
-	return call(request), nil
+	return call(request)
 }
 
 // Version is the core's answer to the op version.
