@@ -51,7 +51,13 @@ object Member {
     }
 
     /** The ALPN protocol of member connections. */
-    const val ALPN = "clipboardbridge/1"
+    const val ALPN = "clipboardbridge/2"
+
+    /** The feature of the hello (section 4, "Hello") that says the sender serves the content of media events. */
+    const val FEATURE_MEDIA = "media"
+
+    /** How many names of the hello's features a receiver reads. */
+    const val MAX_FEATURES = 32
 
     /** Frames larger than this close the connection. */
     const val MAX_FRAME = 7 shl 20
@@ -641,7 +647,7 @@ object Member {
                 "tunnel_psk" to Wire.bytes(m.hello.tunnelPSK),
                 "mode" to Wire.str(m.hello.mode),
                 "key_store" to Wire.str(m.hello.keyStore),
-                "media" to if (m.hello.media) JsonPrimitive(true) else null,
+                "features" to if (m.hello.media) JsonArray(listOf(JsonPrimitive(FEATURE_MEDIA))) else null,
             ),
         )
         is Message.Event -> Wire.obj("t" to Wire.str("event"), "event" to m.event?.toJson())
@@ -758,7 +764,8 @@ object Member {
                                 .mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
                                 .filter { Commands.validActionName(it) }
                                 .take(Commands.MAX_HELLO_ACTIONS),
-                            media = h.optBool("media") ?: false,
+                            media = (h.opt("features") as? JsonArray).orEmpty().take(MAX_FEATURES)
+                                .any { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content == FEATURE_MEDIA },
                         ),
                     )
                 }

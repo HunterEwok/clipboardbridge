@@ -8,8 +8,8 @@ import Foundation
 /// forwarder it registers with, the home networks where it takes members
 /// and publishes itself, and its clients.
 public struct HubState: Codable, Equatable, Sendable {
-    /// The forwarder: its endpoint, "ip:port", and the pin of its key,
-    /// "sha256:…".
+    /// The forwarder: its endpoint, "ip:port", and the pin of its key:
+    /// SHA-256 of its key in standard base64.
     public struct Forwarder: Codable, Equatable, Sendable {
         public var endpoint: String
         public var pin: String
@@ -40,9 +40,8 @@ public struct HubState: Codable, Equatable, Sendable {
     /// Whether pin is the pin of a forwarder's key, as `cbb forward` prints
     /// it.
     public static func validPin(_ pin: String) -> Bool {
-        guard pin.hasPrefix("sha256:") else { return false }
-        let rest = pin.dropFirst(7)
-        return rest.count == 43 && rest.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+        guard let b = Data(base64Encoded: pin), b.count == 32 else { return false }
+        return b.base64EncodedString() == pin
     }
 
     /// The forwarder's endpoint as cbbtun takes it, "ip:port", when s is an

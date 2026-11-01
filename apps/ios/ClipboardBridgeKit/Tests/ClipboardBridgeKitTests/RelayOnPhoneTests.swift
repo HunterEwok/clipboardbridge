@@ -9,7 +9,7 @@ import XCTest
 /// connections the relay joins, and whose each call is.
 final class RelayOnPhoneTests: XCTestCase {
     let phone = String(repeating: "8", count: 32), pc = String(repeating: "1", count: 32), tv = String(repeating: "f", count: 32)
-    let pin = "sha256:" + String(repeating: "A", count: 43)
+    let pin = String(repeating: "A", count: 43) + "="
 
     final class FakeLink: RelayLink, @unchecked Sendable {
         let args: [String]
@@ -83,7 +83,7 @@ final class RelayOnPhoneTests: XCTestCase {
         XCTAssertTrue(links.started.isEmpty, "off: no link")
         XCTAssertEqual(r.status(paused: false).0, .off)
         XCTAssertThrowsError(try r.turnOn(endpoint: "cbb.tools:8764", pin: pin))
-        XCTAssertThrowsError(try r.turnOn(endpoint: "203.0.113.9:8764", pin: "sha256:short"))
+        XCTAssertThrowsError(try r.turnOn(endpoint: "203.0.113.9:8764", pin: "short"))
         XCTAssertNil(saved.settings)
 
         try r.turnOn(endpoint: " 203.0.113.9:8764 ", pin: pin)

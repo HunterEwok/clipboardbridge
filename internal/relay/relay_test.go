@@ -325,7 +325,7 @@ func TestRefused(t *testing.T) {
 
 	d := newDevice(t, g)
 	bad := link
-	bad.Pin = "sha256:" + strings.Repeat("A", 43)
+	bad.Pin = strings.Repeat("A", 43) + "="
 	_, _, _, err = register(ctx, MemberConfig{Link: bad, Key: d.key, Cert: func() tls.Certificate { return d.cert }})
 	if err == nil || !strings.Contains(err.Error(), "not the one given") {
 		t.Errorf("a wrong pin: %v", err)

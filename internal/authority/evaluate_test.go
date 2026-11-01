@@ -394,6 +394,31 @@ func TestSettingsDelay(t *testing.T) {
 	}
 }
 
+// TestKeyLevel checks that the state carries the key level of the current
+// root's newest settings record, that an admin's settings count for
+// nothing, and that a claim's new root starts without one.
+func TestKeyLevel(t *testing.T) {
+	w := newWorld(t)
+	if s := w.evalAll(nil); s.KeyLevel != "" {
+		t.Fatalf("no settings should leave the key level out: %s", mustEncode(t, s))
+	}
+	w.sign("settings", "root", authority.Body{Type: authority.TypeSettings, KeyLevel: "files"}, nil)
+	if s := w.evalAll(nil); s.KeyLevel != "files" {
+		t.Fatalf("the root's settings should set the key level: %s", mustEncode(t, s))
+	}
+	w.sign("settings 2", "root", authority.Body{Type: authority.TypeSettings, KeyLevel: "proven", TakeoverDelayMS: ptr(int64(0))}, nil)
+	w.makeAdmin("B", "phone", phonePowers)
+	bad := w.sign("settings by B", "B", authority.Body{Type: authority.TypeSettings, KeyLevel: "files"}, nil)
+	s := w.evalAll(nil)
+	if s.KeyLevel != "proven" || len(s.Ignored) != 1 || s.Ignored[0].Record != bad.ID() {
+		t.Fatalf("the newest root settings should count and an admin's not: %s", mustEncode(t, s))
+	}
+	w.claim("B", "R2", nil)
+	if s := w.evalAll(nil); len(s.Roots) != 2 || s.KeyLevel != "" {
+		t.Fatalf("the new root should start without a key level: %s", mustEncode(t, s))
+	}
+}
+
 func TestTwoClaimsStop(t *testing.T) {
 	w := newWorld(t)
 	w.makeAdmin("A", "phone", phonePowers)

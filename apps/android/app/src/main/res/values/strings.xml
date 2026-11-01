@@ -141,7 +141,7 @@
     <string name="hub_add_home">This is my home network</string>
     <string name="hub_forwarder">Forwarder</string>
     <string name="hub_forwarder_address">Address, such as 198.51.100.9:8764</string>
-    <string name="hub_forwarder_key">Key, sha256:…</string>
+    <string name="hub_forwarder_key">Key, 44 characters</string>
     <string name="hub_forwarder_save">Save the forwarder</string>
     <string name="hub_bad_forwarder">Give the forwarder\'s address with its port and its key, as cbb forward prints them, or leave both empty.</string>
     <string name="hub_background">Keep the hub running in the background (uses the battery)</string>
@@ -271,7 +271,7 @@
     <string name="relay_with">At the relay; devices of the group there: %1$d.</string>
     <string name="relay_failed">The relay does not take this phone. Check its address and key.</string>
     <string name="relay_address">Relay address, such as 198.51.100.9:8764</string>
-    <string name="relay_key">Relay key, sha256:…</string>
+    <string name="relay_key">Relay key, 44 characters</string>
     <string name="relay_meet">Meet at this relay</string>
     <string name="relay_leave">Leave the relay</string>
     <string name="relay_bad">Give the relay\'s address with its port and its key, as cbb relay prints them, or leave both empty.</string>

@@ -8,7 +8,7 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/forward"
+	"github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -36,7 +37,7 @@ type Link struct {
 // CheckPin tells whether s looks like a relay's key as cbb relay prints it.
 func CheckPin(s string) error {
 	if forward.CheckPin(s) != nil {
-		return fmt.Errorf("%q is not a relay's key; cbb relay prints it, starting with \"sha256\"", s)
+		return fmt.Errorf("%q is not a relay's key; cbb relay prints it, 44 characters of base64", s)
 	}
 	return nil
 }
@@ -287,7 +288,7 @@ func joinOnce(ctx context.Context, cfg MemberConfig) (err error) {
 	notes := bufio.NewReaderSize(watch, 4<<10)
 	for {
 		var n note
-		if err := readNote(notes, &n); err != nil {
+		if err := frame.Read(notes, &n, maxLine); err != nil {
 			if ctx.Err() != nil {
 				return errors.New("the relay ended the registration")
 			}
@@ -334,33 +335,21 @@ func (s *session) endCall() {
 	s.mu.Unlock()
 }
 
-// readNote reads one note from the watch, a line of at most maxLine bytes.
-func readNote(r *bufio.Reader, n *note) error {
-	var line []byte
-	for {
-		part, more, err := r.ReadLine()
-		if err != nil {
-			return err
-		}
-		if len(line)+len(part) > maxLine {
-			return errors.New("relay: a line too long")
-		}
-		line = append(line, part...)
-		if !more {
-			return json.Unmarshal(line, n)
-		}
-	}
-}
-
 // validName reports whether s is a device's name at the relay: its device
-// ID, 32 lowercase hex characters, or its pseudonym, 64.
+// ID, 32 lowercase hex characters, or its pseudonym (group.Pseudonym).
 func validName(s string) bool {
-	return (len(s) == 32 || len(s) == 64) && strings.Trim(s, "0123456789abcdef") == ""
+	if len(s) == 32 {
+		return strings.Trim(s, "0123456789abcdef") == ""
+	}
+	_, ok := group.ParsePseudonym(s)
+	return ok
 }
 
-// validTicket reports whether s is a call's ticket: 16 bytes in hex.
+// validTicket reports whether s is a call's ticket: 16 bytes in standard
+// base64.
 func validTicket(s string) bool {
-	return len(s) == 32 && strings.Trim(s, "0123456789abcdef") == ""
+	b, err := base64.StdEncoding.Strict().DecodeString(s)
+	return err == nil && len(b) == 16 && base64.StdEncoding.EncodeToString(b) == s
 }
 
 // register runs the registration's setup and returns its connection, which
@@ -392,7 +381,7 @@ func register(ctx context.Context, cfg MemberConfig) (*tls.Conn, welcome, string
 		return fail(fmt.Errorf("registering with the relay: %w", err))
 	}
 	cs := tc.ConnectionState()
-	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, 1<<20))
+	enc, dec := frame.NewEncoder(tc, 1<<20), frame.NewDecoder(io.LimitReader(tc, 1<<20), 1<<20)
 	var ch challenge
 	if err := dec.Decode(&ch); err != nil {
 		return fail(fmt.Errorf("registering with the relay: %w", err))

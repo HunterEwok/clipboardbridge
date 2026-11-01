@@ -111,9 +111,6 @@ public enum PairingJoiner {
               try CertificateInfo(der: w.cert).publicKey == CertificateInfo(der: joinerCert).publicKey else {
             throw Failure.badWelcome("the certificate is not for this phone")
         }
-        guard w.groupCAKey == nil, w.phoneCA == nil, w.phoneCAKey == nil else {
-            throw Failure.badWelcome("the other phone sent CA keys")
-        }
         if let adminCA = w.adminCA {
             guard let key = info.adminKey, (try? GroupCertificates.checkAdminCA(adminCA, root: trusted.last!)) != nil,
                   let ca = try? CertificateInfo(der: adminCA), ca.publicKey == key,

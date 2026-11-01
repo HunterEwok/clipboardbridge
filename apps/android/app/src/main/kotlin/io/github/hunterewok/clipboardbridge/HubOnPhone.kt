@@ -32,7 +32,7 @@ data class HubState(
     val homes: List<String> = emptyList(),
     val clients: List<PhoneHub.Client> = emptyList(),
 ) {
-    /** The forwarder: its endpoint, "ip:port", and the pin of its key, "sha256:…". */
+    /** The forwarder: its endpoint, "ip:port", and the pin of its key: SHA-256 of its key in standard base64. */
     data class Forwarder(val endpoint: String, val pin: String)
 
     fun encode(): ByteArray = JsonObject(mapOfValues(
@@ -69,8 +69,10 @@ data class HubState(
         }.getOrNull()
 
         /** Whether pin is the pin of a forwarder's key, as `cbb forward` prints it. */
-        fun validPin(pin: String): Boolean =
-            pin.length == 7 + 43 && pin.startsWith("sha256:") && pin.drop(7).all { it.isLetterOrDigit() && it.code < 128 || it == '-' || it == '_' }
+        fun validPin(pin: String): Boolean = runCatching {
+            val b = Base64.getDecoder().decode(pin)
+            b.size == 32 && Base64.getEncoder().encodeToString(b) == pin
+        }.getOrDefault(false)
 
         /**
          * The forwarder's address as cbbtun takes it, "ip:port", from what
