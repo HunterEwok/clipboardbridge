@@ -23,6 +23,9 @@ use crate::error::{Error, Result};
 pub const MAX_BODY: usize = 256 << 10;
 /// The longest a keys or channel file may stay valid after it was signed.
 pub const MAX_LIFETIME_MS: i64 = 100 * 24 * 3600 * 1000;
+/// The longest attest-status.json stays valid after it was signed: it
+/// must follow Google's list closely.
+pub const MAX_STATUS_LIFETIME_MS: i64 = 8 * 24 * 3600 * 1000;
 
 /// The envelope of every release file.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -44,7 +47,7 @@ struct Head {
     kind: String,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Key {
     #[serde(with = "b64")]
     pub key: Vec<u8>,
@@ -57,7 +60,7 @@ pub struct Key {
 }
 
 /// The body of keys.json.
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Keys {
     pub seq: u64,
     pub time_ms: i64,
@@ -65,13 +68,13 @@ pub struct Keys {
     pub keys: Vec<Key>,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Binary {
     pub name: String,
     pub sha256: String,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Asset {
     pub name: String,
     pub size: i64,
@@ -80,14 +83,14 @@ pub struct Asset {
     pub binaries: Vec<Binary>,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Docker {
     pub image: String,
     pub digest: String,
 }
 
 /// The body of release.json.
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Release {
     pub version: String,
     pub channel: String,
@@ -100,7 +103,7 @@ pub struct Release {
 }
 
 /// The body of a channel file.
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Channel {
     pub channel: String,
     pub seq: u64,
@@ -108,6 +111,23 @@ pub struct Channel {
     pub expires_ms: i64,
     pub release: String,
     pub release_sha256: String,
+}
+
+/// The body of attest-status.json, signed by a status key: the serial
+/// numbers Google's list of Android attestation keys revokes.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Status {
+    pub seq: u64,
+    pub time_ms: i64,
+    pub expires_ms: i64,
+    /// When Google last changed its list, 0 when it did not say.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub source_ms: i64,
+    pub android_revoked: Vec<String>,
+}
+
+fn is_zero_i64(n: &i64) -> bool {
+    *n == 0
 }
 
 /// What a device keeps between checks: the highest sequence numbers and
@@ -197,9 +217,13 @@ fn decode<'a, T: Deserialize<'a>>(body: &'a [u8], kind: &str) -> Result<T> {
 }
 
 fn lifetime(time_ms: i64, expires_ms: i64) -> Result<()> {
+    lifetime_up_to(time_ms, expires_ms, MAX_LIFETIME_MS)
+}
+
+fn lifetime_up_to(time_ms: i64, expires_ms: i64, max: i64) -> Result<()> {
     // A time before 1970 is no signing time; from it the difference cannot
     // leave the range of i64.
-    if time_ms < 0 || expires_ms <= time_ms || expires_ms.saturating_sub(time_ms) > MAX_LIFETIME_MS {
+    if time_ms < 0 || expires_ms <= time_ms || expires_ms.saturating_sub(time_ms) > max {
         return Err(Error::msg("the file's lifetime is out of range"));
     }
     Ok(())
@@ -328,6 +352,38 @@ pub(crate) fn decode_channel(body: &[u8]) -> Result<Channel> {
         return Err(Error::msg("the channel file names no valid release"));
     }
     Ok(c)
+}
+
+/// Whether s is a serial number as attest-status.json writes it: lowercase
+/// hex without leading zeros, at most 64 digits.
+fn is_serial(s: &str) -> bool {
+    let b = s.as_bytes();
+    s == "0"
+        || (!b.is_empty()
+            && b.len() <= 64
+            && b.first().is_some_and(|c| *c != b'0')
+            && b.iter().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(c)))
+}
+
+/// Orders serial numbers as numbers: the shorter first, then as strings.
+fn serial_less(a: &str, b: &str) -> bool {
+    if a.len() != b.len() { a.len() < b.len() } else { a < b }
+}
+
+pub(crate) fn decode_status(body: &[u8]) -> Result<Status> {
+    let s: Status = decode(body, "attest-status")?;
+    if s.seq == 0 {
+        return Err(Error::msg("attest-status.json has no sequence number"));
+    }
+    lifetime_up_to(s.time_ms, s.expires_ms, MAX_STATUS_LIFETIME_MS)?;
+    let mut prev: Option<&String> = None;
+    for r in &s.android_revoked {
+        if !is_serial(r) || prev.is_some_and(|p| !serial_less(p, r)) {
+            return Err(Error::msg(format!("{r:?} is not a serial number in order")));
+        }
+        prev = Some(r);
+    }
+    Ok(s)
 }
 
 /// Checks keys.json against the pinned root keys (SubjectPublicKeyInfos,

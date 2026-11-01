@@ -111,6 +111,8 @@ object ServerCredentials {
         companion object {
             /** Reads and checks a credential's body: its size, the strict form of signed bodies, then its fields. */
             internal fun parse(data: ByteArray): Body {
+                // The core decides whether the body is taken (parse_body).
+                Core.bodyRefusal("credential", data)?.let { throw Refused("the credential is not valid: $it") }
                 if (data.size > MAX_BODY) throw Refused("the credential is too large")
                 try {
                     Strict.check(data, "v", "type", "group", "version", "expires_ms")

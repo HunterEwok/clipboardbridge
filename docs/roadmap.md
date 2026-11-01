@@ -115,7 +115,7 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
 ### Next
 
 - **42.** **Points 1 to 6, 8 and 9 are being built for 0.6**
-    ([records-v2.md](records-v2.md)), without a migration from `v:1`: groups made before
+    ([protocol.md](protocol.md), section 10; [records-v2.md](records-v2.md)), without a migration from `v:1`: groups made before
     are set up again; of point 4, the Welcome's format without a CA key is in 0.6 and the
     legacy path goes with item 17. Everything that changes the rules core or a format it
     reads or signs is done in 0.6, so 0.7 does not change the core: the Go service calls
@@ -183,7 +183,7 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     devices whose hardware key is proven by attestation, devices with a key in hardware (the
     default), or, after a warning, devices with a key in a file too. The evidence and the
     marks are built, and so is the setting's format: `key_level` in the root's `settings`
-    record ([records-v2.md](records-v2.md)), which the state carries; the apps' setting and
+    record ([protocol.md](protocol.md), section 10), which the state carries; the apps' setting and
     its checks are next. See "Key levels" below.
 - **33.** **Researched; not built (D-73).** The iPhone as a hub in the background, as a Network
     Extension. See "Research: the iPhone hub in a Network Extension" below.

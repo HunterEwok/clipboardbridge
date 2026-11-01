@@ -13,7 +13,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
-// handover is the story of a claim (docs/records-v2.md, "Handing the group
+// handover is the story of a claim (docs/protocol.md, section 10, "Handing the group
 // over"): the root phone, which admitted a computer itself, is lost, and
 // admin phone B claims the group with a new root of its own; once the claim
 // takes effect, the new root lists B as the device that holds it and
@@ -294,7 +294,7 @@ func TestIdentityWithRoots(t *testing.T) {
 // group CA handed to a root (cbb upgrade, version 1) are refused: there is
 // no migration to version 2.
 func TestUpgradeRecords(t *testing.T) {
-	checkV1Refused(t, "go-upgrade.json")
+	checkV1Refused(t)
 }
 
 // TestUpgraded checks that an identity of a legacy group, made before

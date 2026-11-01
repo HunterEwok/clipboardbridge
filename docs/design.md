@@ -1127,7 +1127,7 @@ All built in 0.5, but for what each step names as still to do.
    with an admin phone's takeover; `TestMoveHub` moves a hub with a client away from home.
    Still to do on the bench: moving from a phone to the Linux desktop with the lite member far away.
 7. Done: several hubs with a priority (D-65; docs/protocol.md, section 11, "Several hubs"):
-   the order of hubs from the records (`go-hubs.json` checks Go, both kits and the lite
+   the order of hubs from the records (`v2-hubs.json` checks Go, both kits and the lite
    member), the clients keeping every hub's offer with a preshared key of their own, the
    hubs sharing their clients and passing each other's offers on, and a computer's hub
    yielding to a higher one and serving again when it goes; `TestSeveralHubs` switches both
@@ -1745,32 +1745,16 @@ in a phone group, without a new group:
   removes it replaces the iPhone CA as well: a new key, new `clipboardbridge.local`
   certificates for the admins, and every token revoked; iPhones that use the shortcut
   delete the old profile and pair again. The group's root stays;
-- the root computer: another admin takes the group over with a `root` record, as an admin
-  phone does when the root phone is lost (`cbb takeover <name>`), and then removes it. This
+- the root computer: another admin claims the group (a `claim` record, which takes effect
+  after the root's delay unless the root cancels it), as an admin phone does when the root phone is lost (`cbb takeover <name>`). This
   is open to admin computers in a group whose root is a computer; in a phone group they
   still never take over. A group whose root is gone and has no other admin must be made
   anew, so `cbb pair` suggests making a second admin.
 
-**Upgrading a group a computer created.** A group made before this change has a group CA
-with path length 0, and every Linux and Windows member holds the keys of both CAs. It is
-upgraded once with `cbb upgrade` on one of them, after every member runs the new version,
-and that member becomes the root:
-
-1. It creates a new root CA with path length 1 and signs, with the old group CA key, a
-   `root` record that names it. The group keeps its tag, so no device pairs again.
-2. Under the new root it revokes the old group CA key and keeps every listed device's key,
-   so nothing the old key signs from then on counts. A `root` record that a group CA with
-   path length 0 signed itself still counts when every record that revokes that key was
-   signed under the root it names: a leftover copy of the old key can then break the group
-   by signing a rival handover, but never take it over.
-3. It replaces the iPhone CA as above, since every member held its key; iPhones that use
-   the shortcut pair again.
-4. It signs a new device record for every device, with role `full` or `lite` and the `os`
-   its hello states, and renews certificates from the new root as members connect.
-5. Each member that gets the records deletes its copies of the old CA keys and says so in
-   its hello. Until a member has said so, `cbb status` marks it as still holding the old
-   keys, and `cbb revoke` refuses to remove it. Members that were off follow when they
-   come back.
+**Groups made before admin CAs.** A group made before this change has a group CA with path
+length 0, and every Linux and Windows member holds the keys of both CAs. Records of version 2
+have no upgrade from it (`cbb upgrade` went with version 1), so such a group is set up again
+to get a root.
 
 **The shortcut is a legacy way.** An iPhone without the app joins through a shortcut and a
 token (section "The iPhone button"), never with a key of its own. It stays for now, since
@@ -1812,7 +1796,7 @@ computer** (`cbb freeze <name>`): from then on the frozen admin is no admin, not
 counts beyond the records it signed before, its connections are refused, and it cannot
 paste. The root or an admin phone then decides: Unfreeze in the apps (`cbb unfreeze` on a
 root computer) makes it an admin again, Remove takes it out for good. Nobody freezes the
-root or an admin phone. How the records say it is in protocol section 10, rule 4.
+root or an admin phone. How the records say it is in protocol section 10, "Removals and freezes keep what the author saw".
 
 **Taking over from a lost root computer.** In a group whose root is a computer, the root key
 sits in a file just as an admin computer's key does, so a stolen admin computer is no

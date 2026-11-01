@@ -2,7 +2,7 @@
 // Copyright (C) 2026 HunterEwok
 
 //! The memory the evaluation takes for a set at the limit on records
-//! (docs/records-v2.md, "Limits"): the ESP32 holds the set and the
+//! (docs/protocol.md, section 10, "Limits"): the ESP32 holds the set and the
 //! evaluation in its PSRAM, so the peak is held to a few times the set.
 //! Measured with a counting allocator, so this file is its own test binary
 //! with one test.

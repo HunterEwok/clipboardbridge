@@ -132,6 +132,10 @@ func (s *Service) settleRecords(fresh []group.Record) {
 	if revoked || rooted {
 		s.afterRevocation()
 	}
+	if rooted {
+		// A resolve may have voided both histories of this device's key.
+		go s.resignVoided()
+	}
 	if len(fresh) > 0 {
 		s.refreshCredential()
 	}
@@ -212,6 +216,8 @@ func (s *Service) afterRevocation() {
 	s.dropRevokedPhoneCA()
 	if id != nil {
 		switch err := s.allow(id.ID, ownChain(id)); {
+		case errors.Is(err, group.ErrStopped):
+			s.logf("cbb: the group's records stop the exchange until its root decides (cbb status says why); members exchange records only")
 		case errors.Is(err, group.ErrRecordsOnly):
 			s.logf("cbb: %s took the group over from this computer, its root; if this computer is not lost, cbb revoke %s undoes it", s.takenOverBy(id), s.takenOverBy(id))
 		case err != nil && s.frozen(id):
@@ -291,7 +297,7 @@ func (s *Service) refusedAdminCA(ca *x509.Certificate) error {
 // own key, or its admin key under its admin CA. A device record that makes
 // an admin gives it a computer admin's powers unless body names them, and
 // the root's record of its own device says that it holds the root
-// (docs/records-v2.md, "Who signs what").
+// (docs/protocol.md, section 10, "Who signs what").
 func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.Record, error) {
 	ca, chain := id.Signer()
 	if ca == nil {
@@ -330,7 +336,48 @@ func (s *Service) signRecord(id *group.Identity, body group.RecordBody) (group.R
 	if err := s.records.Save(s.cfg.StateDir); err != nil {
 		s.logf("cbb: saving the device records: %v", err)
 	}
+	s.noteSigned(r.ID())
 	return r, nil
+}
+
+// syncWait is how long a signer waits for another member's records before
+// it signs anyway.
+var syncWait = 10 * time.Second
+
+// awaitRecords waits, before this device signs a record the user asked
+// for, until it holds
+// another member's records, at most syncWait, when the group lists another
+// device: a device brought back from an old backup would otherwise sign
+// with a seq it signed already, and the group would stop until its root
+// resolves the two histories (docs/protocol.md, section 10, "Two numbers").
+// When no member answers it signs anyway, and says so in the log.
+func (s *Service) awaitRecords(id *group.Identity) {
+	s.mu.Lock()
+	nd := s.nd
+	s.mu.Unlock()
+	if nd == nil || nd.Synced() {
+		return
+	}
+	s.recMu.Lock()
+	others := false
+	if s.records != nil {
+		for _, d := range s.records.Devices() {
+			if d.ID != id.ID {
+				others = true
+				break
+			}
+		}
+	}
+	s.recMu.Unlock()
+	if !others {
+		return
+	}
+	for end := time.Now().Add(syncWait); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+		if nd.Synced() {
+			return
+		}
+	}
+	s.logf("cbb: no member of the group answered since this device started; signing anyway. If it was brought back from a backup, the group's root may have to resolve two histories (cbb resolve)")
 }
 
 // computerAdminPowers are the powers of an admin computer: takeover too
@@ -384,6 +431,7 @@ func (s *Service) recordDevice(dev group.DeviceID, name, role, os string, key gr
 	if !group.ValidName(name) {
 		name = defaultName(role, dev)
 	}
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(dev), Name: name, Role: role, OS: os, Key: &key})
 	if err != nil {
 		s.logf("cbb: recording %s in the devices list: %v", dev, err)
@@ -673,6 +721,7 @@ func (s *Service) revoke(target string) (string, error) {
 		s.recMu.Unlock()
 	}
 	body.Keys = uniqueKeys(body.Keys)
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, body)
 	if err != nil {
 		return "", err
@@ -721,7 +770,7 @@ func (s *Service) rename(target, name string) (string, error) {
 		return rec.Name, nil
 	}
 	// A device record that names an admin key, or of a phone or a watch,
-	// counts only from a root's own key (docs/records-v2.md, "Who signs
+	// counts only from a root's own key (docs/protocol.md, section 10, "Who signs
 	// what"), and so does the root's own device's.
 	s.recMu.Lock()
 	rootDevice := s.records.RootDevice()
@@ -729,6 +778,7 @@ func (s *Service) rename(target, name string) (string, error) {
 	if !id.IsRoot() && (rec.AdminKey != nil || rec.Role == group.RolePhone || rec.Role == group.RoleWatch || rec.ID == rootDevice) {
 		return "", fmt.Errorf("only the group's root renames %s: it is an admin, a phone or a watch, or the root's own device", rec.Name)
 	}
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, group.RecordBody{Type: group.RecordDevice, Device: string(rec.ID), Name: name, Role: rec.Role,
 		OS: rec.OS, Key: &rec.Key, Admin: rec.AdminKey, Powers: rec.Powers, Commands: rec.Commands, Store: rec.Store, Kind: rec.Kind, Proof: rec.Proof, Seal: rec.Seal})
 	if err != nil {
@@ -784,6 +834,7 @@ func (s *Service) freeze(target string, on bool) (string, error) {
 		body.Type, body.Keys, body.Records = group.RecordThaw, nil, s.records.FreezesOf(*admin)
 		s.recMu.Unlock()
 	}
+	s.awaitRecords(id)
 	r, err := s.signRecord(id, body)
 	if err != nil {
 		return "", err
@@ -913,4 +964,12 @@ func (s *Service) loadSealSecretLocked() {
 		}
 	}
 	s.logf("cbb: the key for sealed commands: %v; commands come unsealed", err)
+}
+
+// noSecretsTo reports whether this member sends dev no secret, as the
+// records say (group.Records.NoSecretsTo); false while it holds no records.
+func (s *Service) noSecretsTo(dev group.DeviceID) bool {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	return s.records != nil && s.records.NoSecretsTo(dev)
 }

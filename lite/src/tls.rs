@@ -34,11 +34,12 @@ pub fn clock() -> Clock {
 /// The records' judgement of a member chain, under their lock.
 pub fn refused(records: &Arc<Mutex<Records>>) -> Refused {
     let records = records.clone();
-    // A chain no counting device record names yet passes here: its
-    // connection carries records only (Node::run).
+    // A chain no counting device record names yet, or one the records
+    // stop the exchange with, passes here: its connection carries records
+    // only (Node::run).
     Arc::new(move |chain| match records.lock().unwrap().refused(chain) {
         Some(Refusal::Refused(why)) => Some(why.to_string()),
-        Some(Refusal::NotListed) | None => None,
+        Some(Refusal::NotListed | Refusal::Stopped) | None => None,
     })
 }
 

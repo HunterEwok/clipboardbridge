@@ -5,8 +5,12 @@ package group
 
 import (
 	"crypto"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,7 +25,7 @@ import (
 
 // heads keeps, for each signer of the tests, the record it signed last
 // and the group of it, so that the records a test signs one after another
-// form the chains of version 2 (docs/records-v2.md, "Chains and numbers").
+// form the chains of version 2 (docs/protocol.md, section 10, "Chains and numbers").
 var heads = struct {
 	sync.Mutex
 	m     map[KeyHash]authority.Head
@@ -158,7 +162,7 @@ func checkV2Cases(t *testing.T, prefixes ...string) {
 }
 
 // computerPowers are the powers the root gives an admin computer, takeover
-// among them when the root is a computer (docs/records-v2.md, "Who signs
+// among them when the root is a computer (docs/protocol.md, section 10, "Who signs
 // what").
 func computerPowers(takeover bool) []string {
 	p := []string{authority.PowerAdmit, authority.PowerFreeze, authority.PowerHub, authority.PowerRemove, authority.PowerRenew}
@@ -199,68 +203,44 @@ func writeV2Vectors(t *testing.T, name string, v any) {
 	}
 }
 
-// checkV1Refused checks that a set refuses every record of version 1 in the
-// interop file name, which the phone kits read until they move to the core:
-// there is no migration, and a member that holds records of version 1
-// refuses them (docs/records-v2.md).
-func checkV1Refused(t *testing.T, name string) {
+// v1Records signs bodies of version 1 as members before 0.6 wrote them,
+// under the group CA root: a device record, a revocation, and the root
+// record by which cbb upgrade gave a legacy group a root.
+func v1Records(t *testing.T, root *CA) []Record {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "interop", name))
-	if err != nil {
-		t.Fatal(err)
+	tag := Tag(root.Cert)
+	dev := NewDeviceID()
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	bodies := []string{
+		fmt.Sprintf(`{"by":%q,"device":%q,"group":%q,"key":%q,"name":"pi","role":"full","time_ms":1,"type":"device","v":1}`, dev, dev, tag, key),
+		fmt.Sprintf(`{"group":%q,"keys":[%q],"time_ms":2,"type":"revoke","v":1}`, tag, key),
+		fmt.Sprintf(`{"group":%q,"root":%q,"time_ms":3,"type":"root","v":1}`, tag, base64.StdEncoding.EncodeToString(root.Cert.Raw)),
 	}
-	var doc any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		t.Fatal(err)
-	}
-	var recs []Record
-	var walk func(any)
-	walk = func(v any) {
-		switch v := v.(type) {
-		case map[string]any:
-			if _, ok := v["body"]; ok {
-				if _, ok := v["sig"]; ok {
-					b, _ := json.Marshal(v)
-					var r Record
-					if json.Unmarshal(b, &r) == nil {
-						recs = append(recs, r)
-						return
-					}
-				}
-			}
-			for _, e := range v {
-				walk(e)
-			}
-		case []any:
-			for _, e := range v {
-				walk(e)
-			}
-		}
-	}
-	walk(doc)
-	if len(recs) == 0 {
-		t.Fatalf("%s holds no records", name)
-	}
-	var ca *x509.Certificate
-	if m, ok := doc.(map[string]any); ok {
-		if s, ok := m["group_ca"].(string); ok {
-			var der []byte
-			if json.Unmarshal([]byte(`"`+s+`"`), &der) == nil {
-				ca, _ = x509.ParseCertificate(der)
-			}
-		}
-	}
-	if ca == nil {
-		g, err := NewRootCA(t0)
+	var out []Record
+	for _, b := range bodies {
+		sum := sha256.Sum256([]byte(b))
+		sig, err := root.Key.Sign(rand.Reader, sum[:], crypto.SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ca = g.Cert
+		out = append(out, Record{Body: []byte(b), Sig: sig})
 	}
-	s := NewRecords(ca)
-	for i, r := range recs {
+	return out
+}
+
+// checkV1Refused checks that a set refuses every record of version 1 that
+// v1Records signs: there is no migration, and a member that holds records
+// of version 1 refuses them (docs/records-v2.md).
+func checkV1Refused(t *testing.T) {
+	t.Helper()
+	root, err := NewRootCA(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewRecords(root.Cert)
+	for i, r := range v1Records(t, root) {
 		if ok, err := s.Add(r); ok || err == nil {
-			t.Errorf("%s: the set took record %d of version 1", name, i)
+			t.Errorf("record %d of version 1 taken", i)
 		}
 	}
 }

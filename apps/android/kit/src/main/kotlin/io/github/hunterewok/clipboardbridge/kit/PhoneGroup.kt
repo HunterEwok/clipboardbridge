@@ -57,7 +57,7 @@ class PhoneGroup internal constructor(
 
     /**
      * The new root of this admin's claim to take the group over, DER, while
-     * the claim waits (docs/records-v2.md, "Handing the group over"); its
+     * the claim waits (docs/protocol.md, section 10, "Handing the group over"); its
      * key stays in the Keystore until the claim takes effect or ends.
      */
     var claim: ByteArray? = null
@@ -199,7 +199,7 @@ class PhoneGroup internal constructor(
 
     /**
      * Claims the group for this admin phone when the root phone lost is gone
-     * (docs/records-v2.md, "Handing the group over"): a claim, signed with
+     * (docs/protocol.md, section 10, "Handing the group over"): a claim, signed with
      * this phone's admin key (adminSigner), that hands the group to newRoot,
      * a root CA for a new key of this phone. The claim waits the group's
      * delay (72 hours unless the root set another), and the root cancels it
@@ -283,7 +283,7 @@ class PhoneGroup internal constructor(
 
     /**
      * Cancels claims, or ends a conflict, as the current root
-     * (docs/records-v2.md, "Voiding"): a resolve that voids the records with
+     * (docs/protocol.md, section 10, "Chains and numbers"): a resolve that voids the records with
      * the IDs ids. It returns the record to send.
      */
     fun resolve(ids: List<ByteArray>, rootSigner: CertificateSigner, now: Instant): Member.Record {
@@ -335,7 +335,7 @@ class PhoneGroup internal constructor(
      * Removes a device from the group: signs a revocation of every key it
      * had, and of its admin key for an admin, which every member then
      * refuses, and returns the record to send. What an admin signed before
-     * stays (docs/records-v2.md, "Removals and freezes keep what the author
+     * stays (docs/protocol.md, section 10, "Removals and freezes keep what the author
      * saw"). The root phone is taken over with takeOver instead.
      */
     fun revoke(device: String, caSigner: CertificateSigner, now: Instant): Member.Record {
@@ -473,7 +473,7 @@ class PhoneGroup internal constructor(
     }
 
     /**
-     * Makes a watch an admin (section 10, rule 8): the root issues an admin
+     * Makes a watch an admin (section 10, "Watches"): the root issues an admin
      * CA for the key the watch made in its Keystore or Secure Enclave
      * (adminKey, a SubjectPublicKeyInfo) and signs the watch's device
      * record, whose key and admin both name that CA, since a watch has no
@@ -501,7 +501,7 @@ class PhoneGroup internal constructor(
         return ca to record(device, n, "watch", key, rootSigner, now, key, os, Records.HARDWARE)
     }
 
-    /** What a watch of the group may do from its wrist (section 10, rule 8). */
+    /** What a watch of the group may do from its wrist (section 10, "Watches"). */
     enum class WatchAction(val key: String) {
         FREEZE("freeze"), REMOVE("remove"), PASTE_OFF("paste-off"), ACTIONS_OFF("actions-off"), AWAY_OFF("away-off"), ACTION("action");
 

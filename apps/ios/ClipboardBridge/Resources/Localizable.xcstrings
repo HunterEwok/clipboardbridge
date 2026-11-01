@@ -1,6 +1,176 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Void both histories" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить обе истории"
+          }
+        }
+      }
+    },
+    "Cancel the claim" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить заявку"
+          }
+        }
+      }
+    },
+    "Remove %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить %@"
+          }
+        }
+      }
+    },
+    "The group's root decides." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Решает корень группы."
+          }
+        }
+      }
+    },
+    "devices unknown here" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "устройства, неизвестные здесь"
+          }
+        }
+      }
+    },
+    "The group is stopped: its devices exchange only their records, no clipboard, until the group's root decides." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Группа остановлена: устройства обмениваются только записями, без буфера обмена, пока корень группы не решит."
+          }
+        }
+      }
+    },
+    "The group sends no secrets until its root decides." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Группа не пересылает секреты, пока её корень не решит."
+          }
+        }
+      }
+    },
+    "%@ signed two histories with one key, as a stolen key or a restore from a backup would." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: две истории, подписанные одним ключом. Так бывает при краже ключа или после восстановления из резервной копии."
+          }
+        }
+      }
+    },
+    "Admins removed or froze each other without seeing it: %@. The root removes one of them." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Админы удалили или заморозили друг друга, не зная об этом: %@. Корень удаляет одного из них."
+          }
+        }
+      }
+    },
+    "Two claims to take the group over: %@." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Две заявки на передачу группы: %@."
+          }
+        }
+      }
+    },
+    "%@ claims the group, to take it over from its root." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ хочет забрать группу у корня."
+          }
+        }
+      }
+    },
+    "%@ claims the group, to take it over from its root: it takes effect in %@." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ хочет забрать группу у корня: это произойдёт через %2$@."
+          }
+        }
+      }
+    },
+    "%@ claims the group, and the group is stopped until its root decides." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ хочет забрать группу, и группа остановлена, пока корень не решит."
+          }
+        }
+      }
+    },
+    "The group holds %lld records of a later version: update the app to read them." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В группе есть записи более новой версии (%lld): обновите приложение, чтобы их прочитать."
+          }
+        }
+      }
+    },
+    "The claim is cancelled. The other devices hear of it as soon as they connect." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заявка отменена. Остальные устройства узнают об этом, как только подключатся."
+          }
+        }
+      }
+    },
+    "Both histories are void. The device signs its records again by itself." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обе истории отменены. Устройство само подпишет свои записи заново."
+          }
+        }
+      }
+    },
+    "Resolve a conflict in your group" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешить конфликт в группе"
+          }
+        }
+      }
+    },
     "Arrange" : {
       "localizations" : {
         "ru" : {

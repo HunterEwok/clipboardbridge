@@ -150,7 +150,7 @@ private fun DeviceRow(d: WatchState.Device, palette: Palette, onClick: (() -> Un
 
 /**
  * The emergency actions this watch has for one device (docs/protocol.md,
- * section 10, rule 8): each asks for a tap on what it signs, then the watch
+ * section 10, "Watches"): each asks for a tap on what it signs, then the watch
  * signs it with its own key.
  */
 @Composable

@@ -119,6 +119,22 @@ object Core {
         return answer["ok"]?.takeIf { it != JsonNull } ?: throw Mismatch("the answer to $op has neither ok nor error")
     }
 
+    /**
+     * Checks a signed body that is not a record through the core's
+     * parse_body (docs/core-api.md, "Signed bodies"): [kind] is `command`,
+     * `credential`, `keys`, `release`, `channel` or `attest-status`. The
+     * core alone decides whether the body is taken; it answers null for a
+     * body it takes and why it refused one otherwise, the message and the
+     * details, for the log.
+     */
+    internal fun bodyRefusal(kind: String, body: ByteArray): String? =
+        try {
+            run("parse_body", Wire.obj("kind" to Wire.str(kind), "body" to Wire.bytes(body)))
+            null
+        } catch (r: Refusal) {
+            r.details?.takeIf { it.isNotEmpty() }?.let { "${r.message}: $it" } ?: r.message
+        }
+
     /** The linked core's version, ABI and the commit it was built from. */
     fun version(): Version {
         val ok = run("version") as? JsonObject ?: throw Mismatch("the answer to version is not an object")

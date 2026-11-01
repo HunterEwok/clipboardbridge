@@ -39,7 +39,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// (section 10, "A computer as admin").
     public var computerAdmins: [String: Data] = [:]
     /// The new root of this admin's claim to take the group over, DER,
-    /// while the claim waits (docs/records-v2.md, "Handing the group
+    /// while the claim waits (docs/protocol.md, section 10, "Handing the group
     /// over"); its key stays in the Secure Enclave until the claim takes
     /// effect or ends.
     public var claim: Data?
@@ -169,7 +169,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         /// A watch's request names a device ID or system that is not a new watch's,
         /// or a device that is not a watch of the group.
         case notAWatch
-        /// A watch may not do that to the device (section 10, rule 8).
+        /// A watch may not do that to the device (section 10, "Watches").
         case notForWatch
     }
 
@@ -194,7 +194,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     static func signer(_ s: CertificateSigner) -> Data { Records.keyHash(spki: s.publicKeyDER) }
 
     /// The powers and commands the apps give an admin with role
-    /// (docs/records-v2.md, "Who signs what").
+    /// (docs/protocol.md, section 10, "Who signs what").
     static func grants(role: String) -> (powers: [String], commands: [String]) {
         switch role {
         case "phone": (Records.powers, Records.commands)
@@ -231,7 +231,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     }
 
     /// Claims the group for this admin phone when the root phone is lost
-    /// (docs/records-v2.md, "Handing the group over"): a claim, signed
+    /// (docs/protocol.md, section 10, "Handing the group over"): a claim, signed
     /// with this phone's admin key (adminSigner), that hands the group to
     /// newRoot, a root CA for a new key of this phone. The claim waits the
     /// group's delay (72 hours unless the root set another), and the root
@@ -307,7 +307,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     }
 
     /// Cancels claims, or ends a conflict, as the current root
-    /// (docs/records-v2.md, "Voiding"): a resolve that voids the records
+    /// (docs/protocol.md, section 10, "Chains and numbers"): a resolve that voids the records
     /// with the IDs ids. It returns the record to send.
     public mutating func resolve(_ ids: [Data], rootSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isRoot else { throw Failure.notRoot }
@@ -398,7 +398,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// Removes a device from the group: signs a revocation of every key it
     /// had, and of its admin key for an admin, which every member then
     /// refuses, and returns the record to send. What an admin signed before
-    /// stays (docs/records-v2.md, "Removals and freezes keep what the
+    /// stays (docs/protocol.md, section 10, "Removals and freezes keep what the
     /// author saw"). The root phone is taken over with takeOver instead.
     public mutating func revoke(device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
@@ -467,7 +467,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return (ca, r)
     }
 
-    /// Makes a watch an admin (section 10, rule 8): the root issues an
+    /// Makes a watch an admin (section 10, "Watches"): the root issues an
     /// admin CA for the key the watch made in its Secure Enclave or
     /// Keystore (adminKey, a SubjectPublicKeyInfo) and signs the watch's
     /// device record, whose key and admin both name that CA, since a watch
@@ -489,7 +489,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         return (ca, r)
     }
 
-    /// What a watch of the group may do from its wrist (section 10, rule 8).
+    /// What a watch of the group may do from its wrist (section 10, "Watches").
     public enum WatchAction: String, Codable, CaseIterable, Sendable {
         case freeze, remove, pasteOff = "paste-off", actionsOff = "actions-off", awayOff = "away-off", action
     }

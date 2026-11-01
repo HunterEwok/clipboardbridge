@@ -80,6 +80,10 @@ button.danger { color: var(--danger); }
 .badge.bad { color: var(--danger); }
 
 main { flex: 1; display: flex; min-height: 0; }
+#alerts { margin: 0 24px 8px; padding: 12px 16px; border-radius: 14px; background: var(--glass); border: 1px solid var(--line); display: grid; gap: 8px; user-select: text; }
+#alerts .alert { color: var(--danger); }
+#alerts .alert.newer { color: var(--text); }
+#alerts .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 #devices { flex: 1; overflow: auto; padding: 8px 24px; position: relative; }
 #devices.fixed { overflow: hidden; }
 #detail {

@@ -387,4 +387,21 @@
     <string name="search_devices">Search devices</string>
     <string name="no_devices_match">No devices match.</string>
     <string name="error_arrangement">The tiles stay as they were: that change does not fit.</string>
+    <string name="reason_resolve">Resolve a conflict in your group</string>
+    <string name="claim_cancelled">The claim is cancelled. The other devices hear of it as soon as they connect.</string>
+    <string name="histories_voided">Both histories are void. The device signs its records again by itself.</string>
+    <string name="alert_stopped">The group is stopped: its devices exchange only their records, no clipboard, until the group\'s root decides.</string>
+    <string name="alert_secrets_stopped">The group sends no secrets until its root decides.</string>
+    <string name="alert_two_histories">%1$s signed two histories with one key, as a stolen key or a restore from a backup would.</string>
+    <string name="alert_admins">Admins removed or froze each other without seeing it: %1$s. The root removes one of them.</string>
+    <string name="alert_claims">Two claims to take the group over: %1$s.</string>
+    <string name="alert_claim_pending">%1$s claims the group, to take it over from its root.</string>
+    <string name="alert_claim_pending_left">%1$s claims the group, to take it over from its root: it takes effect in %2$s.</string>
+    <string name="alert_claim_stopped">%1$s claims the group, and the group is stopped until its root decides.</string>
+    <string name="alert_newer">The group holds %1$d records of a later version: update the app to read them.</string>
+    <string name="alert_unknown_devices">devices unknown here</string>
+    <string name="alert_root_decides">The group\'s root decides.</string>
+    <string name="void_both_histories">Void both histories</string>
+    <string name="cancel_claim">Cancel the claim</string>
+    <string name="remove_device">Remove %1$s</string>
 </resources>

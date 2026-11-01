@@ -6,8 +6,8 @@
 use std::path::Path;
 
 pub use cbb_core::authority::Record;
+pub use cbb_core::command::{Command, valid_name, valid_os};
 pub use cbb_core::group::*;
-pub use cbb_core::records::{Command, valid_name, valid_os};
 
 use crate::certs::Cert;
 use crate::error::{Error, Result, Wrap};

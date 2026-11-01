@@ -686,7 +686,7 @@ private fun AwayFromHomeSection(model: AppModel, away: AppModel.Away) {
     }
 }
 
-/** The root phone makes its Wear OS watch an admin, for the emergency actions (docs/protocol.md, section 10, rule 8). */
+/** The root phone makes its Wear OS watch an admin, for the emergency actions (docs/protocol.md, section 10, "Watches"). */
 @Composable
 private fun WatchSection(model: AppModel) {
     val palette = LocalPalette.current

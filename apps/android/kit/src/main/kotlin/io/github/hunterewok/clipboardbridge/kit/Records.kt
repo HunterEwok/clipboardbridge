@@ -99,7 +99,7 @@ object Records {
         }
     }
 
-    /** The powers an admin may have (docs/records-v2.md, "Who signs what"): what the apps give an admin phone. */
+    /** The powers an admin may have (docs/protocol.md, section 10, "Who signs what"): what the apps give an admin phone. */
     val POWERS = listOf("admit", "freeze", "hub", "remove", "remove-admins", "renew", "takeover", "thaw")
 
     /** The commands an admin may sign. */
@@ -265,7 +265,7 @@ class RecordSet {
         }
     }
 
-    /** A claim of the state: an admin's handover of the group to its new root (docs/records-v2.md, "Handing the group over"). */
+    /** A claim of the state: an admin's handover of the group to its new root (docs/protocol.md, section 10, "Handing the group over"). */
     class Claim(
         val record: ByteArray,
         val claimant: ByteArray,
@@ -281,19 +281,36 @@ class RecordSet {
         override fun hashCode(): Int = record.contentHashCode()
     }
 
-    /** The parts of the group's state (docs/records-v2.md, "The state") the phones show. */
+    /** A conflict of the state: kind is admins, claims or two_histories. */
+    class Conflict(val kind: String, val records: List<ByteArray>, val signers: List<ByteArray>) {
+        override fun equals(other: Any?): Boolean =
+            other is Conflict && kind == other.kind && records.sameAs(other.records) && signers.sameAs(other.signers)
+
+        override fun hashCode(): Int = kind.hashCode()
+    }
+
+    /** The parts of the group's state (docs/protocol.md, section 10, "The state") the phones show. */
     class State(
         val rootDevice: String? = null,
         val roots: List<ByteArray> = emptyList(),
-        /** "none", or why the group stops (docs/records-v2.md, "Stopping the exchange"). */
+        /** "none", or why the group stops (docs/protocol.md, section 10, "Stopping the exchange"). */
         val stop: String = "none",
         val claims: List<Claim> = emptyList(),
         /** The keys the records revoke. */
         val revoked: List<ByteArray> = emptyList(),
+        /** The devices this member sends no secret, only its mark. */
+        val noSecretsTo: List<String> = emptyList(),
+        /** The devices this member sends nothing but records. */
+        val nothingTo: List<String> = emptyList(),
+        /** The conflicts that stop the group until its root decides. */
+        val conflicts: List<Conflict> = emptyList(),
+        /** How many records of a later version the set keeps. */
+        val newer: Int = 0,
     ) {
         override fun equals(other: Any?): Boolean =
             other is State && rootDevice == other.rootDevice && roots.sameAs(other.roots) && stop == other.stop && claims == other.claims &&
-                revoked.sameAs(other.revoked)
+                revoked.sameAs(other.revoked) && noSecretsTo == other.noSecretsTo && nothingTo == other.nothingTo &&
+                conflicts == other.conflicts && newer == other.newer
 
         override fun hashCode(): Int = stop.hashCode()
 
@@ -318,6 +335,13 @@ class RecordSet {
                     )
                 },
                 revoked = o.optBytesList("revoked").orEmpty(),
+                noSecretsTo = o.optArray("no_secrets_to").orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content },
+                nothingTo = o.optArray("nothing_to").orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content },
+                conflicts = o.optArray("conflicts").orEmpty().mapNotNull { e ->
+                    val c = e as? JsonObject ?: return@mapNotNull null
+                    Conflict(c.optString("kind") ?: "", c.optBytesList("records").orEmpty(), c.optBytesList("signers").orEmpty())
+                },
+                newer = o.optArray("newer")?.size ?: 0,
             )
         }
     }
@@ -493,6 +517,9 @@ class RecordSet {
         /** The root's own device that a claim took the group over from; its connection carries records only, so that it may cancel the claim. */
         data class TakenOver(val why: String) : Verdict()
 
+        /** The state stops the exchange with the device (docs/protocol.md, section 10, "Stopping the exchange"); its connection carries records only, so that the root's decision reaches every member. */
+        data class Stopped(val why: String) : Verdict()
+
         data class Refused(val why: String) : Verdict()
 
         /** Why it is not ok, null when it is. */
@@ -501,11 +528,12 @@ class RecordSet {
                 Ok -> null
                 is NotListed -> why
                 is TakenOver -> why
+                is Stopped -> why
                 is Refused -> why
             }
 
         /** Whether the connection carries records only. */
-        val recordsOnly: Boolean get() = this is NotListed || this is TakenOver
+        val recordsOnly: Boolean get() = this is NotListed || this is TakenOver || this is Stopped
 
         companion object {
             internal fun of(o: JsonObject): Verdict {
@@ -514,6 +542,7 @@ class RecordSet {
                     "ok" -> Ok
                     "not_listed" -> NotListed(why)
                     "taken_over" -> TakenOver(why)
+                    "stopped" -> Stopped(why)
                     else -> Refused(why.ifEmpty { "refused" })
                 }
             }
@@ -530,8 +559,31 @@ class RecordSet {
         }
     }
 
-    /** Why the set refuses a member's chain, null when it takes it. */
-    fun refused(chain: List<ByteArray>): String? = verdict(chain).reason
+    /**
+     * Why the set refuses a member's chain, null when it takes it; a chain
+     * the state only stops the exchange with is taken, for records only
+     * (stopped).
+     */
+    fun refused(chain: List<ByteArray>): String? = verdict(chain).let { if (it is Verdict.Stopped) null else it.reason }
+
+    /**
+     * Whether the state stops the exchange with this chain's device: its
+     * connection carries records only (docs/protocol.md, section 10,
+     * "Stopping the exchange").
+     */
+    fun stopped(chain: List<ByteArray>): Boolean = verdict(chain) is Verdict.Stopped
+
+    /**
+     * Whether this member sends device no secret: while the state stops
+     * secrets or everything, or names device among those that get no secrets
+     * or nothing. Such a device gets the mark of a secret, never its text. A
+     * null device is checked against the stop alone.
+     */
+    fun noSecrets(device: String?): Boolean {
+        val st = view.state
+        if (st.stop != "none") return true
+        return device != null && (device in st.noSecretsTo || device in st.nothingTo)
+    }
 
     /** Whether the set takes an admin CA. */
     fun verdictAdminCA(adminCA: ByteArray): Verdict {

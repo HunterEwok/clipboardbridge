@@ -32,7 +32,7 @@ func fuzzSeeds(f *testing.F, section string) {
 }
 
 // FuzzRecordBody reads record bodies as they come from other members
-// (docs/records-v2.md, "Canonical form of signed bodies"): a body it takes
+// (docs/protocol.md, Conventions, "Signed bodies"): a body it takes
 // is within the size limit, and encoding what it read gives the same bytes.
 func FuzzRecordBody(f *testing.F) {
 	fuzzSeeds(f, "records")

@@ -232,6 +232,11 @@ type Service struct {
 	unreached map[group.DeviceID]bool
 
 	listMu sync.Mutex // one ensureListed at a time, so a device is recorded once
+
+	// signedMu guards the log of the records this device signed
+	// (signed.json, resign.go), and lets one resignVoided run at a time.
+	signedMu sync.Mutex
+	resignMu sync.Mutex
 	// attMu guards the revocation list and the evidence of the connected
 	// peers (evidence.go); taken alone.
 	attMu       sync.Mutex
@@ -508,7 +513,7 @@ func (s *Service) startGroup(id *group.Identity) error {
 		Content: s.nodeContent(), Identity: id, Role: s.cfg.Role, Name: s.cfg.Name, OS: s.cfg.OS, Device: s.cfg.Device, Engine: eng, KeyStore: s.keyStore(id), Actions: s.actionsOn,
 		OnWrite: s.write, OnRelay: s.relayed, Serves: s.serves, OnPeers: s.peersChanged, OnCert: s.certRenewed, OnAdmin: s.becomeAdmin, OnCommand: s.command,
 		PhoneCAFor: s.phoneCAFor, OnPhoneCA: s.phoneCAReceived, Now: s.cfg.now, Logf: s.logf,
-		Records: recordStore{s}, Credentials: credentialStore{s}, Releases: releaseStore{s}, Allow: s.allow,
+		Records: recordStore{s}, Credentials: credentialStore{s}, Releases: releaseStore{s}, Allow: s.allow, NoSecrets: s.noSecretsTo,
 		TunnelKey: tunKey, TunnelPSK: tunPSK, OnTunnelKey: s.tunnelKeyOffered, OnTunnel: s.tunnelOffered, SealKey: s.sealPublic,
 		HubShare: s.hubShare, OnHubs: s.hubsShared, OnEvidence: s.evidenceReceived, Evidence: s.ownEvidence(id),
 	})

@@ -297,6 +297,36 @@ final class MemberTests: XCTestCase {
         XCTAssertEqual(last, "after")
     }
 
+    /// A store whose state stops secrets to every peer.
+    final class NoSecretsStore: RecordStore, @unchecked Sendable {
+        var digest: String? { nil }
+        var all: [Member.Record] { [] }
+        func add(_ rs: [Member.Record]) -> [Member.Record] { [] }
+        func noSecrets(to device: String?) -> Bool { true }
+    }
+
+    func testNoSecretsSendsTheMark() async throws {
+        // While the records stop secrets to a peer, it gets the mark of a
+        // secret, never its text (docs/protocol.md, section 10, "Stopping
+        // the exchange").
+        let (pa, pb) = Pipe.pair()
+        let changes = Changes()
+        let a = MemberNode(engine: SyncEngine(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", clock: HybridClock()), name: "iPhone",
+                           records: NoSecretsStore())
+        let b = MemberNode(engine: SyncEngine(device: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", clock: HybridClock()), name: "pi", role: .full,
+                           onChange: { changes.add($0.text) })
+        let ta = Task { try await a.serve(pa) }
+        let tb = Task { try await b.serve(pb) }
+        await a.send(text: "plain", kind: .text)
+        try await waitUntil { changes.all.contains("plain") }
+        await a.send(text: "hunter2", kind: .secret)
+        try await waitUntil { changes.all.contains("") }
+        XCTAssertFalse(changes.all.contains("hunter2"))
+        await a.closeAll()
+        try await ta.value
+        try await tb.value
+    }
+
     func testFramesForGo() throws {
         // The frames Go decodes in TestSwiftMemberFrames.
         // Fixed values, so the file changes only with the encoding.

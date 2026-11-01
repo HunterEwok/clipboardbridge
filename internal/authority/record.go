@@ -155,7 +155,7 @@ type Head struct {
 	ID  Hash  `json:"id"`
 }
 
-// Body is a record's body (docs/records-v2.md, "The record").
+// Body is a record's body (docs/protocol.md, section 10, "Records").
 type Body struct {
 	V      int    `json:"v"`
 	Alg    string `json:"alg"`
@@ -274,7 +274,7 @@ func (b *Body) Encode() ([]byte, error) {
 
 // ParseBody reads a record body: its size, the strict and canonical form,
 // no field its type does not know and none empty, and each field against
-// its row (docs/records-v2.md, "Field rows").
+// its row (docs/protocol.md, section 10, "Field rows").
 func ParseBody(data []byte) (Body, error) {
 	var b Body
 	if len(data) > MaxCheckpointBody {

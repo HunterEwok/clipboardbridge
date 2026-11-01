@@ -7,10 +7,30 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ## [Unreleased]
 
 ### Added
+- The apps show what stops the group: the phones on Home, the Mac app and the tray app above
+  the devices, in a card that says what is stopped, why, and who decides (a claim to take the
+  group over with the time left, two admins acting against each other, a key that signed
+  two histories, a newer version of the records). On the group's root the card offers the
+  way out: cancel a claim by removing its device, remove one of two admins, or void both
+  histories (`cbb resolve`). The phone kits read it from the state (`GroupAlerts`).
+- A key that signed two histories signs nothing until the group's root resolves them; once
+  the root voids both branches, the key goes on from the record below the fork, and what it
+  signs counts (docs/protocol.md, section 10, "Going on after two histories").
+- `cbb resolve`: on the group's root computer, voids both histories of every key that signed
+  two; the admin computer whose key it was signs again by itself what it signed since its
+  last backup (`signed.json` in the state directory keeps its log).
+- Before a record its user asks for, a computer waits up to 10 seconds for another member's
+  records, so that one brought back from a backup does not sign a number it signed already.
 
 - The key-level setting's format: the root's `settings` record may carry `key_level`
-  (`proven`, `hardware` or `files`; docs/records-v2.md), and the group's state carries it, in
+  (`proven`, `hardware` or `files`; docs/protocol.md, section 10), and the group's state carries it, in
   Go and the Rust core alike. The apps' setting and its checks come later.
+- The computers apply the group's stop when its records show a likely thief (docs/protocol.md,
+  section 10, "Stopping the exchange"): while two admins act against each other, two claims
+  or a disputed claim wait, or a key signed two histories, their connections carry records
+  only, or no secret leaves them, until the group's root decides. `cbb status` says what
+  stops, why, and what ends it, and shows the claims to take the group over with the time
+  left.
 - A recovery key for a group whose phones are all lost (docs/records-v2.md, "The recovery
   key"): the root names an offline admin key in a `recovery` record, and that key may only
   claim the group, waiting the delay the root set for admins and cancelled the same ways. The
@@ -39,6 +59,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `group_command` and the other `group_` calls, docs/core-api.md, "The record set"), so the
   phones keep the records file and ask the core instead of applying the group's rules
   themselves.
+- Commands, server credentials and release files are read through the Rust core's
+  `parse_body` (docs/core-api.md, "Signed bodies") by Go in the release builds and by the
+  phone apps, so every program takes exactly the same bodies.
 - The Rust core's entry point checks a peer's member certificates (`check_member`, docs/core-api.md),
   for the TLS verify callbacks of the computers and the phones, and gives the same answer as Go's
   crypto/tls on shared vectors (`testdata/interop/member-chains.json`). The lite member now takes
@@ -640,6 +663,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The protocol's section 10 now specifies the group records of version 2 (docs/protocol.md,
+  from "Records" to "The state", and the records' canonical form in Conventions, "Signed
+  bodies"), in place of version 1's rules; docs/records-v2.md keeps why the records changed
+  and how the implementations are tested.
 - Both phone apps link the Rust core, the group's rules every member shares: the Swift and
   Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
   bindings, and building the Android app, F-Droid's build included, needs the Rust of
@@ -854,6 +881,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - When the root signed two own device records at the same time, the phones take the one
   with the greater record ID as its own device, as the computers and the lite member do, so
   every member agrees which device holds the root and whether it is a phone or a computer.
+
+### Removed
+
+- The Rust core's reader of group records of version 1 (`records`): commands now live in
+  `command`, and the interop vectors of version 1 (`go-*.json` for records, commands, hubs
+  and credentials) give way to the `v2-*.json` vectors of the same cases.
 
 ### Fixed
 

@@ -7,9 +7,9 @@
 
 /// A record's body: one it takes is in the strict form.
 pub fn record_body(data: &[u8]) {
-    if crate::records::Body::parse(data).is_ok() {
+    if crate::authority::Body::parse(data).is_ok() {
         assert!(
-            crate::strict::check(data, &["v", "type", "group", "time_ms"]).is_ok(),
+            crate::strict::check(data, &["v", "alg", "type", "signer", "time_ms", "group", "seq"]).is_ok(),
             "took a record not in the strict form"
         );
     }
@@ -17,7 +17,7 @@ pub fn record_body(data: &[u8]) {
 
 /// A command's body: one it takes is in the strict form.
 pub fn command(data: &[u8]) {
-    if crate::records::Command::parse(data).is_ok() {
+    if crate::command::Command::parse(data).is_ok() {
         assert!(
             crate::strict::check(data, &["v", "type", "group", "by", "to", "id", "time_ms", "expires_ms"]).is_ok(),
             "took a command not in the strict form"

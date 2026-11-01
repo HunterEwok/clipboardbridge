@@ -76,7 +76,7 @@ final class AdminTests: XCTestCase {
         XCTAssertEqual(set.records.count, 3)
 
         // The admin phone is lost: the root removes its admin key and its
-        // key. What it signed before stays (docs/records-v2.md, "Removals
+        // key. What it signed before stays (docs/protocol.md, section 10, "Removals
         // and freezes keep what the author saw").
         // The admin's member key is its admin key here.
         try set.signed(.revoke([adminKey, Records.keyHash(spki: g.admin.publicKeyDER)], signer: g.root, now: g.t0), g.root, groupCA: g.rootCA)
