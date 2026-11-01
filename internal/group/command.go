@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/seal"
 )
 
 // The types of commands (docs/protocol.md, section 15): CommandMode sets
@@ -94,9 +97,12 @@ const MaxHubClients = 256
 // text JSON may escape.
 const (
 	maxCommandBody = 64 << 10
-	// commandVersion is the version of command bodies.
-	commandVersion = 1
-	maxPasteBody   = 2 << 20
+	// commandVersion is the version of command bodies with their orders in
+	// the open, sealedCommandVersion of those with their orders sealed to
+	// the receiver (docs/protocol.md, section 15, "Sealed commands").
+	commandVersion       = 1
+	sealedCommandVersion = 2
+	maxPasteBody         = 2 << 20
 )
 
 // The limits of a command's times: it expires at most CommandLifetime after
@@ -125,6 +131,120 @@ type CommandBody struct {
 	Kind      string    `json:"kind,omitempty"`   // paste: text or secret
 	Text      string    `json:"text,omitempty"`   // paste: what to put in
 	Action    string    `json:"action,omitempty"` // action: the name of the action
+	// Sealed holds the orders above, sealed to the receiver's key, in a
+	// command of version 2 (SealCommand); Open opens them.
+	Sealed []byte `json:"sealed,omitempty"`
+	// Opened reports that Open took the orders out of Sealed.
+	Opened bool `json:"-"`
+}
+
+// commandOrders are the fields of a command that a sealed command seals:
+// all but its open header.
+type commandOrders struct {
+	Mode   string    `json:"mode,omitempty"`
+	Hub    *HubOrder `json:"hub,omitempty"`
+	Enter  bool      `json:"enter,omitempty"`
+	Kind   string    `json:"kind,omitempty"`
+	Text   string    `json:"text,omitempty"`
+	Action string    `json:"action,omitempty"`
+}
+
+func (b *CommandBody) orders() commandOrders {
+	return commandOrders{Mode: b.Mode, Hub: b.Hub, Enter: b.Enter, Kind: b.Kind, Text: b.Text, Action: b.Action}
+}
+
+func (b *CommandBody) setOrders(o commandOrders) {
+	b.Mode, b.Hub, b.Enter, b.Kind, b.Text, b.Action = o.Mode, o.Hub, o.Enter, o.Kind, o.Text, o.Action
+}
+
+// commandAAD is a sealed command's associated data: its open header, each
+// string with its length before it (4 bytes, big-endian) and each time in
+// 8 bytes, big-endian, after the context "clipboardbridge command v2".
+// Sealed orders open only under the header they were sealed with, so that
+// no other signer can send them again in a command of its own.
+func (b *CommandBody) aad() []byte {
+	var out []byte
+	for _, f := range []string{"clipboardbridge command v2", b.Type, b.Group, string(b.By), string(b.To), b.ID} {
+		out = binary.BigEndian.AppendUint32(out, uint32(len(f)))
+		out = append(out, f...)
+	}
+	out = binary.BigEndian.AppendUint64(out, uint64(b.TimeMS))
+	return binary.BigEndian.AppendUint64(out, uint64(b.ExpiresMS))
+}
+
+// marshalCommand writes v as JSON without the escapes of HTML, which
+// would make a text of brackets six times longer.
+func marshalCommand(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
+// SealCommand returns body, a command with its orders in the open, with
+// the orders sealed to public, the receiver's key for sealed messages
+// (the seal of its device record): a command of version 2, which only the
+// receiver reads. Sign it with SignCommand.
+func SealCommand(body CommandBody, public []byte) (CommandBody, error) {
+	body.V, body.Sealed, body.Opened = commandVersion, nil, false
+	if err := body.check(); err != nil {
+		return CommandBody{}, err
+	}
+	plain, err := marshalCommand(body.orders())
+	if err != nil {
+		return CommandBody{}, err
+	}
+	if len(plain) > body.maxBody() {
+		return CommandBody{}, errors.New("group: the command is too large")
+	}
+	sealed, err := seal.Seal(public, body.aad(), plain)
+	if err != nil {
+		return CommandBody{}, fmt.Errorf("group: sealing the command: %w", err)
+	}
+	body.setOrders(commandOrders{})
+	body.V, body.Sealed = sealedCommandVersion, sealed
+	return body, nil
+}
+
+// Open takes the orders of a sealed command out of its sealed part with
+// secret, this device's secret for sealed messages, and checks them as
+// those of a command in the open. A command in the open stays as it is.
+func (b *CommandBody) Open(secret []byte) error {
+	if b.V != sealedCommandVersion {
+		return nil
+	}
+	if secret == nil {
+		return errors.New("group: the command is sealed, and this device has no key for sealed commands")
+	}
+	plain, err := seal.Open(secret, b.aad(), b.Sealed)
+	if err != nil {
+		return errors.New("group: the sealed command does not open with this device's key")
+	}
+	if len(plain) > b.maxBody() {
+		return errors.New("group: the command is too large")
+	}
+	if err := checkStrict(plain); err != nil {
+		return err
+	}
+	var o commandOrders
+	if err := json.Unmarshal(plain, &o); err != nil {
+		return fmt.Errorf("group: a sealed command: %w", err)
+	}
+	opened := *b
+	opened.V, opened.Sealed = commandVersion, nil
+	opened.setOrders(o)
+	if err := opened.checkBase64(plain); err != nil {
+		return err
+	}
+	if err := opened.check(); err != nil {
+		return err
+	}
+	opened.V, opened.Opened = sealedCommandVersion, true
+	*b = opened
+	return nil
 }
 
 // A HubOrder is what a hub command tells the new hub: where its clients
@@ -163,18 +283,17 @@ func NewCommandID() string {
 // admin CA key (chain holds the admin CA certificate).
 func SignCommand(body CommandBody, key crypto.Signer, chain ...*x509.Certificate) (Record, error) {
 	body.V = commandVersion
+	if len(body.Sealed) > 0 {
+		body.V = sealedCommandVersion
+	}
 	if err := body.check(); err != nil {
 		return Record{}, err
 	}
-	// A paste's text is sent as it is: without the escapes of HTML, which
-	// would make a text of brackets six times longer.
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(body); err != nil {
+	// A paste's text is sent as it is: without the escapes of HTML.
+	data, err := marshalCommand(body)
+	if err != nil {
 		return Record{}, err
 	}
-	data := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 	if len(data) > body.maxBody() {
 		return Record{}, errors.New("group: the command is too large")
 	}
@@ -192,10 +311,25 @@ func SignCommand(body CommandBody, key crypto.Signer, chain ...*x509.Certificate
 
 func (b *CommandBody) check() error {
 	switch {
-	case b.V != commandVersion:
+	case b.V != commandVersion && b.V != sealedCommandVersion:
 		return fmt.Errorf("group: unknown command version %d", b.V)
 	case len(b.ID) != 32 || strings.Trim(b.ID, "0123456789abcdef") != "":
 		return errors.New("group: a command has no valid ID")
+	case b.V == commandVersion && len(b.Sealed) > 0:
+		return errors.New("group: a command of version 1 carries a sealed part")
+	case b.V == sealedCommandVersion:
+		// Its orders are sealed: none of them in the open, and a type
+		// they are checked for once opened.
+		if len(b.Sealed) == 0 {
+			return errors.New("group: a sealed command has no sealed part")
+		}
+		if b.orders() != (commandOrders{}) {
+			return errors.New("group: a sealed command carries orders in the open")
+		}
+		if !knownCommand(b.Type) {
+			return fmt.Errorf("group: unknown command type %q", b.Type)
+		}
+		return b.checkHeader()
 	}
 	if b.Type != CommandPaste && (b.Enter || b.Kind != "" || b.Text != "") {
 		return fmt.Errorf("group: a %s command carries a paste", b.Type)
@@ -233,6 +367,21 @@ func (b *CommandBody) check() error {
 	default:
 		return fmt.Errorf("group: unknown command type %q", b.Type)
 	}
+	return b.checkHeader()
+}
+
+// knownCommand reports whether t is a type of command.
+func knownCommand(t string) bool {
+	switch t {
+	case CommandMode, CommandHub, CommandPaste, CommandPasteOff, CommandAction, CommandActionsOff, CommandAwayOff:
+		return true
+	}
+	return false
+}
+
+// checkHeader checks a command's open header past its version and ID: the
+// receiver and the signer's device, and the lifetime.
+func (b *CommandBody) checkHeader() error {
 	if _, err := ParseDeviceID(string(b.To)); err != nil {
 		return err
 	}
@@ -413,11 +562,12 @@ func (s *Records) signerDevice(signer, anchor KeyHash) (dev Device, root, ok boo
 // checkBase64 checks that the bytes of the hub order's clients in data,
 // the body b came from, are in the standard form of base64.
 func (b *CommandBody) checkBase64(data []byte) error {
-	if b.Hub == nil {
+	if b.Hub == nil && len(b.Sealed) == 0 {
 		return nil
 	}
 	var raw struct {
-		Hub struct {
+		Sealed string `json:"sealed"`
+		Hub    struct {
 			Clients []struct {
 				Key string `json:"key"`
 				PSK string `json:"psk"`
@@ -426,6 +576,11 @@ func (b *CommandBody) checkBase64(data []byte) error {
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("group: a command: %w", err)
+	}
+	if len(b.Sealed) > 0 {
+		if _, err := decodeStrictBase64(raw.Sealed); err != nil {
+			return fmt.Errorf("group: a sealed command: %w", err)
+		}
 	}
 	for _, c := range raw.Hub.Clients {
 		if _, err := decodeStrictBase64(c.Key); err != nil {

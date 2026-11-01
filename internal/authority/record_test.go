@@ -98,6 +98,7 @@ func TestSignVerify(t *testing.T) {
 		{Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{2}, Seq: 4, ID: authority.Hash{7}}, {Key: authority.Hash{1}, Seq: 1, ID: authority.Hash{8}}}},
 		bigCheckpoint(),
 		{Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("b", 32), strings.Repeat("a", 32)}},
+		{Type: authority.TypeRecovery, Group: tag, Seq: 1, Admin: &authority.Hash{6}},
 	}
 	for _, b := range bodies {
 		for _, admin := range []bool{false, true} {
@@ -237,6 +238,8 @@ func TestSignRefuses(t *testing.T) {
 		"hubs empty":                 {Type: authority.TypeHubs, Group: tag, Seq: 1},
 		"hubs twice":                 {Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("a", 32), strings.Repeat("a", 32)}},
 		"a hub not a device ID":      {Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("A", 32)}},
+		"a recovery without admin":   {Type: authority.TypeRecovery, Group: tag, Seq: 1},
+		"a recovery with a key":      {Type: authority.TypeRecovery, Group: tag, Seq: 1, Admin: &authority.Hash{6}, Key: &authority.Hash{7}},
 		"17 hubs": func() authority.Body {
 			b := authority.Body{Type: authority.TypeHubs, Group: tag, Seq: 1}
 			for i := range authority.MaxHubs + 1 {

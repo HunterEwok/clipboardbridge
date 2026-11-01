@@ -27,6 +27,7 @@ mod peer;
 mod records;
 mod remotepaste;
 mod rootless;
+mod sealkey;
 mod service;
 mod tls;
 #[cfg(feature = "tunnel")]

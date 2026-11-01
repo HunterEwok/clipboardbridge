@@ -50,6 +50,7 @@ const (
 	RecordSettings   = authority.TypeSettings
 	RecordCheckpoint = authority.TypeCheckpoint
 	RecordHubs       = authority.TypeHubs
+	RecordRecovery   = authority.TypeRecovery
 )
 
 // Device roles in device records: the member roles, shortcut for an

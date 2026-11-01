@@ -8,6 +8,19 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- A recovery key for a group whose phones are all lost (docs/records-v2.md, "The recovery
+  key"): the root names an offline admin key in a `recovery` record, and that key may only
+  claim the group, waiting the delay the root set for admins and cancelled the same ways. The
+  state names it in `recovery`; Go and the Rust core agree on shared vectors. The apps make
+  the key later.
+- The core's entry point reads a remote invitation (`read_invite`, docs/core-api.md): the
+  invitation, or the stable reason it is refused, for the phones to use later.
+- Sealed commands: a computer seals a command's orders (a paste's text, a hub's keys, a mode
+  or an action) to the receiver's key when its device record has one, so that the members
+  in between see only who sent it to whom; the receiver opens them with its own secret
+  (`v` `2`, docs/protocol.md, section 15, "Sealed commands"), in Go and the Rust core, on
+  shared vectors (`testdata/interop/go-sealed-commands.json`). The lite member keeps a key
+  too (`seal.json`), offers it in its hello and opens the commands sealed to it.
 - Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
   and offers it in its hello; a root computer puts it in the device records, the first step
   to commands sealed for their receiver (docs/protocol.md, section 15).
