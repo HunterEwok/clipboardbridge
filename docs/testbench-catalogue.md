@@ -273,7 +273,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | O11 | Phones: the share sheet up to 50 MB on the iPhone and 100 MiB on Android; the button saves files in Files or Downloads; an image already received is nothing new; phones serve their own copies | ui | |
 | O12 | Flatpak apps: copied files through the document portal, written files through FileTransfer | helper | |
 | O13 | Progress in `cbb status` and the apps' notification | real, ui | |
-| O14 | The router's media cache is off by default; on, a hub on the router serves media without running out of memory | fleet, real | |
+| O14 | A member with a router's memory (`GOMEMLIMIT` as the OpenWrt package sets it, 64 MiB) passes a 90 MiB copy on to a member that reaches only it, without running out of memory: the parts go through its cache on disk | fleet, real | |
 | O15 | Fetch limits: gets of at most 1 MiB, 4 MiB ahead, 64 gets per connection; chunks padded to 16 KiB; a peer that asks for more is refused | fleet | |
 
 ## 8. Remote paste (T)

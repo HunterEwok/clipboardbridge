@@ -80,10 +80,18 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - The bench's desktop suite runs on the Linux member alone too: the primary selection kept
   out of the group (Y26), HTML and a PNG image copied on Linux and arriving with their types
   (O4, O1), the session's kind and a copy from an X11 program under Wayland (H1), the keys
-  helper's refusals (T15), the console's tmux on a new virtual terminal (H4) and keys in the
-  TPM in the hub's device list (K13). CI's OpenWrt job checks the UCI memory limit, procd's
+  helper's refusals (T15), the console's tmux on a new virtual terminal (H4), keys in the
+  TPM in the hub's device list (K13) and files through the Flatpak portals (O12); with
+  `-disruptive` it locks, puts to sleep and restarts the computers through the quick actions
+  (Q3, I18, H7) and turns a Mac's application firewall on (H8). CI's OpenWrt job checks the UCI memory limit, procd's
   respawn and sysupgrade's keep list (I23, H9), and its FreeBSD VM the ipfw rules and
   pfSense's refusal to open ports (H10).
+- The bench's fleet runs a lite member on another subnet behind a router with avahi, found
+  through the mDNS reflector and reached with `-peer` (D9), a member with a router's memory
+  passing a 90 MiB copy on (O14), and a soak for `-soak-for` with a fault every hour (E10).
+- `release-sign verify` checks SHA256SUMS against the files and the signed manifest and
+  prints the manifest's Docker image; the published workflow checks every published release
+  with it, each file's build attestation, and the image's digest on ghcr.io (I22).
 - The bench's fleet runs the holder's election and handover (D4, D5), dial-back (D11), what a
   stranger learns (S21), the forwarder's hub rule (W30) and fuzzing for `-fuzz-for` (S20).
 - The bench's fleet runs the key-file warnings (K11), the join matrix (G41, Y6) and, in a

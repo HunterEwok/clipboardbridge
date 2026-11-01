@@ -43,6 +43,7 @@ var automated = map[string][]string{
 	"G5": {"fleet"}, "G6": {"fleet"}, "G9": {"fleet"}, "G20": {"fleet"}, "G21": {"fleet"},
 	"G22": {"fleet"}, "G26": {"fleet"}, "G30": {"fleet"}, "G42": {"fleet"}, "G43": {"fleet"},
 	"Y12": {"fleet"}, "Y16": {"fleet"}, "M3": {"fleet"}, "M6": {"fleet"}, "D15": {"fleet"},
+	"D9": {"fleet"}, "O14": {"fleet"}, "E10": {"fleet"},
 	"E3": {"fleet"}, "E5": {"fleet"}, "E9": {"fleet"}, "S13": {"fleet"}, "S14": {"fleet"},
 	"T1": {"fleet"}, "T2": {"fleet"}, "T6": {"fleet"}, "T7": {"fleet"}, "T9": {"fleet"},
 	"T10": {"fleet"}, "T13": {"fleet"}, "T14": {"fleet"}, "G25": {"fleet"}, "G27": {"fleet"},
@@ -62,7 +63,7 @@ var automated = map[string][]string{
 	"Y24": {"desktop"}, "Y25": {"desktop"}, "Y31": {"desktop"}, "Y32": {"desktop"},
 	"T3": {"desktop"}, "T5": {"desktop"}, "T11": {"desktop"}, "T12": {"desktop"},
 	"I21": {"desktop"}, "M2": {"desktop"}, "H2": {"desktop"}, "H3": {"desktop"}, "O13": {"desktop"},
-	"Y26": {"desktop"}, "O1": {"desktop"}, "O4": {"desktop"}, "H1": {"desktop"}, "T15": {"desktop"}, "H4": {"desktop"}, "K13": {"desktop"},
+	"Y26": {"desktop"}, "O12": {"desktop"}, "Q3": {"desktop"}, "I18": {"desktop"}, "H7": {"desktop"}, "H8": {"desktop"}, "O1": {"desktop"}, "O4": {"desktop"}, "H1": {"desktop"}, "T15": {"desktop"}, "H4": {"desktop"}, "K13": {"desktop"},
 	// CI's tests of the apps' windows: the tray app in a headless browser,
 	// XCUITest of the iPhone app and the Mac app, the Android app on Robolectric.
 	"A2": {"ci"}, "A4": {"ci"}, "A5": {"ci"}, "A8": {"ci"}, "A9": {"ci"}, "A14": {"ci"}, "A15": {"ci"}, "A16": {"ci"}, "U12": {"ci"},
@@ -74,6 +75,13 @@ var automated = map[string][]string{
 	"I23": {"ci"}, "H9": {"ci"}, "H10": {"ci"}, "A10": {"ci"},
 	// The Go tests and the interop vectors that refuse the records cbb upgrade gave.
 	"G29": {"ci"},
+	// The phone kits' tests and the Go tests that read what they sign: the
+	// Swift and Kotlin phones admit a Go joiner by its QR code (G10, the fleet's
+	// G17 the refusals), a takeover (G28), a computer made an admin (G36), the
+	// watch's shared vectors (G38), the attestation and EK chains (K10).
+	"G10": {"ci"}, "G28": {"ci"}, "G36": {"ci"}, "G38": {"ci"}, "K10": {"ci"},
+	// The published workflow's check of every release (release-check).
+	"I22": {"ci"},
 	// The time-scaled build.
 	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
 	"Y13": {"time"}, "W39": {"time"}, "W12": {"time"}, "K5": {"time"},

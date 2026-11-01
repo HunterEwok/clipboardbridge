@@ -21,18 +21,7 @@ func liteOptions(ctx context.Context, r *Report, f *Fleet, g *benchGroup, hub, l
 	const p = "fleet/H5-lite-options/"
 	// with restarts the lite member's service with opts and waits until
 	// it answers.
-	with := func(opts string) error {
-		if _, err := Run(ctx, lite, "echo '"+opts+"' >/tmp/cbb-run-opts && pkill -f '^cbb run' ; true", ""); err != nil {
-			return err
-		}
-		return eventually(ctx, 20*time.Second, func() error {
-			out, err := Run(ctx, lite, "pgrep -af '^cbb run'; cbb status", "")
-			if err == nil && !strings.Contains(out, strings.TrimSpace("cbb run "+opts)) {
-				err = fmt.Errorf("the lite member runs %q, not with %s", firstLine(out), opts)
-			}
-			return err
-		})
-	}
+	with := func(opts string) error { return liteRestart(ctx, lite, opts) }
 	defer with("")
 	listening := func(proto string) (string, error) {
 		return Run(ctx, lite, "ss -"+proto+"lnpH | grep cbb || true", "")
@@ -85,5 +74,20 @@ func liteOptions(ctx context.Context, r *Report, f *Fleet, g *benchGroup, hub, l
 			return fmt.Errorf("cbb join -addr did not put the address in what it shows: %q", lastLines(out, 3))
 		}
 		return nil
+	})
+}
+
+// liteRestart restarts the lite member's service in a fleet container with
+// the options opts of cbb run and waits until it answers.
+func liteRestart(ctx context.Context, lite *Device, opts string) error {
+	if _, err := Run(ctx, lite, "echo '"+opts+"' >/tmp/cbb-run-opts && pkill -f '^cbb run' ; true", ""); err != nil {
+		return err
+	}
+	return eventually(ctx, 20*time.Second, func() error {
+		out, err := Run(ctx, lite, "pgrep -af '^cbb run'; cbb status", "")
+		if err == nil && !strings.Contains(out, strings.TrimSpace("cbb run "+opts)) {
+			err = fmt.Errorf("the lite member runs %q, not with %s", firstLine(out), opts)
+		}
+		return err
 	})
 }

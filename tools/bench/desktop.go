@@ -39,6 +39,7 @@ func Desktop(ctx context.Context, r *Report, devices []*Device, timeout time.Dur
 		return
 	}
 	linuxDesktop(ctx, r, g, l, desks, timeout)
+	defer disruptiveCases(ctx, r, g, append([]*Device{l}, desks...), timeout)
 	if len(desks) == 0 {
 		r.Skip("desktop", "needs a Mac or a Windows PC with its clipboard beside the Linux member")
 		return

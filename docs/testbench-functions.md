@@ -305,7 +305,7 @@ line here with every new function, and a case for it in the catalogue.
 | O.29 | The phones serve their own copies | O11 |
 | O.30 | Flatpak's document portal and FileTransfer | O12 |
 | O.31 | Progress shown | O13 |
-| O.32 | The router's media cache | O14 |
+| O.32 | A copy passed on by a router's small memory | O14 |
 | O.33 | Fetch limits and padding | O15 |
 
 ## T. Remote paste

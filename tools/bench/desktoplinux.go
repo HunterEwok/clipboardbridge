@@ -16,7 +16,8 @@ const wlEnv = `XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=${WAYLAND_DISP
 // linuxDesktop runs the cases of the Linux member's desktop: the primary
 // selection (Y26), formatted text and images to the other desktops (O4,
 // O1), the X11 apps of a Wayland session (H1), the keys helper's limits
-// (T15), the text console's tmux (H4) and where its keys live (K13).
+// (T15), the text console's tmux (H4), where its keys live (K13) and
+// files through the Flatpak portals (O12).
 func linuxDesktop(ctx context.Context, r *Report, g *benchGroup, l *Device, desks []*Device, timeout time.Duration) {
 	p := "desktop/linux/" + l.Name
 	if l.Clipboard != "x11" && l.Clipboard != "wayland" {
@@ -31,6 +32,9 @@ func linuxDesktop(ctx context.Context, r *Report, g *benchGroup, l *Device, desk
 	keysHelper(ctx, r, l)
 	consoleTmux(ctx, r, l)
 	tpmKeys(ctx, r, g, l)
+	if len(desks) > 0 {
+		flatpakFiles(ctx, r, g.run, l, desks[0], timeout)
+	}
 }
 
 // primarySelection (Y26): a text from the group lands in the primary
@@ -283,6 +287,94 @@ func tpmKeys(ctx context.Context, r *Report, g *benchGroup, l *Device) {
 				return fmt.Errorf("the hub lists %s as %q, with its keys not in hardware", l.Name, strings.TrimSpace(line))
 			}
 			return fmt.Errorf("the hub's device list has no %s", l.Name)
+		})
+	})
+}
+
+// pasteFile is what the file name holds in the copy that d's cbb paste -o
+// saves into a new folder.
+func pasteFile(ctx context.Context, d *Device, name string, timeout time.Duration) (string, error) {
+	if d.OS == "windows" {
+		return RunFor(ctx, d, `$o = Join-Path $env:TEMP 'cbb-bench-paste'; Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $o; New-Item -ItemType Directory $o | Out-Null; `+cbbCmd(d)+` paste -o $o | Out-Null; Get-Content -Raw (Join-Path $o '`+name+`')`, "", timeout)
+	}
+	return RunFor(ctx, d, "o=/tmp/cbb-bench-paste; rm -rf $o && mkdir $o && "+cbbCmd(d)+" paste -o $o >/dev/null && cat $o/"+name, "", timeout)
+}
+
+// copyFile makes a file name holding text in d's temporary folder and
+// copies it with cbb copy.
+func copyFile(ctx context.Context, d *Device, name, text string) error {
+	var err error
+	if d.OS == "windows" {
+		_, err = RunFor(ctx, d, `$f = Join-Path $env:TEMP '`+name+`'; [IO.File]::WriteAllText($f, '`+strings.ReplaceAll(text, "'", "''")+`'); `+cbbCmd(d)+` copy $f`, "", time.Minute)
+	} else {
+		_, err = RunFor(ctx, d, "printf %s "+shellQuote(text)+" >/tmp/"+name+" && "+cbbCmd(d)+" copy /tmp/"+name, "", time.Minute)
+	}
+	return err
+}
+
+// flatpakFiles (O12): a file a Flatpak app copies is under the document
+// portal's /run/user/UID/doc, which the agent reads and sends; a file from
+// the group is offered to Flatpak apps through the FileTransfer portal
+// beside its path.
+func flatpakFiles(ctx context.Context, r *Report, run string, l, d *Device, timeout time.Duration) {
+	p := "desktop/O12-flatpak/" + l.Name
+	if l.Clipboard != "wayland" {
+		r.Skip(p, "checked under Wayland")
+		return
+	}
+	text := fmt.Sprintf("cbb-bench %s O12 from a Flatpak app", run)
+	r.Do(p+"/document-portal", func() error {
+		if _, err := Run(ctx, l, "printf %s "+shellQuote(text)+" >/tmp/o12-doc.txt", ""); err != nil {
+			return err
+		}
+		out, err := Run(ctx, l, "command -v flatpak >/dev/null && "+wlEnv+"flatpak document-export --app=org.cbbbench.App /tmp/o12-doc.txt", "")
+		doc := strings.TrimSpace(out)
+		if err != nil || !strings.HasPrefix(doc, "/run/user/") {
+			return Skipped("no flatpak or document portal on " + l.Name)
+		}
+		defer Run(context.WithoutCancel(ctx), l, wlEnv+"flatpak document-unexport /tmp/o12-doc.txt; rm -f /tmp/o12-doc.txt", "")
+		if _, err := Run(ctx, l, wlEnv+"wl-copy -t text/uri-list "+shellQuote("file://"+doc), ""); err != nil {
+			return err
+		}
+		return eventually(ctx, timeout+time.Minute, func() error {
+			got, err := pasteFile(ctx, d, "o12-doc.txt", time.Minute)
+			if err == nil && strings.TrimSpace(got) != text {
+				err = fmt.Errorf("%s saved %q from the document portal's file, not %q", d.Name, firstLine(got), text)
+			}
+			return err
+		})
+	})
+	r.Do(p+"/file-transfer", func() error {
+		has, _ := Run(ctx, l, "gdbus introspect --session -d org.freedesktop.portal.Documents -o /org/freedesktop/portal/documents 2>/dev/null | grep -c org.freedesktop.portal.FileTransfer || true", "")
+		if strings.TrimSpace(has) == "0" || strings.TrimSpace(has) == "" {
+			return Skipped("no FileTransfer portal on " + l.Name)
+		}
+		// A file copied on d reaches l's clipboard with the portal's key
+		// beside its path.
+		name := "cbb-bench-" + run + "-O12.txt"
+		if err := copyFile(ctx, d, name, text+" written"); err != nil {
+			return err
+		}
+		return eventually(ctx, timeout, func() error {
+			types, err := Run(ctx, l, wlEnv+"wl-paste --list-types", "")
+			if err != nil {
+				return err
+			}
+			if !strings.Contains(types, "application/vnd.portal.filetransfer") {
+				return fmt.Errorf("the clipboard offers %q, without the FileTransfer portal's key", strings.ReplaceAll(strings.TrimSpace(types), "\n", " "))
+			}
+			key, err := Run(ctx, l, wlEnv+"wl-paste -t application/vnd.portal.filetransfer", "")
+			if err != nil {
+				return err
+			}
+			got, err := Run(ctx, l, "gdbus call --session -d org.freedesktop.portal.Documents -o /org/freedesktop/portal/documents -m org.freedesktop.portal.FileTransfer.RetrieveFiles "+shellQuote(strings.TrimSpace(strings.TrimRight(key, "\x00")))+" '{}'", "")
+			if err != nil {
+				return fmt.Errorf("the portal gives no files for the clipboard's key: %w", err)
+			}
+			if !strings.Contains(got, "O12.txt") {
+				return fmt.Errorf("the portal gives %q for the clipboard's key, not the file", strings.TrimSpace(got))
+			}
+			return nil
 		})
 	})
 }

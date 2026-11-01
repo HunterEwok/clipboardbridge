@@ -11,9 +11,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,7 +80,12 @@ func archives(t *testing.T, dir string) {
 	}
 	zw.Close()
 	write(t, filepath.Join(dir, "clipboardbridge-windows-amd64.zip"), z.Bytes())
-	write(t, filepath.Join(dir, "SHA256SUMS"), []byte("sums\n"))
+	var sums strings.Builder
+	for _, name := range []string{"clipboardbridge-linux-amd64.tar.gz", "clipboardbridge-windows-amd64.zip"} {
+		sum := sha256.Sum256(must(os.ReadFile(filepath.Join(dir, name))))
+		fmt.Fprintf(&sums, "%x  %s\n", sum, name)
+	}
+	write(t, filepath.Join(dir, "SHA256SUMS"), []byte(sums.String()))
 }
 
 // TestFlow makes, signs and checks a release as docs/maintaining.md
@@ -178,4 +185,36 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func TestCheckSums(t *testing.T) {
+	dir := t.TempDir()
+	archives(t, dir)
+	sum := func(name string) string {
+		s := sha256.Sum256(must(os.ReadFile(filepath.Join(dir, name))))
+		return fmt.Sprintf("%x", s)
+	}
+	r := release.Release{Files: []release.Asset{
+		{Name: "clipboardbridge-linux-amd64.tar.gz", SHA256: sum("clipboardbridge-linux-amd64.tar.gz")},
+		{Name: "clipboardbridge-windows-amd64.zip", SHA256: sum("clipboardbridge-windows-amd64.zip")},
+		{Name: "SHA256SUMS", SHA256: sum("SHA256SUMS")},
+	}}
+	if err := checkSums(dir, r); err != nil {
+		t.Fatalf("good sums: %v", err)
+	}
+	// The manifest names a sum SHA256SUMS does not give.
+	r.Files[1].SHA256 = strings.Repeat("0", 64)
+	if checkSums(dir, r) == nil {
+		t.Error("took a manifest that disagrees with SHA256SUMS")
+	}
+	r.Files[1].SHA256 = sum("clipboardbridge-windows-amd64.zip")
+	// A line whose file changed.
+	write(t, filepath.Join(dir, "clipboardbridge-windows-amd64.zip"), []byte("other"))
+	if checkSums(dir, r) == nil {
+		t.Error("took a file SHA256SUMS gives another sum")
+	}
+	write(t, filepath.Join(dir, "SHA256SUMS"), []byte("not a sum\n"))
+	if checkSums(dir, r) == nil {
+		t.Error("took a line that is no sum")
+	}
 }
