@@ -276,6 +276,32 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       relative's group): every call into the core and every saved state names its group.
     - A temporary guest: a device record with an end date, after which the device leaves the
       group without being removed by hand.
+- **46.** **Planned for 0.7.** Sync away from home through networks that block VPNs, on every
+    member, the lite member included:
+    1. **VLESS behind a web server becomes the main way.** The forwarder (and the relay) can sit
+       behind a web server that already holds the site's real certificate on TCP 443: the web
+       server ends TLS and passes one path, over XHTTP, to the forwarder's VLESS on a local
+       port, as the project's server `cbb.tools` already does for its own use. The hub's offer
+       (docs/protocol.md, sections 11 and 13) then names the host, the path and the group's
+       VLESS user ID in place of REALITY's public key and short ID. The client needs only a
+       plain TLS 1.3 connection to a real certificate, so no browser's fingerprint is forged.
+       The web server sees only VLESS, with WireGuard and the member TLS inside, so the
+       clipboard stays encrypted end to end. Built in Go (the forwarder, the hub and the
+       computers as clients), in `mobile/cbbtun` for the phones (Xray-core has VLESS over
+       XHTTP), in the docs and in the bench, and the support for `cbb.tools` in the product.
+    2. **REALITY stays as an option** for the servers people set up themselves, where no web
+       server or certificate of their own is wanted (`-vless` as today, docs/admin/self-hosting.md).
+    3. **The lite member speaks VLESS** of step 1: its TLS is the core's rustls, already there;
+       the VLESS header and XHTTP over it are small; VLESS's own encryption (ML-KEM-768 with
+       X25519, as Xray-core's) on RustCrypto, checked against Xray-core with shared vectors as
+       the other parts are. It fits the Nano ESP32 too, whose TLS is the same. To keep in mind:
+       rustls's TLS fingerprint is not a browser's; the order of its suites and extensions
+       can be tuned.
+    4. **Then AmneziaWG on the lite member**: its changes to WireGuard's packets (junk packets,
+       shifted sizes and headers, padding) as a layer around GotaTun's UDP socket, checked
+       against amneziawg-go, so the lite member also reaches an obfuscated hub (today it
+       refuses one, `lite/src/tunnel.rs`).
+    5. The lite member at the blind relay (item 28), which it does not reach yet.
 
 ## Devices that are hard to type into
 
