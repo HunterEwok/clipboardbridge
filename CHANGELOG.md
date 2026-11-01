@@ -8,6 +8,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- `cbb version` of the lite member names the Rust core it was built with: its version, the
+  ABI of its entry point and, in a release, the commit it was built from.
 - The Rust core evaluates a record set at the limit with about a third of the memory it took
   (1.7 MB instead of 4.7 MB for 1033 records on a 64-bit computer), for the ESP32, and a test
   holds the peak to eight times the records' size.

@@ -33,6 +33,11 @@ const MaxBody = 8 << 10
 // lists the live records of the whole group.
 const MaxCheckpointBody = 64 << 10
 
+// SealKeySize is the size of a device record's seal: a public key of
+// internal/seal (X-Wing), which a member checks in full before it seals
+// to it.
+const SealKeySize = 1216
+
 // MaxSeq is the largest seq a signer gives a record.
 const MaxSeq = 1<<31 - 1
 
@@ -164,6 +169,8 @@ type Body struct {
 	// HoldsRoot marks the device that holds the signing root's key; only
 	// in a record a root's own key signed.
 	HoldsRoot bool `json:"holds_root,omitempty"`
+	// Seal is the device's public key for sealed messages (internal/seal).
+	Seal []byte `json:"seal,omitempty"`
 
 	Keys    []Hash `json:"keys,omitempty"`
 	Seen    []Seen `json:"seen,omitempty"`
@@ -180,7 +187,7 @@ type Body struct {
 // that it may carry; needed lists those it must.
 var (
 	fields = map[string]map[string]bool{
-		TypeDevice:     set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof", "holds_root"),
+		TypeDevice:     set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof", "holds_root", "seal"),
 		TypeRevoke:     set("keys", "seen"),
 		TypeFreeze:     set("keys", "seen"),
 		TypeThaw:       set("records"),
@@ -220,6 +227,7 @@ func (b *Body) present() []string {
 	add(b.Kind != "", "kind")
 	add(b.Proof != "", "proof")
 	add(b.HoldsRoot, "holds_root")
+	add(len(b.Seal) > 0, "seal")
 	add(len(b.Keys) > 0, "keys")
 	add(len(b.Seen) > 0, "seen")
 	add(len(b.Records) > 0, "records")
@@ -372,6 +380,9 @@ func (b *Body) checkDevice() error {
 	}
 	if b.Admin == nil && (len(b.Powers) > 0 || len(b.Commands) > 0) {
 		return errors.New("authority: powers and commands come only with admin")
+	}
+	if len(b.Seal) > 0 && len(b.Seal) != SealKeySize {
+		return fmt.Errorf("authority: a device record's seal is %d bytes, not %d", len(b.Seal), SealKeySize)
 	}
 	if err := sortedOf(b.Powers, Powers, "powers"); err != nil {
 		return err

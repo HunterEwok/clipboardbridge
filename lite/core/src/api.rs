@@ -508,6 +508,36 @@ mod tests {
         );
     }
 
+    /// A device's seal is a key of crate::seal's size, not a byte more or
+    /// less, and only in a device record.
+    #[test]
+    fn checks_the_seal() {
+        let v = vectors();
+        let bodies: Vec<Value> = v["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|c| c["records"].as_array().unwrap())
+            .map(|r| {
+                let b = base64::engine::general_purpose::STANDARD.decode(r["body"].as_str().unwrap()).unwrap();
+                serde_json::from_slice(&b).unwrap()
+            })
+            .collect();
+        let device = bodies.iter().find(|b| b["type"] == "device").unwrap();
+        let revoke = bodies.iter().find(|b| b["type"] == "revoke").unwrap();
+        let with = |b: &Value, n: usize| {
+            let mut b = b.clone();
+            b["seal"] = base64::engine::general_purpose::STANDARD.encode(vec![7u8; n]).into();
+            b
+        };
+        let size = crate::seal::PUBLIC_KEY_SIZE;
+        assert!(ask("canonical_body", with(device, size)).get("ok").is_some());
+        for n in [size - 1, size + 1] {
+            assert_eq!(code(&ask("canonical_body", with(device, n))), Code::Body as u64, "{n}");
+        }
+        assert_eq!(code(&ask("canonical_body", with(revoke, size))), Code::Body as u64);
+    }
+
     /// Requests of the wrong shape, version or size are refused with their
     /// codes, and any bytes at all get an answer.
     #[test]

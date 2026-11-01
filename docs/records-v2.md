@@ -131,7 +131,7 @@ and `a`-`f`.
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name`, `role`, `os`, `key`, `admin`, `powers`, `commands`, `store`, `kind`, `proof`, `holds_root` | a device in the group, or a change of its name or powers |
+| `device` | `device`, `name`, `role`, `os`, `key`, `admin`, `powers`, `commands`, `store`, `kind`, `proof`, `holds_root`, `seal` | a device in the group, or a change of its name or powers |
 | `revoke` | `keys`, `seen` | removes keys from the group |
 | `freeze` | `keys`, `seen` | stops admins until the root or an admin with `thaw` ends it |
 | `thaw` | `records` | ends the `freeze` records it names |
@@ -154,6 +154,7 @@ and `a`-`f`.
 | `commands` | array of strings | none | sorted; the command types (section 15) the admin may sign; only with `admin` |
 | `store`, `kind`, `proof` | string | none | as in section 17 |
 | `holds_root` | bool | none | `true`: this device holds the signer's root key; only in a record a root's own key signed |
+| `seal` | string | none | the device's public key for sealed messages, base64: 1216 bytes, an X-Wing key (HPKE KEM `0x647a`). The rules check only its size; a member checks the whole key before it seals a message to it |
 | `keys` | array of strings | `revoke`, `freeze`, one at least | sorted key hashes |
 | `seen` | array of objects | `revoke`, `freeze`, `claim`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": the highest seq of that signer the author held, 0 or more}`; `seq` here is never left out, 0 included |
 | `records` | array of strings | `thaw`, `resolve`, one at least | sorted record IDs |
@@ -441,7 +442,7 @@ and returns the state as one canonical JSON object:
 |-------|------|---------|
 | `roots` | array of strings | the path: the root certificates' key hashes from the group CA to the current root |
 | `root_device` | string | the root's own device ID; absent when there is none |
-| `devices` | array of objects | sorted by `device`: `device`, `name`, `role`, `os`, `keys` (sorted member key hashes that stand), and, for an admin, `admin`, `powers`, `commands`, `frozen` (true when frozen) |
+| `devices` | array of objects | sorted by `device`: `device`, `name`, `role`, `os`, `keys` (sorted member key hashes that stand), the newest record's `store`, `kind`, `proof` and `seal` when it has them, and, for an admin, `admin`, `powers`, `commands`, `frozen` (true when frozen) |
 | `revoked` | array of strings | sorted key hashes the records remove |
 | `claims` | array of objects | sorted by `record`: `record`, `claimant` (admin key hash), `root` (new root key hash), `state` (`pending`, `effective`, `cancelled`, `void`, `competing` or `disputed`), `left_ms` while pending |
 | `conflicts` | array of objects | sorted by the first record ID: `kind` (`admins`, `claims`, `two_histories`), `records` (sorted record IDs), `signers` (sorted key hashes) |

@@ -117,6 +117,7 @@ var scenarios = []struct {
 	{"powers", TestPowers},
 	{"stranger's claim", TestStrangersClaim},
 	{"times at the ends", TestTimesAtTheEnds},
+	{"device seal", TestDeviceSeal},
 	{"device limit", TestDeviceLimit},
 	{"admin limit", TestAdminLimit},
 	{"path limit", TestPathLimit},

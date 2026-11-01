@@ -1228,6 +1228,7 @@ type Device struct {
 	Store    string   `json:"store,omitempty"`
 	Kind     string   `json:"kind,omitempty"`
 	Proof    string   `json:"proof,omitempty"`
+	Seal     []byte   `json:"seal,omitempty"`
 	Admin    *Hash    `json:"admin,omitempty"`
 	Powers   []string `json:"powers,omitempty"`
 	Commands []string `json:"commands,omitempty"`
@@ -1435,7 +1436,7 @@ func (ep *epoch) device(id string, rs []*rec) (Device, bool) {
 		return a.Body.Seq > b.Body.Seq
 	})
 	n := counting[0].Body
-	d := Device{Device: id, Name: n.Name, Role: n.Role, OS: n.OS, Store: n.Store, Kind: n.Kind, Proof: n.Proof}
+	d := Device{Device: id, Name: n.Name, Role: n.Role, OS: n.OS, Store: n.Store, Kind: n.Kind, Proof: n.Proof, Seal: n.Seal}
 	for k := range keys {
 		d.Keys = append(d.Keys, k)
 	}
