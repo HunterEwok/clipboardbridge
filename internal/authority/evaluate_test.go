@@ -72,7 +72,10 @@ func (w *world) signerHash(signer string) authority.Hash {
 func (w *world) sign(name, signer string, b authority.Body, seen []authority.Seen) authority.Record {
 	w.t.Helper()
 	h := w.signerHash(signer)
-	b.Group, b.TimeMS = tag, 1
+	b.Group = tag
+	if b.TimeMS == 0 {
+		b.TimeMS = 1
+	}
 	b.Seq = w.seq[h] + 1
 	if b.Seq > 1 {
 		p := w.last[h]
@@ -601,6 +604,41 @@ func TestStrangersClaim(t *testing.T) {
 	after.Ignored = nil
 	if got := mustEncode(t, after); got != before {
 		t.Fatalf("a stranger's claim changed the state:\n got %s\nwant %s", got, before)
+	}
+}
+
+// TestDeviceSeal is a device's key for sealed messages: the state shows
+// the seal of the device's newest record, and a record without one leaves
+// the device without one.
+func TestDeviceSeal(t *testing.T) {
+	w := newWorld(t)
+	w.makeAdmin("A", "phone", phonePowers)
+	sealOf := func(s *authority.State, name string) []byte {
+		for _, d := range s.Devices {
+			if d.Device == w.ids[name] {
+				return d.Seal
+			}
+		}
+		t.Fatalf("no device %s: %s", name, mustEncode(t, s))
+		return nil
+	}
+	k := hashOf(t, &newKey(t).PublicKey)
+	w.members["L"], w.ids["L"] = k, string(group.NewDeviceID())
+	first, second := sealKey(t), sealKey(t)
+	body := func(s []byte) authority.Body {
+		return authority.Body{Type: authority.TypeDevice, Device: w.ids["L"], Name: "L", Role: "full", Key: &k, Seal: s}
+	}
+	w.sign("device L with a seal", "A", body(first), nil)
+	if got := sealOf(w.evalAll(nil), "L"); !bytes.Equal(got, first) {
+		t.Fatalf("the state's seal is not the record's")
+	}
+	w.sign("device L with another seal", "A", body(second), nil)
+	if got := sealOf(w.evalAll(nil), "L"); !bytes.Equal(got, second) {
+		t.Fatalf("the state's seal is not the newest record's")
+	}
+	w.sign("device L without a seal", "A", body(nil), nil)
+	if got := sealOf(w.evalAll(nil), "L"); got != nil {
+		t.Fatalf("a newest record without a seal should leave none")
 	}
 }
 

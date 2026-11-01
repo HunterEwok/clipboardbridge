@@ -8,6 +8,26 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
+  and offers it in its hello; a root computer puts it in the device records, the first step
+  to commands sealed for their receiver (docs/protocol.md, section 15).
+- The group's main hubs in a table the root signs, or an admin that may be a hub (`cbb hubs`,
+  a `hubs` record, docs/records-v2.md, "The hubs table"): they serve first, in the user's
+  order, before the hubs the records give, in Go and the Rust core alike.
+- `cbb version` of the lite member names the Rust core it was built with: its version, the
+  ABI of its entry point and, in a release, the commit it was built from.
+- The Rust core evaluates a record set at the limit with about a third of the memory it took
+  (1.7 MB instead of 4.7 MB for 1033 records on a 64-bit computer), for the ESP32, and a test
+  holds the peak to eight times the records' size.
+- The Rust core's entry point checks a peer's member certificates (`check_member`, docs/core-api.md),
+  for the TLS verify callbacks of the computers and the phones, and gives the same answer as Go's
+  crypto/tls on shared vectors (`testdata/interop/member-chains.json`). The lite member now takes
+  a peer's admin CA wherever the peer puts it in its chain, as Go does.
+- Limits on a group's record set, the same in Go and the Rust core (docs/records-v2.md,
+  "Limits"): 1024 records, 1 MiB, 256 devices, 64 admin keys and 16 roots on the path.
+  Records past a limit count for nothing, with the reason `limit`; the set is never refused,
+  the root's records go first, and the root's checkpoint brings a set back under the limits.
+  The Rust core checks a signer's chain in one pass instead of once per record.
 - The nightly `cargo fuzz` run covers the Rust core's entry point (`api`), starting from
   requests for each operation built from the interop vectors.
 - The remote invitation is read the same way by Go and the Rust core (`cbb_core::invite`),
@@ -596,6 +616,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
+  member: each record names its signer and follows that signer's previous one, the Rust
+  core decides what a set says, and the old records are refused. A group of an earlier
+  version is not carried over: set it up again. The root decides how long a claim to the
+  group waits, 72 hours by default (`cbb takeover-delay`), a new member takes the waits its
+  admitting member counted from the Welcome, and `cbb upgrade` is gone. A device whose
+  record has not reached a member yet gets a connection that carries records only, until
+  the records let it in.
 - Remote paste on Linux and FreeBSD takes nothing where the device cannot tell whether its
   session is locked (no logind, `loginctl` failing or saying nothing): earlier it pasted
   there. The device's user may allow pastes without that check with
@@ -777,6 +805,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A computer that signs two group records in one pass, or at the same moment, gives them
+  consecutive numbers: before, both could take one number, which reads as two histories of
+  the signer and, for the root, stops the group.
 - A member that ends its connections after saying goodbye, as after `cbb global off -on`
   turned sync away from home off there, no longer resets them: it stops sending and reads
   what the other device still sends before it closes. A reset could make the admin lose the

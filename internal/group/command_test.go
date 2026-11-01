@@ -36,8 +36,22 @@ func TestCommands(t *testing.T) {
 			t.Errorf("%s: mode %q", what, got.Mode)
 		}
 	}
+	check("an admin not yet listed", sign(body(), pg.a, pg.a.Cert), now, false)
+	mustAdd(t, s, adminRecord(t, pg.root.Cert, pg.root, nil, member(t, pg.a), "phone a", KeyHashOf(pg.a.Cert)))
+	mustAdd(t, s, adminRecord(t, pg.root.Cert, pg.root, nil, member(t, pg.b), "phone b", KeyHashOf(pg.b.Cert)))
 	check("the root", sign(body(), pg.root), now, true)
 	byA := sign(body(), pg.a, pg.a.Cert)
+	check("an admin naming no device shown", byA, now, false)
+	byOf := func(ca *CA) DeviceID {
+		for _, d := range s.Devices() {
+			if d.AdminKey != nil && *d.AdminKey == KeyHashOf(ca.Cert) {
+				return d.ID
+			}
+		}
+		return ""
+	}
+	bodyBy := func(ca *CA) CommandBody { b := body(); b.By = byOf(ca); return b }
+	byA = sign(bodyBy(pg.a), pg.a, pg.a.Cert)
 	check("an admin", byA, now, true)
 	check("expired", byA, now.Add(CommandLifetime), false)
 	check("from the future", byA, now.Add(-CommandAhead-time.Second), false)
@@ -54,9 +68,11 @@ func TestCommands(t *testing.T) {
 	forged.Body[len(forged.Body)-3] = 'x' // "own" becomes "owx"
 	check("a changed body", forged, now, false)
 
-	mustAdd(t, s, revokeRecord(t, pg.root.Cert, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}, nil))
-	check("a removed admin", sign(body(), pg.a, pg.a.Cert), now, false)
-	check("the other admin", sign(body(), pg.b, pg.b.Cert), now, true)
+	removed := bodyBy(pg.a)
+	mustAdd(t, s, revokeRecord(t, pg.root.Cert, pg.root, nil, []KeyHash{KeyHashOf(pg.a.Cert)}))
+	removed.ID = NewCommandID()
+	check("a removed admin", sign(removed, pg.a, pg.a.Cert), now, false)
+	check("the other admin", sign(bodyBy(pg.b), pg.b, pg.b.Cert), now, true)
 
 	if _, err := SignCommand(CommandBody{Type: CommandMode, To: to, ID: NewCommandID(), TimeMS: 1, ExpiresMS: 1 + time.Hour.Milliseconds(), Mode: "own"}, pg.root.Key); err == nil {
 		t.Error("a command that lives an hour was signed")
@@ -123,7 +139,18 @@ func TestPasteCommand(t *testing.T) {
 		return CommandBody{Type: CommandPaste, Group: Tag(pg.root.Cert), By: NewDeviceID(), To: to, ID: NewCommandID(),
 			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli(), Mode: mode, Kind: kind, Text: text, Enter: true}
 	}
-	c, err := SignCommand(body(PasteByClipboard, "text", "ls -l"), pg.a.Key, pg.a.Cert)
+	aM, bM := member(t, pg.a), member(t, pg.b)
+	for _, r := range []Record{
+		adminRecord(t, pg.root.Cert, pg.root, nil, aM, "phone a", KeyHashOf(pg.a.Cert)),
+		adminRecord(t, pg.root.Cert, pg.root, nil, bM, "phone b", KeyHashOf(pg.b.Cert)),
+	} {
+		if _, err := s.Add(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byA := body(PasteByClipboard, "text", "ls -l")
+	byA.By = DeviceID(aM.Subject.CommonName)
+	c, err := SignCommand(byA, pg.a.Key, pg.a.Cert)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +181,7 @@ func TestPasteCommand(t *testing.T) {
 	if _, err := SignCommand(mode, pg.root.Key); err == nil {
 		t.Error("a mode command with a text was signed")
 	}
-	off := CommandBody{Type: CommandPasteOff, Group: Tag(pg.root.Cert), By: NewDeviceID(), To: to, ID: NewCommandID(),
+	off := CommandBody{Type: CommandPasteOff, Group: Tag(pg.root.Cert), By: DeviceID(bM.Subject.CommonName), To: to, ID: NewCommandID(),
 		TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli()}
 	if c, err := SignCommand(off, pg.b.Key, pg.b.Cert); err != nil {
 		t.Error(err)
@@ -244,21 +271,23 @@ func TestCommandSenders(t *testing.T) {
 	}
 	check(s, "the root naming this device", command(pg.root, tag, selfID, selfID), selfID, false, false)
 
-	// A legacy group, whose CA key every full member holds.
+	// A group made before records v:2, whose CA key every full member
+	// held: v:2 has no such members, so the CA may name only a device
+	// that no record shows.
 	legacy := newLegacyGroup(t)
 	ca := &legacy.GroupCA
 	ls := NewRecords(ca.Cert)
 	full, phone := member(t, ca), member(t, ca)
 	mustAdd(t, ls, deviceRecord(t, ca.Cert, ca, nil, full, "pc", 1))
 	phoneKey := KeyHashOf(phone)
-	pr, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(ca.Cert), TimeMS: 2, Device: DeviceID(phone.Subject.CommonName),
+	pr, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(ca.Cert), TimeMS: 2, Device: string(DeviceID(phone.Subject.CommonName)),
 		Name: "phone", Role: RolePhone, Key: &phoneKey}, ca.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mustAdd(t, ls, pr)
 	ltag, to := Tag(ca.Cert), NewDeviceID()
-	check(ls, "a legacy CA naming a full member", command(ca, ltag, DeviceID(full.Subject.CommonName), to), to, true, true)
+	check(ls, "a legacy CA naming a full member", command(ca, ltag, DeviceID(full.Subject.CommonName), to), to, false, false)
 	check(ls, "a legacy CA naming a phone", command(ca, ltag, DeviceID(phone.Subject.CommonName), to), to, false, false)
 	check(ls, "a legacy CA naming no device shown", command(ca, ltag, NewDeviceID(), to), to, true, false)
 }

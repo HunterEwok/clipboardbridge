@@ -9,6 +9,8 @@ import (
 	"crypto/x509/pkix"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
 // adminCAFor issues an admin CA for the key pub of the device dev, as the
@@ -109,13 +111,14 @@ func TestComputerAdmin(t *testing.T) {
 	if err != nil || got.AdminCA == nil || !got.AdminCA.Equal(admin.AdminCA) {
 		t.Fatalf("the admin CA was not kept: %v", err)
 	}
-	r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(pg.root.Cert), Device: NewDeviceID(), Name: "deck",
-		Role: RoleFull, Key: &KeyHash{1}, By: admin.ID}, ca.Key, chain...)
+	r, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(pg.root.Cert), TimeMS: nextTime(), Device: string(NewDeviceID()), Name: "deck",
+		Role: RoleFull, Key: &KeyHash{1}}, ca.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recs := NewRecords(pg.root.Cert)
-	if ok, err := recs.Add(r); !ok || err != nil || len(recs.Devices()) != 1 {
+	mustAdd(t, recs, adminComputer(t, pg.root, admin.Cert, "pc", KeyHashOf(admin.AdminCA), false))
+	if ok, err := recs.Add(r); !ok || err != nil || len(recs.Devices()) != 2 {
 		t.Errorf("a record the admin computer signed: %v, %v", ok, err)
 	}
 
@@ -216,6 +219,34 @@ func TestTakenOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	other, _ := NewRootCA(t0)
+	// The claim's new root waits in the identity, across a save, until
+	// the claim takes effect.
+	if _, err := m.WithClaim(next); err == nil {
+		t.Error("a member that is no admin holds a claim")
+	}
+	if _, err := admin.WithClaim(&CA{Cert: next.Cert}); err == nil {
+		t.Error("held a claim without its root key")
+	}
+	if _, err := admin.WithClaim(&CA{Cert: next.Cert, Key: other.Key}); err == nil {
+		t.Error("held a claim with another key")
+	}
+	claiming, err := admin.WithClaim(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cdir := t.TempDir()
+	if err := claiming.Save(cdir); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(cdir); err != nil || got.Claim == nil || !got.Claim.Cert.Equal(next.Cert) || !SameKey(got.Claim.Key, next.Key.Public()) || got.IsRoot() {
+		t.Fatalf("the claim was not kept: %v", err)
+	}
+	if dropped, err := claiming.WithClaim(nil); err != nil || dropped.Claim != nil {
+		t.Errorf("a cancelled claim is not dropped: %v", err)
+	}
+	if took, err := claiming.TakenOver(claiming.Claim, []*x509.Certificate{next.Cert}, t0); err != nil || took.Claim != nil || !took.IsRoot() {
+		t.Errorf("the claim's root did not become the root: %v", err)
+	}
 	if _, err := admin.TakenOver(next, []*x509.Certificate{other.Cert}, t0); err == nil {
 		t.Error("took the group over though the records lead to another root")
 	}
@@ -290,16 +321,17 @@ func TestComputerAdminRenews(t *testing.T) {
 	}
 }
 
-// TestRootDeviceAndAdmitted checks the records' root phone and the devices
-// an admin admitted, which a revocation of that admin keeps.
+// TestRootDeviceAndAdmitted checks the records' root phone, the device of
+// the root's own record that says it holds the root, and that removing an
+// admin keeps the devices it admitted.
 func TestRootDeviceAndAdmitted(t *testing.T) {
 	pg := newPhoneGroup(t)
 	tag := Tag(pg.root.Cert)
 	rootPhone, aPhone, deck := NewDeviceID(), NewDeviceID(), NewDeviceID()
 	k1, k2, k3, ka := KeyHash{1}, KeyHash{2}, KeyHash{3}, KeyHashOf(pg.a.Cert)
 	sign := func(body RecordBody, ca *CA, chain ...*x509.Certificate) Record {
-		body.Group = tag
-		r, err := SignRecord(body, ca.Key, chain...)
+		body.Group, body.TimeMS = tag, nextTime()
+		r, err := signRecord(body, ca.Key, chain...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -310,23 +342,37 @@ func TestRootDeviceAndAdmitted(t *testing.T) {
 		t.Error("an empty set has a root phone")
 	}
 	if _, errs := recs.AddAll([]Record{
-		sign(RecordBody{Type: RecordDevice, Device: rootPhone, Name: "root", Role: RolePhone, Key: &k1, By: rootPhone, TimeMS: 1}, pg.root),
-		sign(RecordBody{Type: RecordDevice, Device: aPhone, Name: "a", Role: RolePhone, Key: &k2, Admin: &ka, By: rootPhone, TimeMS: 2}, pg.root),
-		sign(RecordBody{Type: RecordDevice, Device: deck, Name: "deck", Role: RoleFull, Key: &k3, By: aPhone, TimeMS: 3}, pg.a, pg.a.Cert),
-		// An admin's own record signed by itself does not make it the root.
-		sign(RecordBody{Type: RecordDevice, Device: aPhone, Name: "a", Role: RolePhone, Key: &k2, Admin: &ka, By: aPhone, TimeMS: 4}, pg.a, pg.a.Cert),
+		// A root's record of a device without holds_root names no root.
+		sign(RecordBody{Type: RecordDevice, Device: string(deck), Name: "deck", Role: RoleFull, Key: &k3}, pg.root),
+	}); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if recs.RootDevice() != "" {
+		t.Error("a record without holds_root names the root's device")
+	}
+	if _, errs := recs.AddAll([]Record{
+		sign(RecordBody{Type: RecordDevice, Device: string(rootPhone), Name: "root", Role: RolePhone, Key: &k1, HoldsRoot: true}, pg.root),
+		sign(RecordBody{Type: RecordDevice, Device: string(aPhone), Name: "a", Role: RolePhone, Key: &k2, Admin: &ka, Powers: authority.Powers, Commands: authority.Commands}, pg.root),
+		sign(RecordBody{Type: RecordDevice, Device: string(deck), Name: "deck", Role: RoleFull, Key: &k3}, pg.a, pg.a.Cert),
+		// An admin's record of its own device that says it holds the root
+		// counts for nothing.
+		sign(RecordBody{Type: RecordDevice, Device: string(aPhone), Name: "a", Role: RolePhone, Key: &k2, Admin: &ka, HoldsRoot: true}, pg.a, pg.a.Cert),
 	}); len(errs) > 0 {
 		t.Fatal(errs)
 	}
 	if got := recs.RootDevice(); got != rootPhone {
 		t.Errorf("RootDevice = %q, want %q", got, rootPhone)
 	}
-	if got := recs.Admitted(ka); len(got) != 2 || got[0] == got[1] {
-		t.Errorf("Admitted = %v, want the deck and the phone itself", got)
+	if dev, key := recs.RootMember(); dev != rootPhone || key != k1 {
+		t.Errorf("RootMember = %q, %v", dev, key)
 	}
 	for _, d := range recs.Devices() {
-		if d.ID == aPhone && (d.AdminKey == nil || *d.AdminKey != ka) {
-			t.Error("the admin phone's admin key is not listed")
+		if d.ID == aPhone && (d.AdminKey == nil || *d.AdminKey != ka || !d.May(authority.PowerTakeover)) {
+			t.Error("the admin phone's admin key and powers are not listed")
 		}
+	}
+	mustAdd(t, recs, sign(RecordBody{Type: RecordRevoke, Keys: []KeyHash{k2, ka}}, pg.root))
+	if got := names(recs.Devices()); got != "deck root" {
+		t.Errorf("devices after the admin's removal %q, want deck root", got)
 	}
 }

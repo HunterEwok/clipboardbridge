@@ -307,3 +307,37 @@ func DeviceOf(cert *x509.Certificate) (DeviceID, error) {
 func verifyTime(ca *x509.Certificate, now time.Time) time.Time {
 	return maxTime(now, ca.NotBefore)
 }
+
+// checkRoot checks that c may be a root of a group: a CA as the group CA
+// is, that certifies admin CAs (path length 1).
+func checkRoot(c *x509.Certificate) error {
+	if err := checkCA(&CA{Cert: c}, "new root", maxGroupCAPath); err != nil {
+		return err
+	}
+	if c.MaxPathLen != 1 || c.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return errors.New("group: the new root does not certify admin CAs")
+	}
+	return nil
+}
+
+// CheckAdminCA checks that c is an admin CA certified by root.
+func CheckAdminCA(c, root *x509.Certificate) error { return checkAdminCA(c, root) }
+
+// checkAdminCA checks that c is an admin CA certified by root: a CA with
+// path length 0 and a P-256 key, signed by root, which allows one level of
+// CAs below it.
+func checkAdminCA(c, root *x509.Certificate) error {
+	if !c.IsCA || !c.BasicConstraintsValid || c.MaxPathLen != 0 || c.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return errors.New("group: the signer is not an admin CA")
+	}
+	if pub, ok := c.PublicKey.(*ecdsa.PublicKey); !ok || pub.Curve != elliptic.P256() {
+		return errors.New("group: the admin CA key is not a P-256 key")
+	}
+	if root.MaxPathLen < 1 {
+		return errors.New("group: the group CA certifies no admin CAs")
+	}
+	if err := c.CheckSignatureFrom(root); err != nil {
+		return fmt.Errorf("group: the admin CA is not from the group CA: %w", err)
+	}
+	return nil
+}

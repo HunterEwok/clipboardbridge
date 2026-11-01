@@ -269,9 +269,6 @@ type helloBody struct {
 	// PhoneCA is the SHA-256 of the SubjectPublicKeyInfo of the iPhone CA
 	// whose key the sender holds.
 	PhoneCA []byte `json:"phone_ca,omitempty"`
-	// OldKeys tells that the sender holds the group CA key of a legacy
-	// group, which it deletes once the group is upgraded.
-	OldKeys bool `json:"old_keys,omitempty"`
 	// KeyStore is where the sender says its keys live (group.StoreFile or
 	// group.StoreHardware or group.StoreRootless); "" from a member before 0.6.
 	KeyStore string `json:"key_store,omitempty"`
@@ -280,6 +277,8 @@ type helloBody struct {
 	Actions []string `json:"actions,omitempty"`
 	// Media tells that the sender serves the content of media events.
 	Media bool `json:"media,omitempty"`
+	// Seal is the sender's public key for sealed messages.
+	Seal []byte `json:"seal,omitempty"`
 	// ReleaseSeq is the seq of the channel file of the signed release
 	// the sender holds; 0 for none.
 	ReleaseSeq uint64 `json:"release_seq,omitempty"`
@@ -306,10 +305,6 @@ type helloOut struct {
 	// whose key this member holds, so another admin knows whether to send
 	// it a newer one.
 	PhoneCA []byte `json:"phone_ca,omitempty"`
-	// OldKeys tells that this member holds the group CA key of a legacy
-	// group: until it says otherwise after cbb upgrade, it may still hold
-	// the old keys.
-	OldKeys bool `json:"old_keys,omitempty"`
 	// TunnelKey is this member's WireGuard public key, for the group's hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
 	// TunnelPSK is this member's own preshared key, for every hub.
@@ -324,6 +319,9 @@ type helloOut struct {
 	Actions []string `json:"actions,omitempty"`
 	// Media tells that this member serves the content of media events.
 	Media bool `json:"media,omitempty"`
+	// Seal is this member's public key for sealed messages, for the root
+	// or an admin to put in its device record.
+	Seal []byte `json:"seal,omitempty"`
 	// ReleaseSeq is the seq of the channel file of the signed release
 	// this member holds, and ReleaseKeys that of its keys.json, so that a
 	// peer sends only a newer one.

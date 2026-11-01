@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
 // phoneGroup is a group rooted in a phone: a root CA with path length 1 and
@@ -89,9 +91,9 @@ func member(t *testing.T, ca *CA) *x509.Certificate {
 func deviceRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, cert *x509.Certificate, name string, ms int64) Record {
 	t.Helper()
 	key := KeyHashOf(cert)
-	r, err := SignRecord(RecordBody{
+	r, err := signRecord(RecordBody{
 		Type: RecordDevice, Group: Tag(root), TimeMS: ms,
-		Device: DeviceID(cert.Subject.CommonName), Name: name, Role: RoleFull, Key: &key,
+		Device: string(DeviceID(cert.Subject.CommonName)), Name: name, Role: RoleFull, Key: &key,
 	}, signer.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
@@ -99,11 +101,9 @@ func deviceRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x50
 	return r
 }
 
-func revokeRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, keys, keep []KeyHash) Record {
+func revokeRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, keys []KeyHash) Record {
 	t.Helper()
-	// Each its own time: two signers' revocations of the same keys are
-	// still two records.
-	r, err := SignRecord(RecordBody{Type: RecordRevoke, Group: Tag(root), TimeMS: nextTime(), Keys: keys, Keep: keep}, signer.Key, chain...)
+	r, err := signRecord(RecordBody{Type: RecordRevoke, Group: Tag(root), TimeMS: nextTime(), Keys: keys}, signer.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestRecordsInComputerGroup(t *testing.T) {
 	}
 	digest := s.Digest()
 
-	mustAdd(t, s, revokeRecord(t, admin.GroupCA.Cert, &admin.GroupCA, nil, []KeyHash{KeyHashOf(mac.Cert)}, nil))
+	mustAdd(t, s, revokeRecord(t, admin.GroupCA.Cert, &admin.GroupCA, nil, []KeyHash{KeyHashOf(mac.Cert)}))
 	if got := names(s.Devices()); got != "pi" {
 		t.Errorf("devices %q after the revocation, want pi", got)
 	}
@@ -168,7 +168,7 @@ func TestRecordsRejected(t *testing.T) {
 		"changed body":         tampered,
 		"another group's CA":   deviceRecord(t, admin.GroupCA.Cert, &other.GroupCA, nil, admin.Cert, "pi", 1),
 		"another group's tag":  deviceRecord(t, other.GroupCA.Cert, &admin.GroupCA, nil, admin.Cert, "pi", 1),
-		"admin CA from a leaf": deviceRecord(t, admin.GroupCA.Cert, &admin.GroupCA, []*x509.Certificate{admin.Cert}, admin.Cert, "pi", 1),
+		"admin CA from a leaf": {Body: good.Body, Sig: good.Sig, Chain: [][]byte{admin.Cert.Raw}},
 		"not JSON":             {Body: []byte("{"), Sig: good.Sig},
 	}
 	for name, r := range cases {
@@ -176,7 +176,7 @@ func TestRecordsRejected(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	// A computer's group CA has path length 0, so no admin CA counts.
+	// An admin CA of another group is no admin CA of this one.
 	pg := newPhoneGroup(t)
 	if _, err := NewRecords(admin.GroupCA.Cert).Add(deviceRecord(t, admin.GroupCA.Cert, pg.a, []*x509.Certificate{pg.a.Cert}, admin.Cert, "pi", 1)); err == nil {
 		t.Error("a record from a foreign admin CA was accepted")
@@ -185,13 +185,13 @@ func TestRecordsRejected(t *testing.T) {
 		t.Errorf("%d records kept, want none", s.Len())
 	}
 	for name, body := range map[string]RecordBody{
-		"bad name":      {Type: RecordDevice, Device: admin.ID, Name: "a\nb", Role: RoleFull, OS: OSMacOS, Key: &KeyHash{}},
-		"unknown role":  {Type: RecordDevice, Device: admin.ID, Name: "a", Role: "toaster", Key: &KeyHash{}},
+		"bad name":      {Type: RecordDevice, Device: string(admin.ID), Name: "a\nb", Role: RoleFull, OS: OSMacOS, Key: &KeyHash{}},
+		"unknown role":  {Type: RecordDevice, Device: string(admin.ID), Name: "a", Role: "toaster", Key: &KeyHash{}},
 		"no keys":       {Type: RecordRevoke},
 		"unknown type":  {Type: "gift"},
-		"no device key": {Type: RecordDevice, Device: admin.ID, Name: "a", Role: RoleFull, OS: OSMacOS},
+		"no device key": {Type: RecordDevice, Device: string(admin.ID), Name: "a", Role: RoleFull, OS: OSMacOS},
 	} {
-		if _, err := SignRecord(body, admin.GroupCA.Key); err == nil {
+		if _, err := signRecord(body, admin.GroupCA.Key); err == nil {
 			t.Errorf("%s: signed", name)
 		}
 	}
@@ -225,7 +225,7 @@ func TestLosingAPhone(t *testing.T) {
 		t.Fatalf("admins %q, want phone A phone B", got)
 	}
 
-	removal := revokeRecord(t, root, pg.b, bChain, []KeyHash{KeyHashOf(phoneA), adminA}, []KeyHash{KeyHashOf(computer)})
+	removal := revokeRecord(t, root, pg.b, bChain, []KeyHash{KeyHashOf(phoneA), adminA})
 	mustAdd(t, s, removal)
 	mustAdd(t, s, deviceRecord(t, root, pg.a, aChain, stolen, "stolen", 4))
 
@@ -249,20 +249,22 @@ func TestLosingAPhone(t *testing.T) {
 	if got := names(s.Devices()); got != "computer phone B via B" {
 		t.Errorf("devices %q, want computer phone B via B", got)
 	}
-	// A revocation from the revoked A still counts: two admins that revoke
-	// each other both lose their rights.
-	mustAdd(t, s, revokeRecord(t, root, pg.a, aChain, []KeyHash{adminB}, nil))
-	if !s.Revoked(adminB) {
-		t.Error("the revocation from the revoked admin does not count")
+	// A revocation that A signs after it held its own removal does not
+	// count (docs/records-v2.md, "Which admin records count"), and nothing
+	// stops: A was removed before it signed.
+	mustAdd(t, s, revokeRecord(t, root, pg.a, aChain, []KeyHash{adminB}))
+	if s.Revoked(adminB) || s.Stop() != "none" {
+		t.Errorf("the revocation from the removed admin: B revoked %v, stop %q", s.Revoked(adminB), s.Stop())
 	}
 }
 
 func adminRecord(t *testing.T, root *x509.Certificate, signer *CA, chain []*x509.Certificate, cert *x509.Certificate, name string, admin KeyHash) Record {
 	t.Helper()
 	key := KeyHashOf(cert)
-	r, err := SignRecord(RecordBody{
+	r, err := signRecord(RecordBody{
 		Type: RecordDevice, Group: Tag(root), TimeMS: 1,
-		Device: DeviceID(cert.Subject.CommonName), Name: name, Role: RolePhone, Key: &key, Admin: &admin,
+		Device: string(DeviceID(cert.Subject.CommonName)), Name: name, Role: RolePhone, Key: &key, Admin: &admin,
+		Powers: authority.Powers, Commands: authority.Commands,
 	}, signer.Key, chain...)
 	if err != nil {
 		t.Fatal(err)
@@ -285,8 +287,8 @@ func TestRecordsOrderIndependent(t *testing.T) {
 		deviceRecord(t, root, pg.a, aChain, c1, "one", 1),
 		deviceRecord(t, root, pg.b, bChain, c1, "renamed", 5),
 		deviceRecord(t, root, pg.b, bChain, c2, "two", 2),
-		revokeRecord(t, root, pg.b, bChain, []KeyHash{KeyHashOf(pg.a.Cert)}, []KeyHash{KeyHashOf(c1)}),
-		revokeRecord(t, root, pg.a, aChain, []KeyHash{KeyHashOf(pg.b.Cert)}, nil),
+		revokeRecord(t, root, pg.b, bChain, []KeyHash{KeyHashOf(pg.a.Cert)}),
+		revokeRecord(t, root, pg.a, aChain, []KeyHash{KeyHashOf(pg.b.Cert)}),
 	}
 	var want string
 	for i := range 20 {
@@ -388,44 +390,53 @@ func TestPhoneRootIdentity(t *testing.T) {
 	}
 }
 
-// TestRecordRoles checks that records keep the role apart from the system
-// and read the roles of earlier records as today's.
+// TestRecordRoles checks that records keep the role apart from the system,
+// and that the roles of records before v:2 (linux, mac, iphone) are refused.
 func TestRecordRoles(t *testing.T) {
 	admin, err := Create(t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := NewRecords(admin.GroupCA.Cert)
-	for i, tc := range []struct{ role, os, wantRole, wantOS string }{
-		{"linux", "", RoleFull, ""},
-		{"linux", OSWindows, RoleFull, OSWindows},
-		{"mac", "", RoleFull, OSMacOS},
-		{"iphone", "", RoleShortcut, OSiOS},
-		{RoleFull, OSWindows, RoleFull, OSWindows},
-		{RoleLite, OSNone, RoleLite, OSNone},
-		{RolePhone, OSAndroid, RolePhone, OSAndroid},
+	for i, tc := range []struct{ role, os string }{
+		{RoleFull, ""},
+		{RoleFull, OSWindows},
+		{RoleFull, OSMacOS},
+		{RoleShortcut, OSiOS},
+		{RoleLite, OSNone},
+		{RolePhone, OSAndroid},
 	} {
 		key := KeyHash{byte(i + 1)}
 		dev := NewDeviceID()
-		r, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(admin.GroupCA.Cert), Device: dev, Name: "d",
+		r, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(admin.GroupCA.Cert), Device: string(dev), Name: "d",
 			Role: tc.role, OS: tc.os, Key: &key}, admin.GroupCA.Key)
 		if err != nil {
 			t.Fatalf("%s/%s: %v", tc.role, tc.os, err)
 		}
-		s.AddAll([]Record{r})
+		mustAdd(t, s, r)
+		found := false
 		for _, d := range s.Devices() {
-			if d.ID == dev && (d.Role != tc.wantRole || d.OS != tc.wantOS) {
-				t.Errorf("%s/%s reads as %s/%s", tc.role, tc.os, d.Role, d.OS)
+			if d.ID == dev {
+				found = true
+				if d.Role != tc.role || d.OS != tc.os {
+					t.Errorf("%s/%s reads as %s/%s", tc.role, tc.os, d.Role, d.OS)
+				}
 			}
+		}
+		if !found {
+			t.Errorf("%s/%s is not listed", tc.role, tc.os)
 		}
 	}
 	key := KeyHash{99}
 	for _, bad := range []RecordBody{
-		{Type: RecordDevice, Device: admin.ID, Name: "d", Role: "computer", Key: &key},
-		{Type: RecordDevice, Device: admin.ID, Name: "d", Role: RoleFull, OS: "darwin", Key: &key},
+		{Type: RecordDevice, Device: string(admin.ID), Name: "d", Role: "linux", Key: &key},
+		{Type: RecordDevice, Device: string(admin.ID), Name: "d", Role: "mac", Key: &key},
+		{Type: RecordDevice, Device: string(admin.ID), Name: "d", Role: "iphone", Key: &key},
+		{Type: RecordDevice, Device: string(admin.ID), Name: "d", Role: "computer", Key: &key},
+		{Type: RecordDevice, Device: string(admin.ID), Name: "d", Role: RoleFull, OS: "darwin", Key: &key},
 	} {
 		bad.Group = Tag(admin.GroupCA.Cert)
-		if _, err := SignRecord(bad, admin.GroupCA.Key); err == nil {
+		if _, err := signRecord(bad, admin.GroupCA.Key); err == nil {
 			t.Errorf("signed %+v", bad)
 		}
 	}
@@ -458,20 +469,22 @@ func TestDeviceWithTwoKeys(t *testing.T) {
 		t.Fatalf("devices %+v, want one with both keys, the newer first in Key", devs)
 	}
 	// Removing only the newer key leaves the older one listed, not hidden.
-	mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{k2}, nil))
+	mustAdd(t, s, revokeRecord(t, g, pg.root, nil, []KeyHash{k2}))
 	devs = s.Devices()
 	if len(devs) != 1 || devs[0].Key != k1 {
 		t.Fatalf("devices %+v, want the device with its older key", devs)
 	}
-	mustAdd(t, s, revokeRecord(t, g, pg.root, nil, devs[0].Keys, nil))
+	mustAdd(t, s, revokeRecord(t, g, pg.root, nil, devs[0].Keys))
 	if len(s.Devices()) != 0 || s.Refused([]*x509.Certificate{first}) == nil {
 		t.Error("removing every key of the device left it in the group")
 	}
 }
 
 // TestAuthorityRecords checks that the records a hub shows its forwarder
-// name the root's own device and the devices it made admins, the demotion
-// of an admin included, but no other device.
+// are all the records it holds: the root's own device's, the admins', a
+// demotion and plain devices' too, since a server evaluates the whole set
+// until servers take only server credentials (docs/records-v2.md, "What
+// else changes with it").
 func TestAuthorityRecords(t *testing.T) {
 	pg := newPhoneGroup(t)
 	tag := Tag(pg.root.Cert)
@@ -480,8 +493,7 @@ func TestAuthorityRecords(t *testing.T) {
 	ak := KeyHashOf(pg.a.Cert)
 	sign := func(dev DeviceID, name string, ms int64, adminKey *KeyHash) Record {
 		t.Helper()
-		r, err := SignRecord(RecordBody{Type: RecordDevice, Group: tag, TimeMS: t0.UnixMilli() + ms, By: root,
-			Device: dev, Name: name, Role: RolePhone, Key: key(), Admin: adminKey}, pg.root.Key)
+		r, err := signRecord(RecordBody{Type: RecordDevice, Group: tag, TimeMS: t0.UnixMilli() + ms, Device: string(dev), Name: name, Role: RolePhone, Key: key(), Admin: adminKey}, pg.root.Key)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -496,13 +508,10 @@ func TestAuthorityRecords(t *testing.T) {
 	for _, r := range s.AuthorityRecords() {
 		got[r.ID()] = true
 	}
-	for name, r := range map[string]Record{"the root's own": own, "the admin's": made, "the demotion": demoted} {
+	for name, r := range map[string]Record{"the root's own": own, "the admin's": made, "the demotion": demoted, "a plain device's": other} {
 		if !got[r.ID()] {
 			t.Errorf("%s record is missing", name)
 		}
-	}
-	if got[other.ID()] {
-		t.Error("a plain device's record is shown")
 	}
 }
 

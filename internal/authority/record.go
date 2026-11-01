@@ -33,6 +33,11 @@ const MaxBody = 8 << 10
 // lists the live records of the whole group.
 const MaxCheckpointBody = 64 << 10
 
+// SealKeySize is the size of a device record's seal: a public key of
+// internal/seal (X-Wing), which a member checks in full before it seals
+// to it.
+const SealKeySize = 1216
+
 // MaxSeq is the largest seq a signer gives a record.
 const MaxSeq = 1<<31 - 1
 
@@ -61,7 +66,11 @@ const (
 	TypeResolve    = "resolve"
 	TypeSettings   = "settings"
 	TypeCheckpoint = "checkpoint"
+	TypeHubs       = "hubs"
 )
+
+// MaxHubs is how many devices a hubs record names.
+const MaxHubs = 16
 
 // The powers an admin's device record may give.
 const (
@@ -164,6 +173,8 @@ type Body struct {
 	// HoldsRoot marks the device that holds the signing root's key; only
 	// in a record a root's own key signed.
 	HoldsRoot bool `json:"holds_root,omitempty"`
+	// Seal is the device's public key for sealed messages (internal/seal).
+	Seal []byte `json:"seal,omitempty"`
 
 	Keys    []Hash `json:"keys,omitempty"`
 	Seen    []Seen `json:"seen,omitempty"`
@@ -174,13 +185,16 @@ type Body struct {
 
 	Heads []Head `json:"heads,omitempty"`
 	Keep  []Hash `json:"keep,omitempty"`
+
+	// Hubs is the user's main hubs, in the order they serve.
+	Hubs []string `json:"hubs,omitempty"`
 }
 
 // fields lists, for each type, the fields beyond those every record has
 // that it may carry; needed lists those it must.
 var (
 	fields = map[string]map[string]bool{
-		TypeDevice:     set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof", "holds_root"),
+		TypeDevice:     set("device", "name", "role", "os", "key", "admin", "powers", "commands", "store", "kind", "proof", "holds_root", "seal"),
 		TypeRevoke:     set("keys", "seen"),
 		TypeFreeze:     set("keys", "seen"),
 		TypeThaw:       set("records"),
@@ -188,6 +202,7 @@ var (
 		TypeResolve:    set("records"),
 		TypeSettings:   set("takeover_delay_ms"),
 		TypeCheckpoint: set("heads", "keep"),
+		TypeHubs:       set("hubs"),
 	}
 	common = []string{"v", "alg", "type", "group", "signer", "seq", "time_ms"}
 )
@@ -220,6 +235,7 @@ func (b *Body) present() []string {
 	add(b.Kind != "", "kind")
 	add(b.Proof != "", "proof")
 	add(b.HoldsRoot, "holds_root")
+	add(len(b.Seal) > 0, "seal")
 	add(len(b.Keys) > 0, "keys")
 	add(len(b.Seen) > 0, "seen")
 	add(len(b.Records) > 0, "records")
@@ -227,6 +243,7 @@ func (b *Body) present() []string {
 	add(b.TakeoverDelayMS != nil, "takeover_delay_ms")
 	add(len(b.Heads) > 0, "heads")
 	add(len(b.Keep) > 0, "keep")
+	add(len(b.Hubs) > 0, "hubs")
 	return names
 }
 
@@ -342,6 +359,24 @@ func (b *Body) check() error {
 			}
 		}
 		return sortedHashes(b.Keep, "keep")
+	case TypeHubs:
+		return checkHubs(b.Hubs)
+	}
+	return nil
+}
+
+// checkHubs checks a hubs record's hubs: 1 to MaxHubs device IDs, each
+// once, in the user's order.
+func checkHubs(hubs []string) error {
+	if len(hubs) == 0 || len(hubs) > MaxHubs {
+		return fmt.Errorf("authority: a hubs record names %d devices, not 1 to %d", len(hubs), MaxHubs)
+	}
+	seen := map[string]bool{}
+	for _, h := range hubs {
+		if !deviceID(h) || seen[h] {
+			return errors.New("authority: a hubs record's hubs are not device IDs, each once")
+		}
+		seen[h] = true
 	}
 	return nil
 }
@@ -372,6 +407,9 @@ func (b *Body) checkDevice() error {
 	}
 	if b.Admin == nil && (len(b.Powers) > 0 || len(b.Commands) > 0) {
 		return errors.New("authority: powers and commands come only with admin")
+	}
+	if len(b.Seal) > 0 && len(b.Seal) != SealKeySize {
+		return fmt.Errorf("authority: a device record's seal is %d bytes, not %d", len(b.Seal), SealKeySize)
 	}
 	if err := sortedOf(b.Powers, Powers, "powers"); err != nil {
 		return err
@@ -462,6 +500,21 @@ type Record struct {
 	Body  []byte   `json:"body"`
 	Sig   []byte   `json:"sig"`
 	Chain [][]byte `json:"chain"`
+}
+
+// MarshalJSON writes the envelope with chain, empty for a root's own key,
+// as the records Sign makes and a set keeps carry it; a record that never
+// had one (nil), as a test's made-up record, is written without it, as
+// version 1 wrote such records, never with a null chain.
+func (r Record) MarshalJSON() ([]byte, error) {
+	if r.Chain == nil {
+		return json.Marshal(struct {
+			Body []byte `json:"body"`
+			Sig  []byte `json:"sig"`
+		}{r.Body, r.Sig})
+	}
+	type plain Record
+	return json.Marshal(plain(r))
 }
 
 // ID returns the record ID: SHA-256 over the body.

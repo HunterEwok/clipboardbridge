@@ -39,14 +39,11 @@ final class VerdictTests: XCTestCase {
     func verdict(_ c: Case) -> String {
         let body = c.body ?? Data()
         switch c.kind {
-        case "record":
-            guard let b = Records.Body.decode(body) else { return "refused" }
-            return taken([
-                ("type", hex(b.type)), ("group", hex(b.group)), ("time_ms", String(b.time_ms)), ("by", hex(b.by)),
-                ("device", hex(b.device)), ("name", hex(b.name)), ("role", hex(b.role)), ("os", hex(b.os)),
-                ("store", hex(b.store)), ("key", hex(b.key)), ("admin", hex(b.admin)), ("keys", hashes(b.keys)),
-                ("keep", hashes(b.keep)), ("root", hex(b.root)), ("records", hashes(b.records)),
-            ])
+        case "record", "set":
+            // The phones read records v2 only through the Rust core
+            // (docs/core-api.md), which the comparison reads as rust: the
+            // kit's own reader of version 1 has no verdict on them.
+            return "skip"
         case "command":
             return refused {
                 let b = try Commands.parse(body)
@@ -81,30 +78,10 @@ final class VerdictTests: XCTestCase {
                 }
                 return "taken"
             }
-        case "set":
-            return set(c)
         default:
             XCTFail("unknown kind \(c.kind)")
             return ""
         }
-    }
-
-    func set(_ c: Case) -> String {
-        // The kits refuse legacy groups (docs/protocol.md, section 2): a
-        // group CA of path length 0 that a root record hands to a root, as
-        // cbb upgrade does.
-        let legacy = (try? ParsedCertificate(der: c.ca ?? Data()))?.pathLength == 0
-        if legacy, (c.records ?? []).contains(where: { Records.Body.decode($0.body)?.type == "root" }) { return "skip" }
-        var set = RecordSet()
-        let fresh = set.addAll(c.records ?? [], groupCA: c.ca ?? Data())
-        let roots = set.roots.map { hex(sha($0)) }.joined(separator: ".")
-        let devices = set.devices.map {
-            [hex($0.id), hex($0.name), hex($0.role), hex($0.store), bit($0.admin), hex($0.adminKey), bit($0.frozen)].joined(separator: ":")
-        }.joined(separator: ".")
-        let keys = c.keys ?? []
-        let revoked = keys.map { bit(set.revoked.contains($0)) }.joined()
-        let frozen = keys.map { bit(set.isFrozen($0)) }.joined()
-        return "set taken=\(fresh.count) roots=\(roots) devices=\(devices) revoked=\(revoked) frozen=\(frozen) digest=\(set.digest ?? "")"
     }
 
     func testVerdicts() throws {
@@ -119,7 +96,7 @@ final class VerdictTests: XCTestCase {
         if input != nil {
             try out.write(toFile: env["CBB_VERDICTS_OUT"]!, atomically: true, encoding: .utf8)
         } else {
-            XCTAssertEqual(out, "refused\nrefused\n")
+            XCTAssertEqual(out, "skip\nrefused\n")
         }
     }
 }

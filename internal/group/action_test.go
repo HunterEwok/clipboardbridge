@@ -5,11 +5,10 @@ package group
 
 import (
 	"crypto/x509"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
 func TestValidActionName(t *testing.T) {
@@ -32,15 +31,29 @@ func TestActionCommand(t *testing.T) {
 			TimeMS: now.UnixMilli(), ExpiresMS: now.Add(CommandLifetime).UnixMilli(), Action: action}
 	}
 	s := NewRecords(pg.root.Cert)
-	c, err := SignCommand(body(CommandAction, "reboot"), pg.a.Key, pg.a.Cert)
+	unlisted, err := SignCommand(body(CommandAction, "reboot"), pg.a.Key, pg.a.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.VerifyCommand(unlisted, to, now); err == nil {
+		t.Error("a command from an admin whose device has no record here was taken")
+	}
+	// An admin gives commands once the records list its device.
+	aM := member(t, pg.a)
+	if _, err := s.Add(adminRecord(t, pg.root.Cert, pg.root, nil, aM, "phone a", KeyHashOf(pg.a.Cert))); err != nil {
+		t.Fatal(err)
+	}
+	listed := body(CommandAction, "reboot")
+	listed.By = DeviceID(aM.Subject.CommonName)
+	c, err := SignCommand(listed, pg.a.Key, pg.a.Cert)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.VerifyCommand(c, to, now); err != nil || got.Action != "reboot" {
 		t.Errorf("the action command: %+v, %v", got, err)
 	}
-	if _, root, ok := s.CommandSigner(c); root || ok {
-		t.Errorf("an admin whose device has no record here: root %v, found %v", root, ok)
+	if d, root, ok := s.CommandSigner(c); root || !ok || d.ID != listed.By {
+		t.Errorf("a listed admin: %+v, root %v, found %v", d, root, ok)
 	}
 	withMode := body(CommandAction, "lock")
 	withMode.Mode = "own"
@@ -86,36 +99,33 @@ type actionVectors struct {
 	Commands []actionVector `json:"commands"`
 }
 
-// TestGoActionVectors writes (with -update) and checks
-// testdata/interop/go-actions.json: action and actions-off commands for a
-// lite member, signed by the root phone, an admin phone, an admin computer
-// with its keys in a file and one with them in a TPM, and which device each
-// signer is (docs/protocol.md, section 15), for the lite member and the
-// phone kits to agree with.
+// TestGoActionVectors checks action and actions-off commands for a lite
+// member, signed by the root phone, an admin phone, an admin computer with
+// its keys in a file and one with them in a TPM, and which device each
+// signer is (docs/protocol.md, section 15), in records v:2; the records of
+// testdata/interop/go-actions.json are v:1 and refused.
 func TestGoActionVectors(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "interop", "go-actions.json")
-	if *update {
+	checkV1Refused(t, "go-actions.json")
+	var v actionVectors
+	{
 		pg := newPhoneGroup(t)
 		g := pg.root.Cert
 		phone, pc, tpm := pg.a, pg.b, adminCA(t, pg.root)
 		rootPhone, self := member(t, pg.root), member(t, pg.root)
 		selfID, rootID := DeviceID(self.Subject.CommonName), DeviceID(rootPhone.Subject.CommonName)
 		rootKey, selfKey := KeyHashOf(rootPhone), KeyHashOf(self)
-		own, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 1, By: rootID,
-			Device: rootID, Name: "root phone", Role: RolePhone, OS: OSiOS, Key: &rootKey}, pg.root.Key)
+		own, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 1, Device: string(rootID), Name: "root phone", Role: RolePhone, OS: OSiOS, Key: &rootKey, HoldsRoot: true}, pg.root.Key)
 		if err != nil {
 			t.Fatal(err)
 		}
-		lite, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 2, By: rootID,
-			Device: selfID, Name: "pi", Role: RoleLite, OS: OSLinux, Key: &selfKey}, pg.root.Key)
+		lite, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 2, Device: string(selfID), Name: "pi", Role: RoleLite, OS: OSLinux, Key: &selfKey}, pg.root.Key)
 		if err != nil {
 			t.Fatal(err)
 		}
 		tpmMember := member(t, tpm)
 		tpmKey, tpmAdmin := KeyHashOf(tpmMember), KeyHashOf(tpm.Cert)
-		tpmRecord, err := SignRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 3, By: rootID,
-			Device: DeviceID(tpmMember.Subject.CommonName), Name: "tpm pc", Role: RoleFull, OS: OSLinux, Key: &tpmKey,
-			Admin: &tpmAdmin, Store: StoreHardware}, pg.root.Key)
+		tpmRecord, err := signRecord(RecordBody{Type: RecordDevice, Group: Tag(g), TimeMS: 3, Device: string(DeviceID(tpmMember.Subject.CommonName)), Name: "tpm pc", Role: RoleFull, OS: OSLinux, Key: &tpmKey,
+			Admin: &tpmAdmin, Store: StoreHardware, Powers: computerPowers(false), Commands: authority.Commands}, pg.root.Key)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +151,7 @@ func TestGoActionVectors(t *testing.T) {
 			}
 			return r
 		}
-		v := actionVectors{GroupCA: g.Raw, Records: all, Self: selfID, NowMS: now, Commands: []actionVector{
+		v = actionVectors{GroupCA: g.Raw, Records: all, Self: selfID, NowMS: now, Commands: []actionVector{
 			{Name: "reboot by the root phone", Command: sign(pg.root, nil, CommandAction, "reboot"), OK: true, Action: "reboot",
 				Signer: actionSigner{Root: true, Role: RolePhone, Store: StoreHardware, Found: true}},
 			{Name: "lock by the admin phone", Command: sign(phone, []*x509.Certificate{phone.Cert}, CommandAction, "lock"), OK: true, Action: "lock",
@@ -154,21 +164,6 @@ func TestGoActionVectors(t *testing.T) {
 				Signer: actionSigner{Role: RoleFull, Store: StoreFile, Found: true}},
 			{Name: "a key of another group", Command: sign(newRoot(t), nil, CommandAction, "reboot")},
 		}}
-		data, err := json.MarshalIndent(v, "", "\t")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v actionVectors
-	if err := json.Unmarshal(data, &v); err != nil {
-		t.Fatal(err)
 	}
 	ca, err := x509.ParseCertificate(v.GroupCA)
 	if err != nil {

@@ -38,6 +38,7 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/clip"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
+	"github.com/HunterEwok/clipboardbridge/internal/seal"
 	"github.com/HunterEwok/clipboardbridge/internal/uptime"
 )
 
@@ -140,6 +141,11 @@ type Config struct {
 	// Releases, if set, keeps the newest signed release, which goes to
 	// every peer whose hello names an older one.
 	Releases ReleaseStore
+
+	// SealKey, if set, is this member's public key for sealed messages
+	// (internal/seal), which its hello offers so that the group's root or
+	// an admin puts it in its device record (docs/protocol.md, section 15).
+	SealKey []byte
 
 	// TunnelKey, if set, is this member's WireGuard public key, which its
 	// hello offers the group's hubs, with TunnelPSK, its own preshared key.
@@ -248,9 +254,6 @@ type Peer struct {
 	AdminKey []byte
 	// Chain is the certificate chain its handshake verified, leaf first.
 	Chain []*x509.Certificate
-	// OldKeys tells that its hello says it holds the group CA key of a
-	// legacy group.
-	OldKeys bool
 	// Mode is the sync mode its hello reports; "" when it reports none.
 	Mode string
 	// KeyStore is where its hello says its keys live: group.StoreFile or
@@ -261,6 +264,9 @@ type Peer struct {
 	Actions []string
 	// Media tells that its hello says it serves content.
 	Media bool
+	// Seal is the public key for sealed messages its hello offers, of the
+	// right size; nil when it offers none.
+	Seal  []byte
 	Since time.Duration // uptime when the connection started
 	// Local is this end's address of the connection; invalid when it is
 	// not an IP connection.
@@ -397,7 +403,7 @@ func (n *Node) run(ctx context.Context, tc *tls.Conn, dialed bool) error {
 	}
 	if n.cfg.Allow != nil {
 		if err := n.cfg.Allow(id, chain); errors.Is(err, group.ErrRecordsOnly) {
-			return n.recordsOnly(ctx, tc, id, chain)
+			return n.recordsOnly(ctx, tc, id, chain, err)
 		}
 	}
 	c := &conn{n: n, id: id, tc: tc, lowerDialed: dialed == (n.identity().ID < id), peerCert: chain[0], peerChain: chain, out: make(chan outgoing, queueLen),
@@ -484,17 +490,55 @@ func linger(raw net.Conn) {
 // last records came.
 const recordsQuiet = 5 * time.Second
 
-// recordsOnly runs a connection with a root that an admin took the group
-// over from (group.ErrRecordsOnly): the two exchange records and nothing
-// else, so that the old root, if it is still in use, learns of the
-// takeover and its removal of that admin reaches the group (docs/protocol.md,
-// section 10, "Handing the group over"). The connection ends once the
-// records let the peer in again, when it would connect anew as a member,
-// or when no records came for recordsQuiet. This member sends no clipboard,
-// credentials or anything else on it, and takes nothing but records.
-func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID, chain []*x509.Certificate) error {
+// recordsRecheck is how often a records-only connection asks again whether
+// the records let the peer in, for records that came over another
+// connection.
+const recordsRecheck = 250 * time.Millisecond
+
+// ErrLetIn ends a records-only connection once the records let the peer
+// in: whoever dialed connects again at once, as a member.
+var ErrLetIn = errors.New("node: the records let the peer in")
+
+// recordsOnly runs a connection that carries records only
+// (group.ErrRecordsOnly, why says which): with a root that an admin took
+// the group over from, so that the old root, if it is still in use, learns
+// of the takeover and its cancel reaches the group (docs/records-v2.md,
+// "Handing the group over"), or with a member that no device record here
+// names yet (group.ErrNotListed), so that the records reach whichever of
+// the two lacks them. The connection ends with ErrLetIn once the records
+// let the peer in, those it brought or those another member did, when it
+// would connect anew as a member, or with nil when no records came for
+// recordsQuiet. This member sends no clipboard, credentials or anything
+// else on it, and takes nothing but records.
+func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID, chain []*x509.Certificate, why error) error {
 	stop := context.AfterFunc(ctx, func() { tc.NetConn().Close() })
 	defer stop()
+	// Records from another member may let the peer in while this
+	// connection waits: the check closes the socket, and the read below
+	// ends.
+	letIn := make(chan struct{})
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		t := time.NewTicker(recordsRecheck)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				if n.cfg.Allow(id, chain) == nil {
+					close(letIn)
+					tc.NetConn().Close()
+					return
+				}
+			}
+		}
+	}()
+	admitted := func() error {
+		n.cfg.Logf("node: the records let %s in; it connects again as a member", id)
+		return ErrLetIn
+	}
 	st := n.cfg.Records
 	write := func(m *message) error {
 		f, err := frame(m)
@@ -516,11 +560,16 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 	if err := write(&message{Type: typeHello, Role: n.cfg.Role, Hello: data}); err != nil {
 		return err
 	}
-	n.cfg.Logf("node: %s is a root the group was taken over from; exchanging records only", id)
+	n.cfg.Logf("node: %s: %v; exchanging records only", id, why)
 	for first := true; ; first = false {
 		tc.SetReadDeadline(time.Now().Add(recordsQuiet))
 		m, err := readMessage(tc, n.cfg.Timeout)
 		if err != nil {
+			select {
+			case <-letIn:
+				return admitted()
+			default:
+			}
 			if first {
 				return err
 			}
@@ -551,8 +600,7 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 				st.Settle(fresh)
 			}
 			if n.cfg.Allow(id, chain) == nil {
-				n.cfg.Logf("node: %s undid the takeover; it connects again as a member", id)
-				return nil
+				return admitted()
 			}
 		}
 	}
@@ -690,11 +738,11 @@ func (n *Node) Peers() []Peer {
 	for _, c := range n.conns {
 		if role := c.role(); role != "" {
 			c.mu.Lock()
-			adminKey, oldKeys, device, mode, store, acts, media := c.peerAdminKey, c.peerOldKeys, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia
+			adminKey, device, mode, store, acts, media, sealKey := c.peerAdminKey, c.peerDevice, c.peerMode, c.peerKeyStore, c.peerActions, c.peerMedia, c.peerSeal
 			c.mu.Unlock()
 			local, _ := netip.ParseAddrPort(c.tc.LocalAddr().String())
 			out = append(out, Peer{ID: c.id, Role: role, Name: c.name(), OS: c.os(), Device: device, Key: group.KeyHashOf(c.peerCert), Chain: c.peerChain, AdminKey: adminKey,
-				OldKeys: oldKeys, Mode: mode, KeyStore: store, Actions: acts, Media: media, Since: c.since, Local: local.Addr().Unmap()})
+				Mode: mode, KeyStore: store, Actions: acts, Media: media, Seal: sealKey, Since: c.since, Local: local.Addr().Unmap()})
 		}
 	}
 	slices.SortFunc(out, func(a, b Peer) int { return strings.Compare(string(a.ID), string(b.ID)) })
@@ -1231,11 +1279,11 @@ type conn struct {
 	// the iPhone CA that the peer's hello names.
 	peerAdminKey []byte
 	peerPhoneCA  []byte
-	peerOldKeys  bool     // the peer's hello says it holds a legacy group CA key
 	peerMode     string   // the sync mode its hello reports; "" when none or unknown
 	peerKeyStore string   // where its hello says its keys live; "" when it says neither
 	peerActions  []string // the quick actions its hello says are on
 	peerMedia    bool     // its hello says it serves content
+	peerSeal     []byte   // the key for sealed messages its hello offers
 	certSent     bool     // a renewed certificate was queued for the peer
 	sayBye       bool
 	done         chan struct{} // closed to end the connection
@@ -1408,7 +1456,6 @@ func (c *conn) message(o outgoing) (*message, error) {
 			h := group.KeyHashOf(id.PhoneCA.Cert)
 			out.PhoneCA = h[:]
 		}
-		out.OldKeys = id.Legacy() && id.GroupCA.Key != nil
 		if c.n.cfg.Records != nil {
 			out.Records = c.n.cfg.Records.Digest()
 		}
@@ -1419,6 +1466,7 @@ func (c *conn) message(o outgoing) (*message, error) {
 		if k := c.n.tunnelKey.Load(); k != nil {
 			out.TunnelKey, out.TunnelPSK = k[0], k[1]
 		}
+		out.Seal = c.n.cfg.SealKey
 		data, err := encode(out)
 		if err != nil {
 			return nil, err
@@ -1593,7 +1641,11 @@ func (c *conn) reader() error {
 			if extra.Device != nil {
 				c.peerDevice = extra.Device.Clean()
 			}
-			c.peerAdminKey, c.peerPhoneCA, c.peerOldKeys = extra.AdminKey, extra.PhoneCA, extra.OldKeys
+			c.peerAdminKey, c.peerPhoneCA = extra.AdminKey, extra.PhoneCA
+			c.peerSeal = nil
+			if len(extra.Seal) == seal.PublicKeySize {
+				c.peerSeal = extra.Seal
+			}
 			c.peerKeyStore = ""
 			if extra.KeyStore == group.StoreFile || extra.KeyStore == group.StoreHardware || extra.KeyStore == group.StoreRootless {
 				c.peerKeyStore = extra.KeyStore

@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -105,6 +107,28 @@ func seeds(dir string) ([]Case, error) {
 	for _, f := range mutants {
 		if err := read(filepath.Base(f), map[string]string{"records": "record"}); err != nil {
 			return nil, err
+		}
+	}
+	// The bodies of records v2, which the others read, from the cases of
+	// the state's vectors, when the directory has them.
+	data, err := os.ReadFile(filepath.Join(dir, "v2-records.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var v2 struct {
+		Cases []struct {
+			Records []Record `json:"records"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &v2); err != nil {
+		return nil, fmt.Errorf("v2-records.json: %w", err)
+	}
+	for _, c := range v2.Cases {
+		for _, r := range c.Records {
+			out = append(out, Case{Kind: "record", Body: r.Body})
 		}
 	}
 	return out, nil
@@ -375,7 +399,7 @@ func writeSeeds(dir, out string) error {
 // the core's entry point (docs/core-api.md): each case of v2-records.json
 // as the arguments of evaluate, and of evaluate_saved with a secret, the
 // version, and the first 100 record bodies for check_body and
-// canonicalize.
+// canonicalize, and each chain of member-chains.json for check_member.
 func writeAPISeeds(dir, out string, base []Case) error {
 	data, err := os.ReadFile(filepath.Join(dir, "v2-records.json"))
 	if err != nil {
@@ -425,6 +449,25 @@ func writeAPISeeds(dir, out string, base []Case) error {
 			return err
 		}
 		if err := add("canonicalize", body); err != nil {
+			return err
+		}
+	}
+	chains, err := os.ReadFile(filepath.Join(dir, "member-chains.json"))
+	if err != nil {
+		return err
+	}
+	var mc struct {
+		Cases []map[string]json.RawMessage `json:"cases"`
+	}
+	if err := json.Unmarshal(chains, &mc); err != nil {
+		return fmt.Errorf("member-chains.json: %w", err)
+	}
+	for _, c := range mc.Cases {
+		args := map[string]json.RawMessage{}
+		for _, k := range []string{"chain", "trusted", "usage", "now_ms"} {
+			args[k] = c[k]
+		}
+		if err := add("check_member", args); err != nil {
 			return err
 		}
 	}

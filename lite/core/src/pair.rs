@@ -18,10 +18,11 @@ use core::cell::RefCell;
 
 use serde::{Deserialize, Serialize};
 
+use crate::authority::Record;
 use crate::certs::{self, Cert, DeviceId, b64};
 use crate::error::{Context, Error, Result, Wrap};
+use crate::group::{ClaimTime, Records};
 use crate::identity::{self, Identity};
-use crate::records::{Record, Records};
 use crate::third_party::cpace;
 use crate::wire;
 
@@ -63,6 +64,9 @@ struct Welcome {
     /// The records that lead to roots, by which the joiner checks them.
     #[serde(default)]
     records: Vec<Record>,
+    /// When the member first held each claim of records.
+    #[serde(default)]
+    claim_times: Vec<ClaimTime>,
     #[serde(with = "b64::opt", default)]
     group_ca_key: Option<Vec<u8>>,
     #[serde(with = "b64::opt", default)]
@@ -216,7 +220,15 @@ impl Joiner {
         .context("cannot start the exchange")?;
         let first = frame(&Frame { msg: Some(msg), ad: Some(ad), ..Default::default() })?;
         Ok((
-            Exchange { joiner: self, st, member_cert, member_first, member: None, records: RefCell::new(Vec::new()) },
+            Exchange {
+                joiner: self,
+                st,
+                member_cert,
+                member_first,
+                member: None,
+                records: RefCell::new(Vec::new()),
+                claim_times: RefCell::new(Vec::new()),
+            },
             first,
         ))
     }
@@ -236,6 +248,9 @@ pub struct Exchange<'a> {
     /// The records the Welcome gave that lead to the group's roots, once
     /// welcome took it: the program keeps them with the identity.
     records: RefCell<Vec<Record>>,
+    /// When the joiner holds each claim of records from, the member's times
+    /// where they are earlier.
+    claim_times: RefCell<Vec<ClaimTime>>,
 }
 
 /// A failed step: the error, and the frame that tells the member, if any.
@@ -274,8 +289,11 @@ impl Exchange<'_> {
 
     /// Takes the member's last frame, which carries the Welcome, and
     /// returns the new identity for the program to store. If it fails, the
-    /// program sends done(false).
-    pub fn welcome(&self, body: &[u8]) -> Result<Identity> {
+    /// program sends done(false). now_ms is the wall clock, in Unix
+    /// milliseconds, or 0 when the device has none: it then takes none of
+    /// the member's times for the claims, and a root a claim made only by
+    /// waiting does not count yet.
+    pub fn welcome(&self, body: &[u8], now_ms: i64) -> Result<Identity> {
         let member =
             self.member.as_ref().ok_or_else(|| Error::msg("the pairing failed: the frames came out of order"))?;
         let last: Frame = decode(body)?;
@@ -286,7 +304,7 @@ impl Exchange<'_> {
         let Some(welcome) = last.welcome.filter(|_| proved) else {
             return Err(Error::msg("the other device did not prove that it knows the code"));
         };
-        self.identity(&welcome, member)
+        self.identity(&welcome, member, now_ms)
     }
 
     /// The records that lead to the group's roots, from the Welcome that
@@ -295,8 +313,13 @@ impl Exchange<'_> {
         self.records.borrow().clone()
     }
 
+    /// When the joiner first held each claim of records, sorted by record.
+    pub fn claim_times(&self) -> Vec<ClaimTime> {
+        self.claim_times.borrow().clone()
+    }
+
     /// Checks what the member sent and builds the new identity.
-    fn identity(&self, w: &Welcome, member: &MemberAd) -> Result<Identity> {
+    fn identity(&self, w: &Welcome, member: &MemberAd, now_ms: i64) -> Result<Identity> {
         let member_cert = &self.member_cert;
         if w.holds_ca_keys() {
             return Err(Error::msg("the member sent CA keys, which a lite member never holds"));
@@ -309,12 +332,15 @@ impl Exchange<'_> {
         // otherwise name a root of its own, and every certificate from it
         // would pass here for good, whatever the group's root removes.
         let mut path = Records::new(&group_ca);
+        path.set_clock(move || now_ms);
         let _ = path.add_all(&w.records);
+        path.take_claim_times(&w.claim_times);
         let roots = path.roots();
         if roots.iter().map(|c| &c.der).ne(w.roots.iter()) {
             return Err(Error::msg("the member's roots are not the ones the group's records lead to"));
         }
         *self.records.borrow_mut() = path.all();
+        *self.claim_times.borrow_mut() = path.claim_times();
         let mut id = Identity {
             id: self.joiner.id.clone(),
             key: self.joiner.key.clone(),

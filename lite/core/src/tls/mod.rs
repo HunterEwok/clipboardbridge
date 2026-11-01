@@ -110,9 +110,7 @@ pub fn check_member(
     now: i64,
 ) -> Result<(DeviceId, Vec<Cert>)> {
     let certs = chain.iter().map(|c| Cert::parse(c)).collect::<Result<Vec<_>>>()?;
-    let dev = certs::verify_member(&certs, trusted, now.max(root_start), usage)?;
-    // Only the leaf and its issuer count, as the peer sends them.
-    let used: Vec<Cert> = certs.into_iter().take(2).collect();
+    let (dev, used) = certs::member_chain(certs, trusted, now.max(root_start), usage)?;
     if let Some(why) = refused(&used) {
         return Err(Error::msg(why));
     }

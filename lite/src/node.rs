@@ -28,7 +28,7 @@ use crate::identity::Identity;
 use crate::identity::Stored as _;
 use crate::pair::home_address;
 use crate::records::Stored as _;
-use crate::records::{Record, Records};
+use crate::records::{Record, Records, Refusal};
 use crate::tls;
 use crate::uptime;
 use crate::wire::{self, Message};
@@ -123,6 +123,10 @@ struct Conn {
     tx: SyncSender<Out>,
     peer: Mutex<Option<(String, String, String)>>, // role, name and system, from the hello
     chain: Vec<Cert>,
+    /// No device record that counts names the peer's key yet: the
+    /// connection carries records and nothing else, until the records let
+    /// the peer in and it connects again as a member.
+    records_only: bool,
     closed: AtomicBool,
     bye: AtomicBool,
 }
@@ -219,6 +223,7 @@ impl Node {
         let conns = self.conns.lock().unwrap();
         let mut out: Vec<Peer> = conns
             .values()
+            .filter(|c| !c.records_only)
             .filter_map(|c| {
                 c.peer.lock().unwrap().clone().map(|(role, name, os)| Peer { id: c.id.clone(), role, name, os })
             })
@@ -288,7 +293,7 @@ impl Node {
     fn forward(&self, ev: &Event, from: Option<&DeviceId>) {
         let now = uptime::now();
         for c in self.conns.lock().unwrap().values() {
-            if Some(&c.id) != from {
+            if Some(&c.id) != from && !c.records_only {
                 self.enqueue(c, Out::Event(ev.clone(), now));
             }
         }
@@ -395,6 +400,7 @@ impl Node {
 
     fn run(&self, sock: TcpStream, conn: tls::Session, id: DeviceId, chain: Vec<Cert>, addr: SocketAddr) -> Result<()> {
         sock.set_read_timeout(Some(TIMEOUT)).context("the connection broke")?;
+        let records_only = matches!(self.records.lock().unwrap().refused(&chain), Some(Refusal::NotListed));
         let (tx, rx) = mpsc::sync_channel(QUEUE_LEN);
         let c = Arc::new(Conn {
             id: id.clone(),
@@ -403,6 +409,7 @@ impl Node {
             tx,
             peer: Mutex::new(None),
             chain,
+            records_only,
             closed: AtomicBool::new(false),
             bye: AtomicBool::new(false),
         });
@@ -414,13 +421,23 @@ impl Node {
             if let Some(old) = conns.insert(id.clone(), c.clone()) {
                 old.close(false);
             }
-            // The connection is in the forwarding set before the engine
-            // makes the hello, so no event falls between the two.
-            let hello = self.engine.connected(id.as_str());
-            let actions = self.actions.read().unwrap().clone();
-            let _ = c.tx.try_send(Out::Hello(hello, uptime::now(), self.engine.mode(), actions));
+            if records_only {
+                // Its hello offers nothing but the records' digest.
+                let hello = Hello { wall: uptime::wall_ms(), current: None };
+                let _ = c.tx.try_send(Out::Hello(hello, uptime::now(), self.engine.mode(), Vec::new()));
+            } else {
+                // The connection is in the forwarding set before the engine
+                // makes the hello, so no event falls between the two.
+                let hello = self.engine.connected(id.as_str());
+                let actions = self.actions.read().unwrap().clone();
+                let _ = c.tx.try_send(Out::Hello(hello, uptime::now(), self.engine.mode(), actions));
+            }
         }
-        self.logf(&format!("cbb: connected to {id} at {addr}"));
+        if records_only {
+            self.logf(&format!("cbb: {id} at {addr}: {}; exchanging records only", Refusal::NotListed.why()));
+        } else {
+            self.logf(&format!("cbb: connected to {id} at {addr}"));
+        }
         let writer = {
             let c = c.clone();
             let records = self.records.clone();
@@ -438,7 +455,9 @@ impl Node {
                 conns.remove(&id);
             }
         }
-        self.engine.disconnected(id.as_str());
+        if !c.records_only {
+            self.engine.disconnected(id.as_str());
+        }
         match &res {
             Ok(()) => self.logf(&format!("cbb: {id} said goodbye")),
             Err(e) => self.logf(&format!("cbb: the connection to {id} ended: {}", e.for_log())),
@@ -467,17 +486,27 @@ impl Node {
                 let name = if crate::records::valid_name(&body.name) { body.name.clone() } else { String::new() };
                 let os = if crate::records::valid_os(&body.os) { body.os.clone() } else { String::new() };
                 *c.peer.lock().unwrap() = Some((m.role.clone(), name, os));
-                let out = self
-                    .engine
-                    .reconcile(c.id.as_str(), h)
-                    .map_err(|e| e.context(format!("bad hello from {}", c.id)))?;
-                self.apply(out, &c.id);
+                if !c.records_only {
+                    let out = self
+                        .engine
+                        .reconcile(c.id.as_str(), h)
+                        .map_err(|e| e.context(format!("bad hello from {}", c.id)))?;
+                    self.apply(out, &c.id);
+                }
                 let st = self.records.lock().unwrap();
                 let mine = st.digest();
                 if !mine.is_empty() && mine != body.records {
                     for chunk in chunk_records(st.all()) {
                         self.enqueue(c, Out::Records(chunk));
                     }
+                }
+                continue;
+            }
+            if c.records_only {
+                match m.kind.as_str() {
+                    "records" if !m.records.is_empty() => self.add_records(&m.records, &c.id),
+                    "bye" => return Ok(()),
+                    _ => {}
                 }
                 continue;
             }
@@ -550,7 +579,9 @@ impl Node {
         let next = ident.with_cert_from(der, issuer)?;
         let chain: Vec<Cert> = std::iter::once(next.cert.clone()).chain(next.issuer.clone()).collect();
         let records = self.records.lock().unwrap();
-        if let Some(why) = records.refused(&chain) {
+        // Its own device record may come after it, as right after joining:
+        // the key is this member's, so that refuses nothing.
+        if let Some(Refusal::Refused(why)) = records.refused(&chain) {
             return Err(Error::msg(why));
         }
         // A removed admin's or an old root's certificates stay valid for
@@ -592,7 +623,7 @@ impl Node {
                 }
             }
             let own: Vec<Cert> = std::iter::once(ident.cert.clone()).chain(ident.issuer.clone()).collect();
-            if st.refused(&own).is_some() {
+            if matches!(st.refused(&own), Some(Refusal::Refused(_))) {
                 self.logf("cbb: this device was removed from the group; join it again to sync");
             }
             fresh
@@ -600,10 +631,20 @@ impl Node {
         // Pass them on, and drop the connections that are refused now.
         let st = self.records.lock().unwrap();
         for c in self.conns.lock().unwrap().values() {
-            if let Some(why) = st.refused(&c.chain) {
-                self.logf(&format!("cbb: closing the connection to {}: {why}", c.id));
-                c.close(false);
-            } else if &c.id != from && c.peer.lock().unwrap().is_some() {
+            match st.refused(&c.chain) {
+                Some(Refusal::Refused(why)) => {
+                    self.logf(&format!("cbb: closing the connection to {}: {why}", c.id));
+                    c.close(false);
+                    continue;
+                }
+                None if c.records_only => {
+                    self.logf(&format!("cbb: the records let {} in; it connects again as a member", c.id));
+                    c.close(false);
+                    continue;
+                }
+                _ => {}
+            }
+            if &c.id != from && c.peer.lock().unwrap().is_some() {
                 for chunk in chunk_records(fresh.clone()) {
                     self.enqueue(c, Out::Records(chunk));
                 }
@@ -688,7 +729,7 @@ fn writer(
                     name,
                     "linux",
                     crate::device::own(),
-                    key.read().unwrap().as_ref().map(|(k, p)| (k.as_slice(), p.as_slice())),
+                    key.read().unwrap().as_ref().filter(|_| !c.records_only).map(|(k, p)| (k.as_slice(), p.as_slice())),
                     mode.name(),
                     &actions,
                     if crate::rootless::is() { "rootless" } else { "file" },

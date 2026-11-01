@@ -222,7 +222,7 @@ jobs:
           rustup default stable
       - name: build (static, linked with rust-lld; see lite/.cargo/config.toml)
         working-directory: lite
-        run: CBB_VERSION="${GITHUB_REF_NAME#v}" cargo build --locked --release --target ${{ matrix.target }}
+        run: CBB_VERSION="${GITHUB_REF_NAME#v}" CBB_SOURCE="$GITHUB_SHA" cargo build --locked --release --target ${{ matrix.target }}
       - name: archive, with the crates' licenses and the installer
         run: sh lite/packaging/archive.sh lite/target/${{ matrix.target }}/release/cbb ${{ matrix.target }} ${{ matrix.name }} "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -254,7 +254,7 @@ jobs:
           "$RUNNER_TEMP/zig/bin/pip" install -q ziglang==0.15.2 cargo-zigbuild==0.24.0
           echo "$RUNNER_TEMP/zig/bin" >>"$GITHUB_PATH"
       - name: build (static, soft float, without sync away from home; see lite/packaging/mips.sh)
-        run: CBB_VERSION="${GITHUB_REF_NAME#v}" sh lite/packaging/mips.sh ${{ matrix.arch }}
+        run: CBB_VERSION="${GITHUB_REF_NAME#v}" CBB_SOURCE="$GITHUB_SHA" sh lite/packaging/mips.sh ${{ matrix.arch }}
       - name: archive, with the crates' licenses and the installer
         run: sh lite/packaging/archive.sh lite/target/${{ matrix.target }}/release/cbb ${{ matrix.target }} ${{ matrix.name }} "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

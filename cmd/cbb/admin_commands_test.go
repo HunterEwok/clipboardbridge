@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -80,6 +81,12 @@ func TestDeviceCommands(t *testing.T) {
 		{name: "rename", args: []string{"rename", "laptop", " work "}, answer: control.Header{Name: "laptop"},
 			check: sent(control.OpRename, func(m *control.Message) bool { return m.Name == "laptop" && m.NewName == " work " }), stdout: "Renamed laptop to work."},
 		{name: "rename without a new name", args: []string{"rename", "laptop"}, code: 2, stderr: "usage: cbb rename"},
+		{name: "takeover delay", args: []string{"takeover-delay", "24h"}, answer: control.Header{},
+			check: sent(control.OpDelay, func(m *control.Message) bool { return m.Value == "24h" }), stdout: "now waits 24h"},
+		{name: "takeover delay without a duration", args: []string{"takeover-delay"}, code: 2, stderr: "usage: cbb takeover-delay"},
+		{name: "hubs", args: []string{"hubs", "deck", "pi"}, answer: control.Header{},
+			check: sent(control.OpHubs, func(m *control.Message) bool { return slices.Equal(m.Hubs, []string{"deck", "pi"}) }), stdout: "deck, pi, in this order"},
+		{name: "hubs without a device", args: []string{"hubs"}, code: 2, stderr: "usage: cbb hubs"},
 		{name: "freeze", args: []string{"freeze", "desk"}, answer: control.Header{Name: "desk"},
 			check: sent(control.OpFreeze, func(m *control.Message) bool { return m.Name == "desk" }), stdout: "Froze desk"},
 		{name: "unfreeze", args: []string{"unfreeze", "desk"}, answer: control.Header{Name: "desk"},
@@ -91,9 +98,7 @@ func TestDeviceCommands(t *testing.T) {
 		{name: "admin refused", args: []string{"admin", "desk"}, answer: refused, check: sent(control.OpAdmin, nil), code: 1, stderr: "only the group's root"},
 		{name: "admin without a device", args: []string{"admin"}, code: 2, stderr: "usage: cbb admin"},
 		{name: "takeover", args: []string{"takeover", "old"}, answer: control.Header{Name: "old"},
-			check: sent(control.OpTakeover, func(m *control.Message) bool { return m.Name == "old" }), stdout: "old is removed from it"},
-		{name: "upgrade", args: []string{"upgrade"}, check: sent(control.OpUpgrade, nil), stdout: "this computer is its root now"},
-		{name: "upgrade with an argument", args: []string{"upgrade", "x"}, code: 2, stderr: "usage: cbb upgrade"},
+			check: sent(control.OpTakeover, func(m *control.Message) bool { return m.Name == "old" }), stdout: "Claimed the group from old"},
 	})
 }
 

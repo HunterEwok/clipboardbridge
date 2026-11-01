@@ -9,12 +9,14 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/seal"
 )
 
 const tag = "0123456789abcdef"
@@ -81,6 +83,11 @@ func TestSignVerify(t *testing.T) {
 		deviceBody(t),
 		{Type: authority.TypeDevice, Group: tag, Seq: 2, Prev: &prev, TimeMS: 5, Device: strings.Repeat("a", 32), Name: "Phone", Role: "phone", Key: &k, Admin: &k,
 			Powers: []string{authority.PowerTakeover, authority.PowerAdmit}, Commands: []string{"paste", "mode"}, HoldsRoot: true},
+		func() authority.Body {
+			b := deviceBody(t)
+			b.Seal = sealKey(t)
+			return b
+		}(),
 		{Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{3}, {2}}, Seen: []authority.Seen{{Key: authority.Hash{9}, Seq: 0}, {Key: authority.Hash{4}, Seq: 7}}},
 		{Type: authority.TypeFreeze, Group: tag, Seq: 1, Keys: []authority.Hash{{2}}, Seen: []authority.Seen{{Key: authority.Hash{2}, Seq: 3}}},
 		{Type: authority.TypeThaw, Group: tag, Seq: 1, Records: []authority.Hash{{5}}},
@@ -90,6 +97,7 @@ func TestSignVerify(t *testing.T) {
 		{Type: authority.TypeSettings, Group: tag, Seq: 1},
 		{Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{2}, Seq: 4, ID: authority.Hash{7}}, {Key: authority.Hash{1}, Seq: 1, ID: authority.Hash{8}}}},
 		bigCheckpoint(),
+		{Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("b", 32), strings.Repeat("a", 32)}},
 	}
 	for _, b := range bodies {
 		for _, admin := range []bool{false, true} {
@@ -226,6 +234,27 @@ func TestSignRefuses(t *testing.T) {
 		"a checkpoint without heads": {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Keep: []authority.Hash{{1}}},
 		"a head with seq 0":          {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{1}, ID: authority.Hash{2}}}},
 		"heads twice":                {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{1}, Seq: 1}, {Key: authority.Hash{1}, Seq: 2}}},
+		"hubs empty":                 {Type: authority.TypeHubs, Group: tag, Seq: 1},
+		"hubs twice":                 {Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("a", 32), strings.Repeat("a", 32)}},
+		"a hub not a device ID":      {Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("A", 32)}},
+		"17 hubs": func() authority.Body {
+			b := authority.Body{Type: authority.TypeHubs, Group: tag, Seq: 1}
+			for i := range authority.MaxHubs + 1 {
+				b.Hubs = append(b.Hubs, fmt.Sprintf("%032x", i))
+			}
+			return b
+		}(),
+		"a seal one byte short": func() authority.Body {
+			b := deviceBody(t)
+			b.Seal = sealKey(t)[1:]
+			return b
+		}(),
+		"a seal one byte long": func() authority.Body {
+			b := deviceBody(t)
+			b.Seal = append(sealKey(t), 0)
+			return b
+		}(),
+		"a seal on a revoke": {Type: authority.TypeRevoke, Group: tag, Seq: 1, Keys: []authority.Hash{{1}}, Seen: []authority.Seen{{Key: authority.Hash{1}}}, Seal: make([]byte, authority.SealKeySize)},
 		"a device over 8 KiB": func() authority.Body {
 			b := deviceBody(t)
 			b.Proof = strings.Repeat("a", authority.MaxBody)
@@ -242,5 +271,26 @@ func TestSignRefuses(t *testing.T) {
 		if _, err := authority.Sign(b, f.root.Key, nil); err == nil {
 			t.Errorf("%s: signed", name)
 		}
+	}
+}
+
+// sealKey returns a new public key for sealed messages.
+func sealKey(t *testing.T) []byte {
+	t.Helper()
+	secret, err := seal.GenerateSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := seal.PublicKey(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+// TestSealKeySize keeps the records' size of a seal that of internal/seal.
+func TestSealKeySize(t *testing.T) {
+	if authority.SealKeySize != seal.PublicKeySize {
+		t.Fatalf("SealKeySize %d, seal.PublicKeySize %d", authority.SealKeySize, seal.PublicKeySize)
 	}
 }

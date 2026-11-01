@@ -253,6 +253,10 @@ func programKind(data []byte) string {
 		return "Mach-O"
 	case bytes.HasPrefix(data, []byte("MZ")) && len(data) >= 0x40 && isPE(data):
 		return "PE"
+	case bytes.HasPrefix(data, []byte("\x00asm\x01\x00\x00\x00")):
+		// A WebAssembly module, such as the core's for wazero
+		// (internal/core/cbb_core.wasm, built by lite/wasm/build.sh).
+		return "WebAssembly"
 	}
 	return ""
 }

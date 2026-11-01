@@ -485,7 +485,6 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `os` | string or absent | the sender's operating system: `linux`, `windows`, `macos`, `ios`, `android` or `none` (firmware without one); shown, never trusted; a receiver ignores an unknown one. A watch's device record says `watchos` or `wearos` (section 10) |
 | `admin_key` | string or absent | from a full member that is neither the root nor an admin yet, or an admin whose admin CA is from a root before the current one, outside a legacy group: the SubjectPublicKeyInfo of its admin key, DER in base64 (section 10, "Admins") |
 | `phone_ca` | string or absent | from a member that holds the iPhone CA key: SHA-256 of that CA's SubjectPublicKeyInfo, in base64, so another admin knows whether to send it a newer one (section 10, "Admins") |
-| `old_keys` | bool or absent | `true` from a member that holds the group CA key of a legacy group, which it deletes once the group is upgraded (section 10, "Upgrading a legacy group") |
 | `tunnel_key` | string or absent | the sender's WireGuard public key, 32 bytes in base64, for the group's hubs (section 11) |
 | `tunnel_psk` | string or absent | with `tunnel_key`: the WireGuard preshared key the sender chose for its tunnels, 32 bytes in base64, which every hub of the group uses for it (section 11, "Several hubs"); absent from a version before 0.5 |
 | `mode` | string or absent | the sender's sync mode: `own`, `shared`, `receive` or `send` (design.md, "Sync modes"); shown, never trusted; a receiver ignores an unknown one. It changes only what the sender itself does with its clipboard, so a receiver handles the sender's events the same in every mode. Absent from a member before 0.5, which shares |
@@ -495,6 +494,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `release_seq` | integer or absent | the `seq` of the channel file of the newest signed release the sender holds (section 16, "In the group"); absent when it holds none, and from a member before 0.6 |
 | `release_keys_seq` | integer or absent | with `release_seq`: the `seq` of that release's `keys.json`; absent from a member before 0.6, which a receiver reads as 0 |
 | `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
+| `seal` | string or absent | the sender's public key for sealed messages, 1216 bytes in base64 (an X-Wing key, `internal/seal`), which the group's root puts in the sender's device record (`seal`, docs/records-v2.md) so that commands for it can be sealed (section 15); a key of another size is ignored; absent from a member before 0.6 and from the lite member and the phones for now |
 
 ### Device
 
@@ -845,7 +845,8 @@ peer cannot put words in front of the user.
 | `issuer` | bytes, DER | only from an admin phone or computer: its admin CA (section 10), which issued `cert` |
 | `group_ca` | bytes, DER | always: the group's first root, which names the group |
 | `roots` | array of bytes, DER | only in a phone group that `root` records handed to new roots (section 10): those roots in order, the current one last |
-| `records` | array of record envelopes (section 10) | with `roots`: the records that lead to them, the **path records**: each `root` record on the path and, for one an admin CA signed, the `device` records its root's own key signed that name that admin CA in `admin` or that are the root's own (`by` = `device`) |
+| `records` | array of record envelopes (section 10) | the group's records (records-v2.md), so the new device takes its peers at once; always with `roots`, which they must lead to; otherwise left out when they do not fit in the frame, and the new device gets them over connections that carry records only |
+| `claim_times` | array of `{record, ms}` | with `records` that hold a claim: when the admitting member first held each claim, in Unix milliseconds; the joiner takes a time that is earlier than its own and not in the future, so a claim that took effect there takes effect on the joiner too (records-v2.md, "Handing the group over") |
 | `group_ca_key` | bytes, PKCS #8 DER | only in a legacy group (section 2), when ADa `os` is `linux` or `windows` without `role` `lite` |
 | `phone_ca` | bytes, DER | likewise |
 | `phone_ca_key` | bytes, PKCS #8 DER | likewise |
@@ -1111,6 +1112,7 @@ Header fields (all omitted when empty):
 | `html` | bool | `watch`: the same for formatted text, a copy with a `text/html` part whose plain-text alternative is its text; such a watcher reports formatted text with `copied-media` and the text as the alternative, and the others get the text |
 | `act` | bool | `watch`: the watcher runs the quick actions in its session: the presets on a Mac and on Windows, the user's own actions everywhere |
 | `command` | array | `act`, and `action-set`'s action: the program and arguments of the user's own action |
+| `hubs` | array | `hubs`: the group's main hubs by name or device ID, in the order they serve |
 | `refused` | bool | `injected`, `acted`: the target refused, rather than failed |
 | `keys` | string | `inject` to a `desktop` watcher: the grant that its desktop connector hands the uinput helper; `keys`: that grant |
 | `keyboard` | object | `keyboard on`: the Bluetooth keyboard's settings, `{layout?, rate?, pastes?}`; in `status`, also `{on?, connected?, visible_until_ms?, problem?}` |
@@ -1747,8 +1749,9 @@ identity (mode 0600) and the path in the identity file's `roots`.
 | `away` | `{name: "on", consent}`, `{name: "off"}`, `{name: "off", device}`, `{name: "hub", addrs, port, forwarder, forwarder_key, obfuscate?, vless?}`, `{name: "move", device, forwarder?, forwarder_key?, addrs?}` or `{name: "relay", relay, relay_key, consent}` | `{status, done}` or an error. `on` makes the tunnel key and needs `consent` on a device whose keys sit in files (every computer whose keys are not in a TPM); `off` deletes `tunnel.json`, and with `device`, on an admin, sends that device an `away-off` command (section 15); `hub` makes this device the group's hub, reached at `addrs` (`ip:port`) on UDP `port`, and through the forwarder at `forwarder` (`ip:port`) whose key `forwarder_key` pins (section 13); at most 8 addresses with the forwarder's, and at least one of them; `relay` makes this device meet the others at the blind relay at `relay` (`ip:port`) whose key `relay_key` pins, in place of a hub or its offer (section 14), and needs `consent`, since the relay learns which devices talk; `move`, on the hub, an admin, makes the member `device` the hub in its place with a signed `hub` command (section 15), reached at `addrs` and through `forwarder`, or through this hub's forwarder when none are given; `obfuscate` and `vless` with `hub` are the settings of section 11. Members connect again afterwards, so their hellos carry the change (section 11) |
 | `revoke` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin: a member that holds the group CA key, or one with an admin CA; a device cannot remove itself; a key holder of a legacy group cannot be removed yet, since it holds the CA keys; the root is removed only by the admin that takes the group over (`takeover`); removing an admin of a group a computer created replaces the iPhone CA ("Admins") and needs the iPhone CA key |
 | `admin` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on the root computer: makes the connected full member an admin ("Admins") |
-| `upgrade` | none | `{done}` or an error. Only on a member that holds the keys of a legacy group: gives the group a root, this member ("Upgrading a legacy group") |
-| `takeover` | `{name}`: the lost root, a device ID or a name (case-insensitive) | `{name, done}` or an error. Only on an admin computer of a group whose root is a computer, and holding the iPhone CA: takes the group over from the root that name names and removes it ("Handing the group over") |
+| `takeover` | `{name}`: the lost root, a device ID or a name (case-insensitive) | `{name, done}` or an error. Only on an admin computer of a group whose root is a computer, and holding the iPhone CA: signs a `claim` against the root that name names, which takes effect when the root's takeover delay has passed on each member, unless the root cancels it (records-v2.md, "Handing the group over") |
+| `takeover-delay` | `{value}`: a duration from `0s` to `168h` | `{done}` or an error. Only on the group's root: signs a `settings` record with `takeover_delay_ms`, how long a claim waits on each member |
+| `hubs` | `{hubs}`: 1 to 16 names or device IDs of computers and phones, in the order they serve | `{done}` or an error. On the group's root or an admin with `hub`: signs a `hubs` record, the group's main hubs |
 | `freeze` | `{name}`: a device ID, or a name (case-insensitive) | `{name, done}` or an error. Only on an admin that is not frozen: freezes another admin computer, never the root or an admin phone (rule 4) |
 | `thaw` | `{name}` | `{name, done}` or an error. Only on the root computer: ends every freeze of that admin computer (rule 4) |
 
@@ -1863,8 +1866,10 @@ derives from the records alone: phones first (a phone is the hub while its app i
 so it serves whenever it is there), then computers; within each, the root first, then by
 device ID. The vectors in `testdata/interop/go-hubs.json` (Go's `TestGoHubVectors`) give an
 order that Go (`Records.HubOrder`), both kits (`RecordSet.hubOrder`) and the lite member
-(`hub_order`) must all derive. A signed table of main hubs, which the user orders, comes
-later (D-65 in [design.md](design.md)).
+(`hub_order`) must all derive. The root, or an admin with `hub`, may sign a table of main
+hubs in the user's order (a `hubs` record, docs/records-v2.md, "The hubs table"; `cbb hubs`):
+its hubs come first, in its order, then the others in the derived order (D-65 in
+[design.md](design.md)).
 
 - A member keeps every hub's offer and, away from home, uses the first hub in the order that
   answers: it tries them in turn, each at the next of its endpoints. On a hub below the
@@ -2566,6 +2571,11 @@ turns each control character (C0, DEL, C1) into a space and cuts it to 256 bytes
 character boundary. A `hub` command's `done` carries `tunnel`, the new hub's offer. A member without
 commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
 (20 s for `hub`).
+
+Each computer keeps a secret for sealed messages in `seal.json` next to its identity (sealed
+by the TPM where it has one, as the WireGuard key) and offers its public key in its hello
+(`seal`, section 4); a root computer records it in the device's record, as it records a
+changed system. Commands sealed to that key come in a later step of 0.6.
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
 `action`, `actions-off` or `away-off` command to the group's hubs it is connected to (the

@@ -131,7 +131,7 @@ and `a`-`f`.
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `device` | `device`, `name`, `role`, `os`, `key`, `admin`, `powers`, `commands`, `store`, `kind`, `proof`, `holds_root` | a device in the group, or a change of its name or powers |
+| `device` | `device`, `name`, `role`, `os`, `key`, `admin`, `powers`, `commands`, `store`, `kind`, `proof`, `holds_root`, `seal` | a device in the group, or a change of its name or powers |
 | `revoke` | `keys`, `seen` | removes keys from the group |
 | `freeze` | `keys`, `seen` | stops admins until the root or an admin with `thaw` ends it |
 | `thaw` | `records` | ends the `freeze` records it names |
@@ -139,6 +139,7 @@ and `a`-`f`.
 | `resolve` | `records` | the current root voids the records it names: a cancelled claim, one side of a conflict, one of two records with one number |
 | `settings` | `takeover_delay_ms` | the root's settings for the group |
 | `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
+| `hubs` | `hubs` | the user's main hubs for sync away from home, in the order they serve |
 
 ### Field rows
 
@@ -154,6 +155,7 @@ and `a`-`f`.
 | `commands` | array of strings | none | sorted; the command types (section 15) the admin may sign; only with `admin` |
 | `store`, `kind`, `proof` | string | none | as in section 17 |
 | `holds_root` | bool | none | `true`: this device holds the signer's root key; only in a record a root's own key signed |
+| `seal` | string | none | the device's public key for sealed messages, base64: 1216 bytes, an X-Wing key (HPKE KEM `0x647a`). The rules check only its size; a member checks the whole key before it seals a message to it |
 | `keys` | array of strings | `revoke`, `freeze`, one at least | sorted key hashes |
 | `seen` | array of objects | `revoke`, `freeze`, `claim`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": the highest seq of that signer the author held, 0 or more}`; `seq` here is never left out, 0 included |
 | `records` | array of strings | `thaw`, `resolve`, one at least | sorted record IDs |
@@ -161,6 +163,7 @@ and `a`-`f`.
 | `takeover_delay_ms` | integer | none | from 0 to 604 800 000 (7 days); absent means 259 200 000 (72 hours) |
 | `heads` | array of objects | `checkpoint`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": 1 or more, "id": the ID of that signer's record with that seq}` |
 | `keep` | array of strings | none | sorted record IDs: the records below the heads that still count |
+| `hubs` | array of strings | `hubs`, one at least | 1 to 16 device IDs, each once, in the user's order (not sorted) |
 
 A field that a type does not list is refused in it (`form/unknown`), and so is a field
 with an empty value (`form/empty`). An envelope's body is at most 8 KiB, a checkpoint's
@@ -193,6 +196,7 @@ those of the newest such record (the highest `seq` of that root) that names it.
 | `claim` | an admin with `takeover`, under the current root |
 | `resolve`, `settings` | the current root's own key |
 | `checkpoint` | a root's own key |
+| `hubs` | a root's own key, or an admin with `hub` |
 
 A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
 names any key its signer may not remove or freeze. The powers the apps and `cbb`
@@ -236,7 +240,7 @@ A group's records only grow, and a member keeps at most 1 MiB of them (1024 reco
 own key signs a `checkpoint` so that members may drop what no longer matters: `heads` names,
 for each signer, its newest record the checkpoint covers, and `keep` the records below the
 heads that still count: the newest `device` record of each device, the `revoke`, `freeze` and
-`thaw` records that count, the newest `settings`, every claim not yet decided and the records
+`thaw` records that count, the newest `settings`, the `hubs` record that counts, every claim not yet decided and the records
 its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
 by themselves when the records pass three quarters of either limit.
 
@@ -262,6 +266,51 @@ names the checkpoint that counts in `checkpoint`.
 A member may delete the records the checkpoint that counts leaves out. A checkpoint that
 leaves out a record that mattered changes the state for every member alike; only a root signs
 one, and the root always wins.
+
+### Limits
+
+A set is never refused for its size: whatever an admin signs, the group goes on. Records past
+a limit count for nothing, with the reason `limit`, and the rest is evaluated as if they were
+not there. The limits are taken after a checkpoint's pruning, in the set each candidate
+checkpoint prunes; the candidates themselves come from the whole set, so that the root's
+checkpoint brings a set past the limits back under them though it is past them itself.
+
+| Limit | Value | Past it |
+|-------|-------|---------|
+| records in the set | 1024 | the records after the 1024th, in the order below |
+| bytes in the set: each record's body, signature and chain | 1 MiB | the record that would pass it and every record after it |
+| devices with a `device` record | 256 | every `device` record of a device past the 256th |
+| admin keys a root's own `device` records name | 64 | every root's `device` record naming an admin key past the 64th |
+| roots on the path: the group CA and 15 handovers | 16 | a claim that would add the 17th is `void` |
+
+The order: a record's rank (0 for the group CA's own records, 1 for those of the other roots
+of the group, 2 for those under an admin CA of one of its roots, 3 for the rest; a signer's
+lowest rank counts for all its records), then its depth (how many of its signer's records
+have a lower `seq`), then the signer's key hash and the record's ID, in byte order. The
+evaluation stops at the first record that does not fit, so each signer keeps the start of
+its chain, never a record past a gap, and the root's records go before any admin's. Devices
+and admin keys are taken in the order of their first `device` record; a device or an admin
+key past its limit drops every `device` record naming it, the first ones too, so that no
+chain is left with a hole. A `revoke` naming one still counts.
+
+The apps keep well under these: at the most, 256 devices of about 1.6 KB each (a record with
+its sealing key) are about 0.4 MiB, and a checkpoint drops the old records of each.
+
+### The hubs table
+
+The group's hubs serve in an order every member derives from the records (docs/protocol.md,
+section 11, "Several hubs"). A `hubs` record lets the user put main hubs first: its `hubs`
+come first, in their order, and the other hubs follow in the derived order.
+
+Of the `hubs` records that count, one counts for the table: a root's beats an admin's, of two
+roots' the later root on the path, then the higher `seq`; of two admins' the later `time_ms`,
+then the smaller signer, then the higher `seq`. Between admins this trusts each signer's
+clock: an admin whose clock runs ahead keeps its table until the root signs one, which beats
+any admin's. The state lists in `hubs` the devices of that table that are devices of the state
+with the role `full` or `phone`, in its order; a member puts first those of them that may be
+hubs by the records (the root's own device, or an admin with `hub`), so a table naming a
+removed device or one that lost `hub` does not stop the others. A device the table does not
+name still serves after the main hubs.
 
 ### Removals and freezes keep what the author saw
 
@@ -358,6 +407,11 @@ and `seen` with what it held, the current root's records among them. A claim:
   root's records up to the claim's `seen` entry for the old root keep counting, and its
   later ones count only to cancel the claim, as above.
 
+A new member takes, for each claim the Welcome's records hold, the time the admitting member
+first held it when that is earlier than its own and not in the future (protocol.md, the
+Welcome's `claim_times`): it trusts that member with its certificate already, and a claim
+that took effect there takes effect on it too; the rest of the group keeps its own times.
+
 **Two claims** under one root that are neither void nor cancelled stop the group fully on
 every member that holds both, at once and whatever their order or delay: no sync, no
 messages, no admissions. Only the current root ends it, by cancelling one or both; a group
@@ -381,7 +435,10 @@ record that is not revoked, its issuer is a root on the path or the admin CA of 
 whose newest root record gives `admit` or `renew` (also when that admin was removed later,
 for the devices whose records stay), and neither its key nor its issuer is frozen. An admin CA
 is taken when it is under a root on the path and its key is an admin key that is not
-revoked. The **root's own device** is the device of the newest `device` record with `holds_root` that
+revoked. A certificate that passes everything but the rule on its `device` record, as a
+device whose record has not reached this member yet or a new member that holds no records
+yet, gets a connection that carries records only, so the records reach whichever side lacks
+them; it connects as a member once they name it. The **root's own device** is the device of the newest `device` record with `holds_root` that
 the current root's own key signed (the apps and `cbb` sign it right after making the group
 or taking it over); a peer is the root only when its member key is that record's `key`.
 
@@ -412,7 +469,7 @@ and returns the state as one canonical JSON object:
 |-------|------|---------|
 | `roots` | array of strings | the path: the root certificates' key hashes from the group CA to the current root |
 | `root_device` | string | the root's own device ID; absent when there is none |
-| `devices` | array of objects | sorted by `device`: `device`, `name`, `role`, `os`, `keys` (sorted member key hashes that stand), and, for an admin, `admin`, `powers`, `commands`, `frozen` (true when frozen) |
+| `devices` | array of objects | sorted by `device`: `device`, `name`, `role`, `os`, `keys` (sorted member key hashes that stand), the newest record's `store`, `kind`, `proof` and `seal` when it has them, and, for an admin, `admin`, `powers`, `commands`, `frozen` (true when frozen) |
 | `revoked` | array of strings | sorted key hashes the records remove |
 | `claims` | array of objects | sorted by `record`: `record`, `claimant` (admin key hash), `root` (new root key hash), `state` (`pending`, `effective`, `cancelled`, `void`, `competing` or `disputed`), `left_ms` while pending |
 | `conflicts` | array of objects | sorted by the first record ID: `kind` (`admins`, `claims`, `two_histories`), `records` (sorted record IDs), `signers` (sorted key hashes) |
@@ -422,6 +479,7 @@ and returns the state as one canonical JSON object:
 | `newer` | array of strings | sorted IDs of the records of a later version the member keeps, at most 16 |
 | `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
 | `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
+| `hubs` | array of strings | the main hubs of the `hubs` record that counts ("The hubs table"): its devices that are in `devices` with the role `full` or `phone`, in its order |
 
 The reasons in `ignored`, in the order they are decided:
 
@@ -431,6 +489,7 @@ The reasons in `ignored`, in the order they are decided:
 | `signature` | its signature or chain does not check |
 | `group` | is of another group |
 | `issuer` | its admin CA is from no root of the group |
+| `limit` | past a limit on the set (see "Limits") |
 | `history` | its prev chain is broken, on a branch a `resolve` voided, or at or after a second history |
 | `not_root` | a root's own record whose signer is no root on the path |
 | `cut` | a root's record past its root's cut, or an admin record a root's removal, freeze or thaw cut off |
@@ -438,7 +497,7 @@ The reasons in `ignored`, in the order they are decided:
 | `power` | an admin record its signer had no admin power for, or with an admin CA of a root off the path |
 | `removed` | an admin record a counting admin removal or freeze cut off |
 
-Of two copies of one body left out before the evaluation (the first four reasons) for
+Of two copies of one body left out before the evaluation (the first five reasons) for
 different reasons, the reason first in byte order is kept.
 
 Empty fields are left out, as in signed bodies, so two implementations agree when their
@@ -448,7 +507,8 @@ beyond) and check the same bytes.
 
 ## Vectors and tests
 
-- `testdata/interop/v2-records.json`, written by Go (`go test ./internal/authority -run
+- `testdata/interop/v2-records.json` (and `v2-flood.json`, the sets at the limit on records,
+  apart for the size of a file), written by Go (`go test ./internal/authority -run
   TestV2Vectors -update`, from the evaluation tests' scenarios): record sets with the expected state, at
   least the cases of the audit findings of version 1 (each with every order): an admin that
   removes another after a claim took effect (X1 and X2 of the second verification), two admin
@@ -456,7 +516,10 @@ beyond) and check the same bytes.
   cancelled before and after its delay, two claims, a claim disputed by a removal of its
   claimant and resolved either way, a claim after its author's removal, two histories of an admin and of the root,
   a removed admin's later `device` and `claim` records, freezes that cross, a `resolve` of each
-  kind.
+  kind; and each limit: 262 devices, 65 admin keys, 16 handovers, a set of 1033 records, then
+  the same with the root's checkpoint; and the hubs table: an admin's, an admin's without
+  `hub`, a later admin's, the root's, and one naming a removed device. (The 1 MiB limit has a Go test only: its set would be
+  over a megabyte of vectors.)
 - `testdata/interop/strict-generated.json` and `strict-files.json` written again from the
   tables above, with the canonical-form and unknown-field vectors.
 - An order-independence fuzz in Go: random sets over a few phones, computers and roots,

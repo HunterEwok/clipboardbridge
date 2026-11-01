@@ -23,6 +23,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -304,10 +305,7 @@ func revokes(t *testing.T, ca *group.CA, tag string, n, keys int) []group.Record
 			rand.Read(h[:])
 			hs = append(hs, h)
 		}
-		r, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: time.Now().UnixMilli(), Keys: hs}, ca.Key)
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: time.Now().UnixMilli(), Keys: hs}, ca.Key)
 		recs = append(recs, r)
 	}
 	return recs

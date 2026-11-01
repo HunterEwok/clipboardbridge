@@ -15,6 +15,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/budget"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 )
 
 // settled is the relay's state once the registrations it refused have
@@ -83,13 +84,11 @@ func TestRefusedRegistrationLeavesState(t *testing.T) {
 	// revoke its certificate: the relay keeps nothing of them, and the
 	// bytes they cost its source are given back.
 	gone := newGroup(t)
-	self := newDevice(t, gone)
-	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(gone.Cert), TimeMS: time.Now().UnixMilli(),
+	goneRecs := deviceRecords(t, gone, 2)
+	self := listedDevice(t, gone, goneRecs)
+	revoke := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: group.Tag(gone.Cert), TimeMS: time.Now().UnixMilli(),
 		Keys: []group.KeyHash{group.KeyHashOf(self.cert.Leaf)}}, gone.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	self.records = append(deviceRecords(t, gone, 2), revoke)
+	self.records = append(goneRecs, revoke)
 	before := r.state()
 	if err := reg(self); err == nil || !strings.Contains(err.Error(), "removed") {
 		t.Errorf("a device its own records remove: %v, want a refusal for %q", err, "removed")
@@ -109,8 +108,9 @@ func TestRefusedRegistrationLeavesState(t *testing.T) {
 	// with two devices: the relay serves as many groups as it may, and all
 	// registrations come from 127.0.0.1, at its limit too.
 	a := newGroup(t)
-	a1 := newDevice(t, a)
-	a1.records = deviceRecords(t, a, 2)
+	aRecs := deviceRecords(t, a, 2)
+	a1 := listedDevice(t, a, aRecs)
+	a1.records = aRecs
 	c := newCredGroup(t)
 	c1, c1Key := c.device(t)
 	c.sign(t, 1, c1Key, c.key, []device{c1}, &c1)
@@ -134,14 +134,17 @@ func TestRefusedRegistrationLeavesState(t *testing.T) {
 	e1, e1Key := e.device(t)
 	e.sign(t, 1, e1Key, e.key, []device{e1}, &e1)
 	// A device of the first group with new records of it.
-	a2 := newDevice(t, a)
-	a2.records = append(a1.records, deviceRecords(t, a, 3)...)
+	more := deviceRecords(t, a, 3)
+	a2 := listedDevice(t, a, more)
+	a2.records = append(slices.Clip(a1.records), more...)
 	// A device with the first device's WireGuard key.
 	thief := newDevice(t, a)
 	thief.key = a1.key
 	// A device of a new group with records.
-	d1 := newDevice(t, newGroup(t))
-	d1.records = deviceRecords(t, newGroup(t), 1)
+	dg := newGroup(t)
+	dRecs := deviceRecords(t, dg, 1)
+	d1 := listedDevice(t, dg, dRecs)
+	d1.records = dRecs
 
 	for _, tc := range []struct {
 		name string

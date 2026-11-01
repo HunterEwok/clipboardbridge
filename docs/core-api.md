@@ -33,6 +33,17 @@ and always logs them ([errors](reference/errors.md)). The call never panics and 
 bytes, also bytes that are not a request. A change an older caller would misread raises
 `abi`.
 
+The phones reach `call` through UniFFI (`lite/ffi`, `bind.sh`). The same library exports it
+as C functions, declared in `lite/ffi/include/cbb_core.h`, for callers that link C: `cbb_call`
+takes the request's bytes and returns the answer's, which the caller gives back with
+`cbb_free`; `cbb_abi` gives the ABI.
+
+Go reaches them in `internal/core`: through cgo under the build tag `cbbcore`, linking
+`libcbb_ffi`, and on Windows, macOS and FreeBSD through the same core built as WebAssembly
+(`lite/wasm`, `cbb_call` and its memory functions), run by wazero under the tag `cbbwasm`. `lite/wasm/build.sh` builds the module and writes the
+`go build -overlay` file that lays it over `internal/core/cbb_core.wasm`, so no build output
+lands in the source tree.
+
 ## Operations
 
 | `op` | `args` | `ok` |
@@ -43,8 +54,14 @@ bytes, also bytes that are not a request. A change an older caller would misread
 | `canonical_body` | a record body as an object, in any order, with `v` and `signer` set | `{"body"}`: the canonical bytes to sign, base64, after each field is checked against its row |
 | `check_body` | `{"body"}`, base64 | `{"body"}` as it came, once its size, canonical form and fields check |
 | `canonicalize` | `{"body"}`, base64 | `{"body"}`: the strict canonical form of a signed body of version 2 |
+| `check_member` | `chain` (the peer's certificates as it sent them, leaf first, base64 DER), `trusted` (the roots the member trusts, the current root first), `usage` (`"server"` for a member this one dialed, `"client"` for one that dialed it), `now_ms` | `{"device", "used"}`: the device the leaf names and the certificates the records then judge, base64: the leaf and the admin CA that issued it, if one did, wherever the peer put it; see "Member chains" |
 
 The arguments of `evaluate` are a case of `testdata/interop/v2-records.json` as it is.
+
+`cbb version` of the lite member names the core it was built with in a second line,
+`core 0.6.0, abi 1, source <commit>`; the release builds pass the tag's commit in `CBB_SOURCE`,
+and other builds say `source unknown`. The full member and the apps show the same once they
+call the core.
 
 ## Error codes
 
@@ -61,6 +78,19 @@ The numbers and names never change meaning; new codes are added at the end of th
 | 12 | `strict` | a signed body is not in the strict canonical form |
 | 13 | `rollback` | the record set is older than the saved one: a signer's whole chain ends below the seq saved |
 | 14 | `saved` | the saved state cannot be read, is of another version or group, or its check with the secret does not match |
+
+## Member chains
+
+`check_member` is the check of a peer's certificates in member TLS, for a TLS stack's verify
+callback (Go's `VerifyConnection`, the phones' trust evaluation): the leaf is no CA, lists the
+usage in its extended key usage, names its device as its CN and its one DNS name
+(`cb-<device>.local`), and is in its lifetime; a trusted root issued it, or an admin CA (path
+length 0, a P-256 key, certificate signing) that a trusted root issued and that is in its own
+lifetime. The clock is `now_ms` raised to the current root's start, so a member whose clock is
+years behind still connects. A chain it refuses is code 11 (`cert`). Whether the records still
+admit the device, and whether it is the device discovery found, are the caller's to check.
+`testdata/interop/member-chains.json`, written by Go from crypto/tls's chain building, holds the
+cases both give the same answer.
 
 ## Signatures already checked
 

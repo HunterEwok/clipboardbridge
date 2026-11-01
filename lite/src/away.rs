@@ -324,6 +324,7 @@ mod tests {
             admin_key: None,
             frozen: false,
             keys: vec![],
+            ..Default::default()
         }
     }
 

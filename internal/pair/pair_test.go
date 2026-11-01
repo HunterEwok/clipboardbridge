@@ -22,7 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/testnet"
 	"github.com/HunterEwok/clipboardbridge/internal/third_party/cpace"
 )
@@ -1175,11 +1177,12 @@ func TestJoinerTakesAnAdminWelcome(t *testing.T) {
 }
 
 // TestJoinerTakesAWelcomeAfterAHandover checks a welcome in a phone group
-// that a root record handed to a new root: the group CA still names the
-// group, and the certificates come from the new root and an admin CA under
-// it.
+// that an admin's claim handed to a new root: the group CA still names the
+// group, the certificates come from the new root and an admin CA under it,
+// and the joiner takes the admitting member's time for the claim, so a
+// claim that took effect there takes effect on the joiner too.
 func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
-	first, _ := phoneRoot(t)
+	first, firstAdmin := phoneRoot(t)
 	newRoot, admin := phoneRoot(t)
 	j := newJoiner(t, "linux")
 	phoneKey, _ := group.NewKey()
@@ -1192,12 +1195,15 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handover, err := group.SignRecord(group.RecordBody{Type: group.RecordRoot, Group: group.Tag(first.Cert), TimeMS: t0.UnixMilli(), Root: newRoot.Cert.Raw}, first.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: first.Cert.Raw, Roots: [][]byte{newRoot.Cert.Raw}, Records: []group.Record{handover}}
-	member := memberAD{Device: phone, Group: group.Tag(first.Cert)}
+	tag := group.Tag(first.Cert)
+	adminKey, claimantKey := group.KeyHashOf(firstAdmin.Cert), group.KeyHash{1}
+	made := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: t0.UnixMilli(), Device: string(phone),
+		Name: "phone", Role: group.RolePhone, Key: &claimantKey, Admin: &adminKey, Powers: authority.Powers, Commands: authority.Commands}, first.Key)
+	claim := grouptest.Sign(t, group.RecordBody{Type: group.RecordClaim, Group: tag, TimeMS: t0.UnixMilli(), Root: newRoot.Cert.Raw}, firstAdmin.Key, firstAdmin.Cert)
+	held := []group.ClaimTime{{Record: group.KeyHash(claim.ID()), MS: time.Now().Add(-time.Duration(authority.DefaultDelay)*time.Millisecond - time.Hour).UnixMilli()}}
+	w := &Welcome{Cert: cert.Raw, Issuer: admin.Cert.Raw, GroupCA: first.Cert.Raw, Roots: [][]byte{newRoot.Cert.Raw},
+		Records: []group.Record{made, claim}, ClaimTimes: held}
+	member := memberAD{Device: phone, Group: tag}
 	id, err := j.identity(w, phoneCert, member)
 	if err != nil {
 		t.Fatalf("a welcome after a handover: %v", err)
@@ -1205,8 +1211,8 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	if len(id.Roots) != 1 || !id.Root().Equal(newRoot.Cert) {
 		t.Error("the identity does not keep the new root")
 	}
-	if len(j.Records) != 1 {
-		t.Error("the joiner does not keep the record that leads to the new root")
+	if len(j.Records) != 2 || len(j.ClaimTimes) != 1 || j.ClaimTimes[0] != held[0] {
+		t.Errorf("the joiner keeps %d records and the claim times %v", len(j.Records), j.ClaimTimes)
 	}
 	bad := *w
 	bad.Roots = nil
@@ -1219,6 +1225,12 @@ func TestJoinerTakesAWelcomeAfterAHandover(t *testing.T) {
 	bad.Records = nil
 	if _, err := j.identity(&bad, phoneCert, member); err == nil {
 		t.Error("accepted a root that no record leads to")
+	}
+	// Without the admitting member's time, the claim waits on the joiner.
+	bad = *w
+	bad.ClaimTimes = nil
+	if _, err := j.identity(&bad, phoneCert, member); err == nil {
+		t.Error("accepted the root of a claim that waits")
 	}
 }
 

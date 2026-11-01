@@ -139,7 +139,9 @@ impl Pairing {
             }
         };
         link.send(&confirm).await?;
-        let res = match ex.welcome(&link.read_frame().await?) {
+        // The board keeps no wall clock: it takes none of the member's claim
+        // times, which only a group handed over by waiting needs.
+        let res = match ex.welcome(&link.read_frame().await?, 0) {
             Ok(id) if saver.save(&id).await => Ok(id),
             Ok(_) => Err(Error::msg("cannot save the group's identity")),
             Err(e) => Err(e),

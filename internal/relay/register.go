@@ -352,7 +352,9 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 			}
 		}
 		r.mu.Unlock()
-		if recs != nil {
+		// A group the relay holds no verified record of is one it knows
+		// nothing about: only records it holds can refuse a device.
+		if recs != nil && recs.set.Len() > 0 {
 			if err := recs.set.Refused(cs.PeerCertificates); err != nil {
 				r.forgetRecords(tag)
 				return refuse(strings.TrimPrefix(err.Error(), "group: "))

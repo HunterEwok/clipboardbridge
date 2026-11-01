@@ -24,6 +24,7 @@ import (
 
 	"github.com/HunterEwok/clipboardbridge/internal/attest"
 	"github.com/HunterEwok/clipboardbridge/internal/attest/attesttest"
+	"github.com/HunterEwok/clipboardbridge/internal/authority"
 	"github.com/HunterEwok/clipboardbridge/internal/control"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/release"
@@ -108,9 +109,9 @@ func TestComputerAdmin(t *testing.T) {
 	pk, dk, phk := group.KeyHashOf(pi.Cert), group.KeyHashOf(deck.Cert), group.KeyHashOf(phone.Cert)
 	recs := group.NewRecords(g)
 	if _, errs := recs.AddAll([]group.Record{
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: phone.ID, Name: "iphone", Role: group.RolePhone, Key: &phk, By: phone.ID}, root.Key),
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: pi.ID, Name: "pi", Role: group.RoleFull, Key: &pk, By: phone.ID}, root.Key),
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: deck.ID, Name: "deck", Role: group.RoleFull, Key: &dk, By: phone.ID}, root.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(phone.ID), Name: "iphone", Role: group.RolePhone, Key: &phk, HoldsRoot: true}, root.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(pi.ID), Name: "pi", Role: group.RoleFull, Key: &pk}, root.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(deck.ID), Name: "deck", Role: group.RoleFull, Key: &dk}, root.Key),
 	}); len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -139,7 +140,8 @@ func TestComputerAdmin(t *testing.T) {
 	p.dial(&h, pi)
 	p.send(map[string]any{"t": "admin", "admin_ca": ca.Raw})
 	p.send(map[string]any{"t": "records", "records": []group.Record{
-		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: pi.ID, Name: "pi", Role: group.RoleFull, Key: &pk, Admin: &ak, By: phone.ID}, root.Key),
+		sign(t, g, group.RecordBody{Type: group.RecordDevice, Device: string(pi.ID), Name: "pi", Role: group.RoleFull, Key: &pk, Admin: &ak,
+			Powers: []string{authority.PowerAdmit, authority.PowerFreeze, authority.PowerHub, authority.PowerRemove, authority.PowerRenew}, Commands: authority.Commands}, root.Key),
 	}})
 	waitFor(t, "the pi keeps its admin CA", func() bool {
 		id, err := group.Load(piDir)
@@ -253,8 +255,10 @@ func TestAdminOfFileKeys(t *testing.T) {
 	}
 }
 
-// An admin renames any device with a newer device record, which every
-// member takes; the device keeps its role and whether it is an admin.
+// The root renames any device with a newer device record, which every
+// member takes; the device keeps its role and whether it is an admin. An
+// admin renames the devices that are no admin, phone or watch, and not the
+// root's own.
 func TestRename(t *testing.T) {
 	var h hub
 	pi := startService(t, &h, "pi")
@@ -274,8 +278,12 @@ func TestRename(t *testing.T) {
 	if err != nil || m.Name != "deck" {
 		t.Fatalf("rename: %+v %v", m, err)
 	}
-	// The admin renames the root, too.
-	if _, err := deck.do(t, control.Header{Op: control.OpRename, Name: "pi", NewName: "pi4"}, ""); err != nil {
+	// Only the root renames itself or an admin (docs/records-v2.md, "Who
+	// signs what").
+	if _, err := deck.do(t, control.Header{Op: control.OpRename, Name: "pi", NewName: "pi4"}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root") {
+		t.Errorf("the admin renamed the root: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpRename, Name: "pi", NewName: "pi4"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []*testService{pi, deck, mac} {
@@ -383,4 +391,55 @@ func mustLoad(t *testing.T, dir string) *group.Identity {
 		t.Fatal(err)
 	}
 	return id
+}
+
+// TestHubsTable: the root signs the group's main hubs, which come first in
+// every member's order of hubs; an admin without a hub set up, a device
+// that cannot be a hub and a device named twice are refused.
+func TestHubsTable(t *testing.T) {
+	var h hub
+	pi := startService(t, &h, "pi")
+	deck := startService(t, &h, "deck")
+	mac := startRole(t, &h, "mac", group.OSMacOS)
+	pairWith(t, pi, deck)
+	pairWith(t, pi, mac)
+	waitFor(t, "the Mac lists every device", func() bool { return listed(mac.devices(t)) == "deck mac pi" })
+	makeAdmin(t, pi, deck)
+	if _, err := mac.do(t, control.Header{Op: control.OpHubs, Hubs: []string{"pi"}}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root") {
+		t.Errorf("hubs on the Mac: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpHubs, Hubs: []string{"deck", "deck"}}, ""); err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("a hub named twice: %v", err)
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpHubs}, ""); err == nil || !strings.Contains(err.Error(), "1 to 16") {
+		t.Errorf("no hubs: %v", err)
+	}
+	var deckID string
+	for _, d := range mac.devices(t) {
+		if d.Name == "deck" {
+			deckID = d.ID
+		}
+	}
+	if _, err := pi.do(t, control.Header{Op: control.OpHubs, Hubs: []string{deckID, "pi"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*testService{pi, deck, mac} {
+		waitFor(t, s.name+" puts the deck first", func() bool {
+			order := hubOrderIn(s.dir)
+			return len(order) == 2 && string(order[0]) == deckID
+		})
+	}
+}
+
+// hubOrderIn returns the order of hubs of the records in dir.
+func hubOrderIn(dir string) []group.DeviceID {
+	id, err := group.Load(dir)
+	if err != nil {
+		return nil
+	}
+	recs, err := group.LoadRecords(dir, id.GroupCA.Cert)
+	if err != nil {
+		return nil
+	}
+	return recs.HubOrder()
 }

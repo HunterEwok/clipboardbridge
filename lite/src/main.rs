@@ -185,6 +185,7 @@ fn main() {
                         std::env::consts::OS,
                         std::env::consts::ARCH
                     );
+                    println!("{}", core_version());
                     Ok(())
                 }
                 "help" | "-h" | "-help" | "--help" => {
@@ -275,9 +276,10 @@ fn join(g: &Global, args: &[String], for_next: bool) -> Result<()> {
     ))?;
     let joiner = pair::Joiner::new(&name)?;
     let state = g.state.clone();
-    let save = move |id: &identity::Identity, rs: &[records::Record]| {
-        let mut set = records::Records::new(&id.group_ca);
+    let save = move |id: &identity::Identity, rs: &[records::Record], ts: &[records::ClaimTime]| {
+        let mut set = records::new(&id.group_ca);
         let _ = set.add_all(rs);
+        set.take_claim_times(ts);
         records::Stored::save(&set, &state)?;
         id.save(&state)?;
         service::new_device_mode(&state)
@@ -1175,9 +1177,29 @@ fn stamp(ms: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem / 60 % 60, rem % 60)
 }
 
+/// The line of `cbb version` that names the core: its version, the ABI of
+/// its entry point and, in a release build, the commit it was built from
+/// (docs/core-api.md).
+fn core_version() -> String {
+    use cbb_core::api;
+    let source = if api::SOURCE.is_empty() { String::from("unknown") } else { String::from(api::SOURCE) };
+    format!("core {}, abi {}, source {source}", api::VERSION, api::ABI)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::terminal_text;
+    use super::{core_version, terminal_text};
+
+    /// cbb version names the core's version and the ABI of its entry
+    /// point.
+    #[test]
+    fn names_the_core() {
+        let line = core_version();
+        assert!(
+            line.starts_with(&format!("core {}, abi {}, source ", cbb_core::api::VERSION, cbb_core::api::ABI)),
+            "{line}"
+        );
+    }
 
     #[test]
     fn terminal_text_is_safe() {

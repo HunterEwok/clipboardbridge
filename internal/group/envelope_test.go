@@ -4,13 +4,11 @@
 package group
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -30,95 +28,48 @@ func resign(t *testing.T, r Record, signer *CA, chain ...*x509.Certificate) Reco
 	return out
 }
 
-type envelopeVectors struct {
-	GroupCA []byte     `json:"group_ca"`
-	Records []Record   `json:"records"` // in the order a device that saw the admin's copy first got them
-	Keys    []adminKey `json:"keys"`
-	Digest  string     `json:"digest"`
-	Count   int        `json:"count"` // records in the set: the body signed twice counts twice
-}
-
-// One body signed by two signers is two records: a set keeps both, and
-// what it says, its digest included, does not depend on which came first.
-// The root removes an admin phone, and a computer admin, which may not
-// remove an admin phone, signs the root's record of it too: a device that
-// got the computer admin's copy first removes the phone all the same.
-//
-// TestEnvelopeVectors writes (with -update) and checks
-// testdata/interop/go-envelopes.json for the other implementations.
+// In v:2 a body names its signer, so one body signed by another signer is
+// no record: a set refuses the copy a computer admin signed of the root's
+// removal of an admin phone, and the root's own copy removes the phone
+// whichever came first. The records of testdata/interop/go-envelopes.json
+// are v:1 and refused.
 func TestEnvelopeVectors(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "interop", "go-envelopes.json")
-	if *update {
-		pg := newPhoneGroup(t)
-		g := pg.root.Cert
-		pc, phone := pg.a, pg.b
-		pcKey, phoneKey := KeyHashOf(pc.Cert), KeyHashOf(phone.Cert)
-		byRoot := revokeRecord(t, g, pg.root, nil, []KeyHash{phoneKey}, nil)
-		recs := []Record{
-			computerAdminRecord(t, pg, member(t, pc), "pc", pcKey),
-			adminRecord(t, g, pg.root, nil, member(t, phone), "phone", phoneKey),
-			resign(t, byRoot, pc, pc.Cert),
-			byRoot,
-		}
-		s := NewRecords(g)
-		if _, errs := s.AddAll(recs); len(errs) > 0 {
-			t.Fatal(errs)
-		}
-		v := envelopeVectors{GroupCA: g.Raw, Records: recs, Digest: s.Digest(), Count: s.Len()}
-		for _, k := range []struct {
-			name string
-			key  KeyHash
-		}{{"the admin phone the root removes", phoneKey}, {"the computer admin", pcKey}} {
-			v.Keys = append(v.Keys, adminKey{Name: k.name, Key: k.key, Revoked: s.Revoked(k.key)})
-		}
-		data, err := json.MarshalIndent(v, "", "\t")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	checkV1Refused(t, "go-envelopes.json")
+	pg := newPhoneGroup(t)
+	g := pg.root.Cert
+	pc, phone := pg.a, pg.b
+	pcKey, phoneKey := KeyHashOf(pc.Cert), KeyHashOf(phone.Cert)
+	byRoot := revokeRecord(t, g, pg.root, nil, []KeyHash{phoneKey})
+	copied := resign(t, byRoot, pc, pc.Cert)
+	recs := []Record{
+		computerAdminRecord(t, pg, member(t, pc), "pc", pcKey),
+		adminRecord(t, g, pg.root, nil, member(t, phone), "phone", phoneKey),
+		copied,
+		byRoot,
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v envelopeVectors
-	if err := json.Unmarshal(data, &v); err != nil {
-		t.Fatal(err)
-	}
-	ca, err := x509.ParseCertificate(v.GroupCA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v.Count != len(v.Records) || !v.Keys[0].Revoked || v.Keys[1].Revoked {
-		t.Fatalf("the vectors say %d records, revoked %v", v.Count, v.Keys)
-	}
-	orders := map[string][]Record{"as written": v.Records, "reversed": slices.Clone(v.Records)}
+	orders := map[string][]Record{"as written": recs, "reversed": slices.Clone(recs)}
 	slices.Reverse(orders["reversed"])
-	// Without the root's copy, the computer admin's removes nobody.
-	orders["the computer admin's copy only"] = v.Records[:3]
-	for name, recs := range orders {
-		s := NewRecords(ca)
-		for _, r := range recs {
-			if _, err := s.Add(r); err != nil {
-				t.Fatalf("%s: %v", name, err)
+	orders["the computer admin's copy only"] = recs[:3]
+	for name, list := range orders {
+		s := NewRecords(g)
+		for _, r := range list {
+			_, err := s.Add(r)
+			if copy := bytes.Equal(r.Sig, copied.Sig); copy != (err != nil) {
+				t.Fatalf("%s: the copy %v, %v", name, copy, err)
 			}
 		}
 		// The same records again add nothing.
-		for _, r := range recs {
+		for _, r := range list {
 			if isNew, _ := s.Add(r); isNew {
 				t.Errorf("%s: a record held already was new again", name)
 			}
 		}
-		full := len(recs) == len(v.Records)
-		for _, k := range v.Keys {
-			if want := k.Revoked && full; s.Revoked(k.Key) != want {
-				t.Errorf("%s: %s revoked %v, want %v", name, k.Name, s.Revoked(k.Key), want)
-			}
+		full := len(list) == len(recs)
+		if s.Revoked(phoneKey) != full || s.Revoked(pcKey) {
+			t.Errorf("%s: the phone revoked %v, the computer admin %v", name, s.Revoked(phoneKey), s.Revoked(pcKey))
 		}
-		if full && (s.Digest() != v.Digest || s.Len() != v.Count) {
-			t.Errorf("%s: %d records with digest %s, want %d and %s", name, s.Len(), s.Digest(), v.Count, v.Digest)
+		if full && s.Len() != 3 {
+			t.Errorf("%s: %d records", name, s.Len())
 		}
 	}
 }

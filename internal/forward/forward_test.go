@@ -20,6 +20,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"golang.org/x/crypto/chacha20"
 
 	"github.com/HunterEwok/clipboardbridge/internal/group"
+	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 	"github.com/HunterEwok/clipboardbridge/internal/vless"
 	"github.com/HunterEwok/clipboardbridge/internal/vless/vlesstest"
@@ -897,11 +899,8 @@ func TestRegistrationNeedsAnAdmin(t *testing.T) {
 	}
 
 	// The root removes the admin and registers with that record.
-	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli(),
+	revoke := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli(),
 		Keys: []group.KeyHash{group.KeyHashOf(adminCA), group.KeyHashOf(leaf)}}, root.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
 	rk := wg()
 	rc, a := rawOpen(t, f, pin, cert, rk.PublicKey().Bytes(), rk, hubAuth{key: root.Key, records: []group.Record{revoke}})
 	if a.Error != "" {
@@ -937,11 +936,7 @@ func TestRegistrationByMemberKey(t *testing.T) {
 	device := func(d group.DeviceID, leaf *x509.Certificate, by group.DeviceID, admin *group.KeyHash) group.Record {
 		t.Helper()
 		k := group.KeyHashOf(leaf)
-		r, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: now.UnixMilli(), By: by,
-			Device: d, Name: "phone", Role: group.RolePhone, Key: &k, Admin: admin}, root.Key)
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: now.UnixMilli(), Device: string(d), Name: "phone", Role: group.RolePhone, Key: &k, Admin: admin, HoldsRoot: d == dev}, root.Key)
 		return r
 	}
 	own := device(dev, cert.Leaf, dev, nil)
@@ -980,7 +975,9 @@ func TestRegistrationByMemberKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	ak := group.KeyHashOf(adminCA)
-	admins := []group.Record{own, device(otherDev, otherLeaf, dev, &ak)}
+	// The root signs its records as one chain, so the admin record follows
+	// the plain one.
+	admins := append(slices.Clip(plain), device(otherDev, otherLeaf, dev, &ak))
 	ac, a := rawOpen(t, f, pin, other, ok.PublicKey().Bytes(), ok, hubAuth{records: admins})
 	if a.Error != "" || a.ID == 0 {
 		t.Fatalf("an admin phone: %+v", a)
@@ -988,11 +985,8 @@ func TestRegistrationByMemberKey(t *testing.T) {
 	ac.Close()
 
 	// Once removed, the admin phone no longer registers.
-	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli() + 1,
+	revoke := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli() + 1,
 		Keys: []group.KeyHash{ak, group.KeyHashOf(otherLeaf)}}, root.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if a := rawRegister(t, f, pin, other, ok.PublicKey().Bytes(), ok, hubAuth{records: append(admins, revoke)}); a.Error == "" {
 		t.Errorf("a removed admin phone: %+v", a)
 	}
@@ -1011,11 +1005,7 @@ func TestRegistrationRemembersRemovals(t *testing.T) {
 	device := func(d group.DeviceID, leaf *x509.Certificate, admin *group.KeyHash) group.Record {
 		t.Helper()
 		k := group.KeyHashOf(leaf)
-		r, err := group.SignRecord(group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: now.UnixMilli(), By: dev,
-			Device: d, Name: "phone", Role: group.RolePhone, Key: &k, Admin: admin}, root.Key)
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := grouptest.Sign(t, group.RecordBody{Type: group.RecordDevice, Group: tag, TimeMS: now.UnixMilli(), Device: string(d), Name: "phone", Role: group.RolePhone, Key: &k, Admin: admin, HoldsRoot: d == dev}, root.Key)
 		return r
 	}
 	adminDev := group.NewDeviceID()
@@ -1032,11 +1022,8 @@ func TestRegistrationRemembersRemovals(t *testing.T) {
 	}
 	ak := group.KeyHashOf(adminCA)
 	before := []group.Record{device(dev, cert.Leaf, nil), device(adminDev, leaf, &ak)}
-	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli() + 1,
+	revoke := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli() + 1,
 		Keys: []group.KeyHash{ak, group.KeyHashOf(leaf)}}, root.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
 	k, _ := ecdh.X25519().GenerateKey(rand.Reader)
 	pk, _ := ecdh.X25519().GenerateKey(rand.Reader)
 
@@ -1135,11 +1122,8 @@ func TestRegistrationUnderVerifiedRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revoke, err := group.SignRecord(group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli(),
+	revoke := grouptest.Sign(t, group.RecordBody{Type: group.RecordRevoke, Group: tag, TimeMS: now.UnixMilli(),
 		Keys: []group.KeyHash{group.KeyHashOf(mleaf)}}, root.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
 	hk, _ := ecdh.X25519().GenerateKey(rand.Reader)
 	hc, a := rawOpen(t, f, pin, hubCert, hk.PublicKey().Bytes(), hk, hubAuth{key: root.Key, records: []group.Record{revoke}})
 	if a.Error != "" {
