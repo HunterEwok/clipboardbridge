@@ -89,6 +89,10 @@ android {
         unitTests.isIncludeAndroidResources = true
         // A failing test shows its whole stack in CI's log, as there is no report to open.
         unitTests.all {
+            // The kit calls the Rust core through JNA: on the host, the core
+            // the kit's tests build and JNA's desktop library (below).
+            it.dependsOn(gradle.includedBuild("kit").task(":buildCore"))
+            it.systemProperty("jna.library.path", rootDir.resolve("../../lite/target/release").canonicalPath)
             it.testLogging {
                 events("failed")
                 exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
@@ -158,6 +162,8 @@ dependencies {
     implementation("io.github.hunterewok.clipboardbridge:kit:0")
     // JNA with its native parts, through which the kit calls the Rust core.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
+    // The same JNA as a jar for the unit tests on the host: the aar has only Android's libraries.
+    testImplementation("net.java.dev.jna:jna:5.19.1")
     implementation(project(":shared"))
     // The kit's TLS: Conscrypt bundled, for TLS 1.3 with the exporter on every Android version.
     implementation("org.conscrypt:conscrypt-android:2.8.0")
