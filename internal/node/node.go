@@ -481,19 +481,55 @@ func linger(raw net.Conn) {
 // last records came.
 const recordsQuiet = 5 * time.Second
 
+// recordsRecheck is how often a records-only connection asks again whether
+// the records let the peer in, for records that came over another
+// connection.
+const recordsRecheck = 250 * time.Millisecond
+
+// ErrLetIn ends a records-only connection once the records let the peer
+// in: whoever dialed connects again at once, as a member.
+var ErrLetIn = errors.New("node: the records let the peer in")
+
 // recordsOnly runs a connection that carries records only
 // (group.ErrRecordsOnly, why says which): with a root that an admin took
 // the group over from, so that the old root, if it is still in use, learns
 // of the takeover and its cancel reaches the group (docs/records-v2.md,
 // "Handing the group over"), or with a member that no device record here
 // names yet (group.ErrNotListed), so that the records reach whichever of
-// the two lacks them. The connection ends once the records let the peer
-// in, when it would connect anew as a member, or when no records came for
+// the two lacks them. The connection ends with ErrLetIn once the records
+// let the peer in, those it brought or those another member did, when it
+// would connect anew as a member, or with nil when no records came for
 // recordsQuiet. This member sends no clipboard, credentials or anything
 // else on it, and takes nothing but records.
 func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID, chain []*x509.Certificate, why error) error {
 	stop := context.AfterFunc(ctx, func() { tc.NetConn().Close() })
 	defer stop()
+	// Records from another member may let the peer in while this
+	// connection waits: the check closes the socket, and the read below
+	// ends.
+	letIn := make(chan struct{})
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		t := time.NewTicker(recordsRecheck)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				if n.cfg.Allow(id, chain) == nil {
+					close(letIn)
+					tc.NetConn().Close()
+					return
+				}
+			}
+		}
+	}()
+	admitted := func() error {
+		n.cfg.Logf("node: the records let %s in; it connects again as a member", id)
+		return ErrLetIn
+	}
 	st := n.cfg.Records
 	write := func(m *message) error {
 		f, err := frame(m)
@@ -520,6 +556,11 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 		tc.SetReadDeadline(time.Now().Add(recordsQuiet))
 		m, err := readMessage(tc, n.cfg.Timeout)
 		if err != nil {
+			select {
+			case <-letIn:
+				return admitted()
+			default:
+			}
 			if first {
 				return err
 			}
@@ -550,8 +591,7 @@ func (n *Node) recordsOnly(ctx context.Context, tc *tls.Conn, id group.DeviceID,
 				st.Settle(fresh)
 			}
 			if n.cfg.Allow(id, chain) == nil {
-				n.cfg.Logf("node: the records let %s in; it connects again as a member", id)
-				return nil
+				return admitted()
 			}
 		}
 	}

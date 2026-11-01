@@ -1294,3 +1294,38 @@ func TestReleaseSpreads(t *testing.T) {
 		t.Error("b took an older release")
 	}
 }
+
+// TestRecordsOnlyLetIn: a records-only connection ends with ErrLetIn as soon
+// as the records let the peer in, also when the record that does came over
+// another connection and none came on this one, so that the dialer
+// connects again as a member at once.
+func TestRecordsOnlyLetIn(t *testing.T) {
+	var listed atomic.Bool
+	st := newRecordStore()
+	a := newMember(t, Full, withRecords(st), func(_ *clip.Config, nc *Config) {
+		nc.Allow = func(group.DeviceID, []*x509.Certificate) error {
+			if listed.Load() {
+				return nil
+			}
+			return group.ErrNotListed
+		}
+	})
+	st.node = func() *Node { return a.Node }
+	// b does not list a either, so both keep the connection for records.
+	bst := newRecordStore()
+	b := newMember(t, Full, withRecords(bst), func(_ *clip.Config, nc *Config) {
+		nc.Allow = func(group.DeviceID, []*x509.Certificate) error { return group.ErrNotListed }
+	})
+	bst.node = func() *Node { return b.Node }
+	aDone, _ := link(t, a, b)
+	time.Sleep(3 * recordsRecheck)
+	select {
+	case err := <-aDone:
+		t.Fatalf("the records-only connection ended before the records let b in: %v", err)
+	default:
+	}
+	listed.Store(true)
+	if err := wait(t, aDone, "the records-only connection to end"); !errors.Is(err, ErrLetIn) {
+		t.Fatalf("the connection ended with %v, want ErrLetIn", err)
+	}
+}

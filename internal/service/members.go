@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"net/netip"
 	"slices"
@@ -245,8 +246,9 @@ func rank(a netip.Addr) int {
 // member has been up for fallbackAfter.
 func (s *Service) dial(ctx context.Context, id group.DeviceID, later bool) {
 	backoff := minBackoff
+	letIn := false
 	for ctx.Err() == nil {
-		if later && !s.waitUnconnected(ctx, id) {
+		if later && !letIn && !s.waitUnconnected(ctx, id) {
 			return
 		}
 		s.mu.Lock()
@@ -257,6 +259,7 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID, later bool) {
 		}
 		nd := s.nd
 		s.mu.Unlock()
+		letIn = false
 		for _, addr := range addrs {
 			start := uptime.Now()
 			err := nd.Dial(ctx, id, addr)
@@ -267,12 +270,22 @@ func (s *Service) dial(ctx context.Context, id group.DeviceID, later bool) {
 				backoff = minBackoff // the connection worked for a while
 			}
 			logConn(s.logf, id, "at "+addr, err)
+			if errors.Is(err, node.ErrLetIn) {
+				// The records now admit the member: connect again at
+				// once, as a member, at the same address.
+				letIn = true
+				backoff = minBackoff
+				break
+			}
 		}
 		s.mu.Lock()
 		if d := s.dialers[id]; d != nil {
 			d.fallback = false
 		}
 		s.mu.Unlock()
+		if letIn {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
