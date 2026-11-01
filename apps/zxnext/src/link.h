@@ -34,6 +34,10 @@ void link_use(uint8_t uart);
 uint8_t link_ready(void);
 uint8_t link_get(void);
 
+// Whether the selected UART takes a byte now, and that byte, without waiting.
+uint8_t link_can_send(void);
+void link_put(uint8_t c);
+
 // How many times link_ready found a receive buffer full.
 uint16_t link_overflows(void);
 

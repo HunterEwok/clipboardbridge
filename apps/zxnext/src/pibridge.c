@@ -18,11 +18,15 @@
 
 #include "link.h"
 
-#define VERSION "0.1.0"
-// Bytes moved in one go before looking at the other direction.
-#define CHUNK 128
+#define VERSION "0.2.0"
+// Rings for each direction: the UARTs' own buffers are small, so the Z80
+// takes in what arrives at once and passes it on as the other side has
+// room, one byte at a time, without waiting on either.
+#define TO_ESP 2048 // the Pi's output, which comes in long runs
+#define TO_PI 1024  // what the computer types
 
-static uint8_t buf[CHUNK];
+static uint8_t ring_esp[TO_ESP], ring_pi[TO_PI];
+static uint16_t esp_in, esp_out, pi_in, pi_out;
 static char line[80];
 static uint8_t debug;
 static uint32_t to_pi, to_esp;
@@ -116,17 +120,29 @@ static uint8_t esp_prompt(void)
     return 1;
 }
 
-// Moves what one UART has received to the other, up to CHUNK bytes.
-static uint8_t pump(uint8_t from, uint8_t to, uint32_t *count)
+// One round in each direction.
+static void pump(void)
 {
-    uint8_t n = 0, i;
-    link_use(from);
-    while (n < CHUNK && link_ready()) buf[n++] = link_get();
-    if (!n) return 0;
-    link_use(to);
-    for (i = 0; i < n; i++) link_send(buf[i]);
-    *count += n;
-    return n;
+    link_use(LINK_PI);
+    while (((esp_in + 1) & (TO_ESP - 1)) != esp_out && link_ready()) {
+        ring_esp[esp_in] = link_get();
+        esp_in = (esp_in + 1) & (TO_ESP - 1);
+    }
+    while (pi_out != pi_in && link_can_send()) {
+        link_put(ring_pi[pi_out]);
+        pi_out = (pi_out + 1) & (TO_PI - 1);
+        to_pi++;
+    }
+    link_use(LINK_ESP);
+    while (((pi_in + 1) & (TO_PI - 1)) != pi_out && link_ready()) {
+        ring_pi[pi_in] = link_get();
+        pi_in = (pi_in + 1) & (TO_PI - 1);
+    }
+    while (esp_out != esp_in && link_can_send()) {
+        link_put(ring_esp[esp_out]);
+        esp_out = (esp_out + 1) & (TO_ESP - 1);
+        to_esp++;
+    }
 }
 
 static void esp_hang_up(void)
@@ -193,8 +209,7 @@ static int run(int argc, char **argv)
     link_use(LINK_PI);
     link_send('\n'); // so the computer sees SUP> at once
     while (!in_key_pressed(IN_KEY_SCANCODE_SPACE)) {
-        pump(LINK_PI, LINK_ESP, &to_esp);
-        pump(LINK_ESP, LINK_PI, &to_pi);
+        pump();
     }
     esp_hang_up();
     link_use(LINK_PI);

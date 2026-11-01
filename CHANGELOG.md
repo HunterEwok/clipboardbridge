@@ -10,7 +10,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - `.pibridge`, a test tool for the ZX Spectrum Next (`apps/zxnext`): it opens NextPi's shell
   to a computer on the home network through the Next's ESP8266, so a test can drive the Pi
   without typing on the Next, even on a Pi Zero without a radio. It carries the shell in the
-  clear, for a test bench only, and counts the times a UART's receive buffer filled up.
+  clear, for a test bench only, and counts the times a UART's receive buffer filled up. It
+  passes bytes through rings in both directions, so the Pi's long output arrives whole.
 - The phones seal their commands too: a paste, a mode, an action or a hub command to a device
   whose record has a key for sealed messages carries its orders sealed to that key, through
   the core's new `seal_command` (docs/core-api.md). A computer or a lite member sends its key

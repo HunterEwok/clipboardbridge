@@ -80,6 +80,16 @@ uint8_t link_get(void)
     return z80_inp(PORT_RX_BAUD);
 }
 
+uint8_t link_can_send(void)
+{
+    return !(z80_inp(PORT_TX_STATUS) & STATUS_TX_BUSY);
+}
+
+void link_put(uint8_t c)
+{
+    z80_outp(PORT_TX_STATUS, c);
+}
+
 uint16_t link_overflows(void)
 {
     return overflows;
