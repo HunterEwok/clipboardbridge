@@ -1625,10 +1625,23 @@ func TestTakeover(t *testing.T) {
 	if m, err := a.do(t, control.Header{Op: control.OpTakeover, Name: "pi"}, ""); err != nil || m.Name != "pi" {
 		t.Fatalf("takeover: %+v, %v", m, err)
 	}
-	id, _ := group.Load(a.dir)
-	if !id.IsRoot() || len(id.Roots) != 1 || id.AdminCA != nil || !id.ServesPhone() || id.PhoneCA.Cert.Equal(old.PhoneCA.Cert) {
-		t.Fatalf("after the takeover a is root %v, with %d roots, an admin CA %v, a new iPhone CA %v", id.IsRoot(), len(id.Roots), id.AdminCA != nil,
-			id.ServesPhone() && !id.PhoneCA.Cert.Equal(old.PhoneCA.Cert))
+	// The claim takes effect as soon as a evaluates it, and a then makes
+	// itself the root and a new iPhone CA, just after the command returned.
+	var id *group.Identity
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		id, _ = group.Load(a.dir)
+		if id != nil && id.IsRoot() && len(id.Roots) == 1 && id.AdminCA == nil && id.ServesPhone() && !id.PhoneCA.Cert.Equal(old.PhoneCA.Cert) {
+			break
+		}
+		if time.Now().After(deadline) {
+			if id == nil {
+				t.Fatal("after the takeover a has no identity")
+			}
+			t.Fatalf("after the takeover a is root %v, with %d roots, an admin CA %v, a new iPhone CA %v", id.IsRoot(), len(id.Roots), id.AdminCA != nil,
+				id.ServesPhone() && !id.PhoneCA.Cert.Equal(old.PhoneCA.Cert))
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	for _, s := range []*testService{b, c} {
 		waitFor(t, s.name+" follows the new root", func() bool {
