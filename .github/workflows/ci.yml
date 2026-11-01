@@ -366,10 +366,10 @@ jobs:
       - name: qemu for mips programs
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q qemu-user-static
+          sudo apt-get install -y -q qemu-user qemu-user-binfmt
       - name: go test the network, the group and the service under qemu-mips
         run: >-
-          go test -exec qemu-mips-static ./cmd/cbb ./internal/clip ./internal/control ./internal/group
+          go test -exec "$(command -v qemu-mips-static || command -v qemu-mips)" ./cmd/cbb ./internal/clip ./internal/control ./internal/group
           ./internal/hlc ./internal/mdns ./internal/netguard ./internal/node ./internal/openwrt
           ./internal/pair ./internal/service ./internal/sysinfo ./internal/tunnel ./internal/uptime
           ./internal/vless </dev/null
@@ -1638,7 +1638,7 @@ jobs:
           "$RUNNER_TEMP/zig/bin/pip" install -q ziglang==0.15.2 cargo-zigbuild==0.24.0
           echo "$RUNNER_TEMP/zig/bin" >>"$GITHUB_PATH"
           sudo apt-get update
-          sudo apt-get install -y -q qemu-user-static
+          sudo apt-get install -y -q qemu-user qemu-user-binfmt
       - name: build for mips and mipsel
         run: |
           sh lite/packaging/mips.sh mips
