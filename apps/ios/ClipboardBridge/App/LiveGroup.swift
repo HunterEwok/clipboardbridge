@@ -1016,7 +1016,9 @@ final class LiveGroup: GroupController {
         let (status, error) = hub.status(paused: !foreground)
         var h = AppModel.Hub(on: hub.isOn, status: status, error: error, forwarder: hub.forwarder,
                              home: hub.isHome(network), clients: hub.clients.count)
-        if hub.isOn, hub.forwarder != nil {
+        // The computers show without a forwarder too, so that the user sees
+        // where the hub can go; Settings asks for the forwarder first.
+        if hub.isOn {
             let movable = computers.filter { $0.online && $0.role == "full" && ($0.admin || $0.canMakeAdmin) }
             h.computers = movable.map { .init(id: $0.id, name: $0.name) }
             if !UserDefaults.standard.bool(forKey: Self.keepsPhoneHubKey),

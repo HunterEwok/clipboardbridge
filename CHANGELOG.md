@@ -940,6 +940,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The phones show where the hub can move while it has no forwarder yet, and ask for the
+  forwarder first, instead of hiding the choice.
 - A remote paste to a Mac answers in time when the Mac's clipboard holds what Universal
   Clipboard brought from another Apple device: the app no longer reads it to put it back,
   which fetched it from that device first, and it no longer naps while it pastes.

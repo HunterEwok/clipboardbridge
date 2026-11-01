@@ -2764,6 +2764,16 @@
         }
       }
     },
+    "Save a forwarder above first: away from home, the devices reach the new hub through it." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сначала сохраните форвардер выше: вне дома устройства находят новый хаб через него."
+          }
+        }
+      }
+    },
     "Keep this phone" : {
       "localizations" : {
         "ru" : {
