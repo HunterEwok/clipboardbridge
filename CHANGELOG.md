@@ -14,7 +14,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   or an action) to the receiver's key when its device record has one, so that the members
   in between see only who sent it to whom; the receiver opens them with its own secret
   (`v` `2`, docs/protocol.md, section 15, "Sealed commands"), in Go and the Rust core, on
-  shared vectors (`testdata/interop/go-sealed-commands.json`).
+  shared vectors (`testdata/interop/go-sealed-commands.json`). The lite member keeps a key
+  too (`seal.json`), offers it in its hello and opens the commands sealed to it.
 - Each computer makes a key for sealed messages (`seal.json`, in the TPM where there is one)
   and offers it in its hello; a root computer puts it in the device records, the first step
   to commands sealed for their receiver (docs/protocol.md, section 15).

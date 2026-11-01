@@ -591,10 +591,10 @@ fn go_sealed_commands() {
 fn hello_actions() {
     let h = crate::clip::Hello { wall: 1, current: None };
     let on = ["reboot".to_string(), "restart".to_string()];
-    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &on, "file");
+    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &on, "file", None);
     let (_, body) = wire::decode_hello(m.hello.as_ref()).unwrap();
     assert_eq!(body.actions, on);
-    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &[], "file");
+    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &[], "file", None);
     assert!(m.hello.unwrap().get("actions").is_none());
 }
 

@@ -89,7 +89,7 @@ func startLiteEnv(t *testing.T, bin, dir string, env []string, args ...string) *
 	if env != nil {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	cmd.Stdout, cmd.Stderr = testWriter{t, "lite: "}, testWriter{t, "lite: "}
+	cmd.Stdout, cmd.Stderr = testWriter{t, "lite: ", s}, testWriter{t, "lite: ", s}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -120,15 +120,22 @@ func startLiteEnv(t *testing.T, bin, dir string, env []string, args ...string) *
 	}
 }
 
-// testWriter logs what a child process writes.
+// testWriter logs what a child process writes, and keeps it in the lines
+// of s, if given, for logged.
 type testWriter struct {
 	t      *testing.T
 	prefix string
+	s      *testService
 }
 
 func (w testWriter) Write(p []byte) (int, error) {
 	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
 		w.t.Log(w.prefix + line)
+		if w.s != nil {
+			w.s.logMu.Lock()
+			w.s.lines = append(w.s.lines, line)
+			w.s.logMu.Unlock()
+		}
 	}
 	return len(p), nil
 }
@@ -151,7 +158,7 @@ func TestEmbassyJoiner(t *testing.T) {
 
 	file := filepath.Join(t.TempDir(), "identity.json")
 	join := exec.Command(bin, "-debug", "-tap", "tap0", "-addr", "192.168.69.2/24", "-name", "board", "-identity", file)
-	join.Stderr = testWriter{t, "esp32-on-linux: "}
+	join.Stderr = testWriter{t, "esp32-on-linux: ", nil}
 	out, err := join.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -246,7 +253,7 @@ func joinLite(t *testing.T, bin string, pi *testService) string {
 	dir := t.TempDir()
 	join := exec.Command(bin, "-state", dir, "-debug", "join", "-name", "lite", "-code", pa)
 	join.Stdin = strings.NewReader(code + "\n")
-	join.Stderr = testWriter{t, "lite join: "}
+	join.Stderr = testWriter{t, "lite join: ", nil}
 	out, err := join.Output()
 	if err != nil || !strings.Contains(string(out), "Joined the group") {
 		t.Fatalf("cbb join: %v; %s", err, out)
@@ -370,11 +377,32 @@ func TestLiteMember(t *testing.T) {
 		}
 		return false
 	})
+	// The lite member offers its key for sealed messages, and the root
+	// records it, so the command below is sealed to it.
+	waitFor(t, "the root records the lite member's key for sealed messages", func() bool {
+		id, err := group.Load(pi.dir)
+		if err != nil {
+			return false
+		}
+		recs, err := group.LoadRecords(pi.dir, id.GroupCA.Cert)
+		if err != nil {
+			return false
+		}
+		for _, d := range recs.Devices() {
+			if string(d.ID) == st.Device {
+				return len(d.Seal) > 0
+			}
+		}
+		return false
+	})
 	if _, err := pi.do(t, control.Header{Op: control.OpMode, Device: st.Device, Name: "receive"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if m := lite.status(t).Mode; m != "receive" {
 		t.Errorf("after the root's command the lite member's mode is %q, want receive", m)
+	}
+	if !lite.logged("opened a sealed mode command") {
+		t.Error("the lite member did not open the command sealed to it")
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "mode")); err != nil || string(b) != "receive\n" {
 		t.Errorf("the lite member's mode file: %q, %v", b, err)

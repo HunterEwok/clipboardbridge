@@ -200,6 +200,10 @@ pub fn run(cfg: Config) -> Result<()> {
             }
         }
     };
+    match crate::sealkey::load(&cfg.state_dir).and_then(crate::sealkey::set) {
+        Ok(()) => {}
+        Err(e) => log(&format!("cbb: the key for sealed commands: {}; commands come unsealed", e.for_log())),
+    }
     let records = Records::load(&cfg.state_dir, &ident.group_ca)?;
     let ident = with_roots(ident, &records, &cfg.state_dir, &*log);
     log(&format!("cbb: device {} in group {}, version {VERSION}", ident.id, ident.tag()));
@@ -459,14 +463,21 @@ impl Service {
         };
         let now = uptime::wall_ms();
         let me = node.identity().id.to_string();
-        let body = match node.records().lock().unwrap().verify_command(c, &me, now) {
+        let mut body = match node.records().lock().unwrap().verify_command(c, &me, now) {
             Ok(b) => b,
             Err(e) => return refused("", e.message().to_string()),
         };
         if body.sealed() {
-            // Its sender found a key for sealed commands in this device's
-            // record, which this version of the lite member does not offer.
-            return refused(&body.id, "this device does not open sealed commands yet".into());
+            let Some(secret) = crate::sealkey::secret() else {
+                return refused(
+                    &body.id,
+                    "the command is sealed, and this device has no key for sealed commands".into(),
+                );
+            };
+            if let Err(e) = body.open(secret) {
+                return refused(&body.id, e.message().to_string());
+            }
+            (self.log)(&format!("cbb: opened a sealed {} command from {peer}", body.kind));
         }
         if body.time_ms < self.started_ms {
             // It may have been carried out before the restart, which the
