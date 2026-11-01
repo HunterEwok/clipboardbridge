@@ -38,9 +38,17 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// device ID: sent again to a computer that offers the same admin key
     /// (section 10, "A computer as admin").
     public var computerAdmins: [String: Data] = [:]
+    /// The new root of this admin's claim to take the group over, DER,
+    /// while the claim waits (docs/records-v2.md, "Handing the group
+    /// over"); its key stays in the Secure Enclave until the claim takes
+    /// effect or ends.
+    public var claim: Data?
+    /// The device of the root that claim takes the group over from, which
+    /// the new root removes.
+    public var claimedFrom: String?
 
     enum CodingKeys: String, CodingKey {
-        case device, groupCA, roots, memberCert, memberIssuer, isRoot, adminCA, computers, records, computerAdmins
+        case device, groupCA, roots, memberCert, memberIssuer, isRoot, adminCA, computers, records, computerAdmins, claim, claimedFrom
     }
 
     init(device: String, groupCA: Data, memberCert: Data, computers: [Computer]) {
@@ -60,12 +68,8 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         computers = try c.decode([Computer].self, forKey: .computers)
         records = try c.decodeIfPresent(RecordSet.self, forKey: .records) ?? RecordSet()
         computerAdmins = try c.decodeIfPresent([String: Data].self, forKey: .computerAdmins) ?? [:]
-        // Sets saved before root records do not name their group CA.
-        if records.groupCA == nil, !records.records.isEmpty {
-            var set = RecordSet()
-            set.addAll(records.records, groupCA: groupCA)
-            records = set
-        }
+        claim = try c.decodeIfPresent(Data.self, forKey: .claim)
+        claimedFrom = try c.decodeIfPresent(String.self, forKey: .claimedFrom)
     }
 
     /// Whether this phone may admit devices, renew certificates and remove
@@ -145,6 +149,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         // The records that lead to the roots stay with the group, so the
         // roots are those its records name.
         g.records.addAll(j.welcome.records ?? [], groupCA: j.welcome.groupCA)
+        g.records.takeClaimTimes(j.welcome.claimTimes ?? [])
         g.roots = g.records.roots
         return g
     }
@@ -155,6 +160,12 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// rootless install, which is never an admin (D-79).
     public enum Failure: Error, Equatable {
         case cannotRemoveItself, unknownDevice, notAdmin, cannotRemoveRoot, notRoot, notAComputer, frozen, notFrozen, invalidName, fileKey, rootless
+        /// The root did not give this admin the power to take the group over.
+        case noTakeover
+        /// This admin's claim to take the group over waits already.
+        case claimWaiting
+        /// The delay before a claim takes effect is outside 0 to 7 days.
+        case invalidDelay
         /// A watch's request names a device ID or system that is not a new watch's,
         /// or a device that is not a watch of the group.
         case notAWatch
@@ -174,55 +185,146 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// Takes the roots of the records when they differ from roots,
     /// compared by content, so a root the records do not name never stays
     /// trusted; an empty set says nothing yet.
-    mutating func adoptRoots() {
+    public mutating func adoptRoots() {
         let path = records.roots
         if !records.records.isEmpty, path != roots { roots = path }
     }
 
-    /// Signs and adds a device record.
-    mutating func record(device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
-                         store: String? = nil, kind: String? = nil, proof: String? = nil, caSigner: CertificateSigner,
-                         now: Date) throws -> Member.Record {
-        guard isAdmin else { throw Failure.notAdmin }
-        let r = try Records.device(device, name: name, role: role, os: os, key: key, admin: admin, store: store, kind: kind, proof: proof,
-                                   group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+    /// The key hash of the signer's key, which names it in its records.
+    static func signer(_ s: CertificateSigner) -> Data { Records.keyHash(spki: s.publicKeyDER) }
+
+    /// The powers and commands the apps give an admin with role
+    /// (docs/records-v2.md, "Who signs what").
+    static func grants(role: String) -> (powers: [String], commands: [String]) {
+        switch role {
+        case "phone": (Records.powers, Records.commands)
+        case "watch": (Records.watchPowers, Records.watchCommands)
+        default: (Records.computerPowers, Records.commands)
+        }
+    }
+
+    /// Signs body with caSigner, the root's own key or this phone's admin
+    /// key, and adds it to the set.
+    mutating func sign(_ body: Records.Body, caSigner: CertificateSigner) throws -> Member.Record {
+        if records.groupCA == nil { records.groupCA = groupCA }
+        let r = try records.sign(body, with: caSigner, adminCA: isRoot ? nil : adminCA)
         records.add(r, groupCA: groupCA)
         return r
     }
 
-    /// Hands the group to this admin phone when the root phone lost is gone
-    /// (section 10, "Handing the group over"): a new root for rootSigner's
-    /// key, a root record signed with this phone's admin CA (adminSigner),
-    /// then, as the new root, a revocation of the old root's key and the
-    /// lost phone that keeps everything else the old root certified, and
-    /// this phone's own record under the new root. It returns the records
-    /// to send; this phone is the root afterwards.
-    public mutating func takeOver(from lost: String, adminSigner: CertificateSigner, rootSigner: CertificateSigner,
-                                  now: Date) throws -> [Member.Record] {
-        guard let myCA = adminCA, !isRoot else { throw Failure.notAdmin }
+    /// Signs and adds a device record. A record that makes an admin gives
+    /// it the powers of its role unless powers names them, and the root's
+    /// record of its own device says that it holds the root.
+    mutating func record(device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
+                         powers: [String]? = nil, commands: [String]? = nil, store: String? = nil, kind: String? = nil,
+                         proof: String? = nil, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isAdmin else { throw Failure.notAdmin }
+        var b = Records.Body(type: "device", signer: Self.signer(caSigner), timeMS: Records.ms(now))
+        (b.device, b.name, b.role, b.os, b.key, b.admin) = (device, name, role, os, key, admin)
+        (b.store, b.kind, b.proof) = (store, kind, proof)
+        if admin != nil {
+            let g = Self.grants(role: role)
+            (b.powers, b.commands) = (powers ?? g.powers, commands ?? g.commands)
+        }
+        if isRoot, device == self.device { b.holds_root = true }
+        return try sign(b, caSigner: caSigner)
+    }
+
+    /// Claims the group for this admin phone when the root phone is lost
+    /// (docs/records-v2.md, "Handing the group over"): a claim, signed
+    /// with this phone's admin key (adminSigner), that hands the group to
+    /// newRoot, a root CA for a new key of this phone. The claim waits the
+    /// group's delay (72 hours unless the root set another), and the root
+    /// cancels it meanwhile if it is still in use; finishTakeOver then
+    /// makes this phone the root. It returns the record to send.
+    public mutating func takeOver(from lost: String, adminSigner: CertificateSigner, newRoot: Data, now: Date) throws -> Member.Record {
+        guard adminCA != nil, !isRoot else { throw Failure.notAdmin }
         guard lost == records.rootDevice, lost != device else { throw Failure.notRoot }
-        let list = devices
-        guard let d = list.first(where: { $0.id == lost }), let me = list.first(where: { $0.id == device }) else {
-            throw Failure.unknownDevice
-        }
-        let oldRoot = try Records.keyHash(cert: currentRoot)
-        let newRoot = try GroupCertificates.groupCA(signer: rootSigner, now: now, pathLength: 1)
-        var keep = records.staying(by: oldRoot)
-        for other in list where other.id != lost {
-            if let k = other.adminKey, !keep.contains(k) { keep.append(k) }
-        }
-        keep.removeAll { d.keys.contains($0) || $0 == d.adminKey }
-        var out = [try Records.root(newRoot, group: tag, by: device, now: now, signer: adminSigner, adminCA: myCA)]
-        records.add(out[0], groupCA: groupCA)
-        out.append(try Records.revoke([oldRoot] + d.keys + (d.adminKey.map { [$0] } ?? []), keep: keep, group: tag, by: device, now: now,
-                                      signer: rootSigner))
-        out.append(try Records.device(device, name: me.name, role: "phone", os: me.os ?? "ios", key: me.key, admin: me.adminKey, group: tag, by: device,
-                                      now: now, signer: rootSigner))
-        for r in out.dropFirst() { records.add(r, groupCA: groupCA) }
+        guard claim == nil else { throw Failure.claimWaiting }
+        guard let me = devices.first(where: { $0.id == device }), me.may("takeover") else { throw Failure.noTakeover }
+        var b = Records.Body(type: "claim", signer: Self.signer(adminSigner), timeMS: Records.ms(now))
+        b.root = newRoot
+        let r = try sign(b, caSigner: adminSigner)
+        (claim, claimedFrom) = (newRoot, lost)
+        return r
+    }
+
+    /// The state of this phone's claim, as the records say: "pending",
+    /// "effective", "cancelled", "void", "competing" or "disputed"; nil
+    /// without one.
+    public var claimState: String? {
+        guard let claim, let k = try? Records.keyHash(cert: claim) else { return nil }
+        return records.claims.last(where: { $0.root == k })?.state
+    }
+
+    /// Drops this phone's claim when the root cancelled it or it became
+    /// void; reports whether it did.
+    @discardableResult
+    public mutating func dropEndedClaim() -> Bool {
+        guard let st = claimState, st == "cancelled" || st == "void" else { return false }
+        (claim, claimedFrom) = (nil, nil)
+        return true
+    }
+
+    /// Makes this phone the root once the records make its claim's new root
+    /// the current root, and signs what a new root starts with: its own
+    /// device that holds the root, the admins it keeps, and a removal of
+    /// the lost root's device and the shortcuts. rootSigner is the new
+    /// root's key. A claim that was cancelled or became void is dropped.
+    /// It returns the records to send; none while the claim waits.
+    public mutating func finishTakeOver(rootSigner: CertificateSigner, now: Date) throws -> [Member.Record] {
+        records.refresh()
         adoptRoots()
-        guard currentRoot == newRoot else { throw Failure.notRoot }
-        (isRoot, adminCA) = (true, nil)
+        guard let claim else { return [] }
+        guard currentRoot == claim else {
+            dropEndedClaim()
+            return []
+        }
+        let lost = claimedFrom
+        let list = devices
+        (isRoot, self.claim, claimedFrom) = (true, nil, nil)
+        var out: [Member.Record] = []
+        if let me = list.first(where: { $0.id == device }) {
+            out.append(try record(device: device, name: me.name, role: "phone", os: me.os ?? "ios", key: me.key, store: me.store,
+                                  kind: me.kind, proof: me.proof, caSigner: rootSigner, now: now))
+        }
+        var revoke: [Data] = []
+        for d in list where d.id != device {
+            if d.id == lost || d.role == "shortcut" {
+                revoke += d.keys
+            } else if let admin = d.adminKey, !d.frozen {
+                out.append(try record(device: d.id, name: d.name, role: d.role, os: d.os, key: d.key, admin: admin, powers: d.powers,
+                                      commands: d.commands, store: d.store, kind: d.kind, proof: d.proof, caSigner: rootSigner, now: now))
+            }
+        }
+        if !revoke.isEmpty {
+            var b = Records.Body(type: "revoke", signer: Self.signer(rootSigner), timeMS: Records.ms(now))
+            b.keys = Array(Set(revoke)).sorted { $0.base64EncodedString() < $1.base64EncodedString() }
+            out.append(try sign(b, caSigner: rootSigner))
+        }
+        adminCA = nil
         return out
+    }
+
+    /// Cancels claims, or ends a conflict, as the current root
+    /// (docs/records-v2.md, "Voiding"): a resolve that voids the records
+    /// with the IDs ids. It returns the record to send.
+    public mutating func resolve(_ ids: [Data], rootSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isRoot else { throw Failure.notRoot }
+        var b = Records.Body(type: "resolve", signer: Self.signer(rootSigner), timeMS: Records.ms(now))
+        b.records = ids
+        return try sign(b, caSigner: rootSigner)
+    }
+
+    /// Sets how long a claim waits before it takes effect (0 to 7 days;
+    /// 72 hours without a settings record), as the current root. It
+    /// returns the record to send.
+    public mutating func setTakeoverDelay(ms: Int64, rootSigner: CertificateSigner, now: Date) throws -> Member.Record {
+        guard isRoot else { throw Failure.notRoot }
+        guard (0...7 * 24 * 3600 * 1000).contains(ms) else { throw Failure.invalidDelay }
+        var b = Records.Body(type: "settings", signer: Self.signer(rootSigner), timeMS: Records.ms(now))
+        b.takeover_delay_ms = ms
+        return try sign(b, caSigner: rootSigner)
     }
 
     /// Renews this phone's own member certificate when it is due; reports
@@ -293,28 +395,21 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                                 now: now, signer: caSigner, adminCA: adminCA)
     }
 
-    /// Removes a device from the group: signs a revocation of its key,
-    /// which every member then refuses, and returns the record to send. For
-    /// an admin phone it revokes its admin key too and keeps the devices
-    /// that phone admitted, so they stay in the group (section 10). The
-    /// root phone is removed with takeOver instead.
+    /// Removes a device from the group: signs a revocation of every key it
+    /// had, and of its admin key for an admin, which every member then
+    /// refuses, and returns the record to send. What an admin signed before
+    /// stays (docs/records-v2.md, "Removals and freezes keep what the
+    /// author saw"). The root phone is taken over with takeOver instead.
     public mutating func revoke(device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
         guard device != self.device else { throw Failure.cannotRemoveItself }
         guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
         guard device != records.rootDevice else { throw Failure.cannotRemoveRoot }
-        // Every key the device had in the group goes, so none of them stays
-        // a member nobody sees.
-        var keys = d.keys, keep: [Data]?
-        if let admin = d.adminKey {
-            // A watch's record names its admin CA as its key already.
-            if !keys.contains(admin) { keys.append(admin) }
-            // Its own removals stop counting with it, so this record names them again.
-            for k in records.revokedBy(admin) where !keys.contains(k) { keys.append(k) }
-            keep = records.staying(by: admin).filter { !keys.contains($0) }
-        }
-        let r = try Records.revoke(keys, keep: keep, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
-        records.add(r, groupCA: groupCA)
+        var keys = d.keys
+        if let admin = d.adminKey, !keys.contains(admin) { keys.append(admin) }
+        var b = Records.Body(type: "revoke", signer: Self.signer(caSigner), timeMS: Records.ms(now))
+        b.keys = keys
+        let r = try sign(b, caSigner: caSigner)
         computers.removeAll { $0.device == device }
         computerAdmins[device] = nil
         return r
@@ -331,6 +426,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, Self.validName(name) == name else { throw Failure.invalidName }
         return try record(device: device, name: name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
+                          powers: d.adminKey == nil ? nil : d.powers, commands: d.adminKey == nil ? nil : d.commands,
                           store: d.store, kind: d.kind, proof: d.proof, caSigner: caSigner, now: now)
     }
 
@@ -340,10 +436,10 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     public mutating func thaw(device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
         guard let d = devices.first(where: { $0.id == device }) else { throw Failure.unknownDevice }
-        guard d.frozen, let admin = d.adminKey else { throw Failure.notFrozen }
-        let r = try Records.thaw(records.freezes(of: admin), group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
-        records.add(r, groupCA: groupCA)
-        return r
+        guard d.frozen, d.adminKey != nil, !d.freezes.isEmpty else { throw Failure.notFrozen }
+        var b = Records.Body(type: "thaw", signer: Self.signer(caSigner), timeMS: Records.ms(now))
+        b.records = d.freezes
+        return try sign(b, caSigner: caSigner)
     }
 
     /// Makes a computer an admin (section 10, "A computer as admin"): the
@@ -417,7 +513,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// watchRecord puts the two together. Any phone of the group builds
     /// it, admin or not: what counts is the watch's signature.
     public func watchBody(_ action: WatchAction, device: String, name: String? = nil, watch: String, now: Date) throws -> Data {
-        guard let w = devices.first(where: { $0.id == watch && $0.role == "watch" }), let ca = w.adminKey, records.isWatch(ca) else {
+        guard let w = devices.first(where: { $0.id == watch && $0.role == "watch" }), let ca = w.adminKey, w.admin else {
             throw Failure.notAWatch
         }
         guard watchActions(for: device).contains(action), let d = devices.first(where: { $0.id == device }) else {
@@ -428,8 +524,13 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         switch action {
         case .freeze:
             guard let admin = d.adminKey else { throw Failure.notForWatch }
-            r = try Records.freeze([admin], records: records.signed(by: admin), group: tag, by: watch, now: now, signer: s)
-        case .remove: r = try Records.revoke(d.keys, group: tag, by: watch, now: now, signer: s)
+            var b = Records.Body(type: "freeze", signer: ca, timeMS: Records.ms(now))
+            b.keys = [admin]
+            return try records.canonical(b)
+        case .remove:
+            var b = Records.Body(type: "revoke", signer: ca, timeMS: Records.ms(now))
+            b.keys = d.keys
+            return try records.canonical(b)
         case .pasteOff: r = try Commands.pasteOff(to: device, group: tag, by: watch, now: now, signer: s)
         case .actionsOff: r = try Commands.actionsOff(to: device, group: tag, by: watch, now: now, signer: s)
         case .awayOff: r = try Commands.awayOff(to: device, group: tag, by: watch, now: now, signer: s)
@@ -479,12 +580,14 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
             // but Google no longer vouches for the chain.
             guard d.store == Records.proven else { return nil }
             return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
+                              powers: d.adminKey == nil ? nil : d.powers, commands: d.adminKey == nil ? nil : d.commands,
                               store: Records.hardware, kind: d.kind, proof: nil, caSigner: rootSigner, now: now)
         }
         if d.store == r.store, (d.kind ?? "") == r.kind { return nil }
         guard let first = e.chain.first else { return nil }
         let proof = r.store == Records.proven ? SHA256.hash(data: first).map { String(format: "%02x", $0) }.joined() : nil
-        return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey, store: r.store,
+        return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
+                          powers: d.adminKey == nil ? nil : d.powers, commands: d.adminKey == nil ? nil : d.commands, store: r.store,
                           kind: r.kind.isEmpty ? nil : r.kind, proof: proof, caSigner: rootSigner, now: now)
     }
 
@@ -514,7 +617,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         guard isAdmin else { throw Failure.notAdmin }
         let (first, later, root, ca, issuer) = (groupCA, roots, currentRoot, signingCA, adminCA)
         let canMakeAdmins = isRoot && invitation == nil
-        let pathRecords = later.isEmpty ? nil : records.pathRecords
+        let pathRecords = records.pathRecords, claimTimes = records.claimTimes
         var adminKey: Data?
         let admitted = try await PairingMember.admit(
             over: t, code: code, memberCert: memberCert, joinerCert: joinerCert, sessionID: sessionID,
@@ -523,7 +626,14 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         ) { dev, publicKey, info in
             var w = Pairing.Welcome(cert: try GroupCertificates.member(device: dev, publicKey: publicKey, ca: ca, caSigner: caSigner, now: now),
                                     groupCA: first, issuer: issuer)
-            (w.roots, w.records) = (later.isEmpty ? nil : later, pathRecords)
+            w.roots = later.isEmpty ? nil : later
+            // The records let the new device take its peers at once; a
+            // group never handed over leaves them out when they do not fit
+            // in a frame, and the device gets them from its peers.
+            (w.records, w.claimTimes) = (pathRecords.isEmpty ? nil : pathRecords, claimTimes.isEmpty ? nil : claimTimes)
+            if later.isEmpty, ((try? JSONEncoder().encode(w))?.count ?? Int.max) > Pairing.maxFrame - Pairing.welcomeRoom {
+                (w.records, w.claimTimes) = (nil, nil)
+            }
             if info.isPhone, let key = info.adminKey, makeAdmin, canMakeAdmins {
                 w.adminCA = try GroupCertificates.adminCA(device: dev, publicKey: key, root: root, rootSigner: caSigner)
                 adminKey = key

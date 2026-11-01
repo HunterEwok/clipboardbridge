@@ -183,6 +183,22 @@ func afterDelay() time.Time {
 	return time.Now().Add(time.Duration(authority.DefaultDelay+1000) * time.Millisecond)
 }
 
+// writeV2Vectors writes v as testdata/interop/name with -update: the
+// vectors in records v:2 that the phone kits read once they ask the core.
+func writeV2Vectors(t *testing.T, name string, v any) {
+	t.Helper()
+	if !*update {
+		return
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("..", "..", "testdata", "interop", name), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // checkV1Refused checks that a set refuses every record of version 1 in the
 // interop file name, which the phone kits read until they move to the core:
 // there is no migration, and a member that holds records of version 1

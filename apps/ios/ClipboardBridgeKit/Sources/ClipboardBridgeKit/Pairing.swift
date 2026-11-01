@@ -13,6 +13,9 @@ public enum Pairing {
     public static let exporterLabel = "EXPERIMENTAL-clipboardbridge-pair-v1"
     /// Frames larger than this are refused.
     public static let maxFrame = 64 << 10
+    /// What a Welcome leaves free in its frame for the CA keys and the
+    /// framing, as Go's welcomeRoom.
+    static let welcomeRoom = 4 << 10
     static let channelPrefix = Array("clipboardbridge pair v1\u{0}".utf8)
 
     /// One frame of the exchange; each uses some of the fields.
@@ -43,9 +46,13 @@ public enum Pairing {
         /// The roots that took a phone group over from groupCA, in order;
         /// nil when it was never handed over (section 10, "Roots").
         public var roots: [Data]?
-        /// The records that lead to roots (RecordSet.pathRecords), by which
-        /// the joiner checks them; nil with roots.
+        /// The group's records (RecordSet.pathRecords): the joiner checks
+        /// roots by them and takes its peers at once; nil when they do not
+        /// fit and the group was never handed over.
         public var records: [Member.Record]?
+        /// When the admitting member first held each claim of records,
+        /// which the new device takes (RecordSet.takeClaimTimes).
+        public var claimTimes: [RecordSet.ClaimTime]?
         public var groupCAKey: Data?
         public var phoneCA: Data?
         public var phoneCAKey: Data?
@@ -54,7 +61,7 @@ public enum Pairing {
         public var adminCA: Data?
 
         enum CodingKeys: String, CodingKey {
-            case cert, issuer, groupCA = "group_ca", roots, records, groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key",
+            case cert, issuer, groupCA = "group_ca", roots, records, claimTimes = "claim_times", groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key",
                  adminCA = "admin_ca"
         }
 

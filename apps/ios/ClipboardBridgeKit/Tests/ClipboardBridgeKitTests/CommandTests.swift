@@ -167,8 +167,9 @@ final class CommandTests: XCTestCase {
         try await tb.value
     }
 
-    /// Writes mode commands this kit signed, with the root key and with an
-    /// admin CA's, for internal/group's TestSwiftCommand, when
+    /// Writes commands this kit signed, with the root key and with an admin
+    /// CA's, and the records that name both, for internal/group's
+    /// TestSwiftCommand, when
     /// CBB_INTEROP_OUT names a directory.
     func testCommandsForGo() throws {
         guard let dir = ProcessInfo.processInfo.environment["CBB_INTEROP_OUT"] else { return }
@@ -177,31 +178,40 @@ final class CommandTests: XCTestCase {
         let tag = GroupCertificates.tag(groupCA: ca)
         let adminCA = try GroupCertificates.adminCA(device: "fedcba9876543210fedcba9876543210", publicKey: admin.publicKeyDER,
                                                     root: ca, rootSigner: root)
-        let by = "0123456789abcdef0123456789abcdef"
+        // The records name the root's own device and the admin phone, which
+        // may sign every command.
+        let by = "0123456789abcdef0123456789abcdef", adminBy = "fedcba9876543210fedcba9876543210"
+        var set = RecordSet()
+        try set.signed(.device(by, name: "Root", role: "phone", key: Records.keyHash(spki: SoftwareSigner().publicKeyDER), holdsRoot: true,
+                               signer: root, now: now), root, groupCA: ca)
+        try set.signed(.device(adminBy, name: "Admin", role: "phone", key: Records.keyHash(spki: SoftwareSigner().publicKeyDER),
+                               admin: Records.keyHash(cert: adminCA), signer: root, now: now), root, groupCA: ca)
         struct Out: Encodable {
             var group_ca: Data
+            var records: [Member.Record]
             var to: String
             var commands: [Member.Record]
         }
-        let out = Out(group_ca: ca, to: pc, commands: [
+        let out = Out(group_ca: ca, records: set.records, to: pc, commands: [
             try Commands.mode(to: pc, mode: "receive", group: tag, by: by, now: now, signer: root),
-            try Commands.mode(to: pc, mode: "receive", group: tag, by: by, now: now, signer: admin, adminCA: adminCA),
+            try Commands.mode(to: pc, mode: "receive", group: tag, by: adminBy, now: now, signer: admin, adminCA: adminCA),
             try Commands.hub(to: pc, forwarder: ("203.0.113.9:8764", "sha256:AAAA"),
                              clients: [PhoneHub.Client(device: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", key: Data(repeating: 1, count: 32),
                                                        psk: Data(repeating: 2, count: 32))],
                              group: tag, by: by, now: now, signer: root),
-            try Commands.paste(to: pc, text: "echo <ok> & \"done\"\n", method: "type", enter: true, group: tag, by: by, now: now,
+            try Commands.paste(to: pc, text: "echo <ok> & \"done\"\n", method: "type", enter: true, group: tag, by: adminBy, now: now,
                                signer: admin, adminCA: adminCA),
             try Commands.pasteOff(to: pc, group: tag, by: by, now: now, signer: root),
-            try Commands.action(to: pc, name: "lock", group: tag, by: by, now: now, signer: admin, adminCA: adminCA),
+            try Commands.action(to: pc, name: "lock", group: tag, by: adminBy, now: now, signer: admin, adminCA: adminCA),
             try Commands.actionsOff(to: pc, group: tag, by: by, now: now, signer: root),
         ])
+        for c in out.commands { XCTAssertNoThrow(try Commands.verify(c, records: set, me: pc, nowMS: Records.ms(now))) }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         try (enc.encode(out) + Data("\n".utf8)).write(to: URL(fileURLWithPath: dir).appendingPathComponent("swift-command.json"))
     }
 
-    /// Reads testdata/interop/go-commands.json, from Go's
+    /// Reads testdata/interop/v2-commands.json, from Go's
     /// TestGoCommandVectors: which commands for this phone count.
     func testGoCommands() throws {
         var url = URL(fileURLWithPath: #filePath)
@@ -219,7 +229,7 @@ final class CommandTests: XCTestCase {
             var now_ms: Int64
             var commands: [C]
         }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-commands.json")))
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/v2-commands.json")))
         var set = RecordSet()
         XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
         XCTAssertEqual(v.commands.count, 17)
@@ -238,7 +248,7 @@ final class CommandTests: XCTestCase {
         }
     }
 
-    /// Reads testdata/interop/go-actions.json, from Go's
+    /// Reads testdata/interop/v2-actions.json, from Go's
     /// TestGoActionVectors: action commands for a member, as Go checks them.
     func testGoActions() throws {
         var url = URL(fileURLWithPath: #filePath)
@@ -256,7 +266,7 @@ final class CommandTests: XCTestCase {
             var now_ms: Int64
             var commands: [C]
         }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-actions.json")))
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/v2-actions.json")))
         var set = RecordSet()
         XCTAssertEqual(set.addAll(v.records, groupCA: v.group_ca).count, v.records.count)
         XCTAssertEqual(v.commands.count, 6)

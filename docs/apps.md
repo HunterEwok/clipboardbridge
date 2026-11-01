@@ -778,9 +778,13 @@ the app on real devices.
   the join QR code with its home network addresses (`LocalAddresses`). An admin phone scans
   it in "Add a device". The root phone makes every phone it admits an admin; an admin that
   is not the root admits phones as plain members. An admin phone that removes the root
-  phone takes the group over (`PhoneGroup.takeOver`, protocol.md section 10, "Handing the
-  group over"): it makes a new root key in the Secure Enclave behind Face ID, signs the
-  `root` record with its admin key, then, as the new root, the revocation and its own record.
+  phone takes the group over (`PhoneGroup.takeOver`, docs/records-v2.md): it makes a new
+  root key in the Secure Enclave behind Face ID and signs a claim with its admin key. The
+  claim waits as long as the root decided (72 hours by default, `setTakeoverDelay`), and the
+  root's phone may cancel it (`resolve`). Once the wait is over the app finishes the takeover
+  by itself (`finishTakeOver`): as the new root it signs its own record, keeps the other
+  admins and removes the lost phone. The kit keeps the records file and asks the Rust core
+  what it says (`RecordSet`, docs/core-api.md, "The record set").
 - `apps/android/` — the Gradle project (Kotlin, Compose), built and tested in CI on Linux;
   the app's `src/full` and `src/fdroid` hold what its two builds do differently, and
   `packaging/fdroid` the F-Droid recipe.

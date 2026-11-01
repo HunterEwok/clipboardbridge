@@ -92,7 +92,7 @@ final class PhoneJoinTests: XCTestCase {
         // By key: the root's own chain and the admin's, not another device's under their IDs.
         XCTAssertTrue(root.records.mayHost(root.device, chain: root.memberChain))
         XCTAssertTrue(root.records.mayHost(second.device, chain: admin.memberChain))
-        XCTAssertFalse(root.records.mayHost(second.device, chain: [pcJoined.welcome.cert, adminCA]), "a chain whose key no admin record names")
+        XCTAssertFalse(root.records.mayHost(pc.device, chain: [pcJoined.welcome.cert, adminCA]), "a chain whose key no admin record names")
         XCTAssertFalse(root.records.mayHost(root.device, chain: admin.memberChain))
 
         // Renewals: an admin renews what it issued, the root renews any.
@@ -111,23 +111,21 @@ final class PhoneJoinTests: XCTestCase {
         XCTAssertEqual(try GroupCertificates.verifyMember(chain: admin.memberChain, groupCA: root.groupCA, now: later), admin.device)
 
         // The admin cannot remove the root; the root removes the admin and
-        // keeps every listed device: the computer it admitted, and the root,
-        // whose certificate it renewed.
+        // every listed device stays: the computer it admitted, and the root,
+        // whose certificate it renewed (docs/records-v2.md, "Removals and
+        // freezes keep what the author saw").
         XCTAssertThrowsError(try admin.revoke(device: root.device, caSigner: adminKey, now: t0)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .cannotRemoveRoot)
         }
         let revocation = try root.revoke(device: second.device, caSigner: rootKey, now: t0)
-        let body = try JSONDecoder().decode(Records.Body.self, from: revocation.body)
+        struct Keys: Decodable { var type: String, keys: [Data]? }
+        let body = try JSONDecoder().decode(Keys.self, from: revocation.body)
+        XCTAssertEqual(body.type, "revoke")
         XCTAssertEqual(Set(body.keys ?? []), [listed.key, try Records.keyHash(cert: adminCA)])
-        XCTAssertEqual(Set(body.keep ?? []), [try Records.keyHash(cert: pcJoined.welcome.cert), try Records.keyHash(cert: root.memberCert)])
         XCTAssertFalse(root.devices.contains { $0.id == second.device })
         XCTAssertTrue(root.devices.contains { $0.id == pc.device })
         XCTAssertNil(root.records.refused(chain: pcChain))
         XCTAssertNil(root.records.refused(chain: [rootsOne.cert, adminCA]), "the root's certificate the removed admin renewed")
-        // A takeover keeps the removed admin's CA too, under which those
-        // certificates hold.
-        let staying = root.records.staying(by: try Records.keyHash(cert: root.groupCA))
-        XCTAssertTrue(staying.contains(try Records.keyHash(cert: adminCA)), "a takeover drops the removed admin's CA")
         XCTAssertNotNil(root.records.refused(chain: [joined.welcome.cert]))
     }
 

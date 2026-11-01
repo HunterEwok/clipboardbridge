@@ -622,6 +622,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   admitting member counted from the Welcome, and `cbb upgrade` is gone. A device whose
   record has not reached a member yet gets a connection that carries records only, until
   the records let it in.
+- The iPhone app keeps its group's records of version 2 and asks the Rust core what they say
+  (`group_add`, `group_view`, `group_command`), instead of applying the group's rules in
+  Swift. Taking a group over is a claim that waits as long as the root decided: the app
+  finishes it by itself once the wait is over, with Face ID, and the root's phone may cancel
+  it or change the wait. A new member takes the waits counted so far from the Welcome.
 - Remote paste on Linux and FreeBSD takes nothing where the device cannot tell whether its
   session is locked (no logind, `loginctl` failing or saying nothing): earlier it pasted
   there. The device's user may allow pastes without that check with

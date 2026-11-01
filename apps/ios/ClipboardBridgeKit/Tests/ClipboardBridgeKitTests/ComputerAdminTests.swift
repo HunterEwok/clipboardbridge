@@ -18,7 +18,7 @@ final class ComputerAdminTests: XCTestCase {
         let pi = SyncEngine.newID()
         let cert = try GroupCertificates.member(device: pi, publicKey: SoftwareSigner().publicKeyDER, ca: g.groupCA, caSigner: root, now: t0)
         let key = try Records.keyHash(cert: cert)
-        _ = try g.record(device: pi, name: "pi", role: "linux", key: key, caSigner: root, now: t0)
+        _ = try g.record(device: pi, name: "pi", role: "full", key: key, caSigner: root, now: t0)
         return (g, root, pi, key)
     }
 
@@ -111,8 +111,8 @@ final class ComputerAdminTests: XCTestCase {
         // The admin computer admits the deck; removing the computer keeps it.
         let deck = SyncEngine.newID()
         let deckCert = try GroupCertificates.member(device: deck, publicKey: SoftwareSigner().publicKeyDER, ca: ca, caSigner: adminKey, now: t0)
-        g.add([try Records.device(deck, name: "deck", role: "linux", key: Records.keyHash(cert: deckCert), group: g.tag, by: pi, now: t0,
-                                  signer: adminKey, adminCA: ca)])
+        g.add([try g.records.sign(.device(deck, name: "deck", role: "full", key: Records.keyHash(cert: deckCert), signer: adminKey, now: t0),
+                                  with: adminKey, adminCA: ca)])
         XCTAssertTrue(g.devices.contains { $0.id == deck })
         _ = try g.revoke(device: pi, caSigner: root, now: t0)
         XCTAssertEqual(Set(g.devices.map(\.id)), [g.device, deck])
@@ -148,14 +148,14 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertEqual(d.key, key)
         XCTAssertEqual(d.adminKey, key)
         XCTAssertTrue(d.admin)
-        XCTAssertTrue(g.records.isWatch(key))
+        XCTAssertEqual(d.powers, Records.watchPowers)
         XCTAssertFalse(g.records.mayHost(watch))
 
         // A device record the watch signs admits nobody.
         let deck = SyncEngine.newID()
         let deckCert = try GroupCertificates.member(device: deck, publicKey: SoftwareSigner().publicKeyDER, ca: ca, caSigner: watchKey, now: t0)
-        g.add([try Records.device(deck, name: "deck", role: "linux", key: Records.keyHash(cert: deckCert), group: g.tag, by: watch, now: t1,
-                                  signer: watchKey, adminCA: ca)])
+        g.add([try g.records.sign(.device(deck, name: "deck", role: "full", key: Records.keyHash(cert: deckCert), signer: watchKey, now: t1),
+                                  with: watchKey, adminCA: ca)])
         XCTAssertFalse(g.devices.contains { $0.id == deck })
         XCTAssertNotNil(g.records.refused(chain: [deckCert, ca]))
 
@@ -200,7 +200,10 @@ final class ComputerAdminTests: XCTestCase {
         XCTAssertNoThrow(try Commands.verify(try signed(.action, t.pi, name: "lock"), records: g.records, me: t.pi, nowMS: now))
 
         // The freeze and the removal count.
-        XCTAssertEqual(g.add([try signed(.freeze, t.pi), try signed(.remove, deck)]).count, 2)
+        // One at a time: two bodies built from the same set would carry
+        // one number, which stops the watch's records (two histories).
+        XCTAssertEqual(g.add([try signed(.freeze, t.pi)]).count, 1)
+        XCTAssertEqual(g.add([try signed(.remove, deck)]).count, 1)
         XCTAssertTrue(try XCTUnwrap(g.devices.first { $0.id == t.pi }).frozen)
         XCTAssertFalse(g.devices.contains { $0.id == deck })
     }

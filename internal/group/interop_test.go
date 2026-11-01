@@ -498,9 +498,10 @@ func TestGoTakeoverVectors(t *testing.T) {
 }
 
 // TestSwiftCommand checks the commands a phone kit signed
-// (swift-command.json, which the kits' tests write): mode commands with the
-// root's key and with an admin CA's, a hub, a paste, a paste-off, an action
-// and an actions-off command are taken, for the device they name.
+// (swift-command.json, which the kits' tests write) with the records it
+// signed: mode commands with the root's key and with an admin CA's, a hub, a
+// paste, a paste-off, an action and an actions-off command are taken, for
+// the device they name.
 func TestSwiftCommand(t *testing.T) {
 	dir := os.Getenv("CBB_INTEROP_OUT")
 	if dir == "" {
@@ -515,6 +516,7 @@ func TestSwiftCommand(t *testing.T) {
 	}
 	var v struct {
 		GroupCA  []byte   `json:"group_ca"`
+		Records  []Record `json:"records"`
 		To       DeviceID `json:"to"`
 		Commands []Record `json:"commands"`
 	}
@@ -526,6 +528,9 @@ func TestSwiftCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewRecords(ca)
+	if _, errs := s.AddAll(v.Records); len(errs) > 0 {
+		t.Fatalf("Go refuses the phone's records: %v", errs)
+	}
 	// Two mode commands, by the root and by an admin, a hub command by the
 	// root with one client, a typed paste by the admin, paste-off by the
 	// root, lock by the admin and actions-off by the root.
@@ -538,12 +543,10 @@ func TestSwiftCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err := s.VerifyCommand(c, v.To, time.UnixMilli(b.TimeMS))
-		// An admin's command needs the device record that names its key
-		// and gives it the command's type (records v2), which the kits do
-		// not write yet: until they sign records v2 through the core,
-		// their admins' commands are refused here, and only the root's
-		// are checked through.
-		if len(c.Chain) > 0 {
+		// A kit that does not sign records v2 through the core yet (the
+		// Kotlin kit, until it moves) writes no records, and its admin's
+		// commands are refused: only the root's are checked through.
+		if len(v.Records) == 0 && len(c.Chain) > 0 {
 			if err == nil || !strings.Contains(err.Error(), "not an admin") {
 				t.Errorf("command %d, by an admin no record names: %v", i, err)
 			}
@@ -780,6 +783,7 @@ func TestGoCommandVectors(t *testing.T) {
 		}
 		file = v
 	}
+	writeV2Vectors(t, "v2-commands.json", file)
 	v := file
 	ca, err := x509.ParseCertificate(v.GroupCA)
 	if err != nil {

@@ -9,7 +9,7 @@ import XCTest
 final class CredentialsTests: XCTestCase {
     typealias Credential = ServerCredentials.Credential
 
-    /// Reads testdata/interop/go-credentials.json, from Go's
+    /// Reads testdata/interop/v2-credentials.json, from Go's
     /// TestGoCredentialVectors.
     func testGoCredentials() throws {
         var url = URL(fileURLWithPath: #filePath)
@@ -35,7 +35,7 @@ final class CredentialsTests: XCTestCase {
             var pseudonym: String
             var bad: [Bad]
         }
-        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-credentials.json")))
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/v2-credentials.json")))
         var s = RecordSet()
         _ = s.addAll(v.records, groupCA: v.group_ca)
         let l = ServerCredentials.lists(s)
