@@ -27,13 +27,13 @@ final class MacUITests: XCTestCase {
     func testStoppedService() {
         var app = launch(["-ShowErrorDetails", "NO"])
         XCTAssertTrue(app.staticTexts["The service does not answer"].waitForExistence(timeout: 30))
-        XCTAssertTrue(app.staticTexts[Self.plain].waitForExistence(timeout: 10), "with details off the notice is not the plain message")
+        XCTAssertTrue(text(app, equal: Self.plain).waitForExistence(timeout: 10), "with details off the notice is not the plain message")
         app.terminate()
 
         app = launch(["-ShowErrorDetails", "YES"])
         let detailed = app.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@ OR label BEGINSWITH %@", Self.plain + "\n\n", Self.plain + "\n\n")).firstMatch
         XCTAssertTrue(detailed.waitForExistence(timeout: 30), "with details on the notice has no error underneath")
-        XCTAssertFalse(app.staticTexts[Self.plain].exists, "with details on the plain message shows alone")
+        XCTAssertFalse(text(app, equal: Self.plain).exists, "with details on the plain message shows alone")
         app.terminate()
     }
 
@@ -42,7 +42,14 @@ final class MacUITests: XCTestCase {
         for (arg, want) in [("NO", false), ("YES", true)] {
             let app = launch(["-ShowErrorDetails", arg])
             XCTAssertTrue(app.staticTexts["The service does not answer"].waitForExistence(timeout: 30))
-            app.typeKey(",", modifierFlags: .command)
+            app.activate()
+            let item = app.menuBarItems["CBB"].menuItems["Settings…"]
+            if item.waitForExistence(timeout: 5) {
+                app.menuBarItems["CBB"].click()
+                item.click()
+            } else {
+                app.typeKey(",", modifierFlags: .command)
+            }
             let toggle = app.checkBoxes["Show error details"].exists ? app.checkBoxes["Show error details"] : app.switches["Show error details"]
             XCTAssertTrue(toggle.waitForExistence(timeout: 10), "Settings has no error details switch")
             let on = (toggle.value as? Int ?? Int(toggle.value as? String ?? "") ?? -1) == 1
@@ -56,6 +63,12 @@ final class MacUITests: XCTestCase {
         let app = launch(language: "ru")
         XCTAssertTrue(app.staticTexts[ru("The service does not answer")].waitForExistence(timeout: 30))
         app.terminate()
+    }
+
+    /// A text whose value or label is exactly this; a query by a long string
+    /// as the identifier is refused past 128 characters.
+    private func text(_ app: XCUIApplication, equal: String) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "value == %@ OR label == %@", equal, equal)).firstMatch
     }
 
     /// The app's Russian text for an English one, from its string catalog,
