@@ -1671,9 +1671,11 @@ jobs:
         run: go run ./tools/bench -cbb "$RUNNER_TEMP/cbb" -android apps/android -report "$RUNNER_TEMP/phone" phone
       - name: the emulator's log
         if: failure() || cancelled()
+        timeout-minutes: 2
         run: |
-          tail -100 "$RUNNER_TEMP/emulator.log"
-          "$ANDROID_HOME/platform-tools/adb" logcat -d -t 400 '*:W' || true
+          tail -100 "$RUNNER_TEMP/emulator.log" || true
+          # logcat waits for a device that never came up; the timeout ends that.
+          timeout 30 "$ANDROID_HOME/platform-tools/adb" logcat -d -t 400 '*:W' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
