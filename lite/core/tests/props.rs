@@ -161,7 +161,7 @@ proptest! {
         for c in cases() {
             let mut s = seed;
             let mut records = c.records.clone();
-            records.extend(c.records.iter().filter(|_| next(&mut s) % 2 == 0).cloned());
+            records.extend(c.records.iter().filter(|_| next(&mut s).is_multiple_of(2)).cloned());
             shuffle(&mut records, seed);
             prop_assert_eq!(evaluate(&c, &records), c.state.clone(), "{} with duplicates", c.name);
         }
@@ -173,7 +173,7 @@ proptest! {
     fn damaged_sets_never_panic(seed in any::<u64>(), flip in any::<(usize, u8)>()) {
         for c in cases() {
             let mut s = seed;
-            let mut records: Vec<Record> = c.records.iter().filter(|_| next(&mut s) % 3 != 0).cloned().collect();
+            let mut records: Vec<Record> = c.records.iter().filter(|_| !next(&mut s).is_multiple_of(3)).cloned().collect();
             if let Some(r) = records.first_mut() {
                 if !r.body.is_empty() {
                     let i = flip.0 % r.body.len();

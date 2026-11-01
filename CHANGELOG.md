@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Encryption of a message for one device, for the sealed commands of 0.6: HPKE with
+  X-Wing (ML-KEM-768 and X25519, so it holds against a quantum computer as well),
+  HKDF-SHA256 and ChaCha20-Poly1305, in Go (`internal/seal`) and in the Rust core
+  (`cbb_core::seal`), checked on shared vectors (`testdata/interop/seal-go.json`,
+  `seal-rust.json`). The Rust core needs Rust 1.87.
 - Nightly mutation testing of the records' rules (`cargo mutants` on the Rust core,
   `gremlins` on Go's `internal/authority`): every change to the code that no test notices is
   listed in the run (docs/testing.md, "Mutation testing").

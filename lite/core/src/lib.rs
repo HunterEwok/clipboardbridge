@@ -57,6 +57,7 @@ pub mod pair;
 #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unwrap_used, clippy::expect_used)]
 pub mod records;
 pub mod release;
+pub mod seal;
 pub mod store;
 pub mod strict;
 pub mod sync;
