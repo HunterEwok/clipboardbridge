@@ -934,6 +934,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A remote paste to a Mac answers in time when the Mac's clipboard holds what Universal
+  Clipboard brought from another Apple device: the app no longer reads it to put it back,
+  which fetched it from that device first, and it no longer naps while it pastes.
+- `cbb global` says "for 1 device", not "1 devices".
 - The iPhone app shows why a computer refused a remote paste under the text, where the
   keyboard no longer hides it.
 - The Mac app shows "Allowed" for remote paste once Accessibility allows it, without
