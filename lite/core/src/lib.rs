@@ -52,6 +52,7 @@ pub mod error;
 pub mod fuzzing;
 pub mod hlc;
 pub mod identity;
+pub mod invite;
 pub mod keyboard;
 pub mod media;
 pub mod pair;

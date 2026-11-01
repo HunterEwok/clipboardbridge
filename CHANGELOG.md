@@ -8,6 +8,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The remote invitation is read the same way by Go and the Rust core (`cbb_core::invite`),
+  checked on shared vectors (`testdata/interop/invites.json`). Its JSON must now be in the
+  strict form of signed bodies with exactly the fields of docs/protocol.md section 12. A
+  refusal names one reason, the same in both. The obfuscation's ranges are read only as
+  `min-max` in plain decimal.
 - Encryption of a message for one device, for the sealed commands of 0.6: HPKE with
   X-Wing (ML-KEM-768 and X25519, so it holds against a quantum computer as well),
   HKDF-SHA256 and ChaCha20-Poly1305, in Go (`internal/seal`) and in the Rust core

@@ -9,6 +9,7 @@
 package invite
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/pair"
+	"github.com/HunterEwok/clipboardbridge/internal/strict"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
 )
 
@@ -80,66 +82,199 @@ func (in *Invitation) String() string {
 	return prefix + base64.RawURLEncoding.EncodeToString(data)
 }
 
+// Reason names why Parse refused a text, the same in Go and in the Rust
+// core (cbb_core::invite), as testdata/interop/invites.json lists them.
+type Reason string
+
+// The reasons Parse gives.
+const (
+	NotInvitation  Reason = "not_invitation" // not the invitation's prefix
+	Damaged        Reason = "damaged"        // not base64url, not strict JSON, a field missing, unknown or of another type
+	Version        Reason = "version"        // a v other than 1
+	BadGroup       Reason = "group"          // g is not a group tag
+	BadHub         Reason = "hub"            // h is not a device ID
+	BadKey         Reason = "key"            // hk, k or psk is not 32 bytes, or all zeros
+	BadEndpoints   Reason = "endpoints"      // ep is empty, longer than 8, or holds an address that is not ip:port
+	BadSecret      Reason = "secret"         // s is shorter than 16 bytes or longer than 64
+	BadExpiry      Reason = "expiry"         // exp is not after 0
+	BadObfuscation Reason = "obfuscation"    // o is damaged
+)
+
+// Error is Parse's error.
+type Error struct {
+	Reason Reason
+	msg    string
+}
+
+func (e *Error) Error() string { return "invite: " + e.msg }
+
+func refuse(r Reason, msg string) error { return &Error{Reason: r, msg: msg} }
+
+// MaxSecret is the longest pairing secret an invitation carries.
+const MaxSecret = 64
+
+// strictWire is what Parse reads: the fields of wire, with the byte
+// strings as text so that only their standard form passes.
+type strictWire struct {
+	V         int64      `json:"v"`
+	Group     string     `json:"g"`
+	Hub       string     `json:"h"`
+	HubKey    string     `json:"hk"`
+	Endpoints []string   `json:"ep"`
+	GuestKey  string     `json:"k"`
+	GuestPSK  string     `json:"psk"`
+	Secret    string     `json:"s"`
+	Expires   int64      `json:"exp"`
+	Obf       *strictObf `json:"o"`
+}
+
+type strictObf struct {
+	JC        *int64  `json:"jc"`
+	JMin      *int64  `json:"jmin"`
+	JMax      *int64  `json:"jmax"`
+	S1        *int64  `json:"s1"`
+	S2        *int64  `json:"s2"`
+	S3        *int64  `json:"s3"`
+	S4        *int64  `json:"s4"`
+	H1        *string `json:"h1"`
+	H2        *string `json:"h2"`
+	H3        *string `json:"h3"`
+	H4        *string `json:"h4"`
+	HeaderKey *string `json:"header_protection_key"`
+}
+
 // Parse reads an invitation's text, such as a file's content, and checks
-// it; surrounding white space is ignored. It does not check the expiry.
+// it; spaces, tabs and line breaks around it are ignored. It does not check the expiry
+// (Expired does). The JSON must be in the strict form of signed bodies
+// (docs/protocol.md, Conventions) with exactly the fields of section 12,
+// byte strings in standard base64, so that every implementation reads one
+// text alike.
 func Parse(text string) (*Invitation, error) {
-	text = strings.TrimSpace(text)
+	text = strings.Trim(text, " \t\r\n")
 	enc, ok := strings.CutPrefix(text, prefix)
 	if !ok {
-		return nil, errors.New("invite: this is not a clipboardbridge invitation")
+		return nil, refuse(NotInvitation, "this is not a clipboardbridge invitation")
 	}
-	data, err := base64.RawURLEncoding.DecodeString(enc)
-	if err != nil {
-		return nil, errors.New("invite: the invitation is damaged")
+	// Go's decoder skips line breaks; the text has none.
+	data, err := base64.RawURLEncoding.Strict().DecodeString(enc)
+	if err != nil || strings.ContainsAny(enc, "\r\n") {
+		return nil, refuse(Damaged, "the invitation is damaged")
 	}
-	var w wire
-	if err := json.Unmarshal(data, &w); err != nil {
-		return nil, errors.New("invite: the invitation is damaged")
+	if err := strict.Check(data, "v"); err != nil {
+		return nil, refuse(Damaged, "the invitation is damaged")
 	}
-	if w.V != 1 {
-		return nil, fmt.Errorf("invite: an invitation of version %d; update clipboardbridge", w.V)
+	var v struct {
+		V json.RawMessage `json:"v"`
 	}
-	in := &Invitation{Group: w.Group, Hub: w.Hub, Secret: w.Secret, Expires: time.Unix(w.Expires, 0), Obfuscation: w.Obfuscation}
+	var version int64
+	if err := json.Unmarshal(data, &v); err != nil || json.Unmarshal(v.V, &version) != nil {
+		return nil, refuse(Damaged, "the invitation is damaged")
+	}
+	if version != 1 {
+		return nil, refuse(Version, fmt.Sprintf("an invitation of version %d; update clipboardbridge", version))
+	}
+	if err := strict.Check(data, "v", "g", "h", "hk", "ep", "k", "psk", "s", "exp"); err != nil {
+		return nil, refuse(Damaged, "the invitation is damaged")
+	}
+	var w strictWire
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&w); err != nil {
+		return nil, refuse(Damaged, "the invitation is damaged")
+	}
+	in := &Invitation{Group: w.Group, Hub: w.Hub, Expires: time.Unix(w.Expires, 0)}
+	if !isHex(w.Group, 16) {
+		return nil, refuse(BadGroup, "the invitation names no group")
+	}
+	if !isHex(w.Hub, 32) {
+		return nil, refuse(BadHub, "the invitation names no hub")
+	}
 	for _, k := range []struct {
 		dst *tunnel.Key
-		src []byte
+		src string
 	}{{&in.HubKey, w.HubKey}, {&in.GuestKey, w.GuestKey}, {&in.GuestPSK, w.GuestPSK}} {
-		if len(k.src) != len(k.dst) {
-			return nil, errors.New("invite: the invitation is damaged")
+		b, err := strict.DecodeBase64(k.src)
+		if err != nil || len(b) != len(k.dst) {
+			return nil, refuse(BadKey, "the invitation lacks a key")
 		}
-		copy(k.dst[:], k.src)
+		copy(k.dst[:], b)
+		if k.dst.IsZero() {
+			return nil, refuse(BadKey, "the invitation lacks a key")
+		}
+	}
+	if len(w.Endpoints) == 0 || len(w.Endpoints) > 8 {
+		return nil, refuse(BadEndpoints, "the invitation has no hub address, or too many")
 	}
 	for _, e := range w.Endpoints {
-		ep, err := netip.ParseAddrPort(e)
+		ep, err := ParseEndpoint(e)
 		if err != nil {
-			return nil, errors.New("invite: the invitation is damaged")
+			return nil, refuse(BadEndpoints, "the invitation has an address that is not ip:port")
 		}
 		in.Endpoints = append(in.Endpoints, ep)
 	}
-	if err := in.check(); err != nil {
-		return nil, err
+	if in.Secret, err = strict.DecodeBase64(w.Secret); err != nil || len(in.Secret) < pair.MinSecret || len(in.Secret) > MaxSecret {
+		return nil, refuse(BadSecret, "the invitation's secret is too short or too long")
+	}
+	if w.Expires <= 0 {
+		return nil, refuse(BadExpiry, "the invitation has no expiry")
+	}
+	if w.Obf != nil {
+		if in.Obfuscation, err = w.Obf.read(); err != nil {
+			return nil, refuse(BadObfuscation, "the invitation's obfuscation settings are damaged")
+		}
 	}
 	return in, nil
 }
 
-func (in *Invitation) check() error {
-	if _, err := tunnel.Addr(in.Hub); err != nil {
-		return errors.New("invite: the invitation names no hub")
+// Expired tells whether the invitation has expired at now.
+func (in *Invitation) Expired(now time.Time) bool { return !now.Before(in.Expires) }
+
+// ParseEndpoint reads an address as ip:port in its canonical form (an
+// IPv6 address in brackets, without a zone), with a port that is not 0.
+func ParseEndpoint(s string) (netip.AddrPort, error) {
+	ep, err := netip.ParseAddrPort(s)
+	if err != nil || ep.Addr().Zone() != "" || ep.Port() == 0 || ep.String() != s {
+		return netip.AddrPort{}, fmt.Errorf("invite: %q is not ip:port", s)
 	}
-	switch {
-	case in.Group == "":
-		return errors.New("invite: the invitation names no group")
-	case len(in.Endpoints) == 0 || len(in.Endpoints) > 8:
-		return errors.New("invite: the invitation has no hub address, or too many")
-	case len(in.Secret) < pair.MinSecret:
-		return errors.New("invite: the invitation's secret is too short")
-	case in.HubKey.IsZero() || in.GuestKey.IsZero() || in.GuestPSK.IsZero():
-		return errors.New("invite: the invitation lacks a key")
+	return ep, nil
+}
+
+func isHex(s string, n int) bool {
+	if len(s) != n {
+		return false
 	}
-	if o := in.Obfuscation; o != nil {
-		if err := o.Check(); err != nil {
-			return errors.New("invite: the invitation's obfuscation settings are damaged")
+	for _, c := range []byte(s) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
 		}
 	}
-	return nil
+	return true
+}
+
+func (o *strictObf) read() (*tunnel.Obfuscation, error) {
+	ints := []*int64{o.JC, o.JMin, o.JMax, o.S1, o.S2, o.S3, o.S4}
+	strs := []*string{o.H1, o.H2, o.H3, o.H4, o.HeaderKey}
+	for _, p := range ints {
+		if p == nil || *p < 0 || *p > 1<<31 {
+			return nil, errors.New("a number is missing or out of range")
+		}
+	}
+	for _, p := range strs {
+		if p == nil {
+			return nil, errors.New("a field is missing")
+		}
+	}
+	out := &tunnel.Obfuscation{JC: int(*o.JC), JMin: int(*o.JMin), JMax: int(*o.JMax),
+		S1: int(*o.S1), S2: int(*o.S2), S3: int(*o.S3), S4: int(*o.S4)}
+	for i, r := range []*tunnel.Range{&out.H1, &out.H2, &out.H3, &out.H4} {
+		if err := r.UnmarshalText([]byte(*strs[i])); err != nil {
+			return nil, err
+		}
+	}
+	key, err := strict.DecodeBase64(*o.HeaderKey)
+	if err != nil || len(key) != len(out.HeaderKey) {
+		return nil, errors.New("the header protection key is not 32 bytes")
+	}
+	copy(out.HeaderKey[:], key)
+	return out, out.Check()
 }
