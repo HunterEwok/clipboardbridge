@@ -114,6 +114,9 @@ func (d *Desk) snapshot() State {
 	defer d.mu.Unlock()
 	st := State{Lang: d.lang, Problem: d.problem, Status: d.status, Devices: d.devices, Busy: d.busy,
 		Message: d.message, Settings: d.settings, Version: version.String(), ShowDetails: details}
+	if st.Devices == nil {
+		st.Devices = []control.Device{} // the window takes null for no list
+	}
 	if a, ids, self, ok := d.arrangementLocked(); ok {
 		st.Arranged = a.View(ids, self)
 		st.Custom = len(a.Items) > 0
@@ -201,10 +204,15 @@ func (d *Desk) refresh() {
 			}
 		}
 	}
+	// describe reads the settings under d.mu, so it runs before the lock.
+	problem := ""
+	if err != nil {
+		problem = d.describe(err)
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err != nil {
-		d.problem = d.describe(err)
+		d.problem = problem
 		return
 	}
 	d.problem, d.status, d.devices = "", st, devices
@@ -303,7 +311,7 @@ func (d *Desk) SetMode(id, mode string) {
 func (d *Desk) admin(args []string, yes bool, done string) {
 	details := d.showDetails()
 	d.act(func() (string, error) {
-		if err := runAdmin(args, yes, details); err != nil {
+		if err := adminRun(args, yes, details); err != nil {
 			return "", err
 		}
 		return d.T(done), nil

@@ -14,8 +14,10 @@ import (
 )
 
 // automated names the suites that run each case of
-// docs/testbench-catalogue.md, in part or in full. A test checks that every
-// ID here is in the catalogue and that the suites exist.
+// docs/testbench-catalogue.md, in part or in full; "ci" is a test that CI
+// runs on every pull request instead, such as the tray app's window in a
+// headless browser. A test checks that every ID here is in the catalogue
+// and that the suites exist.
 var automated = map[string][]string{
 	// Sync of text.
 	"Y1": {"full"}, "Y2": {"full"}, "Y3": {"full"}, "Y4": {"full"}, "Y5": {"full"},
@@ -60,6 +62,8 @@ var automated = map[string][]string{
 	"Y24": {"desktop"}, "Y25": {"desktop"}, "Y31": {"desktop"}, "Y32": {"desktop"},
 	"T3": {"desktop"}, "T5": {"desktop"}, "T11": {"desktop"}, "T12": {"desktop"},
 	"I21": {"desktop"}, "M2": {"desktop"}, "H2": {"desktop"}, "H3": {"desktop"}, "O13": {"desktop"},
+	// CI's tests of the apps' windows.
+	"A5": {"ci"}, "A8": {"ci"}, "A9": {"ci"}, "A15": {"ci"}, "A16": {"ci"}, "U12": {"ci"},
 	// The time-scaled build.
 	"K1": {"time"}, "K2": {"time"}, "K4": {"time"}, "K6": {"time"}, "K7": {"time"}, "Y14": {"time"}, "T8": {"time", "fleet"},
 	"Y13": {"time"}, "W39": {"time"}, "W12": {"time"}, "K5": {"time"},
@@ -208,7 +212,7 @@ func checkCatalogue(cases []catCase, funcs []function) []string {
 			bad = append(bad, fmt.Sprintf("no function names case %s", c.ID))
 		}
 	}
-	known := map[string]bool{}
+	known := map[string]bool{"ci": true}
 	for _, s := range suites {
 		known[s] = true
 	}

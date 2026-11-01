@@ -125,6 +125,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   logs rotated past 1 MiB (I21); `cbb copy` on purpose in every mode (M2); one Linux agent per
   session and a restarted one (H2); tmux's copy and paste keys (H3); and a large copy's
   progress in `cbb status` (O13).
+- CI runs the tray app's window in a headless Chrome or Edge against its real Go side: the
+  colours and layouts, collections, Russian, error details and the admin actions (A5, A8,
+  A9, A15, A16, U12); the bench's coverage counts such CI tests as `ci`.
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
@@ -817,6 +820,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The tray app no longer hangs when the service does not answer, and opened while the
+  service is not running it says so instead of showing an empty window.
 - A computer that signs two group records in one pass, or at the same moment, gives them
   consecutive numbers: before, both could take one number, which reads as two histories of
   the signer and, for the root, stops the group.
