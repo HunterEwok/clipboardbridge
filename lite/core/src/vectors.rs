@@ -410,16 +410,45 @@ fn go_commands() {
     }
 }
 
+/// Commands with their orders sealed to the receiver (docs/protocol.md,
+/// section 15, "Sealed commands"), as Go's TestSealedCommandVectors writes
+/// them: which ones the receiver takes as signed, and which of those open
+/// with its secret.
+#[test]
+fn go_sealed_commands() {
+    let v = vectors("go-sealed-commands.json");
+    let s = Records::new(&cert(&v["group_ca"]));
+    let me = v["self"].as_str().unwrap();
+    let now = v["now_ms"].as_i64().unwrap();
+    let secret = STANDARD.decode(v["secret"].as_str().unwrap()).unwrap();
+    let cs = v["commands"].as_array().unwrap();
+    assert_eq!(cs.len(), 10);
+    for c in cs {
+        let r: Record = serde_json::from_value(c["command"].clone()).unwrap();
+        let name = c["name"].as_str().unwrap();
+        let got = s.verify_command(&r, me, now);
+        assert_eq!(got.is_ok(), c["ok"].as_bool().unwrap(), "{name}: {got:?}");
+        let Ok(mut b) = got else { continue };
+        let opened = b.open(&secret);
+        assert_eq!(opened.is_ok(), c["opens"].as_bool().unwrap(), "{name}: {opened:?}");
+        if opened.is_ok() {
+            assert!(b.opened, "{name}");
+            assert_eq!(b.mode, c["mode"].as_str().unwrap_or(""), "{name}");
+            assert_eq!(b.text, c["text"].as_str().unwrap_or(""), "{name}");
+        }
+    }
+}
+
 /// A lite member's hello names the quick actions that are on there, and
 /// leaves the field out when none is.
 #[test]
 fn hello_actions() {
     let h = crate::clip::Hello { wall: 1, current: None };
     let on = ["reboot".to_string(), "restart".to_string()];
-    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &on, "file");
+    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &on, "file", None);
     let (_, body) = wire::decode_hello(m.hello.as_ref()).unwrap();
     assert_eq!(body.actions, on);
-    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &[], "file");
+    let m = wire::hello(&h, String::new(), "pi", "linux", &wire::DeviceInfo::default(), None, "own", &[], "file", None);
     assert!(m.hello.unwrap().get("actions").is_none());
 }
 

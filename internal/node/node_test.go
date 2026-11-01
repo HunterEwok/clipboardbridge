@@ -464,6 +464,7 @@ func TestPingCadence(t *testing.T) {
 	r := rawPeer(t, pi, mac)
 	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
 	var last time.Time
+	var gaps []time.Duration
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		r.tc.SetReadDeadline(time.Now().Add(time.Second))
@@ -475,12 +476,26 @@ func TestPingCadence(t *testing.T) {
 			continue
 		}
 		if !last.IsZero() {
-			if gap := time.Since(last); gap > 180*time.Millisecond {
-				t.Errorf("%v between pings, want about 100 ms", gap)
-			}
+			gaps = append(gaps, time.Since(last))
 		}
 		last = time.Now()
 		r.send(&message{Type: typePing})
+	}
+	// Each gap stays under the Timeout, which is what keeps the connection;
+	// the cadence is the median gap, so that one gap a busy test machine
+	// stretched (it measures this reader's scheduling too) does not count
+	// as a slow pinger.
+	if len(gaps) < 4 {
+		t.Fatalf("%d pings in a second, want about 10", len(gaps)+1)
+	}
+	for _, g := range gaps {
+		if g >= 300*time.Millisecond {
+			t.Errorf("%v between pings, past the Timeout", g)
+		}
+	}
+	slices.Sort(gaps)
+	if m := gaps[len(gaps)/2]; m < 60*time.Millisecond || m > 180*time.Millisecond {
+		t.Errorf("the median gap between pings is %v, want about 100 ms (all: %v)", m, gaps)
 	}
 }
 

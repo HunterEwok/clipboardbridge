@@ -123,7 +123,7 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 		return node.Result{Status: node.ResultRefused, Reason: err.Error()}
 	}
 	s.mu.Lock()
-	id := s.id
+	id, secret := s.id, s.sealSecret
 	s.mu.Unlock()
 	if id == nil {
 		return refused(s.errNoGroup())
@@ -140,8 +140,14 @@ func (s *Service) command(peer group.DeviceID, c group.Record) node.Result {
 		from.key, from.verified = s.records.CommandSender(c, body.By)
 	}
 	s.recMu.Unlock()
+	if err == nil {
+		err = body.Open(secret)
+	}
 	if err != nil {
 		return refused(err)
+	}
+	if body.Opened {
+		s.logf("cbb: opened a sealed %s command from %s", body.Type, peer)
 	}
 	if body.TimeMS < s.startedMS {
 		// It may have been carried out before the restart, which the
@@ -228,7 +234,7 @@ func (s *Service) setModeOn(ctx context.Context, target, name string) error {
 	now := s.cfg.now()
 	body := group.CommandBody{Type: group.CommandMode, Group: group.Tag(id.GroupCA.Cert), By: id.ID, To: group.DeviceID(d.ID),
 		ID: group.NewCommandID(), TimeMS: now.UnixMilli(), ExpiresMS: now.Add(group.CommandLifetime).UnixMilli(), Mode: name}
-	cmd, err := group.SignCommand(body, ca.Key, chain...)
+	cmd, err := s.signCommand(body, ca, chain)
 	if err != nil {
 		return err
 	}

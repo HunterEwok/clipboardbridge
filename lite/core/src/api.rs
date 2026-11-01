@@ -180,6 +180,7 @@ fn dispatch(op: &str, args: Value) -> Result<Vec<u8>, Refusal> {
         "check_body" => check_body(serde_json::from_value(args).map_err(bad_args)?),
         "canonicalize" => canonicalize(serde_json::from_value(args).map_err(bad_args)?),
         "check_member" => check_member(serde_json::from_value(args).map_err(bad_args)?),
+        "read_invite" => read_invite(serde_json::from_value(args).map_err(bad_args)?),
         _ => group::dispatch(op, &args)
             .or_else(|| signed::dispatch(op, &args))
             .unwrap_or_else(|| Err(refuse(Code::Op, Error::msg(alloc::format!("The core has no call named {op:?}."))))),
@@ -441,6 +442,24 @@ fn check_member(a: MemberArgs) -> Result<Vec<u8>, Refusal> {
     Ok(json(serde_json::json!({ "device": dev.as_str(), "used": used })))
 }
 
+/// The arguments of `read_invite`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InviteArgs {
+    text: String,
+}
+
+/// `read_invite`: a remote invitation's text read and checked (docs/protocol.md,
+/// section 12): `{"invitation"}` when it is taken, `{"refused": {"reason",
+/// "message"}}` with its stable reason and a sentence for the user when it
+/// is not. The caller checks the expiry against its clock.
+fn read_invite(a: InviteArgs) -> Result<Vec<u8>, Refusal> {
+    Ok(json(match crate::invite::parse(&a.text) {
+        Ok(inv) => serde_json::json!({ "invitation": inv.to_json() }),
+        Err(r) => serde_json::json!({ "refused": { "reason": r.name(), "message": r.message() } }),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,6 +493,26 @@ mod tests {
             let want = alloc::format!("{{\"abi\":{ABI},\"ok\":{}}}", c["state"].as_str().unwrap());
             assert_eq!(String::from_utf8(out).unwrap(), want, "{}", c["name"]);
         }
+    }
+
+    /// read_invite answers each text of testdata/interop/invites.json as
+    /// the file says: the invitation, or the reason it is refused.
+    #[test]
+    fn reads_invitations() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/invites.json");
+        let v: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for c in v["valid"].as_array().unwrap() {
+            let got = ask("read_invite", serde_json::json!({"text": c["text"]}));
+            let mut want = c.clone();
+            want.as_object_mut().unwrap().retain(|k, _| k != "name" && k != "text");
+            assert_eq!(got["ok"]["invitation"], want, "{}", c["name"]);
+        }
+        for c in v["refused"].as_array().unwrap() {
+            let got = ask("read_invite", serde_json::json!({"text": c["text"]}));
+            assert_eq!(got["ok"]["refused"]["reason"], c["reason"], "{}", c["name"]);
+            assert!(!got["ok"]["refused"]["message"].as_str().unwrap().is_empty());
+        }
+        assert_eq!(code(&ask("read_invite", serde_json::json!({}))), Code::Request as u64);
     }
 
     /// A body built in any order comes back canonical and checks; the

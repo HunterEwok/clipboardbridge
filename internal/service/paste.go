@@ -521,7 +521,7 @@ func (s *Service) commandOn(ctx context.Context, d control.Device, body group.Co
 	now := s.cfg.now()
 	body.Group, body.By, body.To = group.Tag(id.GroupCA.Cert), id.ID, group.DeviceID(d.ID)
 	body.ID, body.TimeMS, body.ExpiresMS = group.NewCommandID(), now.UnixMilli(), now.Add(group.CommandLifetime).UnixMilli()
-	cmd, err := group.SignCommand(body, ca.Key, chain...)
+	cmd, err := s.signCommand(body, ca, chain)
 	if err != nil {
 		return err
 	}

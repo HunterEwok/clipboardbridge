@@ -52,7 +52,7 @@ Every rule of version 2 is in [protocol.md](protocol.md), section 10:
 - "Chains and numbers", "Checkpoints" and "Limits";
 - "The hubs table";
 - "Removals and freezes keep what the author saw" and "Which admin records count";
-- "Handing the group over" and "Certificates";
+- "Handing the group over", "The recovery key" and "Certificates";
 - "Stopping the exchange" and "The state", the one result all four implementations must
   give byte for byte.
 
@@ -69,7 +69,9 @@ Every rule of version 2 is in [protocol.md](protocol.md), section 10:
   a removed admin's later `device` and `claim` records, freezes that cross, a `resolve` of each
   kind; and each limit: 262 devices, 65 admin keys, 16 handovers, a set of 1033 records, then
   the same with the root's checkpoint; and the hubs table: an admin's, an admin's without
-  `hub`, a later admin's, the root's, and one naming a removed device. (The 1 MiB limit has a Go test only: its set would be
+  `hub`, a later admin's, the root's, and one naming a removed device; and the recovery key:
+  its claim waiting the delay, taking effect and cancelled, a delay the root set, its other
+  records, a removed key, a key replaced, and a `recovery` record an admin signed. (The 1 MiB limit has a Go test only: its set would be
   over a megabyte of vectors.)
 - `testdata/interop/strict-generated.json` and `strict-files.json`, written from the tables of
   protocol.md; their records are of version 1 and are all refused, and the record bodies of

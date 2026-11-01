@@ -101,6 +101,10 @@ pub struct HelloBody {
     /// buttons (section 15); shown, never trusted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<String>,
+    /// The sender's public key for sealed messages (section 15, "Sealed
+    /// commands"), which a root records in its device record.
+    #[serde(with = "b64::opt", default, skip_serializing_if = "Option::is_none")]
+    pub seal: Option<Vec<u8>>,
 }
 
 /// What a hello says about the sender's device (section 4, "Device"): its
@@ -210,6 +214,7 @@ pub fn hello(
     mode: &str,
     actions: &[String],
     key_store: &str,
+    seal: Option<&[u8]>,
 ) -> Message {
     let device = device.cleaned();
     let body = HelloBody {
@@ -226,6 +231,7 @@ pub fn hello(
         // flash: "file", or "rootless" for a rootless install (D-79).
         key_store: key_store.into(),
         actions: actions.to_vec(),
+        seal: seal.map(<[u8]>::to_vec),
     };
     Message { kind: "hello".into(), role: "lite".into(), hello: Some(to_value(&body)), ..Default::default() }
 }

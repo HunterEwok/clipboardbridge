@@ -57,6 +57,7 @@ pub const TYPE_RESOLVE: &str = "resolve";
 pub const TYPE_SETTINGS: &str = "settings";
 pub const TYPE_CHECKPOINT: &str = "checkpoint";
 pub const TYPE_HUBS: &str = "hubs";
+pub const TYPE_RECOVERY: &str = "recovery";
 /// How many devices a hubs record names.
 pub const MAX_HUBS: usize = 16;
 
@@ -253,6 +254,7 @@ fn allowed(kind: &str) -> Option<&'static [&'static str]> {
         TYPE_SETTINGS => &["takeover_delay_ms"],
         TYPE_CHECKPOINT => &["heads", "keep"],
         TYPE_HUBS => &["hubs"],
+        TYPE_RECOVERY => &["admin"],
         _ => return None,
     })
 }
@@ -401,6 +403,8 @@ impl Body {
                 sorted_hashes(&self.keep, "keep")
             }
             TYPE_HUBS => check_hubs(&self.hubs),
+            TYPE_RECOVERY if self.admin.is_none() => Err(Error::msg("a recovery record needs admin")),
+            TYPE_RECOVERY => Ok(()),
             _ => match self.takeover_delay_ms {
                 Some(d) if !(0..=MAX_DELAY).contains(&d) => {
                     Err(Error::msg(format!("a takeover delay of {d} ms is not from 0 to {MAX_DELAY}")))
@@ -691,6 +695,11 @@ pub struct State {
     /// (docs/protocol.md, section 10, "The hubs table").
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hubs: Vec<String>,
+    /// The admin key of the group's recovery key, from the newest recovery
+    /// record of a root on the path, while it is neither revoked nor
+    /// frozen (docs/records-v2.md, "The recovery key").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<Hash>,
 }
 
 /// A record of the set that does not count, with why: one of the WHY_
@@ -1299,6 +1308,8 @@ struct Epoch<'a> {
     counted: Vec<bool>,
     forked: BTreeMap<Hash, i64>,
     admins: BTreeMap<Hash, usize>,
+    /// The recovery record that counts, if any.
+    recovery: Option<usize>,
     label: Vec<Label>,
     /// Why the labelling put a record out.
     why: Vec<&'static str>,
@@ -1326,6 +1337,7 @@ impl<'a> Epoch<'a> {
             counted: vec![false; n],
             forked: BTreeMap::new(),
             admins: BTreeMap::new(),
+            recovery: None,
             label: vec![Label::Unlabelled; n],
             why: vec![""; n],
             revoked: BTreeSet::new(),
@@ -1458,10 +1470,33 @@ impl<'a> Epoch<'a> {
                 }
             }
         }
+        // The recovery key: the admin of the newest recovery record a root
+        // on the path signed, with takeover only, unless a device record
+        // makes that key an admin too.
+        self.recovery = None;
+        let roots: Vec<Hash> = self.on_path.keys().copied().collect();
+        for signer in &roots {
+            for &i in self.of(signer) {
+                if self.r(i).b().kind == TYPE_RECOVERY
+                    && self.root_record(i)
+                    && self.recovery.is_none_or(|old| self.newer(i, old))
+                {
+                    self.recovery = Some(i);
+                }
+            }
+        }
+        if let Some(i) = self.recovery {
+            if let Some(a) = self.r(i).b().admin {
+                self.admins.entry(a).or_insert(i);
+            }
+        }
     }
 
     fn has(&self, admin: &Hash, power: &str) -> bool {
-        self.admins.get(admin).is_some_and(|&i| self.r(i).b().powers.iter().any(|p| p == power))
+        self.admins.get(admin).is_some_and(|&i| {
+            let b = self.r(i).b();
+            if b.kind == TYPE_RECOVERY { power == POWER_TAKEOVER } else { b.powers.iter().any(|p| p == power) }
+        })
     }
 
     /// Reports whether k is an admin key or the member key of a device
@@ -1962,6 +1997,13 @@ impl<'a> Epoch<'a> {
         }
         s.conflicts.sort_by(|a, b| a.records.first().cmp(&b.records.first()));
         s.hubs = self.hubs(&s.devices);
+        if let Some(i) = self.recovery {
+            if let Some(a) = self.r(i).b().admin {
+                if self.admins.get(&a) == Some(&i) && !self.revoked.contains(&a) && !self.frozen.contains(&a) {
+                    s.recovery = Some(a);
+                }
+            }
+        }
         if self.stop_full {
             s.stop = STOP_FULL.into();
         } else if forked_admin {

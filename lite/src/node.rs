@@ -766,6 +766,7 @@ fn writer(
                     mode.name(),
                     &actions,
                     if crate::rootless::is() { "rootless" } else { "file" },
+                    crate::sealkey::public(),
                 ))
             }
             Out::Event(mut ev, queued) => {

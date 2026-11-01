@@ -231,7 +231,7 @@ func (s *Service) moveHub(ctx context.Context, target, fwd, fwdKey string, addrs
 	now := s.cfg.now()
 	body := group.CommandBody{Type: group.CommandHub, Group: group.Tag(id.GroupCA.Cert), By: id.ID, To: group.DeviceID(d.ID),
 		ID: group.NewCommandID(), TimeMS: now.UnixMilli(), ExpiresMS: now.Add(group.CommandLifetime).UnixMilli(), Hub: &order}
-	cmd, err := group.SignCommand(body, ca.Key, chain...)
+	cmd, err := s.signCommand(body, ca, chain)
 	if err != nil {
 		return err
 	}

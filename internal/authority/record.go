@@ -67,6 +67,7 @@ const (
 	TypeSettings   = "settings"
 	TypeCheckpoint = "checkpoint"
 	TypeHubs       = "hubs"
+	TypeRecovery   = "recovery"
 )
 
 // MaxHubs is how many devices a hubs record names.
@@ -203,6 +204,7 @@ var (
 		TypeSettings:   set("takeover_delay_ms"),
 		TypeCheckpoint: set("heads", "keep"),
 		TypeHubs:       set("hubs"),
+		TypeRecovery:   set("admin"),
 	}
 	common = []string{"v", "alg", "type", "group", "signer", "seq", "time_ms"}
 )
@@ -361,6 +363,10 @@ func (b *Body) check() error {
 		return sortedHashes(b.Keep, "keep")
 	case TypeHubs:
 		return checkHubs(b.Hubs)
+	case TypeRecovery:
+		if b.Admin == nil {
+			return errors.New("authority: a recovery record needs admin")
+		}
 	}
 	return nil
 }

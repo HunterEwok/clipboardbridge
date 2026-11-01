@@ -515,7 +515,7 @@ admins admit devices, and only a member with the iPhone CA key holds the name.
 | `release_seq` | integer or absent | the `seq` of the channel file of the newest signed release the sender holds (section 16, "In the group"); absent when it holds none, and from a member before 0.6 |
 | `release_keys_seq` | integer or absent | with `release_seq`: the `seq` of that release's `keys.json`; absent from a member before 0.6, which a receiver reads as 0 |
 | `media` | bool or absent | `true` from a member that serves the content of media events ("Content", below), so others may send it `get`; absent from a member before 0.6 and from those that serve none (the lite member) |
-| `seal` | string or absent | the sender's public key for sealed messages, 1216 bytes in base64 (an X-Wing key, `internal/seal`), which the group's root puts in the sender's device record (`seal`, docs/records-v2.md) so that commands for it can be sealed (section 15); a key of another size is ignored; absent from a member before 0.6 and from the lite member and the phones for now |
+| `seal` | string or absent | the sender's public key for sealed messages, 1216 bytes in base64 (an X-Wing key, `internal/seal`), which the group's root puts in the sender's device record (`seal`, docs/records-v2.md) so that commands for it can be sealed (section 15); a key of another size is ignored; absent from a member before 0.6 and from the phones for now |
 
 ### Device
 
@@ -1477,6 +1477,7 @@ and `a`-`f`.
 | `settings` | `takeover_delay_ms` | the root's settings for the group |
 | `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
 | `hubs` | `hubs` | the user's main hubs for sync away from home, in the order they serve |
+| `recovery` | `admin` | names the group's recovery key, an offline admin key that may only claim the group ("The recovery key") |
 
 #### Field rows
 
@@ -1487,7 +1488,7 @@ and `a`-`f`.
 | `role` | string | `device` | `full`, `phone`, `lite`, `watch` or `shortcut` |
 | `os` | string | none | `linux`, `windows`, `macos`, `ios`, `android`, `watchos`, `wearos` or `none` |
 | `key` | string | `device` | a key hash: the member key (for a watch, its admin key; for `shortcut`, the phone ID) |
-| `admin` | string | none | a key hash: the admin key its admin CA certifies; only in a record a root's own key signed |
+| `admin` | string | `recovery` | a key hash: the admin key its admin CA certifies; only in a record a root's own key signed |
 | `powers` | array of strings | none | sorted; from `admit`, `renew`, `remove`, `remove-admins`, `freeze`, `thaw`, `takeover`, `hub`; only with `admin` |
 | `commands` | array of strings | none | sorted; the command types (section 15) the admin may sign; only with `admin` |
 | `store`, `kind`, `proof` | string | none | as in section 17 |
@@ -1534,6 +1535,7 @@ those of the newest such record (the highest `seq` of that root) that names it.
 | `resolve`, `settings` | the current root's own key |
 | `checkpoint` | a root's own key |
 | `hubs` | a root's own key, or an admin with `hub` |
+| `recovery` | a root's own key |
 
 A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
 names any key its signer may not remove or freeze. The powers the apps and `cbb`
@@ -1609,7 +1611,7 @@ A group's records only grow, and a member keeps at most 1 MiB of them (1024 reco
 own key signs a `checkpoint` so that members may drop what no longer matters: `heads` names,
 for each signer, its newest record the checkpoint covers, and `keep` the records below the
 heads that still count: the newest `device` record of each device, the `revoke`, `freeze` and
-`thaw` records that count, the newest `settings`, the `hubs` record that counts, every claim not yet decided and the records
+`thaw` records that count, the newest `settings`, the `hubs` record that counts, the `recovery` record that counts, every claim not yet decided and the records
 its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
 by themselves when the records pass three quarters of either limit.
 
@@ -1795,6 +1797,29 @@ once a new root removes it, nothing it signs counts under that root. What it can
 the root, by pretending it had not seen a record or by removing the claimant under its old
 admin CA, is stop the group: never take it.
 
+#### The recovery key
+
+A recovery key lets the user take the group back when every phone with the root or
+`takeover` is lost: an offline key, printed or on a hardware key, kept away from the devices.
+The root's own key issues it an admin CA, as for an admin, and signs a `recovery` record whose
+`admin` is its key hash. It has no device and no `device` record.
+
+Of the `recovery` records that count (a root's own key on the path signed them, within its
+cut), the newest counts. The key it names is an admin key with only `takeover` and no
+commands, unless a `device` record of a root names the same key as an admin, whose powers
+then hold. So the recovery key signs one thing that counts, a `claim`, with its admin CA as
+the chain; every other record it signs is `ignored` with `power`. Its claim is a claim as
+above: it waits the root's `takeover_delay_ms`, the root cancels it with a `resolve` or a
+`revoke` of the key, a counting admin removal or freeze of the key disputes it, and one claim
+at a time holds.
+
+A newer `recovery` record replaces the older one: the key the older one named is no admin
+any more, and its claims do not count. A `revoke` of the key removes it (a root's own key, or
+an admin with `remove-admins`, as for any admin key). The state names the key in `recovery`
+while it is neither removed nor frozen.
+
+The apps make the key and sign the record later; 0.6 has the record and its rules.
+
 #### Certificates
 
 A member certificate is taken when its chain verifies to a root on the path (section 2 and "Admin CA and chains"), its key is the `key` of a counting `device`
@@ -1850,6 +1875,7 @@ and returns the state as one canonical JSON object:
 | `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
 | `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
 | `hubs` | array of strings | the main hubs of the `hubs` record that counts ("The hubs table"): its devices that are in `devices` with the role `full` or `phone`, in its order |
+| `recovery` | string | the key hash of the recovery key ("The recovery key"), while it is neither removed nor frozen |
 
 The reasons in `ignored`, in the order they are decided:
 
@@ -2703,7 +2729,7 @@ signed bodies (Conventions):
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `v` | integer | `1` |
+| `v` | integer | `1`, or `2` for a sealed command (below) |
 | `type` | string | `mode`, `hub`, `paste`, `paste-off`, `action`, `actions-off` or `away-off` |
 | `group` | string | the group tag |
 | `by` | string | the signer's device ID (32 of `0`-`9` and `a`-`f`): a receiver refuses a command whose `by` is no device ID, or, when its records show which device holds the signing key (the root's own device for the root's key, the device whose record names the admin CA), names another device, or, when they show none, names a device they show (a computer takes a legacy group CA's command that names a `full` member, since each holds that key) |
@@ -2717,6 +2743,7 @@ signed bodies (Conventions):
 | `text` | string | in a `paste` command: the text, not empty, at most 1 MiB of UTF-8 for `paste` and 4 KiB for `type` |
 | `action` | string | in an `action` command: the action's name, 1 to 32 of `a`-`z`, `0`-`9` and `-`, starting with a letter; in no other command |
 | `hub` | object | in a `hub` command: `forwarder` (`endpoint`, `key`) or absent, `endpoints` (at most 8 with the forwarder's) or absent, at least one of the two, and `clients`, at most 256 of `{device, key, psk}` (base64, 32 bytes each, no device twice) |
+| `sealed` | string | in a command of `v` `2` only: the orders, sealed to the receiver (below), base64 |
 
 The exact rule, after the strict form: each field of this table has its JSON type in every
 command. A command is refused without `mode` in `mode` and `paste`, `hub` in `hub`, `kind`
@@ -2755,16 +2782,16 @@ character boundary. A `hub` command's `done` carries `tunnel`, the new hub's off
 commands, such as one before 0.5, ignores the message, so the sender gives up after 10 s
 (20 s for `hub`).
 
-Each computer keeps a secret for sealed messages in `seal.json` next to its identity (sealed
-by the TPM where it has one, as the WireGuard key) and offers its public key in its hello
+Each computer and lite member keeps a secret for sealed messages in `seal.json` next to its
+identity (sealed by the TPM where a computer has one, as the WireGuard key) and offers its public key in its hello
 (`seal`, section 4); a root computer records it in the device's record, as it records a
-changed system. Commands sealed to that key come in a later step of 0.6.
+changed system, and a command for it is sealed (below, "Sealed commands").
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
 `action`, `actions-off` or `away-off` command to the group's hubs it is connected to (the
 root and the admins, "Several hubs" in section 11), and to no other member: a command's body,
-a paste's text among it, is signed but not encrypted, and the hubs are the devices the user
-gave admin powers. A `hub` command only goes directly. Senders before 0.6 send it to every
+a paste's text among it, is signed but encrypted only when sealed (below), and the hubs are
+the devices the user gave admin powers. A `hub` command only goes directly. Senders before 0.6 send it to every
 member they are connected to, and a member that is not a hub still passes it on. A member
 that gets a command whose `to` is another device passes it on, unchanged, only when it is
 connected to that device and has not passed that `id` before (it keeps the IDs until the
@@ -2844,6 +2871,33 @@ off already. A member before 0.6 refuses `away-off`, `action` and `actions-off` 
 types. Of the presets, the lite member knows only `reboot`, `cancel-shutdown` and
 `restart`.
 
+### Sealed commands
+
+A sender seals a command's orders to its receiver when the receiver's device record has a
+`seal` key, so that the members in between see only the header:
+
+- The **orders** are the fields `mode`, `hub`, `enter`, `kind`, `text` and `action`, as a JSON
+  object in the strict form of signed bodies, with only those of them the command has.
+- The **associated data** is the header: the context `clipboardbridge command v2`, then
+  `type`, `group`, `by`, `to` and `id`, each of these six strings as its length in 4 bytes and
+  its bytes, then `time_ms` and `expires_ms`, 8 bytes each; every number big-endian.
+- `sealed` is the orders sealed to the `seal` key with that associated data: X-Wing HPKE,
+  the encapsulated key (1120 bytes) and then the ciphertext with its tag (`internal/seal`).
+- The body is the header with `v` `2` and `sealed`, and none of the orders; the signature
+  covers it as any command's.
+
+A receiver refuses a body of `v` `2` without `sealed`, with any of the orders beside it, or
+with an unknown `type`, and one of `v` `1` with `sealed`; `sealed` is base64 in its standard
+form. It checks the signature and the header as for any command, then opens `sealed` with
+its own secret and the header as associated data, and refuses the command when it does not
+open, when the orders are not in the strict form, or when they fail the checks of the table
+for the command's `type`. Its orders then count as those of a command in the open. Sealed
+orders open only under the header they were sealed with, so no other signer can send them
+again under an `id` or a time of its own. The limits of a body (64 KiB, 2 MiB for `paste`)
+hold for the body as sent and for the orders once opened. The members in between pass a
+sealed command on as any other. A receiver still takes a command in the open, as the
+phones and senders before 0.6 send; a member without a key of its own refuses a sealed
+one. The vectors are `go-sealed-commands.json`.
 
 ## 16. Signed releases
 
