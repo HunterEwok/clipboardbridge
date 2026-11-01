@@ -8,6 +8,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Nightly mutation testing of the records' rules (`cargo mutants` on the Rust core,
+  `gremlins` on Go's `internal/authority`): every change to the code that no test notices is
+  listed in the run (docs/testing.md, "Mutation testing").
 - A model of the rules for handing the group over in records v:2, in Quint
   (`docs/model/claims.qnt`): CI's `model` job checks its scenarios and the promises of
   docs/records-v2.md over random runs.
