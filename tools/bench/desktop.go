@@ -14,8 +14,9 @@ import (
 // Desktop runs the cases of the desktops' own clipboards on the Macs and
 // Windows PCs of the inventory, in a group with a Linux member: a written
 // text never sent back and a clipboard history's offer of it making no
-// event (Y24, Y25), password managers' marks kept from the group (Y31), and
-// a received secret's marks and expiry (Y32).
+// event (Y24, Y25), password managers' marks kept from the group (Y31), a
+// received secret's marks and expiry (Y32), and remote paste on Windows
+// (T3, T5, T11, T12).
 func Desktop(ctx context.Context, r *Report, devices []*Device, timeout time.Duration) {
 	g := formGroup(ctx, r, "desktop", devices)
 	if g == nil {
@@ -41,6 +42,13 @@ func Desktop(ctx context.Context, r *Report, devices []*Device, timeout time.Dur
 	}
 	for _, d := range desks {
 		secretMarks(ctx, r, l, d, g.run, timeout)
+	}
+	for _, d := range desks {
+		if d.Clipboard == "windows" {
+			winPaste(ctx, r, g, d, timeout)
+		} else {
+			r.Skip("desktop/T3-paste/"+d.Name, "the Mac app's paste target needs Accessibility, granted by hand: it stays manual")
+		}
 	}
 }
 
