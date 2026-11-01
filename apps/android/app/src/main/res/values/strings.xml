@@ -284,7 +284,6 @@
     <string name="paste_text">Text</string>
     <string name="paste_empty_clipboard">Left empty, the phone\'s clipboard goes.</string>
     <string name="paste_clipboard_empty">The clipboard holds no text.</string>
-    <string name="paste_from_clipboard">From the clipboard</string>
     <string name="paste_type">Type it key by key</string>
     <string name="paste_enter">Press Enter after it</string>
     <string name="paste_secret">A secret</string>

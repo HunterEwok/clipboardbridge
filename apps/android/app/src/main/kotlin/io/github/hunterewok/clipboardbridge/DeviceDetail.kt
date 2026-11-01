@@ -269,7 +269,6 @@ private fun PasteOn(model: AppModel, d: LiveGroup.Device, dismiss: () -> Unit) {
                     label = { Text(stringResource(R.string.paste_text)) },
                     supportingText = { Text(stringResource(R.string.paste_empty_clipboard)) },
                 )
-                TextButton(onClick = { clipText(context)?.let { text = it } }) { Text(stringResource(R.string.paste_from_clipboard), color = palette.accent) }
                 // Why the device did not take it, right under the text.
                 model.message?.takeIf { !sending }?.let { NoteText(it) }
                 Switch(stringResource(R.string.paste_type), typing) { typing = it }

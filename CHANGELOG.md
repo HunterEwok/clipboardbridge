@@ -700,7 +700,7 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ### Changed
 
 - Remote paste on the phones: with the text left empty, Paste sends what the phone's
-  clipboard holds, without putting it in the field first.
+  clipboard holds, and the button that put the clipboard in the field is gone.
 - On a Mac the service and the agent write their own logs, as on Windows:
   `/Library/Logs/clipboardbridge/service.log` and `~/Library/Logs/clipboardbridge/agent.log`,
   each line after the time, each moved to `.1` at 1 MiB, so a log no longer grows without

@@ -281,7 +281,6 @@
     <string name="paste_text">Текст</string>
     <string name="paste_empty_clipboard">Если оставить пустым, уйдёт буфер обмена телефона.</string>
     <string name="paste_clipboard_empty">В буфере обмена нет текста.</string>
-    <string name="paste_from_clipboard">Из буфера обмена</string>
     <string name="paste_type">Набрать по клавишам</string>
     <string name="paste_enter">Нажать Enter после него</string>
     <string name="paste_secret">Секрет</string>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import SwiftUI
+import UIKit
 
 /// Remote paste (docs/design.md, "Remote paste"): a text to put where a
 /// computer's focus is, pasted or typed, with Enter after it if asked. The
@@ -26,10 +27,6 @@ struct PasteView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .focused($editing)
-                    // PasteButton reads the clipboard without the system's prompt.
-                    PasteButton(payloadType: String.self) { strings in
-                        if let s = strings.first { text = s }
-                    }
                 } footer: {
                     Text("It goes where \(device.name)'s keyboard focus is, once its user turned remote paste on there. Left empty, Paste sends what the clipboard holds.")
                 }
@@ -55,15 +52,8 @@ struct PasteView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     if sending {
                         ProgressView()
-                    } else if text.isEmpty {
-                        // The system's button reads the clipboard without its prompt,
-                        // so an empty field sends what was copied, in one tap.
-                        PasteButton(payloadType: String.self) { strings in
-                            guard let s = strings.first, !s.isEmpty else { return }
-                            Task { @MainActor in send(s) }
-                        }
                     } else {
-                        Button { send(text) } label: { Text("Paste") }
+                        Button { send() } label: { Text("Paste") }
                     }
                 }
             }
@@ -71,8 +61,15 @@ struct PasteView: View {
         }
     }
 
-    private func send(_ text: String) {
+    /// Sends the field, or what the clipboard holds when the field is empty
+    /// (iOS asks once whether the app may read it, unless its Settings allow it).
+    private func send() {
         editing = false
+        let text = text.isEmpty ? (UIPasteboard.general.string ?? "") : text
+        guard !text.isEmpty else {
+            model.message = String(localized: "The clipboard holds no text.", bundle: .app)
+            return
+        }
         sending = true
         Task {
             let done = await model.paste(device.id, text: text, method: typing ? "type" : "paste", enter: enter, secret: secret)

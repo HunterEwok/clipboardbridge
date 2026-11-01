@@ -1994,6 +1994,16 @@
         }
       }
     },
+    "The clipboard holds no text.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В буфере обмена нет текста."
+          }
+        }
+      }
+    },
     "The code did not match. Run cbb pair on the computer again and scan the new code.": {
       "localizations": {
         "ru": {
