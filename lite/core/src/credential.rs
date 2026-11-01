@@ -122,7 +122,7 @@ impl Body {
         if !valid_tag(&self.group) {
             return Err(Error::msg("a credential's group is not a tag"));
         }
-        let lists = self.hubs.len() + self.admins.len() + self.members.len();
+        let lists = self.hubs.len().saturating_add(self.admins.len()).saturating_add(self.members.len());
         match self.kind.as_str() {
             PERIOD | SERVER => {
                 if !valid_tag(&self.tag) {
@@ -145,7 +145,7 @@ impl Body {
                 if self.members.len() > MAX_MEMBERS {
                     return Err(Error::msg("a members' credential lists too many keys"));
                 }
-                if !self.tag.is_empty() || !self.key.is_empty() || self.hubs.len() + self.admins.len() != 0 {
+                if !self.tag.is_empty() || !self.key.is_empty() || !(self.hubs.is_empty() && self.admins.is_empty()) {
                     return Err(Error::msg("a members' credential carries more than its list"));
                 }
             }

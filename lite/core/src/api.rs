@@ -269,11 +269,13 @@ struct SavedSeq {
     seq: i64,
 }
 
-fn saved_mac(secret: &[u8], body: &[u8]) -> Hmac<Sha256> {
-    let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(secret).expect("HMAC takes a key of any length");
+fn saved_mac(secret: &[u8], body: &[u8]) -> Result<Hmac<Sha256>, Refusal> {
+    // HMAC takes a key of any length; the error is never expected.
+    let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(secret)
+        .map_err(|e| refuse(Code::Request, Error::msg(alloc::format!("the device's secret: {e}"))))?;
     m.update(b"cbb saved state v1\n");
     m.update(body);
-    m
+    Ok(m)
 }
 
 /// Reads a saved state: canonical JSON of Saved with `mac`, the HMAC with
@@ -289,7 +291,7 @@ fn read_saved(secret: &[u8], data: &[u8], group: &str) -> Result<Saved, Refusal>
     let mac = base64::engine::general_purpose::STANDARD
         .decode(mac)
         .map_err(|e| bad(Error::msg(alloc::format!("its mac: {e}"))))?;
-    if saved_mac(secret, &json(v.clone())).verify_slice(&mac).is_err() {
+    if saved_mac(secret, &json(v.clone()))?.verify_slice(&mac).is_err() {
         return Err(bad(Error::msg("its check with this device's secret does not match")));
     }
     let s: Saved = serde_json::from_value(v).map_err(|e| bad(Error::with("its fields", e)))?;
@@ -302,13 +304,13 @@ fn read_saved(secret: &[u8], data: &[u8], group: &str) -> Result<Saved, Refusal>
     Ok(s)
 }
 
-fn write_saved(secret: &[u8], s: &Saved) -> Vec<u8> {
+fn write_saved(secret: &[u8], s: &Saved) -> Result<Vec<u8>, Refusal> {
     let mut v = serde_json::to_value(s).unwrap_or_default();
-    let mac = saved_mac(secret, &json(v.clone())).finalize().into_bytes();
+    let mac = saved_mac(secret, &json(v.clone()))?.finalize().into_bytes();
     if let Some(m) = v.as_object_mut() {
         m.insert("mac".into(), b64_value(&mac));
     }
-    json(v)
+    Ok(json(v))
 }
 
 /// `evaluate_saved`: evaluate, with the state the member saved after its
@@ -346,7 +348,7 @@ fn evaluate_saved(a: SavedArgs) -> Result<Vec<u8>, Refusal> {
         seqs: seqs.into_iter().map(|(key, seq)| SavedSeq { key, seq }).collect(),
         sigs: SIGS.entries().into_iter().map(|e| e.to_vec()).collect(),
     };
-    let saved = write_saved(&a.secret, &saved);
+    let saved = write_saved(&a.secret, &saved)?;
     let mut out = b"{\"saved\":".to_vec();
     strict::write_canonical(&mut out, &b64_value(&saved));
     out.extend_from_slice(b",\"state\":");

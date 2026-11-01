@@ -214,11 +214,11 @@ pub fn hello(
     let device = device.cleaned();
     let body = HelloBody {
         wall: h.wall,
-        current: h.current.as_ref().map(|e| serde_json::to_value(e).unwrap()),
+        current: h.current.as_ref().map(to_value),
         records,
         name: name.to_string(),
         os: os.to_string(),
-        device: if device.is_empty() { None } else { Some(serde_json::to_value(&device).unwrap()) },
+        device: if device.is_empty() { None } else { Some(to_value(&device)) },
         tunnel_key: tunnel_key.map(|(k, _)| k.to_vec()),
         tunnel_psk: tunnel_key.map(|(_, p)| p.to_vec()),
         mode: mode.to_string(),
@@ -227,12 +227,14 @@ pub fn hello(
         key_store: key_store.into(),
         actions: actions.to_vec(),
     };
-    Message {
-        kind: "hello".into(),
-        role: "lite".into(),
-        hello: Some(serde_json::to_value(body).unwrap()),
-        ..Default::default()
-    }
+    Message { kind: "hello".into(), role: "lite".into(), hello: Some(to_value(&body)), ..Default::default() }
+}
+
+/// A message part as JSON. The parts are plain structs of strings, numbers
+/// and lists, which serde_json always encodes.
+#[allow(clippy::expect_used, reason = "plain structs always encode")]
+fn to_value<T: Serialize + ?Sized>(v: &T) -> serde_json::Value {
+    serde_json::to_value(v).expect("a plain struct encodes")
 }
 
 /// The result message that answers a command.
@@ -242,7 +244,7 @@ pub fn result(r: CommandResult) -> Message {
 
 /// An event message.
 pub fn event(ev: &Event) -> Message {
-    Message { kind: "event".into(), event: Some(serde_json::to_value(ev).unwrap()), ..Default::default() }
+    Message { kind: "event".into(), event: Some(to_value(ev)), ..Default::default() }
 }
 
 /// A message with only its type, such as a ping or a goodbye.
@@ -273,7 +275,7 @@ pub fn frame(m: &Message) -> Result<Vec<u8>> {
     if data.len() > MAX_FRAME {
         return Err(Error::msg("the message is too large"));
     }
-    let mut out = Vec::with_capacity(4 + data.len());
+    let mut out = Vec::with_capacity(data.len().saturating_add(4));
     out.extend_from_slice(&(data.len() as u32).to_be_bytes());
     out.extend_from_slice(&data);
     Ok(out)

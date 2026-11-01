@@ -298,6 +298,7 @@ impl Engine {
         self.inner.lock().mode = m;
     }
 
+    #[allow(clippy::expect_used, reason = "HMAC takes a key of any length, so this never fails")]
     fn sum(&self, text: &str) -> Sum {
         let mut m = Hmac::<Sha256>::new_from_slice(&self.key).expect("HMAC takes a key of any length");
         m.update(text.as_bytes());
@@ -385,7 +386,7 @@ impl Engine {
         }
         let mut out = Outcome::default();
         if !local_has(&st, text, now) {
-            st.seq += 1;
+            st.seq = st.seq.saturating_add(1);
             out.write = true;
             out.seq = st.seq;
             add_written(&mut st, sum, now);
@@ -430,7 +431,8 @@ impl Engine {
     /// it.
     pub fn connected(&self, peer: &str) -> Hello {
         let mut st = self.inner.lock();
-        *st.peers.entry(peer.to_string()).or_default() += 1;
+        let n = st.peers.entry(peer.to_string()).or_default();
+        *n = n.saturating_add(1);
         let mut h = Hello { wall: (self.wall)(), current: None };
         if !st.current.id.is_empty() {
             let mut ev = self.with_age(&st, (self.uptime)());
@@ -447,7 +449,7 @@ impl Engine {
         let mut st = self.inner.lock();
         match st.peers.get_mut(peer) {
             Some(n) if *n > 1 => {
-                *n -= 1;
+                *n = n.saturating_sub(1);
                 return;
             }
             _ => {}
@@ -485,7 +487,7 @@ impl Engine {
         let mut st = self.inner.lock();
         let known = st.skews.contains_key(peer);
         if h.wall > 0 && (known || st.skews.len() < 1024) {
-            let skew = h.wall - (self.wall)();
+            let skew = h.wall.saturating_sub((self.wall)());
             st.skews.insert(peer.to_string(), skew);
         }
         let mut out = Outcome::default();
@@ -549,7 +551,7 @@ impl Engine {
         if now.saturating_sub(st.copied_at) > LIVE_WINDOW && (!in_rejoin_window(st, now) || st.offline_copy) {
             return out;
         }
-        st.seq += 1;
+        st.seq = st.seq.saturating_add(1);
         out.write = true;
         out.seq = st.seq;
         let kind = if st.current.kind == Kind::Media { Kind::Text } else { st.current.kind };
