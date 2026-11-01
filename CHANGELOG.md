@@ -77,6 +77,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   clipboards and the e2e), the lite member, the Swift kit and the Kotlin kit, prints it in
   the run's summary, and fails when a part falls below its floor (`tools/coverage`,
   docs/testing.md, "Coverage").
+- The bench's desktop suite runs on the Linux member alone too: the primary selection kept
+  out of the group (Y26), HTML and a PNG image copied on Linux and arriving with their types
+  (O4, O1), the session's kind and a copy from an X11 program under Wayland (H1), the keys
+  helper's refusals (T15), the console's tmux on a new virtual terminal (H4) and keys in the
+  TPM in the hub's device list (K13). CI's OpenWrt job checks the UCI memory limit, procd's
+  respawn and sysupgrade's keep list (I23, H9), and its FreeBSD VM the ipfw rules and
+  pfSense's refusal to open ports (H10).
 - The bench's fleet runs the holder's election and handover (D4, D5), dial-back (D11), what a
   stranger learns (S21), the forwarder's hub rule (W30) and fuzzing for `-fuzz-for` (S20).
 - The bench's fleet runs the key-file warnings (K11), the join matrix (G41, Y6) and, in a

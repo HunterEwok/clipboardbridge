@@ -34,8 +34,13 @@ func Desktop(ctx context.Context, r *Report, devices []*Device, timeout time.Dur
 			desks = append(desks, d)
 		}
 	}
-	if l == nil || len(desks) == 0 {
-		r.Skip("desktop", "needs a Linux member and a Mac or a Windows PC with its clipboard")
+	if l == nil {
+		r.Skip("desktop", "needs a Linux member")
+		return
+	}
+	linuxDesktop(ctx, r, g, l, desks, timeout)
+	if len(desks) == 0 {
+		r.Skip("desktop", "needs a Mac or a Windows PC with its clipboard beside the Linux member")
 		return
 	}
 	for _, d := range desks {
