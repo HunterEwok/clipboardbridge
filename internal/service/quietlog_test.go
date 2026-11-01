@@ -31,3 +31,21 @@ func TestPeerEnded(t *testing.T) {
 		}
 	}
 }
+
+func TestLogRepeat(t *testing.T) {
+	t.Setenv("CBB_DEBUG", "0")
+	var lines []string
+	s := &Service{logf: func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) }}
+	for range 3 {
+		s.logRepeat("cbb: refused %s", "a")
+	}
+	s.logRepeat("cbb: refused %s", "b")
+	if len(lines) != 2 {
+		t.Fatalf("logged %q, want one line for a and one for b", lines)
+	}
+	t.Setenv("CBB_DEBUG", "1")
+	s.logRepeat("cbb: refused %s", "a")
+	if len(lines) != 3 {
+		t.Fatalf("with CBB_DEBUG=1 logged %q, want the repeat too", lines)
+	}
+}

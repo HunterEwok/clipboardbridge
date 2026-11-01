@@ -1100,11 +1100,11 @@ func (s *Service) watch(ctx context.Context, c net.Conn, r *control.Reader, m *c
 		// the system does not name, or a console helper that is not root,
 		// never takes one.
 		if w.inject != "" && (!w.peer.known || w.inject == targetConsole && !w.peer.privileged()) {
-			s.logf("cbb: a watcher offers the paste target %s as %s, which may not take it; it gets no remote pastes", w.inject, w.peer)
+			s.logRepeat("cbb: a watcher offers the paste target %s as %s, which may not take it; it gets no remote pastes", w.inject, w.peer)
 			w.inject = ""
 		}
 		if w.act && !w.peer.known {
-			s.logf("cbb: a watcher offers to run the quick actions as %s; it runs none", w.peer)
+			s.logRepeat("cbb: a watcher offers to run the quick actions as %s; it runs none", w.peer)
 			w.act = false
 		}
 	}

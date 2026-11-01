@@ -904,6 +904,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A watcher the service refuses (a paste target or the quick actions offered by a user the
+  system does not name) is logged once in 10 minutes instead of at each try, every 2 seconds;
+  on Windows the line says what the system did not tell.
 - A computer's log no longer fills with a line each time a phone's system ends the app's
   connection in the background (a reset or a close by the peer); with `CBB_DEBUG=1` the log
   still has them, and a failed handshake is logged as before.
