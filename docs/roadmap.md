@@ -276,6 +276,11 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       relative's group): every call into the core and every saved state names its group.
     - A temporary guest: a device record with an end date, after which the device leaves the
       group without being removed by hand.
+- **46.** **Planned.** VLESS behind the server's own web server, as the main way through
+    networks that block WireGuard: WebSocket inside the TLS of a real site, which the site's
+    nginx passes to the forwarder; REALITY stays as an option for forwarders without a web
+    server. The project's forwarder at cbb.tools runs it, and every client speaks it, the
+    lite member among them ([below](#vless-behind-a-web-server)).
 
 ## Devices that are hard to type into
 
@@ -550,6 +555,66 @@ marks in `cbb status` are built:
   in "Key levels" above (D-66, D-70). What attestation does not do: it does not stop malware
   on the device itself from using the key while it runs there, and it is no stronger than
   the chip.
+
+## VLESS behind a web server
+
+Item 46, decided by the owner on 2026-11-01. Today VLESS runs only inside REALITY
+([design](design.md#blocked-networks)): the forwarder listens on TCP 443 itself and borrows
+another site's TLS. A server that already serves a site on 443, as cbb.tools does with
+nginx, cannot do that, and the lite member cannot speak REALITY at all: REALITY needs a
+browser's ClientHello and its own check inside the session ID, which rustls does not
+make. VLESS behind a web server becomes the main way; REALITY stays for forwarders that
+people run on servers of their own without a site.
+
+- **The transport.** VLESS over WebSocket over TLS. The web server (nginx) ends the TLS
+  with the site's own certificate and passes one path, with HTTP's Upgrade, to the
+  forwarder's VLESS listener on the loopback address; every other request gets the site.
+  WebSocket is the simplest transport that nginx passes as it is and that every client can
+  carry, the lite member in `no_std` too (an HTTP/1.1 Upgrade and simple frames); gRPC or
+  XHTTP can follow if WebSocket is singled out. Before building it, compare it with what
+  cbb.tools' nginx runs today.
+- **What stays the same.** VLESS carries WireGuard's UDP packets (VLESS's UDP command,
+  each packet with its length), the forwarder passes them to its own UDP port and routes
+  them as every packet, by `mac1` and the indices, and the group's VLESS user ID is let in
+  only while its hub is registered. VLESS and the web server add no security and the
+  design does not rely on them: the boundary stays the member TLS, then WireGuard. The web
+  server sees the VLESS user ID and WireGuard packets, nothing more; that location keeps no
+  access log.
+- **The forwarder.** Its operator picks the transport: REALITY as today, or WebSocket with
+  the public host and the path the web server passes, the forwarder listening only on the
+  loopback address. The path is made at random and kept in the forwarder's key file; it
+  keeps scanners off the VLESS listener and is not a secret the design relies on. The
+  forwarder tells a registering hub which transport it runs and its settings.
+- **The hub's offer** (docs/protocol.md, sections 11 and 13) names the transport: today's
+  `public_key`, `short_id` and site for REALITY, or the host, port and path for WebSocket,
+  with the group's VLESS user ID either way. A client that does not know the transport says
+  that it needs an update and stays at home; it never falls back to plain WireGuard, which
+  would show the network what it hides.
+- **Clients.**
+  - `cbb` and the phones' tunnel (`mobile/cbbtun`): Xray-core has VLESS over WebSocket; its
+    TLS uses Xray's browser fingerprint (uTLS), so the ClientHello looks like a browser's.
+  - The lite member: a VLESS and WebSocket client of its own in `cbb_core` (sans-I/O,
+    `no_std` with alloc, so the ESP32 can have it later), on the TLS it has (rustls with the
+    RustCrypto provider). It checks the site's certificate against the public CAs (the
+    Mozilla list built in, or the system's bundle on Linux and OpenWrt), which its member
+    TLS never needed. GotaTun's packets go over the one WebSocket connection instead of its
+    UDP socket.
+  - Interop vectors for the VLESS header and the WebSocket frames in `testdata/interop`,
+    and a test of the lite member against the Go forwarder in CI's `lite` job.
+- **Risks.** rustls' ClientHello is not a browser's, and a censor that singles out TLS
+  fingerprints (JA3, JA4) may notice it; a real site and its certificate still hide far more
+  than plain WireGuard, and the order of the cipher suites and extensions can be brought
+  closer to a browser's. WireGuard over TCP adds latency on a lossy network (TCP inside
+  TCP), which a clipboard tolerates.
+- **cbb.tools.** `site/deploy/nginx.conf` gains the WebSocket location, which reads the
+  path from a file made on the server (as `cbb-preview.conf`), so the path stays out of the
+  repository; `site/README.md` gains the step, and the forwarder runs with WebSocket.
+
+Steps: the protocol and the Go forwarder and hub first, with Xray's WebSocket transport;
+then the phones' tunnel; then the lite member's client and its vectors; then cbb.tools'
+nginx and forwarder; then the guide for blocked networks (with its translations), the
+reference and the bench's cases for a network that blocks WireGuard (P20, S9, F7), run
+from a real network in Russia.
 
 ## Future research (not planned)
 
