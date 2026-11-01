@@ -276,32 +276,12 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
       relative's group): every call into the core and every saved state names its group.
     - A temporary guest: a device record with an end date, after which the device leaves the
       group without being removed by hand.
-- **46.** **Planned for 0.7.** Sync away from home through networks that block VPNs, on every
-    member, the lite member included:
-    1. **VLESS behind a web server becomes the main way.** The forwarder (and the relay) can sit
-       behind a web server that already holds the site's real certificate on TCP 443: the web
-       server ends TLS and passes one path, over XHTTP, to the forwarder's VLESS on a local
-       port, as the project's server `cbb.tools` already does for its own use. The hub's offer
-       (docs/protocol.md, sections 11 and 13) then names the host, the path and the group's
-       VLESS user ID in place of REALITY's public key and short ID. The client needs only a
-       plain TLS 1.3 connection to a real certificate, so no browser's fingerprint is forged.
-       The web server sees only VLESS, with WireGuard and the member TLS inside, so the
-       clipboard stays encrypted end to end. Built in Go (the forwarder, the hub and the
-       computers as clients), in `mobile/cbbtun` for the phones (Xray-core has VLESS over
-       XHTTP), in the docs and in the bench, and the support for `cbb.tools` in the product.
-    2. **REALITY stays as an option** for the servers people set up themselves, where no web
-       server or certificate of their own is wanted (`-vless` as today, docs/admin/self-hosting.md).
-    3. **The lite member speaks VLESS** of step 1: its TLS is the core's rustls, already there;
-       the VLESS header and XHTTP over it are small; VLESS's own encryption (ML-KEM-768 with
-       X25519, as Xray-core's) on RustCrypto, checked against Xray-core with shared vectors as
-       the other parts are. It fits the Nano ESP32 too, whose TLS is the same. To keep in mind:
-       rustls's TLS fingerprint is not a browser's; the order of its suites and extensions
-       can be tuned.
-    4. **Then AmneziaWG on the lite member**: its changes to WireGuard's packets (junk packets,
-       shifted sizes and headers, padding) as a layer around GotaTun's UDP socket, checked
-       against amneziawg-go, so the lite member also reaches an obfuscated hub (today it
-       refuses one, `lite/src/tunnel.rs`).
-    5. The lite member at the blind relay (item 28), which it does not reach yet.
+- **46.** **Planned for 0.7.** Sync away from home through networks that block VPNs, on
+    every member, the lite member included: VLESS behind the server's own web server becomes
+    the main way (XHTTP inside the TLS of a real site, which the site's nginx passes to the
+    forwarder), REALITY stays as an option for forwarders without a web server, the
+    project's forwarder at cbb.tools runs it, and every client speaks it; then AmneziaWG and
+    the blind relay on the lite member ([below](#vless-behind-a-web-server)).
 
 ## Devices that are hard to type into
 
@@ -576,6 +556,71 @@ marks in `cbb status` are built:
   in "Key levels" above (D-66, D-70). What attestation does not do: it does not stop malware
   on the device itself from using the key while it runs there, and it is no stronger than
   the chip.
+
+## VLESS behind a web server
+
+Item 46, decided by the owner on 2026-11-01, for 0.7. Today VLESS runs only inside REALITY
+([design](design.md#blocked-networks)): the forwarder listens on TCP 443 itself and borrows
+another site's TLS. A server that already serves a site on 443, as cbb.tools does with
+nginx, cannot do that, and the lite member cannot speak REALITY at all: REALITY needs a
+browser's ClientHello and its own check inside the session ID, which rustls does not
+make. VLESS behind a web server becomes the main way; REALITY stays for forwarders that
+people run on servers of their own without a site.
+
+- **The transport.** VLESS over XHTTP over TLS, as cbb.tools' nginx already passes VLESS
+  for other uses. The web server (nginx) ends the TLS with the site's own certificate and
+  passes one path to the forwarder's VLESS listener on the loopback address; every other
+  request gets the site. XHTTP is plain HTTP requests that nginx passes as they are;
+  WebSocket is the fallback if a client cannot carry XHTTP.
+- **What stays the same.** VLESS carries WireGuard's UDP packets (VLESS's UDP command,
+  each packet with its length), the forwarder passes them to its own UDP port and routes
+  them as every packet, by `mac1` and the indices, and the group's VLESS user ID is let in
+  only while its hub is registered. VLESS and the web server add no security and the
+  design does not rely on them: the boundary stays the member TLS, then WireGuard. The web
+  server sees the VLESS user ID and WireGuard packets, nothing more; that location keeps no
+  access log.
+- **The forwarder.** Its operator picks the transport: REALITY as today, or XHTTP with the
+  public host and the path the web server passes, the forwarder listening only on the
+  loopback address. The path is made at random and kept in the forwarder's key file; it
+  keeps scanners off the VLESS listener and is not a secret the design relies on. The
+  forwarder tells a registering hub which transport it runs and its settings.
+- **The hub's offer** (docs/protocol.md, sections 11 and 13) names the transport: today's
+  `public_key`, `short_id` and site for REALITY, or the host, port and path for XHTTP, with
+  the group's VLESS user ID either way. A client that does not know the transport says that
+  it needs an update and stays at home; it never falls back to plain WireGuard, which would
+  show the network what it hides.
+- **Clients.**
+  - `cbb` and the phones' tunnel (`mobile/cbbtun`): Xray-core has VLESS over XHTTP; its TLS
+    uses Xray's browser fingerprint (uTLS), so the ClientHello looks like a browser's.
+  - The lite member: a VLESS and XHTTP client of its own in `cbb_core` (sans-I/O, `no_std`
+    with alloc, so the ESP32 can have it later), on the TLS it has (rustls with the
+    RustCrypto provider), with VLESS's own encryption (ML-KEM-768 with X25519, as
+    Xray-core's) when the forwarder asks for it. It checks the site's certificate against
+    the public CAs (the Mozilla list built in, or the system's bundle on Linux and OpenWrt),
+    which its member TLS never needed. GotaTun's packets go over that connection instead of
+    its UDP socket.
+  - Interop vectors for the VLESS header, the XHTTP framing and the encryption in
+    `testdata/interop`, checked against Xray-core, and a test of the lite member against
+    the Go forwarder in CI's `lite` job.
+- **Risks.** rustls' ClientHello is not a browser's, and a censor that singles out TLS
+  fingerprints (JA3, JA4) may notice it; a real site and its certificate still hide far more
+  than plain WireGuard, and the order of the cipher suites and extensions can be brought
+  closer to a browser's. WireGuard over TCP adds latency on a lossy network (TCP inside
+  TCP), which a clipboard tolerates.
+- **cbb.tools.** `site/deploy/nginx.conf` gains the XHTTP location, which reads the path
+  from a file made on the server (as `cbb-preview.conf`), so the path stays out of the
+  repository; `site/README.md` gains the step, and the forwarder runs with XHTTP.
+- **Then, on the lite member:** AmneziaWG (its changes to WireGuard's packets: junk
+  packets, shifted sizes and headers, padding) as a layer around GotaTun's UDP socket,
+  ported from amneziawg-go (MIT) under `third_party` and checked against it, so the lite
+  member also reaches an obfuscated hub (today `lite/src/tunnel.rs` refuses one); and the
+  blind relay (item 28), which it does not reach yet.
+
+Steps: the protocol and the Go forwarder and hub first, with Xray's XHTTP transport; then
+the phones' tunnel; then the lite member's client and its vectors; then cbb.tools' nginx
+and forwarder; then the guide for blocked networks (with its translations), the reference
+and the bench's cases for a network that blocks WireGuard (P20, S9, F7), run from a real
+network that blocks VPNs; then AmneziaWG and the relay on the lite member.
 
 ## Future research (not planned)
 

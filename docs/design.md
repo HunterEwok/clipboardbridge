@@ -1433,6 +1433,9 @@ relay, or a hub.
    - The forwarder passes whatever comes over VLESS to its own UDP port and routes it as it
      routes every packet, by `mac1` and the indices, so VLESS cannot be used to reach
      anything else; with AmneziaWG on as well, both apply.
+3. **Planned for 0.7: VLESS over XHTTP behind the server's own web server** as the main way,
+   with REALITY kept for forwarders without a site, for every client including the lite member
+   ([roadmap item 46](roadmap.md#vless-behind-a-web-server)).
 
 sing-box is not used (GPL).
 
