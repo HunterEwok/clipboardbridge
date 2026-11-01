@@ -470,6 +470,26 @@ func removedAway(ctx context.Context, r *Report, f *Fleet, timeout time.Duration
 		}
 		return nil
 	})
+	// S6: the removed client reaches no one: what it copies arrives
+	// nowhere, at home or away.
+	r.Do("fleet/S6-removed-reaches-no-one", func() error {
+		text := "cbb-bench " + a.run + " from the removed client"
+		if err := Copy(ctx, c2, text); err != nil {
+			return err
+		}
+		time.Sleep(timeout)
+		for _, d := range a.members {
+			if d == c2 {
+				continue
+			}
+			if got, err := Paste(ctx, d); err != nil {
+				return err
+			} else if strings.Contains(got, text) {
+				return fmt.Errorf("%s got a copy from the removed client", d.Name)
+			}
+		}
+		return nil
+	})
 	r.Do("fleet/W40-forwarder-keeps-nothing", func() error {
 		var secrets []string
 		for _, d := range a.members {

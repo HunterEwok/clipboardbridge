@@ -164,6 +164,7 @@ func installers(ctx context.Context, r *Report, f *Fleet, builds map[string]stri
 		}
 		return listens("8764")
 	})
+	installedCases(ctx, r, d, builds["0.6.0"])
 
 	const q = "fleet/I4-uninstall/"
 	r.Do(q+"keeps-state", func() error {

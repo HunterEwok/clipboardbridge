@@ -60,20 +60,32 @@ kind() {
 
 # nets prints the home networks: the private IPv4 networks this machine is
 # on, 100.64.0.0/10 when install.sh --home-cgnat on counts it as home, then
-# link-local and unique-local IPv6.
+# link-local and unique-local IPv6. With the argument ufw, it leaves IPv6 out
+# when ufw takes no IPv6 rules.
 nets() {
 	ip -o -f inet route show scope link 2>/dev/null | awk '
 		$1 ~ /^10\./ || $1 ~ /^192\.168\./ || $1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./ { print $1 }' | sort -u
 	if [ "$(sed -n 's/^CBB_HOME_CGNAT=//p' /etc/clipboardbridge/clipboardbridge.env 2>/dev/null | tail -n 1)" = 1 ]; then
 		echo 100.64.0.0/10
 	fi
-	echo fe80::/10
-	echo fc00::/7
+	# A kernel without IPv6 (ipv6.disable=1) has no IPv6 networks, and
+	# ufw refuses rules for them, as it does with IPV6=no.
+	if [ -d /proc/sys/net/ipv6 ] && ! { [ "${1-}" = ufw ] && ufw_no_ipv6; }; then
+		echo fe80::/10
+		echo fc00::/7
+	fi
 }
 
-# rules prints the rules clipboardbridge needs, one numbered line each.
+# ufw_no_ipv6 reports whether /etc/default/ufw sets IPV6=no, quoted or not.
+ufw_no_ipv6() {
+	grep -Eqi '^[[:space:]]*IPV6=["'\'']?no["'\'']?[[:space:]]*$' /etc/default/ufw 2>/dev/null
+}
+
+# rules prints the rules clipboardbridge needs for the firewall named first,
+# one numbered line each.
 rules() {
-	from=$(nets | paste -sd, - | sed 's/,/, /g')
+	from=$(nets "$1" | paste -sd, - | sed 's/,/, /g')
+	shift
 	n=1
 	for p in "$@"; do
 		echo "  $n. Allow incoming TCP $p from $from. Purpose: connections from the group's devices."
@@ -89,7 +101,7 @@ commands() {
 	shift
 	case $k in
 	ufw)
-		for net in $(nets); do
+		for net in $(nets ufw); do
 			for p in "$@"; do
 				echo "  sudo ufw allow proto tcp from $net to any port $p comment clipboardbridge"
 			done
@@ -209,7 +221,7 @@ open() {
 	case $(kind) in
 	ufw)
 		echo ufw >"$state"
-		for net in $(nets); do
+		for net in $(nets ufw); do
 			ufw allow proto udp from "$net" to any port 5353 comment 'clipboardbridge mDNS' >/dev/null
 			for p in "$@"; do
 				ufw allow proto tcp from "$net" to any port "$p" comment clipboardbridge >/dev/null
@@ -352,7 +364,7 @@ setup() {
 		return
 	fi
 	echo "Firewall: $k (active). Clipboard Bridge requires these rules:"
-	rules "$@"
+	rules "$k" "$@"
 	case $k in
 	nftables | iptables | fw4)
 		close
