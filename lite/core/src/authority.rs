@@ -956,7 +956,9 @@ impl Evaluation {
         };
         // One body may come with more than one valid admin CA (an admin key
         // certified again); the smallest DER is kept, whatever the order.
-        let mut by_id: BTreeMap<Hash, Rec> = BTreeMap::new();
+        // A Vec sorted once, not a map: a set at the limits is most of the
+        // memory the evaluation takes, so it is held once.
+        let mut all: Vec<Rec> = Vec::with_capacity(input.records.len());
         for r in input.records {
             let s = match verify(r, |h| e.roots.get(h), input.sigs) {
                 Ok(s) => s,
@@ -980,19 +982,16 @@ impl Evaluation {
                 },
                 None => None,
             };
-            let better = match (by_id.get(&s.id).and_then(|o| o.s.admin_ca.as_ref()), &s.admin_ca) {
-                (None, _) => !by_id.contains_key(&s.id),
-                (Some(old), Some(new)) => new.der < old.der,
-                (Some(_), None) => false,
-            };
-            if better {
-                by_id.insert(s.id, Rec { s, issuer, key: LimitKey::default() });
-            }
+            all.push(Rec { s, issuer, key: LimitKey::default() });
         }
-        let (all, kept) = e.limit(key_hash_of(input.group_ca), by_id.into_values().collect());
+        fn der(x: &Rec) -> Option<&[u8]> {
+            x.s.admin_ca.as_ref().map(|c| c.der.as_slice())
+        }
+        all.sort_unstable_by(|a, b| a.s.id.cmp(&b.s.id).then_with(|| der(a).cmp(&der(b))));
+        all.dedup_by(|later, first| later.s.id == first.s.id);
+        let (all, kept) = e.limit(key_hash_of(input.group_ca), all);
         e.kept = kept;
-        for x in all {
-            let i = e.recs.len();
+        for (i, x) in all.iter().enumerate() {
             e.all_by_sig.entry(x.s.body.signer).or_default().push(i);
             if i < kept {
                 e.by_sig.entry(x.s.body.signer).or_default().push(i);
@@ -1000,8 +999,8 @@ impl Evaluation {
                     e.devices.entry(x.s.body.device.clone()).or_default().push(i);
                 }
             }
-            e.recs.push(x);
         }
+        e.recs = all;
         e.cap_devices();
         e
     }
@@ -1048,7 +1047,9 @@ impl Evaluation {
             let depth = seqs.get(&k).map_or(0, |q| q.partition_point(|&s| s < x.s.body.seq));
             x.key = LimitKey { rank: rank.get(&k).copied().unwrap_or(3), depth, signer: k, id: x.s.id };
         }
-        all.sort_by_key(|x| x.key);
+        // Keys are unique (the ID is in them), so an unstable sort is exact
+        // and needs no buffer as large as the set.
+        all.sort_unstable_by_key(|x| x.key);
         let mut size = 0usize;
         let mut keep = all.len();
         for (i, x) in all.iter().enumerate() {
