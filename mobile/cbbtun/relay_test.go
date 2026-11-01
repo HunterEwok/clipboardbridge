@@ -362,12 +362,12 @@ func TestRelayBadArguments(t *testing.T) {
 		port               int
 		events             RelayEvents
 	}{
-		{"short key", []byte{1}, "127.0.0.1:8764", "sha256:" + pad43, okDevice, 1, kit},
-		{"no port", wg, "127.0.0.1", "sha256:" + pad43, okDevice, 1, kit},
+		{"short key", []byte{1}, "127.0.0.1:8764", pad43, okDevice, 1, kit},
+		{"no port", wg, "127.0.0.1", pad43, okDevice, 1, kit},
 		{"bad pin", wg, "127.0.0.1:8764", "nope", okDevice, 1, kit},
-		{"bad device", wg, "127.0.0.1:8764", "sha256:" + pad43, "phone", 1, kit},
-		{"no member port", wg, "127.0.0.1:8764", "sha256:" + pad43, okDevice, 0, kit},
-		{"no events", wg, "127.0.0.1:8764", "sha256:" + pad43, okDevice, 1, nil},
+		{"bad device", wg, "127.0.0.1:8764", pad43, "phone", 1, kit},
+		{"no member port", wg, "127.0.0.1:8764", pad43, okDevice, 0, kit},
+		{"no events", wg, "127.0.0.1:8764", pad43, okDevice, 1, nil},
 	} {
 		if _, err := StartRelay(c.key, c.dev, c.endpoint, c.pin, "[]", keySigner{}, "", c.port, c.events); err == nil {
 			t.Errorf("%s: no error", c.name)
@@ -377,4 +377,4 @@ func TestRelayBadArguments(t *testing.T) {
 
 const okDevice = "0123456789abcdef0123456789abcdef"
 
-var pad43 = strings.Repeat("A", 43)
+var pad43 = strings.Repeat("A", 43) + "="

@@ -151,7 +151,7 @@ func (s *Service) invite(ctx context.Context, c net.Conn, r *control.Reader, m *
 			return ctx.Err()
 		}
 	}
-	w, err := pair.Open(id, "", pair.Options{Now: benchtime.Now, Records: s.pathRecords, ClaimTimes: s.claimTimes, Taken: s.idTaken, Secret: in.Secret, Lifetime: lifetime, NoCAKeys: true, Confirm: confirm, ConfirmWait: confirmWait})
+	w, err := pair.Open(id, "", pair.Options{Now: benchtime.Now, Records: s.pathRecords, ClaimTimes: s.claimTimes, Taken: s.idTaken, Secret: in.Secret, Lifetime: lifetime, Confirm: confirm, ConfirmWait: confirmWait})
 	if err != nil {
 		fail(c, err)
 		return

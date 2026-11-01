@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: f3e807bbde74 -->
+<!-- source: 5a17c9adbba6 -->
 # Сети, блокирующие VPN
 
 Вне дома ваши устройства подключаются к хабу через собственный туннель WireGuard группы.
@@ -40,7 +40,7 @@ sudo cbb global hub -obfuscate 203.0.113.7:8764
 С форвардером добавьте `-obfuscate` так же:
 
 ```sh
-sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 Хаб один раз создаёт настройки группы случайным образом и хранит их, пока остаётся
@@ -69,7 +69,7 @@ VLESS работает между вашими устройствами и фо�
 2. **На хабе**:
 
    ```sh
-   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:... -vless
+   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key> -vless
    ```
 
    Добавьте и `-obfuscate`, если хотите; тогда действуют оба.

@@ -11,7 +11,6 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
 	mrand "math/rand/v2"
 	"net/netip"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"github.com/HunterEwok/clipboardbridge/internal/budget"
+	"github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -83,7 +83,7 @@ func rawClaim(t *testing.T, f *Forwarder, pin string, cert tls.Certificate, key 
 	if Pin(tc.ConnectionState().PeerCertificates[0]) != pin {
 		t.Fatal("the forwarder's pin changed")
 	}
-	dec := json.NewDecoder(tc)
+	dec := frame.NewDecoder(tc, 1<<20)
 	var ch challenge
 	if err := dec.Decode(&ch); err != nil {
 		tc.Close()
@@ -94,7 +94,7 @@ func rawClaim(t *testing.T, f *Forwarder, pin string, cert tls.Certificate, key 
 	p, _ := proof(shared, tc.ConnectionState())
 	c := claim{Key: key, Proof: p}
 	edit(&c, tc.ConnectionState())
-	json.NewEncoder(tc).Encode(c)
+	frame.NewEncoder(tc, 1<<20).Encode(c)
 	var a answer
 	if err := dec.Decode(&a); err != nil {
 		tc.Close()

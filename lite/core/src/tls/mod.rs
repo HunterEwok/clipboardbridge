@@ -40,9 +40,9 @@ use crate::error::{Error, Result};
 use crate::identity::Identity;
 
 /// The ALPN protocol of member connections.
-pub const MEMBER_PROTOCOL: &[u8] = b"clipboardbridge/1";
+pub const MEMBER_PROTOCOL: &[u8] = b"clipboardbridge/2";
 /// The ALPN protocol of pairing connections.
-pub const PAIR_PROTOCOL: &[u8] = b"clipboardbridge-pair/1";
+pub const PAIR_PROTOCOL: &[u8] = b"clipboardbridge-pair/2";
 
 /// The clock of the TLS configurations.
 pub type Clock = Arc<dyn TimeProvider>;
@@ -197,7 +197,7 @@ fn server_builder(clock: &Clock) -> Result<rustls::ConfigBuilder<rustls::ServerC
 }
 
 /// The client configuration for dialing a member: TLS 1.3 only, ALPN
-/// clipboardbridge/1, this member's certificate with its issuer, and the
+/// clipboardbridge/2, this member's certificate with its issuer, and the
 /// server checked against the group's roots and records. peer is the
 /// device that discovery found, when known.
 pub fn member_client(
@@ -284,7 +284,7 @@ impl ClientCertVerifier for MemberClientVerifier {
 
 /// The server configuration for members that dial this one (phones, Macs
 /// and lite members with a lower device ID): TLS 1.3 only, ALPN
-/// clipboardbridge/1, this member's certificate with its issuer, a client
+/// clipboardbridge/2, this member's certificate with its issuer, a client
 /// certificate of the group required, no session tickets.
 pub fn member_server(id: &Identity, refused: Refused, clock: &Clock) -> Result<rustls::ServerConfig> {
     let verifier = MemberClientVerifier {
@@ -386,7 +386,7 @@ fn pair_identity(cert: &[u8], key: &[u8]) -> (Vec<CertificateDer<'static>>, Priv
 }
 
 /// The joiner's server configuration, for a member that dials it: TLS 1.3,
-/// ALPN clipboardbridge-pair/1, its self-signed certificate, any client
+/// ALPN clipboardbridge-pair/2, its self-signed certificate, any client
 /// certificate required, no session tickets. Use a new one for each
 /// connection: its Exporter gives the pairing's sid.
 pub fn pair_server(cert: &[u8], key: &[u8], clock: &Clock) -> Result<(rustls::ServerConfig, Arc<Exporter>)> {

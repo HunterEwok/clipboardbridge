@@ -105,10 +105,15 @@ pub fn sha256(b: &[u8]) -> [u8; 32] {
 /// SubjectPublicKeyInfo.
 pub type KeyHash = [u8; 32];
 
-/// The fingerprint a join QR code carries: SHA-256 over the DER, in
-/// base64url without padding.
-pub fn qr_fingerprint(der: &[u8]) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha256(der))
+/// The fingerprint of a certificate's key, the one form of docs/protocol.md
+/// (Conventions, "Fingerprints"): SHA-256 over its SubjectPublicKeyInfo in
+/// standard base64, as a record's key hash; empty for bytes that are no
+/// certificate. A join QR code carries it.
+pub fn fingerprint(der: &[u8]) -> String {
+    match Cert::parse(der) {
+        Ok(c) => base64::engine::general_purpose::STANDARD.encode(sha256(&c.spki)),
+        Err(_) => String::new(),
+    }
 }
 
 /// The short identifier of a group: the first 8 bytes of SHA-256 over the

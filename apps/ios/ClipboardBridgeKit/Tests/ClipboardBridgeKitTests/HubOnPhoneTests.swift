@@ -8,7 +8,7 @@ import XCTest
 /// with, its home networks, and the clients it hands its tunnel.
 final class HubOnPhoneTests: XCTestCase {
     let phone = String(repeating: "a", count: 32), pc = String(repeating: "b", count: 32), tv = String(repeating: "c", count: 32)
-    let pin = "sha256:" + String(repeating: "A", count: 43)
+    let pin = String(repeating: "A", count: 43) + "="
 
     final class FakeHub: HubTunnel, @unchecked Sendable {
         let memberPort: UInt16
@@ -70,9 +70,11 @@ final class HubOnPhoneTests: XCTestCase {
 
     func testForwarderInput() {
         XCTAssertTrue(HubState.validPin(pin))
-        XCTAssertTrue(HubState.validPin("sha256:" + String(repeating: "a-_9", count: 10) + "abc"))
-        XCTAssertFalse(HubState.validPin("sha256:" + String(repeating: "A", count: 42)))
-        XCTAssertFalse(HubState.validPin("sha256:" + String(repeating: "A", count: 42) + "="))
+        XCTAssertTrue(HubState.validPin(String(repeating: "a+/9", count: 10) + "abc="))
+        XCTAssertFalse(HubState.validPin("sha256:" + String(repeating: "A", count: 43) + "="))
+        XCTAssertFalse(HubState.validPin(String(repeating: "A", count: 43)))
+        XCTAssertFalse(HubState.validPin(String(repeating: "a-_9", count: 10) + "abc="))
+        XCTAssertFalse(HubState.validPin(String(repeating: "A", count: 42) + "B="))
         XCTAssertEqual(HubState.endpoint(" 203.0.113.9:8764 "), "203.0.113.9:8764")
         XCTAssertEqual(HubState.endpoint("[2001:db8::9]:8764"), "[2001:db8::9]:8764")
         XCTAssertNil(HubState.endpoint("203.0.113.9"))

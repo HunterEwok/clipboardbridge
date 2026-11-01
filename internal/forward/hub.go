@@ -11,15 +11,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
-	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/netguard"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -32,21 +31,16 @@ type Link struct {
 	Pin      string
 }
 
-// pinPrefix starts a pin: the SHA-256 of the forwarder's public key, in
-// base64url without padding.
-const pinPrefix = "sha256:"
-
-// Pin returns the pin of a forwarder's certificate.
-func Pin(cert *x509.Certificate) string {
-	sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
-	return pinPrefix + base64.RawURLEncoding.EncodeToString(sum[:])
-}
+// Pin returns the pin of a forwarder's certificate: the fingerprint of its
+// key, in the one form of docs/protocol.md (Conventions, "Fingerprints"),
+// SHA-256 over its SubjectPublicKeyInfo in standard base64.
+func Pin(cert *x509.Certificate) string { return group.KeyHashOf(cert).String() }
 
 // CheckPin tells whether s looks like a pin.
 func CheckPin(s string) error {
-	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(s, pinPrefix))
-	if !strings.HasPrefix(s, pinPrefix) || err != nil || len(b) != sha256.Size {
-		return fmt.Errorf("%q is not a forwarder's key; cbb forward prints it, starting with %s", s, pinPrefix)
+	b, err := base64.StdEncoding.Strict().DecodeString(s)
+	if err != nil || len(b) != sha256.Size || base64.StdEncoding.EncodeToString(b) != s {
+		return fmt.Errorf("%q is not a forwarder's key; cbb forward prints it, 44 characters of base64", s)
 	}
 	return nil
 }
@@ -194,7 +188,7 @@ func registerOnce(ctx context.Context, cfg HubConfig, report func(Report)) error
 		return fmt.Errorf("registering with the forwarder: %w", err)
 	}
 	cs := tc.ConnectionState()
-	enc, dec := json.NewEncoder(tc), json.NewDecoder(io.LimitReader(tc, 1<<20))
+	enc, dec := frame.NewEncoder(tc, 1<<20), frame.NewDecoder(io.LimitReader(tc, 1<<20), 1<<20)
 	var ch challenge
 	if err := dec.Decode(&ch); err != nil {
 		return fmt.Errorf("registering with the forwarder: %w", err)

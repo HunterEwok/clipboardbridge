@@ -37,7 +37,7 @@ sudo cbb global hub -obfuscate 203.0.113.7:8764
 With a forwarder, add `-obfuscate` the same way:
 
 ```sh
-sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 The hub makes the group's settings once, at random, and keeps them while `-obfuscate`
@@ -66,7 +66,7 @@ first, then the hub.
 2. **On the hub**:
 
    ```sh
-   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:... -vless
+   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key> -vless
    ```
 
    Add `-obfuscate` too if you like; both then apply.

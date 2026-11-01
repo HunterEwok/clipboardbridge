@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"unicode/utf8"
 
@@ -55,6 +56,11 @@ const (
 	MaxDelay     = 7 * 24 * 3600 * 1000
 	DefaultDelay = 72 * 3600 * 1000
 )
+
+// KeyLevels are the key levels a settings record may set (docs/roadmap.md,
+// "Key levels"): only proven hardware keys, hardware keys (the default),
+// or files allowed too.
+var KeyLevels = []string{"proven", "hardware", "files"}
 
 // The record types.
 const (
@@ -183,6 +189,9 @@ type Body struct {
 	Root    []byte `json:"root,omitempty"`
 
 	TakeoverDelayMS *int64 `json:"takeover_delay_ms,omitempty"`
+	// KeyLevel is which keys may be the group's root, an admin or a hub:
+	// one of KeyLevels; "" means "hardware".
+	KeyLevel string `json:"key_level,omitempty"`
 
 	Heads []Head `json:"heads,omitempty"`
 	Keep  []Hash `json:"keep,omitempty"`
@@ -201,7 +210,7 @@ var (
 		TypeThaw:       set("records"),
 		TypeClaim:      set("root", "seen"),
 		TypeResolve:    set("records"),
-		TypeSettings:   set("takeover_delay_ms"),
+		TypeSettings:   set("takeover_delay_ms", "key_level"),
 		TypeCheckpoint: set("heads", "keep"),
 		TypeHubs:       set("hubs"),
 		TypeRecovery:   set("admin"),
@@ -243,6 +252,7 @@ func (b *Body) present() []string {
 	add(len(b.Records) > 0, "records")
 	add(len(b.Root) > 0, "root")
 	add(b.TakeoverDelayMS != nil, "takeover_delay_ms")
+	add(b.KeyLevel != "", "key_level")
 	add(len(b.Heads) > 0, "heads")
 	add(len(b.Keep) > 0, "keep")
 	add(len(b.Hubs) > 0, "hubs")
@@ -347,6 +357,9 @@ func (b *Body) check() error {
 	case TypeSettings:
 		if d := b.TakeoverDelayMS; d != nil && (*d < 0 || *d > MaxDelay) {
 			return fmt.Errorf("authority: a takeover delay of %d ms is not from 0 to %d", *d, MaxDelay)
+		}
+		if b.KeyLevel != "" && !slices.Contains(KeyLevels, b.KeyLevel) {
+			return fmt.Errorf("authority: an unknown key level %q", b.KeyLevel)
 		}
 	case TypeCheckpoint:
 		if len(b.Heads) == 0 {

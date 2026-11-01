@@ -8,7 +8,12 @@ import Foundation
 /// pings, records and goodbyes.
 public enum Member {
     /// The ALPN protocol of member connections.
-    public static let alpn = "clipboardbridge/1"
+    public static let alpn = "clipboardbridge/2"
+    /// The feature of the hello (section 4, "Hello") that says the sender
+    /// serves the content of media events, and how many names of the
+    /// hello's features a receiver reads.
+    static let featureMedia = "media"
+    static let maxFeatures = 32
     /// Frames larger than this close the connection.
     public static let maxFrame = 7 << 20
     /// The most bytes of a part one chunk carries (section 4, "Content").
@@ -697,7 +702,7 @@ public enum Member {
                                       mode: h.mode.flatMap { modes.contains($0) ? $0 : nil },
                                       keyStore: h.key_store.flatMap { $0 == Records.file || $0 == Records.hardware || $0 == Records.rootless ? $0 : nil },
                                       actions: Array((h.actions?.value ?? []).filter(Commands.validActionName).prefix(Commands.maxHelloActions)),
-                                      media: h.media ?? false))
+                                      media: (h.features?.value ?? []).prefix(Member.maxFeatures).contains(Member.featureMedia)))
         case "event": return .event(w.event?.value)
         case "ping": return .ping
         case "bye": return .bye
@@ -736,7 +741,7 @@ public enum Member {
         var mode: String?
         var key_store: String?
         var actions: Lenient<[String]>?
-        var media: Bool?
+        var features: Lenient<[String]>?
     }
 
     struct WireIn: Decodable {
@@ -762,7 +767,7 @@ public enum Member {
         init(_ m: Message) { self.m = m }
 
         enum Keys: String, CodingKey { case t, role, hello, event, cert, issuer, records, credentials, admin_ca, tunnel, hubs, command, result, evidence, get }
-        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions, media }
+        enum HelloKeys: String, CodingKey { case wall_ms, current, records, name, os, device, admin_key, tunnel_key, tunnel_psk, mode, key_store, actions, features }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: Keys.self)
@@ -783,7 +788,7 @@ public enum Member {
                 try hc.encodeIfPresent(h.mode, forKey: .mode)
                 try hc.encodeIfPresent(h.keyStore, forKey: .key_store)
                 if !h.actions.isEmpty { try hc.encode(h.actions, forKey: .actions) }
-                if h.media { try hc.encode(true, forKey: .media) }
+                if h.media { try hc.encode([Member.featureMedia], forKey: .features) }
             case let .event(e):
                 try c.encode("event", forKey: .t)
                 try c.encodeIfPresent(e, forKey: .event)

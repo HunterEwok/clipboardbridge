@@ -1,13 +1,13 @@
 [
 	{
-		"text": "clipboardbridge://join?code=246802\u0026addr=192.168.1.20%3A8767\u0026addr=%5Bfd00%3A%3A5%5D%3A8767\u0026fp=qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA",
+		"text": "clipboardbridge://join?code=246802\u0026addr=192.168.1.20%3A8767\u0026addr=%5Bfd00%3A%3A5%5D%3A8767\u0026fp=qFnj7Uv%2BCE%2FWNnna2IEmMaLbkA6tHcKf0VijTRzekKA%3D",
 		"want": {
 			"Code": "246802",
 			"Addrs": [
 				"192.168.1.20:8767",
 				"[fd00::5]:8767"
 			],
-			"Fingerprint": "qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA"
+			"Fingerprint": "qFnj7Uv+CE/WNnna2IEmMaLbkA6tHcKf0VijTRzekKA="
 		}
 	},
 	{
@@ -54,5 +54,13 @@
 	{
 		"text": "https://join/?code=1",
 		"want": null
+	},
+	{
+		"text": "clipboardbridge://join?code=246802\u0026fp=ab+c/d=",
+		"want": {
+			"Code": "246802",
+			"Addrs": null,
+			"Fingerprint": "ab+c/d="
+		}
 	}
 ]

@@ -13,7 +13,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -28,6 +27,7 @@ import (
 	"golang.org/x/crypto/blake2s"
 	"golang.org/x/crypto/chacha20"
 
+	"github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/group/grouptest"
 	"github.com/HunterEwok/clipboardbridge/internal/tunnel"
@@ -547,7 +547,7 @@ func rawOpen(t *testing.T, f *Forwarder, pin string, cert tls.Certificate, claim
 	if Pin(tc.ConnectionState().PeerCertificates[0]) != pin {
 		t.Fatal("the forwarder's pin changed")
 	}
-	dec := json.NewDecoder(tc)
+	dec := frame.NewDecoder(tc, 1<<20)
 	var ch challenge
 	if err := dec.Decode(&ch); err != nil {
 		tc.Close()
@@ -558,7 +558,7 @@ func rawOpen(t *testing.T, f *Forwarder, pin string, cert tls.Certificate, claim
 	p, _ := proof(shared, tc.ConnectionState())
 	c := claim{Key: claimKey, Proof: p}
 	auth.sign(t, &c, tc.ConnectionState())
-	json.NewEncoder(tc).Encode(c)
+	frame.NewEncoder(tc, 1<<20).Encode(c)
 	var a answer
 	if err := dec.Decode(&a); err != nil {
 		tc.Close()
@@ -605,7 +605,7 @@ func TestRegistration(t *testing.T) {
 	}
 	defer tc.Close()
 	go func() {
-		dec := json.NewDecoder(tc)
+		dec := frame.NewDecoder(tc, 1<<20)
 		var ch challenge
 		dec.Decode(&ch)
 		e, _ := ecdh.X25519().NewPublicKey(ch.E)
@@ -613,7 +613,7 @@ func TestRegistration(t *testing.T) {
 		p, _ := proof(shared, tc.ConnectionState())
 		c := claim{Key: mine.PublicKey().Bytes(), Proof: p}
 		auth.sign(t, &c, tc.ConnectionState())
-		json.NewEncoder(tc).Encode(c)
+		frame.NewEncoder(tc, 1<<20).Encode(c)
 		var a answer
 		dec.Decode(&a)
 		done <- a
@@ -662,7 +662,7 @@ func TestPin(t *testing.T) {
 	if err := CheckPin(Pin(cert.Leaf)); err != nil {
 		t.Error(err)
 	}
-	for _, bad := range []string{"", "sha256:", "sha256:abc", "md5:" + strings.Repeat("A", 43)} {
+	for _, bad := range []string{"", "sha256:" + strings.Repeat("A", 43) + "=", "abc", strings.Repeat("A", 43), strings.Repeat("A", 42) + "==", strings.Repeat("-", 43) + "="} {
 		if CheckPin(bad) == nil {
 			t.Errorf("CheckPin(%q) passed", bad)
 		}

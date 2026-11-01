@@ -7,7 +7,7 @@
 // computer or a phone) made an admin, or a key holder of a legacy group. The
 // window has a code, valid for five minutes, one attempt at a time, closed
 // after a success or the third failed attempt. The new device connects to the member's port
-// over TLS 1.3 with the ALPN protocol clipboardbridge-pair/1 and presents a
+// over TLS 1.3 with the ALPN protocol clipboardbridge-pair/2 and presents a
 // self-signed certificate for the key it will keep. Neither side can check
 // the other's certificate yet; instead both run the CPace
 // password-authenticated key exchange with the code, bound to this TLS
@@ -41,8 +41,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
-	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -52,16 +50,17 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	wire "github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 	"github.com/HunterEwok/clipboardbridge/internal/seal"
 )
 
 // Protocol is the ALPN protocol of pairing connections.
-const Protocol = "clipboardbridge-pair/1"
+const Protocol = "clipboardbridge-pair/2"
 
 const (
-	exporterLabel = "EXPERIMENTAL-clipboardbridge-pair-v1"
-	channelPrefix = "clipboardbridge pair v1\x00"
+	exporterLabel = "EXPERIMENTAL-clipboardbridge-pair-v2"
+	channelPrefix = "clipboardbridge pair v2\x00"
 
 	// Lifetime is how long a pairing window stays open, counting the time
 	// the machine sleeps. An attempt that has started may finish after it.
@@ -220,12 +219,6 @@ func (i Info) check() error {
 	return nil
 }
 
-// holdsKeys reports whether the device gets the CA keys in a group a
-// computer created: a Linux or Windows computer does.
-func (i Info) holdsKeys() bool {
-	return i.Role != RoleLite && (i.OS == group.OSLinux || i.OS == group.OSWindows)
-}
-
 // memberAD is the member's CPace associated data.
 type memberAD struct {
 	Device group.DeviceID `json:"device"`
@@ -248,9 +241,6 @@ type Welcome struct {
 	// Records, which the new device takes (group.Records.TakeClaimTimes);
 	// absent when there is no claim.
 	ClaimTimes []group.ClaimTime `json:"claim_times,omitempty"`
-	GroupCAKey []byte            `json:"group_ca_key,omitempty"`
-	PhoneCA    []byte            `json:"phone_ca,omitempty"`
-	PhoneCAKey []byte            `json:"phone_ca_key,omitempty"`
 }
 
 // frame is every message of the exchange; each uses some of the fields.
@@ -263,34 +253,11 @@ type frame struct {
 	OK      bool     `json:"ok,omitempty"`
 }
 
-func writeFrame(w io.Writer, f *frame) error {
-	data, err := json.Marshal(f)
-	if err != nil {
-		return err
-	}
-	if len(data) > maxFrame {
-		return errors.New("pair: frame too large")
-	}
-	buf := binary.BigEndian.AppendUint32(make([]byte, 0, 4+len(data)), uint32(len(data)))
-	_, err = w.Write(append(buf, data...))
-	return err
-}
+func writeFrame(w io.Writer, f *frame) error { return wire.Write(w, f, maxFrame) }
 
 func readFrame(r io.Reader) (*frame, error) {
-	var n [4]byte
-	if _, err := io.ReadFull(r, n[:]); err != nil {
-		return nil, err
-	}
-	size := binary.BigEndian.Uint32(n[:])
-	if size > maxFrame {
-		return nil, errors.New("pair: frame too large")
-	}
-	data := make([]byte, size)
-	if _, err := io.ReadFull(r, data); err != nil {
-		return nil, err
-	}
 	var f frame
-	if err := json.Unmarshal(data, &f); err != nil {
+	if err := wire.Read(r, &f, maxFrame); err != nil {
 		return nil, fmt.Errorf("pair: bad frame: %w", err)
 	}
 	return &f, nil
