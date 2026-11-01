@@ -1679,13 +1679,20 @@ jobs:
         timeout-minutes: 2
         run: |
           tail -100 "$RUNNER_TEMP/emulator.log" || true
+          # What the instrumented tests reported, and why a run ended early.
+          results=apps/android/app/build/outputs/androidTest-results
+          find "$results" -type f 2>/dev/null | head -50
+          find "$results" -name '*.xml' -exec cat {} + 2>/dev/null | head -400
           # logcat waits for a device that never came up; the timeout ends that.
-          timeout 30 "$ANDROID_HOME/platform-tools/adb" logcat -d -t 400 '*:W' || true
+          timeout 30 "$ANDROID_HOME/platform-tools/adb" logcat -d -s TestRunner:* AndroidRuntime:* clipboardbridge:* System.err:* || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: phone-report
-          path: ${{ runner.temp }}/phone
+          path: |
+            ${{ runner.temp }}/phone
+            apps/android/app/build/reports/androidTests
+            apps/android/app/build/outputs/androidTest-results
           retention-days: 7
 
   fdroid:
