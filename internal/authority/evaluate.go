@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -42,6 +43,7 @@ type Input struct {
 type rec struct {
 	*Signed
 	issuer Hash // the root that issued the admin CA; zero for a root's own record
+	key    limitKey
 	label  label
 	why    string // why the labelling put it out
 }
@@ -123,12 +125,14 @@ func (ep *epoch) finish(input Input) *State {
 
 // checkpoints returns the checkpoints the evaluation tries: a root's own,
 // of a root of the group (the group CA, or the root of a claim that an
-// admin under such a root signed), at most MaxCheckpoints.
+// admin under such a root signed), at most MaxCheckpoints. They come from
+// every verified record, past the limits too, so that a root's checkpoint
+// can bring a set back under them.
 func (e *evaluation) checkpoints(groupCA Hash) []*rec {
 	roots := map[Hash]bool{groupCA: true}
 	for grew := true; grew; {
 		grew = false
-		for _, rs := range e.bySig {
+		for _, rs := range e.allBy {
 			for _, r := range rs {
 				if r.Body.Type != TypeClaim || r.AdminCA == nil || !roots[r.issuer] {
 					continue
@@ -141,7 +145,7 @@ func (e *evaluation) checkpoints(groupCA Hash) []*rec {
 	}
 	var cs []*rec
 	for signer := range roots {
-		for _, r := range e.bySig[signer] {
+		for _, r := range e.allBy[signer] {
 			if r.AdminCA == nil && r.Body.Type == TypeCheckpoint {
 				cs = append(cs, r)
 			}
@@ -252,11 +256,13 @@ type evaluation struct {
 	failed  map[Hash]string            // why records left out before the epochs were, by ID
 	roots   map[Hash]*x509.Certificate // every root the group may have
 	bySig   map[Hash][]*rec            // records by signer
+	allBy   map[Hash][]*rec            // bySig with the records past the limits too, for checkpoints
 	devices map[string][]*rec          // device records by device ID
+	capped  map[Hash]bool              // device records over MaxDevices or MaxAdmins, which count for nothing
 }
 
 func newEvaluation(input Input, anchors map[Hash]bool) *evaluation {
-	e := &evaluation{anchors: anchors, failed: map[Hash]string{}, roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, devices: map[string][]*rec{}}
+	e := &evaluation{anchors: anchors, failed: map[Hash]string{}, roots: map[Hash]*x509.Certificate{KeyHashOf(input.GroupCA): input.GroupCA}, bySig: map[Hash][]*rec{}, allBy: map[Hash][]*rec{}, devices: map[string][]*rec{}, capped: map[Hash]bool{}}
 	// The new roots of claims are the only other roots a record may be
 	// signed under; a claim itself is signed by an admin CA.
 	for _, r := range input.Records {
@@ -306,12 +312,165 @@ func newEvaluation(input Input, anchors map[Hash]bool) *evaluation {
 		}
 	}
 	for _, x := range byID {
+		e.allBy[x.Body.Signer] = append(e.allBy[x.Body.Signer], x)
+	}
+	for _, x := range e.limit(KeyHashOf(input.GroupCA), byID) {
 		e.bySig[x.Body.Signer] = append(e.bySig[x.Body.Signer], x)
 		if x.Body.Type == TypeDevice {
 			e.devices[x.Body.Device] = append(e.devices[x.Body.Device], x)
 		}
 	}
+	e.capDevices()
 	return e
+}
+
+// The limits on a record set (docs/records-v2.md, "Limits"). Records over
+// them count for nothing, with the reason WhyLimit; the set is never
+// refused, so that no admin can stop the group by filling it.
+const (
+	MaxRecords  = 1024    // records in the set, as the checkpoint prunes it
+	MaxSetBytes = 1 << 20 // their bodies, signatures and chains together
+	MaxDevices  = 256     // devices with a device record
+	MaxAdmins   = 64      // admin keys a root names
+	MaxPath     = 16      // roots on the path: the group CA and 15 handovers
+)
+
+// limitKey is a record's place in the order the limits take records in:
+// the group CA's own records first, then those of the other roots of the
+// group, then those under an admin CA of the group, then the rest; within
+// each, by depth (how many of its signer's records have a lower seq), then
+// signer and ID. Each signer's records stay in seq order, so what a limit
+// leaves out is the end of its chains, never a record in the middle.
+type limitKey struct {
+	rank, depth int
+	signer, id  Hash
+}
+
+func (a limitKey) less(b limitKey) bool {
+	if a.rank != b.rank {
+		return a.rank < b.rank
+	}
+	if a.depth != b.depth {
+		return a.depth < b.depth
+	}
+	if c := bytes.Compare(a.signer[:], b.signer[:]); c != 0 {
+		return c < 0
+	}
+	return bytes.Compare(a.id[:], b.id[:]) < 0
+}
+
+// limit returns the records that fit in MaxRecords and MaxSetBytes, taken
+// in limitKey order up to the first that does not fit; that one and every
+// record after it fail with WhyLimit. It notes each record's key for
+// capDevices.
+func (e *evaluation) limit(groupCA Hash, byID map[Hash]*rec) []*rec {
+	// The roots of the group: the group CA and the root of each claim an
+	// admin CA of one of them signed.
+	roots := map[Hash]bool{groupCA: true}
+	for grew := true; grew; {
+		grew = false
+		for _, x := range byID {
+			if x.Body.Type == TypeClaim && x.AdminCA != nil && roots[x.issuer] {
+				if r := claimRoot(x); !roots[r] {
+					roots[r], grew = true, true
+				}
+			}
+		}
+	}
+	rank := map[Hash]int{}
+	seqs := map[Hash][]int64{}
+	for _, x := range byID {
+		k := x.Body.Signer
+		r := 3
+		switch {
+		case k == groupCA:
+			r = 0
+		case roots[k]:
+			r = 1
+		case x.AdminCA != nil && roots[x.issuer]:
+			r = 2
+		}
+		if old, ok := rank[k]; !ok || r < old {
+			rank[k] = r
+		}
+		seqs[k] = append(seqs[k], x.Body.Seq)
+	}
+	for _, q := range seqs {
+		slices.Sort(q)
+	}
+	all := make([]*rec, 0, len(byID))
+	for _, x := range byID {
+		q := seqs[x.Body.Signer]
+		lower := sort.Search(len(q), func(i int) bool { return q[i] >= x.Body.Seq })
+		x.key = limitKey{rank: rank[x.Body.Signer], depth: lower, signer: x.Body.Signer, id: x.ID}
+		all = append(all, x)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].key.less(all[j].key) })
+	size := 0
+	for i, x := range all {
+		n := len(x.Record.Body) + len(x.Record.Sig)
+		for _, c := range x.Record.Chain {
+			n += len(c)
+		}
+		if i >= MaxRecords || size+n > MaxSetBytes {
+			for _, y := range all[i:] {
+				e.fail(y.ID, WhyLimit)
+			}
+			return all[:i]
+		}
+		size += n
+	}
+	return all
+}
+
+// capDevices marks the device records over MaxDevices and MaxAdmins: the
+// devices, and the admin keys of a root's own records, are taken in the
+// limitKey order of their first such record, and a record naming one
+// past the limit counts for nothing.
+func (e *evaluation) capDevices() {
+	isAdmin := func(x *rec) bool { return x.AdminCA == nil && x.Body.Admin != nil }
+	devices := e.over(MaxDevices, func(x *rec) (string, bool) { return x.Body.Device, true })
+	admins := e.over(MaxAdmins, func(x *rec) (string, bool) {
+		if !isAdmin(x) {
+			return "", false
+		}
+		return x.Body.Admin.String(), true
+	})
+	for _, rs := range e.devices {
+		for _, x := range rs {
+			if devices[x.Body.Device] || isAdmin(x) && admins[x.Body.Admin.String()] {
+				e.capped[x.ID] = true
+			}
+		}
+	}
+}
+
+// over takes the names the device records give (name returns false for a
+// record that gives none) in the limitKey order of each name's first record
+// and returns those past the first max.
+func (e *evaluation) over(max int, name func(*rec) (string, bool)) map[string]bool {
+	best := map[string]limitKey{}
+	for _, rs := range e.devices {
+		for _, x := range rs {
+			n, ok := name(x)
+			if !ok {
+				continue
+			}
+			if k, seen := best[n]; !seen || x.key.less(k) {
+				best[n] = x.key
+			}
+		}
+	}
+	names := make([]string, 0, len(best))
+	for n := range best {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool { return best[names[i]].less(best[names[j]]) })
+	over := map[string]bool{}
+	for _, n := range names[min(len(names), max):] {
+		over[n] = true
+	}
+	return over
 }
 
 // fail notes why a record was left out; of two copies of one body left out
@@ -394,7 +553,7 @@ func (e *evaluation) epoch(path []Hash, cuts map[Hash]int64) *epoch {
 // rootRecord reports whether r is a root's own record that counts in this
 // epoch: its root is on the path and it is within that root's cut.
 func (ep *epoch) rootRecord(r *rec) bool {
-	if r.AdminCA != nil || !ep.counted[r.ID] {
+	if r.AdminCA != nil || !ep.counted[r.ID] || ep.e.capped[r.ID] {
 		return false
 	}
 	if _, ok := ep.onPath[r.Body.Signer]; !ok {
@@ -572,7 +731,7 @@ func (ep *epoch) rootDevice() *rec {
 // signs what").
 func (ep *epoch) permitted(r *rec) bool {
 	a := r.Body.Signer
-	if _, ok := ep.onPath[r.issuer]; !ok || ep.admins[a] == nil {
+	if _, ok := ep.onPath[r.issuer]; !ok || ep.admins[a] == nil || ep.e.capped[r.ID] {
 		return false
 	}
 	b := &r.Body
@@ -967,6 +1126,12 @@ func (ep *epoch) decideClaims(now int64, firstSeen map[Hash]int64, unknown bool)
 		ep.pending = &c.Body.Signer
 		return nil, 0
 	}
+	if len(ep.path) >= MaxPath {
+		// A handover past the limit on the path counts for nothing.
+		cl.State = "void"
+		ep.claims = append(ep.claims, cl)
+		return nil, 0
+	}
 	cl.State = "effective"
 	ep.claims = append(ep.claims, cl)
 	next := cl.Root
@@ -1165,6 +1330,7 @@ const (
 	WhyPower      = "power"      // its signer was no admin with the power it needs
 	WhyRemoved    = "removed"    // an admin's removal or freeze that counts cut it off
 	WhyUndecided  = "undecided"  // it is in a conflict between admins
+	WhyLimit      = "limit"      // it is past a limit on the set (MaxRecords, MaxSetBytes, MaxDevices, MaxAdmins)
 )
 
 // MaxIgnored is how many records a state lists in ignored.
@@ -1209,6 +1375,8 @@ func (ep *epoch) whyNot(r *rec) string {
 	case r.Body.Type == TypeClaim && ep.tookEffect(r.ID):
 		// A claim that took effect counted under the root before.
 		return ""
+	case ep.e.capped[r.ID]:
+		return WhyLimit
 	case !ep.counted[r.ID]:
 		return WhyHistory
 	case r.AdminCA == nil:
