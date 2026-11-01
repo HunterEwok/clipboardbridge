@@ -45,6 +45,7 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray? = null,
         id: String = newID(),
+        seal: ByteArray? = null,
     ): Member.Record {
         require(mode in Member.MODES) { "unknown sync mode $mode" }
         val ms = now.toEpochMilli()
@@ -61,7 +62,7 @@ object Commands {
                 "mode" to Wire.str(mode),
             ),
         )
-        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+        return finish(body, signer, adminCA, seal)
     }
 
     /**
@@ -81,6 +82,7 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray? = null,
         id: String = newID(),
+        seal: ByteArray? = null,
     ): Member.Record {
         require(forwarder != null || endpoints.isNotEmpty()) { "the new hub needs a forwarder or an address" }
         require(endpoints.size <= 8 && clients.size <= MAX_HUB_CLIENTS) { "too many addresses or clients" }
@@ -103,7 +105,7 @@ object Commands {
                 "hub" to order,
             ),
         )
-        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+        return finish(body, signer, adminCA, seal)
     }
 
     /** The longest text of a paste command, in bytes of UTF-8, and of one typed key by key. */
@@ -128,6 +130,7 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray? = null,
         id: String = newID(),
+        seal: ByteArray? = null,
     ): Member.Record {
         val limit = when (method) {
             "paste" -> MAX_PASTE_TEXT
@@ -154,7 +157,7 @@ object Commands {
                 "text" to Wire.str(text),
             ),
         )
-        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+        return finish(body, signer, adminCA, seal)
     }
 
     /** A paste-off command for the device to: it turns remote paste off there. Signed as mode. */
@@ -166,6 +169,7 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray? = null,
         id: String = newID(),
+        seal: ByteArray? = null,
     ): Member.Record {
         val ms = now.toEpochMilli()
         val body = Wire.encode(
@@ -180,7 +184,7 @@ object Commands {
                 "expires_ms" to Wire.num(ms + LIFETIME_MS),
             ),
         )
-        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+        return finish(body, signer, adminCA, seal)
     }
 
     /** The longest name of a quick action. */
@@ -206,9 +210,10 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray? = null,
         id: String = newID(),
+        seal: ByteArray? = null,
     ): Member.Record {
         require(validActionName(name)) { "$name is not an action's name" }
-        return signed("action", to, group, by, now, signer, adminCA, id, "action" to Wire.str(name))
+        return signed("action", to, group, by, now, signer, adminCA, id, seal, "action" to Wire.str(name))
     }
 
     /** An actions-off command for the device to: it turns every quick action off there. Signed as mode. */
@@ -220,7 +225,8 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray? = null,
         id: String = newID(),
-    ): Member.Record = signed("actions-off", to, group, by, now, signer, adminCA, id)
+        seal: ByteArray? = null,
+    ): Member.Record = signed("actions-off", to, group, by, now, signer, adminCA, id, seal)
 
     /** An away-off command for the device to: it turns sync away from home off there, and its tunnel keys go. Signed as mode. */
     fun awayOff(
@@ -231,10 +237,21 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray? = null,
         id: String = newID(),
-    ): Member.Record = signed("away-off", to, group, by, now, signer, adminCA, id)
+        seal: ByteArray? = null,
+    ): Member.Record = signed("away-off", to, group, by, now, signer, adminCA, id, seal)
 
     /** The commands a watch's admin key may sign (docs/protocol.md, section 10, "Watches"), as Go's WatchCommand. */
     val WATCH_TYPES = setOf("paste-off", "actions-off", "away-off", "action")
+
+    /**
+     * Signs body; with seal, the receiver's key for sealed messages from its
+     * device record, its orders are sealed to that key first (docs/protocol.md,
+     * section 15, "Sealed commands"), in the Rust core.
+     */
+    private fun finish(body: ByteArray, signer: CertificateSigner, adminCA: ByteArray?, seal: ByteArray?): Member.Record {
+        val b = if (seal != null) Core.sealCommand(body, seal) else body
+        return Member.Record(b, signer.signature(b), adminCA?.let { listOf(it) })
+    }
 
     private fun signed(
         type: String,
@@ -245,6 +262,7 @@ object Commands {
         signer: CertificateSigner,
         adminCA: ByteArray?,
         id: String,
+        seal: ByteArray?,
         vararg extra: Pair<String, JsonElement?>,
     ): Member.Record {
         val ms = now.toEpochMilli()
@@ -261,7 +279,7 @@ object Commands {
                 *extra,
             ),
         )
-        return Member.Record(body, signer.signature(body), adminCA?.let { listOf(it) })
+        return finish(body, signer, adminCA, seal)
     }
 
     /** The most clients a hub command hands over, as many as a hub keeps. */

@@ -39,6 +39,8 @@ public enum Records {
         public var kind: String?
         public var proof: String?
         public var holds_root: Bool?
+        /// The device's public key for sealed messages (section 15).
+        public var seal: Data?
         // revoke, freeze
         public var keys: [Data]?
         // thaw, resolve
@@ -77,6 +79,7 @@ public enum Records {
             try put(kind, .kind)
             try put(proof, .proof)
             if holds_root == true { try c.encode(true, forKey: .holds_root) }
+            try put(seal, .seal)
             // Each key and record once, as the core wants them.
             func once(_ a: [Data]?) -> [Data]? { a.map { a in a.enumerated().filter { a.firstIndex(of: $0.element) == $0.offset }.map(\.element) } }
             try put(once(keys), .keys)
@@ -87,7 +90,7 @@ public enum Records {
         }
 
         private enum Key: String, CodingKey {
-            case v, alg, type, signer, time_ms, device, name, role, os, key, admin, powers, commands, store, kind, proof, holds_root
+            case v, alg, type, signer, time_ms, device, name, role, os, key, admin, powers, commands, store, kind, proof, holds_root, seal
             case keys, records, root, takeover_delay_ms, hubs
         }
     }
@@ -201,6 +204,9 @@ public struct RecordSet: Codable, Equatable, Sendable {
         /// checked, if any.
         public var kind: String?
         public var proof: String?
+        /// Its public key for sealed messages, which commands for it are
+        /// sealed to; nil when its record has none.
+        public var seal: Data?
         /// An admin now: it has an admin key and is not frozen.
         public var admin = false
         /// The key hash of its admin CA, whether or not it is frozen.
@@ -219,7 +225,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
         public func may(_ p: String) -> Bool { admin && powers.contains(p) }
 
         private enum CodingKeys: String, CodingKey {
-            case id = "device", name, role, os, key, store, kind, proof, admin, adminKey = "admin_key", powers, commands, frozen, freezes, keys
+            case id = "device", name, role, os, key, store, kind, proof, seal, admin, adminKey = "admin_key", powers, commands, frozen, freezes, keys
         }
 
         public init(from decoder: Decoder) throws {
@@ -232,6 +238,7 @@ public struct RecordSet: Codable, Equatable, Sendable {
             store = try c.decodeIfPresent(String.self, forKey: .store) ?? Records.file
             kind = try c.decodeIfPresent(String.self, forKey: .kind)
             proof = try c.decodeIfPresent(String.self, forKey: .proof)
+            seal = try c.decodeIfPresent(Data.self, forKey: .seal)
             admin = try c.decodeIfPresent(Bool.self, forKey: .admin) ?? false
             adminKey = try c.decodeIfPresent(Data.self, forKey: .adminKey)
             powers = try c.decodeIfPresent([String].self, forKey: .powers) ?? []

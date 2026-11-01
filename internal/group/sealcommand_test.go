@@ -4,6 +4,7 @@
 package group
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
@@ -24,6 +25,7 @@ type sealedVectors struct {
 	Self     DeviceID       `json:"self"`
 	NowMS    int64          `json:"now_ms"`
 	Secret   []byte         `json:"secret"`
+	Public   []byte         `json:"public"` // the secret's public key, for the kits that seal
 	Commands []sealedVector `json:"commands"`
 }
 
@@ -68,6 +70,9 @@ func TestSealedCommandVectors(t *testing.T) {
 	var v sealedVectors
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatal(err)
+	}
+	if pub, err := seal.PublicKey(v.Secret); err != nil || !bytes.Equal(pub, v.Public) {
+		t.Fatalf("the vectors' public key is not their secret's: %v", err)
 	}
 	ca, err := x509.ParseCertificate(v.GroupCA)
 	if err != nil {
@@ -170,7 +175,7 @@ func writeSealedVectors(t *testing.T, path string) {
 		return strings.TrimSuffix(string(h), "}") + rest + "}"
 	}
 	someSealed := `"` + strings.Repeat("AAAA", 300) + `"`
-	v := sealedVectors{GroupCA: pg.root.Cert.Raw, Self: self, NowMS: now, Secret: secret}
+	v := sealedVectors{GroupCA: pg.root.Cert.Raw, Self: self, NowMS: now, Secret: secret, Public: public}
 	v.Commands = []sealedVector{
 		{Name: "a sealed paste", Command: paste, OK: true, Opens: true, Mode: PasteByClipboard, Text: text},
 		{Name: "a sealed mode", Command: sealSign(mode, public), OK: true, Opens: true, Mode: "own"},

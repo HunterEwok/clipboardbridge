@@ -217,11 +217,11 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// record of its own device says that it holds the root.
     mutating func record(device: String, name: String, role: String, os: String? = nil, key: Data, admin: Data? = nil,
                          powers: [String]? = nil, commands: [String]? = nil, store: String? = nil, kind: String? = nil,
-                         proof: String? = nil, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
+                         proof: String? = nil, seal: Data? = nil, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
         var b = Records.Body(type: "device", signer: Self.signer(caSigner), timeMS: Records.ms(now))
         (b.device, b.name, b.role, b.os, b.key, b.admin) = (device, name, role, os, key, admin)
-        (b.store, b.kind, b.proof) = (store, kind, proof)
+        (b.store, b.kind, b.proof, b.seal) = (store, kind, proof, seal)
         if admin != nil {
             let g = Self.grants(role: role)
             (b.powers, b.commands) = (powers ?? g.powers, commands ?? g.commands)
@@ -294,7 +294,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                 revoke += d.keys
             } else if let admin = d.adminKey, !d.frozen {
                 out.append(try record(device: d.id, name: d.name, role: d.role, os: d.os, key: d.key, admin: admin, powers: d.powers,
-                                      commands: d.commands, store: d.store, kind: d.kind, proof: d.proof, caSigner: rootSigner, now: now))
+                                      commands: d.commands, store: d.store, kind: d.kind, proof: d.proof, seal: d.seal, caSigner: rootSigner, now: now))
             }
         }
         if !revoke.isEmpty {
@@ -352,12 +352,20 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// The devices of the group, from the records.
     public var devices: [RecordSet.Device] { records.devices }
 
+    /// The key for sealed messages that the device record of device
+    /// names, which an admin's commands for it are sealed to (section 15,
+    /// "Sealed commands"); nil when it has none.
+    func sealKey(of device: String) -> Data? {
+        devices.first { $0.id == device }?.seal
+    }
+
     /// A command that sets the sync mode of the member device to (section
     /// 15), signed with this phone's root or admin key; only an admin phone
     /// signs one.
     public func modeCommand(to device: String, mode: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
-        return try Commands.mode(to: device, mode: mode, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+        return try Commands.mode(to: device, mode: mode, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA,
+                                 seal: sealKey(of: device))
     }
 
     /// A paste command that puts text where the focus of the member device
@@ -367,7 +375,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                              caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
         return try Commands.paste(to: device, text: text, method: method, enter: enter, kind: secret ? "secret" : "text",
-                                  group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+                                  group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA, seal: sealKey(of: device))
     }
 
     /// An action command that runs the quick action name on the member
@@ -375,14 +383,16 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
     /// defines what it does.
     public func actionCommand(to device: String, name: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
-        return try Commands.action(to: device, name: name, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+        return try Commands.action(to: device, name: name, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA,
+                                   seal: sealKey(of: device))
     }
 
     /// An actions-off command that turns every quick action off on the
     /// member device.
     public func actionsOffCommand(to device: String, caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin else { throw Failure.notAdmin }
-        return try Commands.actionsOff(to: device, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA)
+        return try Commands.actionsOff(to: device, group: tag, by: self.device, now: now, signer: caSigner, adminCA: adminCA,
+                                       seal: sealKey(of: device))
     }
 
     /// A hub command that makes the admin computer to the group's hub in
@@ -392,7 +402,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
                            caSigner: CertificateSigner, now: Date) throws -> Member.Record {
         guard isAdmin, records.mayHost(device) else { throw Failure.notAdmin }
         return try Commands.hub(to: device, forwarder: forwarder, clients: clients.filter { $0.device != device }, group: tag, by: self.device,
-                                now: now, signer: caSigner, adminCA: adminCA)
+                                now: now, signer: caSigner, adminCA: adminCA, seal: sealKey(of: device))
     }
 
     /// Removes a device from the group: signs a revocation of every key it
@@ -427,7 +437,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         guard !name.isEmpty, Self.validName(name) == name else { throw Failure.invalidName }
         return try record(device: device, name: name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
                           powers: d.adminKey == nil ? nil : d.powers, commands: d.adminKey == nil ? nil : d.commands,
-                          store: d.store, kind: d.kind, proof: d.proof, caSigner: caSigner, now: now)
+                          store: d.store, kind: d.kind, proof: d.proof, seal: d.seal, caSigner: caSigner, now: now)
     }
 
     /// Unfreezes an admin computer that another admin froze (section 10,
@@ -462,7 +472,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         guard store != Records.file || allowFileKey else { throw Failure.fileKey }
         let ca = try GroupCertificates.adminCA(device: device, publicKey: adminKey, root: currentRoot, rootSigner: rootSigner)
         let r = try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: Records.keyHash(cert: ca),
-                           store: store, kind: proven ? d.kind : nil, proof: proven ? d.proof : nil, caSigner: rootSigner, now: now)
+                           store: store, kind: proven ? d.kind : nil, proof: proven ? d.proof : nil, seal: d.seal, caSigner: rootSigner, now: now)
         computerAdmins[device] = ca
         return (ca, r)
     }
@@ -581,14 +591,14 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
             guard d.store == Records.proven else { return nil }
             return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
                               powers: d.adminKey == nil ? nil : d.powers, commands: d.adminKey == nil ? nil : d.commands,
-                              store: Records.hardware, kind: d.kind, proof: nil, caSigner: rootSigner, now: now)
+                              store: Records.hardware, kind: d.kind, proof: nil, seal: d.seal, caSigner: rootSigner, now: now)
         }
         if d.store == r.store, (d.kind ?? "") == r.kind { return nil }
         guard let first = e.chain.first else { return nil }
         let proof = r.store == Records.proven ? SHA256.hash(data: first).map { String(format: "%02x", $0) }.joined() : nil
         return try record(device: device, name: d.name, role: d.role, os: d.os, key: d.key, admin: d.adminKey,
                           powers: d.adminKey == nil ? nil : d.powers, commands: d.adminKey == nil ? nil : d.commands, store: r.store,
-                          kind: r.kind.isEmpty ? nil : r.kind, proof: proof, caSigner: rootSigner, now: now)
+                          kind: r.kind.isEmpty ? nil : r.kind, proof: proof, seal: d.seal, caSigner: rootSigner, now: now)
     }
 
     /// The admin CA this phone issued for an admin key a computer offers,
@@ -651,7 +661,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         computers.append(Computer(device: admitted.device, name: admitted.info.name, os: admitted.info.os, cert: admitted.cert, admitted: now,
                                   addrs: addrs.filter(JoinCode.isHome)))
         _ = try record(device: admitted.device, name: name, role: admitted.info.role == Pairing.Info.lite ? "lite" : "full",
-                       os: admitted.info.os, key: key, caSigner: caSigner, now: now)
+                       os: admitted.info.os, key: key, seal: admitted.info.seal, caSigner: caSigner, now: now)
         return admitted
     }
 

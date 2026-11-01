@@ -512,9 +512,18 @@ func TestSwiftCommand(t *testing.T) {
 	}
 	// Two mode commands, by the root and by an admin, a hub command by the
 	// root with one client, a typed paste by the admin, paste-off by the
-	// root, lock by the admin and actions-off by the root.
-	if len(v.Commands) != 7 {
-		t.Fatalf("%d commands, want 7", len(v.Commands))
+	// root, lock by the admin, actions-off by the root, and a paste by the
+	// admin sealed to the key of go-sealed-commands.json.
+	if len(v.Commands) != 8 {
+		t.Fatalf("%d commands, want 8", len(v.Commands))
+	}
+	var sealed sealedVectors
+	data, err = os.ReadFile(filepath.Join("..", "..", "testdata", "interop", "go-sealed-commands.json"))
+	if err == nil {
+		err = json.Unmarshal(data, &sealed)
+	}
+	if err != nil {
+		t.Fatal(err)
 	}
 	for i, c := range v.Commands {
 		var b CommandBody
@@ -543,6 +552,14 @@ func TestSwiftCommand(t *testing.T) {
 		}
 		if i == 6 && got.Type != CommandActionsOff {
 			t.Errorf("the actions-off command: %+v", got)
+		}
+		if i == 7 {
+			if got.V != sealedCommandVersion || got.Text != "" {
+				t.Errorf("the sealed paste came in the open: %+v", got)
+			}
+			if err := got.Open(sealed.Secret); err != nil || got.Type != CommandPaste || got.Text != "sealed <text>" {
+				t.Errorf("the sealed paste: %v, %+v", err, got)
+			}
 		}
 		if _, err := s.VerifyCommand(c, NewDeviceID(), time.UnixMilli(b.TimeMS)); err == nil {
 			t.Errorf("command %d was taken by another device", i)

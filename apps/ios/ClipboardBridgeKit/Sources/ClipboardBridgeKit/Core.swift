@@ -108,6 +108,15 @@ public enum Core {
         _ = try run("parse_body", Args(kind: kind, body: body), as: Answer.self)
     }
 
+    /// A command in the open with its orders sealed to key, the
+    /// receiver's key for sealed messages (seal_command, docs/core-api.md,
+    /// "Signed bodies"), for the sender to sign.
+    static func sealCommand(_ body: Data, key: Data) throws -> Data {
+        struct Args: Encodable { var body: Data, key: Data }
+        struct Answer: Decodable { var body: Data }
+        return try run("seal_command", Args(body: body, key: key), as: Answer.self).body
+    }
+
     /// checkBody, with a refusal in words for the log: the core's message
     /// and its details.
     static func bodyRefusal(_ kind: String, _ body: Data) -> String? {

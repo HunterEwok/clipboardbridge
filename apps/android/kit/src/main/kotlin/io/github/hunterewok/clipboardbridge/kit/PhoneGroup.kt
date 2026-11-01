@@ -168,6 +168,7 @@ class PhoneGroup internal constructor(
         proof: String? = null,
         powers: List<String>? = null,
         commands: List<String>? = null,
+        seal: ByteArray? = null,
     ): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
         val b = Records.Body.of("device", caSigner, now)
@@ -180,6 +181,7 @@ class PhoneGroup internal constructor(
         b.store = store
         b.kind = kind
         b.proof = proof
+        b.seal = seal
         if (admin != null) {
             val (p, c) = Records.grants(role)
             b.powers = powers ?: p
@@ -195,6 +197,7 @@ class PhoneGroup internal constructor(
             d.id, name, d.role, d.key, caSigner, now, admin, d.os, store, kind, proof,
             d.powers.takeIf { admin != null && admin.contentEqualsOrNull(d.adminKey) && it.isNotEmpty() },
             d.commands.takeIf { admin != null && admin.contentEqualsOrNull(d.adminKey) && it.isNotEmpty() },
+            d.seal,
         )
 
     /**
@@ -269,7 +272,7 @@ class PhoneGroup internal constructor(
             if (d.id == lost || d.role == "shortcut") {
                 revoke += d.keys
             } else if (admin != null && !d.frozen) {
-                out += record(d.id, d.name, d.role, d.key, rootSigner, now, admin, d.os, d.store, d.kind, d.proof, d.powers, d.commands)
+                out += record(d.id, d.name, d.role, d.key, rootSigner, now, admin, d.os, d.store, d.kind, d.proof, d.powers, d.commands, d.seal)
             }
         }
         if (revoke.isNotEmpty()) {
@@ -368,6 +371,9 @@ class PhoneGroup internal constructor(
         return recordAgain(d, caSigner, now, name = n)
     }
 
+    /** The key for sealed messages that the device record of to names, which an admin's commands for it are sealed to (section 15, "Sealed commands"); null when it has none. */
+    internal fun sealKey(to: String): ByteArray? = devices.firstOrNull { it.id == to }?.seal
+
     /**
      * A command that sets a computer's sync mode (docs/protocol.md,
      * section 15), signed with this phone's root or admin key; the caller
@@ -375,7 +381,7 @@ class PhoneGroup internal constructor(
      */
     fun modeCommand(to: String, mode: String, caSigner: CertificateSigner, now: Instant): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
-        return Commands.mode(to, mode, tag, device, now, caSigner, adminCA)
+        return Commands.mode(to, mode, tag, device, now, caSigner, adminCA, seal = sealKey(to))
     }
 
     /**
@@ -386,7 +392,7 @@ class PhoneGroup internal constructor(
      */
     fun pasteCommand(to: String, text: String, method: String, enter: Boolean, secret: Boolean, caSigner: CertificateSigner, now: Instant): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
-        return Commands.paste(to, text, method, enter, if (secret) "secret" else "text", tag, device, now, caSigner, adminCA)
+        return Commands.paste(to, text, method, enter, if (secret) "secret" else "text", tag, device, now, caSigner, adminCA, seal = sealKey(to))
     }
 
     /**
@@ -396,13 +402,13 @@ class PhoneGroup internal constructor(
      */
     fun actionCommand(to: String, name: String, caSigner: CertificateSigner, now: Instant): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
-        return Commands.action(to, name, tag, device, now, caSigner, adminCA)
+        return Commands.action(to, name, tag, device, now, caSigner, adminCA, seal = sealKey(to))
     }
 
     /** An actions-off command that turns every quick action off on the member to. */
     fun actionsOffCommand(to: String, caSigner: CertificateSigner, now: Instant): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
-        return Commands.actionsOff(to, tag, device, now, caSigner, adminCA)
+        return Commands.actionsOff(to, tag, device, now, caSigner, adminCA, seal = sealKey(to))
     }
 
     /**
@@ -420,7 +426,7 @@ class PhoneGroup internal constructor(
     ): Member.Record {
         if (!isAdmin) throw Failure("this phone is no admin")
         if (!records.mayHost(to)) throw Failure("only the group's root or an admin can be its hub")
-        return Commands.hub(to, forwarder, emptyList(), clients.filter { it.device != to }, tag, device, now, caSigner, adminCA)
+        return Commands.hub(to, forwarder, emptyList(), clients.filter { it.device != to }, tag, device, now, caSigner, adminCA, seal = sealKey(to))
     }
 
     /**
@@ -466,7 +472,7 @@ class PhoneGroup internal constructor(
         val ca = GroupCertificates.adminCA(device, adminKey, currentRoot, rootSigner)
         val r = record(
             device, d.name, d.role, d.key, rootSigner, now, Records.keyHashOfCert(ca), d.os, store,
-            d.kind.takeIf { proven }, d.proof.takeIf { proven },
+            d.kind.takeIf { proven }, d.proof.takeIf { proven }, seal = d.seal,
         )
         computerAdmins[device] = ca
         return ca to r
@@ -683,7 +689,7 @@ class PhoneGroup internal constructor(
         computers.removeAll { it.device == admitted.device }
         computers.add(Computer(admitted.device, admitted.info.name, admitted.info.os, admitted.cert, now, addrs.filter(JoinCode::isHome)))
         val role = if (admitted.info.role == Pairing.Info.LITE) "lite" else "full"
-        record(admitted.device, name, role, key, caSigner, now, os = admitted.info.os)
+        record(admitted.device, name, role, key, caSigner, now, os = admitted.info.os, seal = admitted.info.seal)
         return admitted
     }
 

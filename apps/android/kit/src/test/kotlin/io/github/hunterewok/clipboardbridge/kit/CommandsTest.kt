@@ -122,6 +122,28 @@ class CommandsTest {
         assertNull(off.opt("text"))
     }
 
+    /** The public key of testdata/interop/go-sealed-commands.json, whose secret Go opens the commands with. */
+    private fun sealPublic(): ByteArray = Interop.read("go-sealed-commands.json").jsonObject.optBytes("public")!!
+
+    /**
+     * A command to a device whose record has a key for sealed messages carries
+     * its orders sealed, through the core: the header stays, the text is gone,
+     * and the core takes the body as a command.
+     */
+    @Test
+    fun sealedCommand() {
+        val c = Commands.paste(pc, "a secret <text>", kind = "secret", group = "tag", by = pc, now = now, signer = SoftwareSigner(), seal = sealPublic())
+        val text = c.body.decodeToString()
+        assertTrue("a secret" !in text, text)
+        assertTrue("\"sealed\":" in text && "\"v\":2" in text, text)
+        assertNull(Core.bodyRefusal("command", c.body))
+        val o = Wire.parse(c.body)!!
+        assertEquals("paste", o.optString("type"))
+        assertEquals(pc, o.optString("to"))
+        assertNull(o.opt("text"))
+        assertFailsWith<Core.Refusal> { Commands.paste(pc, "x", group = "tag", by = pc, now = now, signer = SoftwareSigner(), seal = byteArrayOf(1, 2, 3)) }
+    }
+
     /** A command for a member this one is not connected to goes through one that is, and the result comes back. */
     @Test
     fun commandPassedOn() {
@@ -212,8 +234,10 @@ class CommandsTest {
             Commands.pasteOff(pc, tag, by, now, root),
             Commands.action(pc, "lock", tag, adminBy, now, admin, adminCA),
             Commands.actionsOff(pc, tag, by, now, root),
+            Commands.paste(pc, "sealed <text>", group = tag, by = adminBy, now = now, signer = admin, adminCA = adminCA, seal = sealPublic()),
         )
-        for (c in commands) Commands.verify(c, set, pc, now.toEpochMilli())
+        // The last one is sealed, for Go to open: a phone opens none.
+        for (c in commands.dropLast(1)) Commands.verify(c, set, pc, now.toEpochMilli())
         val out = Wire.obj(
             "group_ca" to Wire.bytes(ca),
             "records" to JsonArray(set.records.map { it.toJson() }),
