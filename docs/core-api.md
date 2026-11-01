@@ -62,7 +62,7 @@ lands in the source tree.
 | `group_admin_peer` | the set's arguments, `device`, `chain` | `{"admin"}`: whether the device is the group's root or an admin, which alone may be a hub |
 | `group_command` | the set's arguments, `command` (`{body, sig, chain}`), `me` (the member's device) | `{"command", "signer", "root", "sender", "verified"}`: the command's body as an object, the device that signed it, whether it signed as the root, and the device the limits count it for, `verified` when that device's own key signed; a command refused is code 15 |
 | `group_claim_times` | the set's arguments, `claim_times` (`[{record, ms}]`, from a Welcome) | `{"file"}`: the times earlier than the set's own and not in the future taken |
-| `group_next` | the set's arguments, `signer` (the key hash, base64) | `{"seq", "prev"}`: the seq and prev of the signer's next record; seq 1 and no prev when the set holds none of its records |
+| `group_body` | the set's arguments, `body` (a record body as `canonical_body` takes it, with `signer` set) | `{"body"}`: the canonical bytes of the signer's next record, to sign: the group, seq and prev set from the set, and for a removal, a freeze or a claim `seen` from the set, the signer's own previous seq among them |
 
 The arguments of `evaluate` are a case of `testdata/interop/v2-records.json` as it is.
 

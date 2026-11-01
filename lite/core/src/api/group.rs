@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use super::{Code, Refusal, b64_value, bad_args, json, refuse};
-use crate::authority::{Hash, Record};
+use crate::authority::{Hash, Record, Seen, TYPE_CLAIM, TYPE_FREEZE, TYPE_REVOKE};
 use crate::certs::{Cert, b64};
 use crate::error::Error;
 use crate::group::{ClaimTime, Device, Records, Refusal as Verdict};
@@ -143,7 +143,7 @@ pub(super) fn dispatch(op: &str, args: &Value) -> Option<Result<Vec<u8>, Refusal
         "group_admin_peer" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(admin_peer),
         "group_command" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(command),
         "group_claim_times" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(claim_times),
-        "group_next" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(next),
+        "group_body" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(body),
         _ => return None,
     })
 }
@@ -307,23 +307,47 @@ fn claim_times(a: TimesArgs) -> Result<Vec<u8>, Refusal> {
 }
 
 #[derive(Deserialize)]
-struct NextArgs {
+struct BodyArgs {
     #[serde(flatten)]
     set: SetArgs,
-    signer: Hash,
+    body: Map<String, Value>,
 }
 
-/// `group_next`: the seq and prev of the next record the key signer
-/// signs.
-fn next(a: NextArgs) -> Result<Vec<u8>, Refusal> {
+/// `group_body`: the canonical bytes of the signer's next record, to sign:
+/// the body as `canonical_body` takes it, with the group, seq and prev set
+/// from the set, and for a removal, a freeze or a claim the seen the set
+/// gives, the signer's own previous seq among them.
+fn body(a: BodyArgs) -> Result<Vec<u8>, Refusal> {
     let s = a.set.open()?;
-    let (seq, prev) = s.next_for(&a.signer);
-    let mut m = Map::new();
-    m.insert("seq".into(), Value::from(seq));
-    if let Some(p) = prev {
-        m.insert("prev".into(), b64_value(&p.0));
+    let mut b = a.body;
+    let signer: Hash = b
+        .get("signer")
+        .cloned()
+        .ok_or_else(|| refuse(Code::Body, Error::msg("The record names no signer.")))
+        .and_then(|v| {
+            serde_json::from_value(v)
+                .map_err(|e| refuse(Code::Body, Error::with("The record's signer does not read.", e)))
+        })?;
+    let (seq, prev) = s.next_for(&signer);
+    b.insert("group".into(), Value::from(s.tag()));
+    b.insert("seq".into(), Value::from(seq));
+    match prev {
+        Some(p) => b.insert("prev".into(), b64_value(&p.0)),
+        None => b.remove("prev"),
+    };
+    let kind = b.get("type").and_then(Value::as_str).unwrap_or_default();
+    if [TYPE_REVOKE, TYPE_FREEZE, TYPE_CLAIM].contains(&kind) {
+        let mut seen = s.seen();
+        if !seen.iter().any(|e| e.key == signer) {
+            seen.push(Seen { key: signer, seq: seq.saturating_sub(1) });
+        }
+        b.insert(
+            "seen".into(),
+            serde_json::to_value(&seen)
+                .map_err(|e| refuse(Code::Body, Error::with("The record could not be written.", e)))?,
+        );
     }
-    Ok(json(Value::Object(m)))
+    super::canonical_body(Value::Object(b))
 }
 
 #[cfg(test)]
@@ -357,7 +381,7 @@ mod tests {
         serde_json::json!({"group_ca": case["group_ca"], "group": case["group"], "now_ms": case["now_ms"]})
     }
 
-    /// Records added to the file one call at a time give each case's
+    /// Records added to the file a few at a time give each case's
     /// state, as the evaluation of all of them at once does.
     #[test]
     fn the_file_gives_each_cases_state() {
@@ -368,9 +392,9 @@ mod tests {
             }
             let name = case["name"].as_str().unwrap();
             let mut set = set_of(case);
-            for r in case["records"].as_array().unwrap() {
+            for r in case["records"].as_array().unwrap().chunks(4) {
                 let mut args = set.clone();
-                args["records"] = Value::from(alloc::vec![r.clone()]);
+                args["records"] = Value::from(r.to_vec());
                 let got = ok("group_add", args);
                 set["file"] = got["file"].clone();
             }
@@ -402,10 +426,10 @@ mod tests {
         }
     }
 
-    /// The next record of a signer follows its highest seq; a signer the
-    /// set does not know starts at 1.
+    /// The next record of a signer follows its highest seq and names what
+    /// the set holds in seen; a signer the set does not know starts at 1.
     #[test]
-    fn next_follows_the_signers_chain() {
+    fn body_follows_the_signers_chain() {
         let v = vectors();
         let case = &v["cases"][0];
         let mut set = set_of(case);
@@ -413,8 +437,8 @@ mod tests {
         args["records"] = case["records"].clone();
         set["file"] = ok("group_add", args)["file"].clone();
         let dec = |s: &Value| base64::engine::general_purpose::STANDARD.decode(s.as_str().unwrap()).unwrap();
-        let body: Value = serde_json::from_slice(&dec(&case["records"][0]["body"])).unwrap();
-        let signer = body["signer"].clone();
+        let first: Value = serde_json::from_slice(&dec(&case["records"][0]["body"])).unwrap();
+        let signer = first["signer"].clone();
         let highest = case["records"]
             .as_array()
             .unwrap()
@@ -424,16 +448,28 @@ mod tests {
             .map(|b| b["seq"].as_i64().unwrap())
             .max()
             .unwrap();
+        let other = base64::engine::general_purpose::STANDARD.encode([9u8; 32]);
+        let revoke = serde_json::json!({"v": 2, "alg": first["alg"], "type": "revoke", "signer": signer,
+            "time_ms": 5, "keys": [other], "prev": other, "seen": []});
         let mut a = set.clone();
-        a["signer"] = signer;
-        let next = ok("group_next", a);
-        assert_eq!(next["seq"], highest + 1);
-        assert!(next["prev"].is_string());
+        a["body"] = revoke.clone();
+        let got: Value = serde_json::from_slice(&dec(&ok("group_body", a)["body"])).unwrap();
+        assert_eq!(got["seq"], highest + 1);
+        assert_eq!(got["group"], case["group"]);
+        assert!(got["prev"].is_string());
+        assert_ne!(got["prev"], other);
+        assert!(got["seen"].as_array().unwrap().iter().any(|e| e["key"] == signer), "{got}");
         let mut a = set.clone();
-        a["signer"] = base64::engine::general_purpose::STANDARD.encode([9u8; 32]).into();
-        let next = ok("group_next", a);
-        assert_eq!(next["seq"], 1);
-        assert!(next.get("prev").is_none());
+        let mut fresh = revoke.clone();
+        fresh["signer"] = other.clone().into();
+        a["body"] = fresh;
+        let got: Value = serde_json::from_slice(&dec(&ok("group_body", a)["body"])).unwrap();
+        assert_eq!(got["seq"], 1);
+        assert!(got.get("prev").is_none());
+        assert!(got["seen"].as_array().unwrap().iter().any(|e| e["key"] == other && e["seq"] == 0), "{got}");
+        let mut a = set.clone();
+        a["body"] = serde_json::json!({"type": "revoke"});
+        assert_eq!(ask("group_body", a)["error"]["code"], Code::Body as u64);
     }
 
     /// A claim time from a Welcome is kept when it is earlier than the

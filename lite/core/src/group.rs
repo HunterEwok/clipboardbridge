@@ -18,7 +18,7 @@ use core::cell::RefCell;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
-use crate::authority::{self, Body, Hash, Input, Record, SigCache, State, key_hash_of};
+use crate::authority::{self, Body, Hash, Input, Record, Seen, SigCache, State, key_hash_of};
 use crate::certs::{self, Cert, KeyHash, sha256};
 use crate::error::{Context, Error, Result, Wrap};
 use crate::records::{COMMAND_AHEAD_MS, Command, store_of};
@@ -740,6 +740,24 @@ impl Records {
             .filter(|(_, b)| b.signer == *signer)
             .max_by_key(|(_, b)| b.seq)
             .map_or((1, None), |(id, b)| (b.seq.saturating_add(1), Some(id)))
+    }
+
+    /// The group's tag, which every record of the set names.
+    pub fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    /// For every signer of the set, the highest seq the set holds of it:
+    /// what a removal, a freeze or a claim names in seen, sorted by key.
+    pub fn seen(&self) -> Vec<Seen> {
+        let mut top: BTreeMap<Hash, i64> = BTreeMap::new();
+        for (_, b) in self.bodies() {
+            let e = top.entry(b.signer).or_insert(0);
+            if b.seq > *e {
+                *e = b.seq;
+            }
+        }
+        top.into_iter().map(|(key, seq)| Seen { key, seq }).collect()
     }
 
     /// The certificates of the roots on the path, the group CA first.
