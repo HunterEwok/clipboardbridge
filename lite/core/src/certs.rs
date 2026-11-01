@@ -428,6 +428,18 @@ pub enum Usage {
 /// verifyTime: a device whose clock is behind still accepts certificates,
 /// an expired one is rejected.
 pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64, usage: Usage) -> Result<DeviceId> {
+    verify_member_chain(chain, trusted, t, usage).map(|(dev, _)| dev)
+}
+
+/// verify_member, and the position in chain of the admin CA that issued
+/// the leaf, None when a root did: wherever the peer put it, as a peer may
+/// send certificates it does not need.
+pub fn verify_member_chain(
+    chain: &[Cert],
+    trusted: &[Cert],
+    t: i64,
+    usage: Usage,
+) -> Result<(DeviceId, Option<usize>)> {
     let leaf = chain.first().ok_or_else(|| Error::msg("the peer sent no certificate"))?;
     if leaf.is_ca {
         return Err(Error::msg("the peer's certificate is a CA"));
@@ -440,21 +452,37 @@ pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64, usage: Usage) -> 
         return Err(Error::msg("the peer's certificate is expired or not for this use"));
     }
     let from = |child: &Cert, parent: &Cert| child.issuer_name == parent.subject_name && child.signed_by(parent);
-    let mut ok = trusted.iter().any(|root| root.valid_at(t) && from(leaf, root));
-    if !ok {
+    let issuer = if trusted.iter().any(|root| root.valid_at(t) && from(leaf, root)) {
+        None
+    } else {
         // Through one admin CA under a root.
-        ok = chain.iter().skip(1).any(|admin| {
+        let admin = chain.iter().enumerate().skip(1).find(|(_, admin)| {
             admin.valid_at(t)
                 && from(leaf, admin)
                 && trusted.iter().any(|root| {
                     root.valid_at(t) && admin.issuer_name == root.subject_name && check_admin_ca(admin, root).is_ok()
                 })
         });
+        match admin {
+            Some((i, _)) => Some(i),
+            None => return Err(Error::msg("the peer's certificate is not from the group")),
+        }
+    };
+    Ok((device_of(leaf)?, issuer))
+}
+
+/// Checks a peer's member chain at time t (verify_member_chain) and returns
+/// its device with the certificates the records judge: the leaf and the
+/// admin CA that issued it, if one did, wherever the peer put it.
+pub fn member_chain(chain: Vec<Cert>, trusted: &[Cert], t: i64, usage: Usage) -> Result<(DeviceId, Vec<Cert>)> {
+    let (dev, issuer) = verify_member_chain(&chain, trusted, t, usage)?;
+    let mut used = Vec::new();
+    for (i, c) in chain.into_iter().enumerate() {
+        if i == 0 || Some(i) == issuer {
+            used.push(c);
+        }
     }
-    if !ok {
-        return Err(Error::msg("the peer's certificate is not from the group"));
-    }
-    device_of(leaf)
+    Ok((dev, used))
 }
 
 /// Serde helpers for byte strings as standard base64, Go's encoding of
