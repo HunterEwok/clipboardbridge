@@ -131,24 +131,12 @@ func portBlocked(ctx context.Context, r *Report, g *benchGroup, timeout time.Dur
 		r.Skip(prefix, "needs a Linux member and another member")
 		return
 	}
-	rules := []string{"INPUT -p tcp --dport 8764 -j DROP", "OUTPUT -p tcp --dport 8764 -j DROP"}
-	var undo, block []string
-	for _, rule := range rules {
-		block = append(block, "iptables -I "+rule)
-		undo = append(undo, "iptables -D "+rule+" 2>/dev/null")
-	}
-	undoAll := strings.Join(undo, "; ") + "; true"
-	cancel, err := revertAfter(ctx, d, "cbbbench-port", 5*time.Minute, undoAll)
+	var open func() error
 	if r.Do(prefix+d.Name+"/block", func() error {
-		if err != nil {
-			return err
-		}
-		_, err := Run(ctx, d, "sudo -n sh -c "+shellQuote(strings.Join(block, " && ")), "")
-		return noSudo(d, err)
+		var err error
+		open, err = blockPort(ctx, d)
+		return err
 	}) != nil {
-		if cancel != nil {
-			cancel()
-		}
 		return
 	}
 	var others []*Device
@@ -165,13 +153,39 @@ func portBlocked(ctx context.Context, r *Report, g *benchGroup, timeout time.Dur
 		time.Sleep(15 * time.Second)
 	}
 	r.Do(prefix+d.Name+"/kept-out", func() error { return staysAway(ctx, d, last) })
-	r.Do(prefix+d.Name+"/open", func() error {
+	r.Do(prefix+d.Name+"/open", open)
+	// The member's dials back off up to a minute after failures.
+	r.Do(prefix+d.Name+"/catches-up", func() error { return arrives(ctx, d, last, 90*time.Second) })
+}
+
+// blockPort closes a Linux member's port both ways, with a timer on the
+// device that opens it again within five minutes; open opens it at once.
+func blockPort(ctx context.Context, d *Device) (open func() error, err error) {
+	rules := []string{"INPUT -p tcp --dport 8764 -j DROP", "OUTPUT -p tcp --dport 8764 -j DROP"}
+	var undo, block []string
+	for _, rule := range rules {
+		block = append(block, "iptables -I "+rule)
+		undo = append(undo, "iptables -D "+rule+" 2>/dev/null")
+	}
+	undoAll := strings.Join(undo, "; ") + "; true"
+	cancel, err := revertAfter(ctx, d, "cbbbench-port", 5*time.Minute, undoAll)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := Run(ctx, d, "sudo -n sh -c "+shellQuote(strings.Join(block, " && ")), ""); err != nil {
+		cancel()
+		return nil, noSudo(d, err)
+	}
+	done := false
+	return func() error {
+		if done {
+			return nil
+		}
+		done = true
 		_, err := Run(context.WithoutCancel(ctx), d, "sudo -n sh -c "+shellQuote(undoAll), "")
 		cancel()
 		return err
-	})
-	// The member's dials back off up to a minute after failures.
-	r.Do(prefix+d.Name+"/catches-up", func() error { return arrives(ctx, d, last, 90*time.Second) })
+	}, nil
 }
 
 // hungService (E11, U6): the hub's service stops answering but keeps its
