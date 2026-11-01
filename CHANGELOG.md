@@ -737,6 +737,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- A member that ends its connections after saying goodbye, as after `cbb global off -on`
+  turned sync away from home off there, no longer resets them: it stops sending and reads
+  what the other device still sends before it closes. A reset could make the admin lose the
+  command's result and report that the device closed the connection before it answered.
 - A relay on Windows told to listen on any free port no longer gives up when
   the ports the system hands out fall in a range Windows reserves for the other protocol; it
   takes turns picking the UDP port first and the TCP port first.
