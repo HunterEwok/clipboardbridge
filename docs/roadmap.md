@@ -451,9 +451,10 @@ One pull request each, smaller ones together:
 5. The iPad build of the iPhone app (done in 0.6: CI tests it on an iPad simulator too,
    and a keyboard's shortcuts work).
 
-The TV variant is part of the one APK of the phone app. For Apple TV a spike with pyatv on a
-real Apple TV with tvOS 26 comes before the Companion protocol in Go; if text input does not
-work there, Apple TV is reached through the Bluetooth keyboards only. The Apple TV accepts a new
+The TV variant is part of the one APK of the phone app. For Apple TV the spike with pyatv is
+done (2026-11-01, Apple TV 4K of the second generation, tvOS 27.2): the Companion protocol
+pairs with a PIN shown on the TV and then sets the whole text of the focused field at once,
+with no key presses, so the Companion protocol in Go comes next. The Apple TV accepts a new
 remote only while Settings, AirPlay and HomeKit, Allow Access is "Everyone on the Same
 Network" (or "Everyone"); with "Only People Sharing This Home" it refuses every pairing, so
 the app's steps and the user guide say to switch it before pairing. A keyboard types with
