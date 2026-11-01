@@ -8,15 +8,15 @@ import Foundation
 /// in frames of a 4-byte big-endian length.
 public enum Pairing {
     /// The ALPN protocol of pairing connections.
-    public static let alpn = "clipboardbridge-pair/1"
+    public static let alpn = "clipboardbridge-pair/2"
     /// The TLS exporter label for the CPace session ID.
-    public static let exporterLabel = "EXPERIMENTAL-clipboardbridge-pair-v1"
+    public static let exporterLabel = "EXPERIMENTAL-clipboardbridge-pair-v2"
     /// Frames larger than this are refused.
     public static let maxFrame = 64 << 10
     /// What a Welcome leaves free in its frame for the CA keys and the
     /// framing, as Go's welcomeRoom.
     static let welcomeRoom = 4 << 10
-    static let channelPrefix = Array("clipboardbridge pair v1\u{0}".utf8)
+    static let channelPrefix = Array("clipboardbridge pair v2\u{0}".utf8)
 
     /// One frame of the exchange; each uses some of the fields.
     public struct Frame: Codable, Equatable {
@@ -53,16 +53,12 @@ public enum Pairing {
         /// When the admitting member first held each claim of records,
         /// which the new device takes (RecordSet.takeClaimTimes).
         public var claimTimes: [RecordSet.ClaimTime]?
-        public var groupCAKey: Data?
-        public var phoneCA: Data?
-        public var phoneCAKey: Data?
         /// For a phone that joins as an admin: the admin CA the root issued
         /// for the admin key the phone sent in its Info.
         public var adminCA: Data?
 
         enum CodingKeys: String, CodingKey {
-            case cert, issuer, groupCA = "group_ca", roots, records, claimTimes = "claim_times", groupCAKey = "group_ca_key", phoneCA = "phone_ca", phoneCAKey = "phone_ca_key",
-                 adminCA = "admin_ca"
+            case cert, issuer, groupCA = "group_ca", roots, records, claimTimes = "claim_times", adminCA = "admin_ca"
         }
 
         public init(cert: Data, groupCA: Data, issuer: Data? = nil, adminCA: Data? = nil) {
@@ -144,12 +140,13 @@ public enum Pairing {
         channelPrefix + Array(SHA256.hash(data: memberCert)) + Array(SHA256.hash(data: joinerCert))
     }
 
-    /// The fingerprint a join QR code carries: SHA-256 of the certificate,
-    /// in base64url without padding.
+    /// The fingerprint of a certificate's key, the one form of
+    /// docs/protocol.md (Conventions, "Fingerprints"): SHA-256 over its
+    /// SubjectPublicKeyInfo in standard base64, as a record's key hash;
+    /// empty for bytes that are no certificate. A join QR code carries it.
     public static func fingerprint(cert: Data) -> String {
-        Data(SHA256.hash(data: cert)).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        guard let info = try? CertificateInfo(der: cert) else { return "" }
+        return Data(SHA256.hash(data: info.publicKey)).base64EncodedString()
     }
 
     /// Encodes a frame: the length, then the JSON.
@@ -236,11 +233,12 @@ public struct JoinCode: Equatable {
 
     /// The text of the QR code, as cbb pair shows it.
     public var qrText: String {
-        var u = URLComponents()
-        (u.scheme, u.host) = ("clipboardbridge", "join")
-        u.queryItems = [URLQueryItem(name: "code", value: code)] + addrs.prefix(Self.maxAddrs).map { URLQueryItem(name: "addr", value: $0) }
-            + [URLQueryItem(name: "fp", value: fingerprint)]
-        return u.string ?? ""
+        // Escaped as Go's phone.JoinQR does: everything but letters, digits
+        // and -._~, so a fingerprint's + is never read as a space.
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        func esc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: unreserved) ?? "" }
+        let items = [("code", code)] + addrs.prefix(Self.maxAddrs).map { ("addr", $0) } + [("fp", fingerprint)]
+        return "clipboardbridge://join?" + items.map { "\($0.0)=\(esc($0.1))" }.joined(separator: "&")
     }
 
     /// A new six-digit code.

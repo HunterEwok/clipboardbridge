@@ -2534,12 +2534,12 @@
         }
       }
     },
-    "Forwarder key, sha256:…": {
+    "Forwarder key, 44 characters": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ключ форвардера, sha256:…"
+            "value": "Ключ форвардера, 44 символа"
           }
         }
       }
@@ -2854,12 +2854,12 @@
         }
       }
     },
-    "Relay key, sha256:…": {
+    "Relay key, 44 characters": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ключ релея, sha256:…"
+            "value": "Ключ релея, 44 символа"
           }
         }
       }

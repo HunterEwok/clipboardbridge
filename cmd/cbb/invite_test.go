@@ -58,7 +58,7 @@ func TestPairInvite(t *testing.T) {
 			got := fakeHandler(t, func(m *control.Message, _ *control.Reader, c net.Conn) {
 				switch m.Op {
 				case control.OpJoin:
-					answer(c, control.Message{Header: control.Header{Fingerprint: "sha256:abcd"}})
+					answer(c, control.Message{Header: control.Header{Fingerprint: "abcd"}})
 					answer(c, control.Message{Header: control.Header{Done: true}})
 				case control.OpStatus:
 					st := &control.Status{Role: "full", Group: in.Group, Away: &control.Away{HubDevice: in.Hub, Allow: tc.allow}}

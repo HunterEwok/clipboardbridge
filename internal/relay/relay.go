@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -652,7 +653,7 @@ func (r *Relay) serveDial(m *member, c net.Conn, to string) {
 	}
 	var tb [16]byte
 	rand.Read(tb[:])
-	ticket := hex.EncodeToString(tb[:])
+	ticket := base64.StdEncoding.EncodeToString(tb[:])
 	cl := &call{from: m, answered: make(chan net.Conn, 1)}
 	r.mu.Lock()
 	t := r.groups[m.tag][to]

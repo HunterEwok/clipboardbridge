@@ -76,35 +76,6 @@ func newFixture(t *testing.T) *fixture {
 	return fixtureFor(t, admin)
 }
 
-// newLegacyFixture is newFixture in a legacy group, whose Linux and
-// Windows members get the CA keys.
-func newLegacyFixture(t *testing.T) *fixture {
-	t.Helper()
-	return fixtureFor(t, legacyGroup(t))
-}
-
-// legacyGroup is a group as computers made them before admin CAs: a group
-// CA with path length 0, whose key every Linux member holds.
-func legacyGroup(t *testing.T) *group.Identity {
-	t.Helper()
-	admin, err := group.Create(t0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ca, err := group.NewGroupCA(t0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admin.GroupCA = *ca
-	if admin.Cert, err = ca.IssueMember(admin.ID, group.PublicKey(admin.Key), t0); err != nil {
-		t.Fatal(err)
-	}
-	if err := admin.Check(); err != nil {
-		t.Fatal(err)
-	}
-	return admin
-}
-
 func fixtureFor(t *testing.T, admin *group.Identity) *fixture {
 	t.Helper()
 	clk := &clock{up: time.Hour}
@@ -136,7 +107,6 @@ func newJoiner(t *testing.T, os string) *Joiner {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j.Now = func() time.Time { return t0 }
 	return j
 }
 
@@ -233,18 +203,15 @@ func TestPairLite(t *testing.T) {
 }
 
 func TestPairLinux(t *testing.T) {
-	f := newLegacyFixture(t)
+	f := newFixture(t)
 	j := newJoiner(t, "linux")
 	out := f.attempt(t, j, f.code[:3]+" "+f.code[3:], nil)
 	if out.joinErr != nil || out.serveErr != nil {
 		t.Fatalf("join: %v; serve: %v", out.joinErr, out.serveErr)
 	}
 	id := out.id
-	if !id.ServesPhone() || !group.SameKey(id.GroupCA.Key, f.admin.GroupCA.Key.Public()) || !group.SameKey(id.PhoneCA.Key, f.admin.PhoneCA.Key.Public()) {
-		t.Fatal("a Linux member did not get the CA keys")
-	}
-	if !id.Phone.PublicKey.(*ecdsa.PublicKey).Equal(group.PublicKey(j.Key)) {
-		t.Error("the clipboardbridge.local certificate is not for the device's key")
+	if id.ServesPhone() || id.GroupCA.Key != nil || id.PhoneCA != nil {
+		t.Fatal("a Linux member got CA keys")
 	}
 	assertMembers(t, id, f.admin)
 }
@@ -619,7 +586,7 @@ func TestFakeMember(t *testing.T) {
 		pub := cs.PeerCertificates[0].PublicKey.(*ecdsa.PublicKey)
 		cert, _ := other.GroupCA.IssueMember(j.ID, pub, t0)
 		w := &Window{admin: other}
-		wel, _ := w.welcome(cert, true)
+		wel, _ := w.welcome(cert)
 		writeFrame(tc, &frame{Tag: st.Tag(), Welcome: wel})
 		readFrame(tc)
 	}()
@@ -711,30 +678,6 @@ func TestWhatTheMemberSends(t *testing.T) {
 			t.Errorf("last frame %+v", last)
 		}
 	})
-	t.Run("a Linux member gets none in a group with a root", func(t *testing.T) {
-		f := newFixture(t)
-		r, _ := startRaw(t, f, Info{Name: "pi", OS: "linux"}, f.code)
-		w := r.confirm().Welcome
-		if w == nil || w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil {
-			t.Errorf("welcome to a Linux member: %+v", w)
-		}
-	})
-	t.Run("a Mac gets no CA keys", func(t *testing.T) {
-		f := newLegacyFixture(t)
-		r, _ := startRaw(t, f, Info{Name: "mac", OS: "macos"}, f.code)
-		w := r.confirm().Welcome
-		if w == nil || w.GroupCAKey != nil || w.PhoneCA != nil || w.PhoneCAKey != nil {
-			t.Errorf("welcome to a Mac: %+v", w)
-		}
-	})
-	t.Run("a Linux member gets them in a legacy group", func(t *testing.T) {
-		f := newLegacyFixture(t)
-		r, _ := startRaw(t, f, Info{Name: "pi", OS: "linux"}, f.code)
-		w := r.confirm().Welcome
-		if w == nil || w.GroupCAKey == nil || w.PhoneCA == nil || w.PhoneCAKey == nil {
-			t.Errorf("welcome to a Linux member: %+v", w)
-		}
-	})
 	t.Run("a bad description is refused and does not count", func(t *testing.T) {
 		f := newFixture(t)
 		r, served := startRaw(t, f, Info{Name: "bad\nname", OS: "linux"}, f.code)
@@ -822,27 +765,8 @@ func TestServerTLSRejects(t *testing.T) {
 	}
 }
 
-// TestJoinerRefusesKeysFromARoot checks that a joiner refuses CA keys in a
-// group with a root, where no device gets them by joining.
-func TestJoinerRefusesKeysFromARoot(t *testing.T) {
-	f := newFixture(t)
-	j := newJoiner(t, "linux")
-	cert, err := f.admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w, err := f.window.welcome(cert, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	member := memberAD{Device: f.admin.ID, Group: group.Tag(f.admin.GroupCA.Cert)}
-	if _, err := j.identity(w, f.admin.Cert, member); err == nil {
-		t.Error("took the CA keys from the root")
-	}
-}
-
 func TestJoinerChecksTheWelcome(t *testing.T) {
-	f := newLegacyFixture(t)
+	f := newFixture(t)
 	other, err := group.Create(t0)
 	if err != nil {
 		t.Fatal(err)
@@ -852,7 +776,7 @@ func TestJoinerChecksTheWelcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, err := f.window.welcome(cert, true)
+	w, err := f.window.welcome(cert)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -871,7 +795,6 @@ func TestJoinerChecksTheWelcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherCAKey, _ := x509.MarshalPKCS8PrivateKey(other.GroupCA.Key)
 	tests := []struct {
 		name   string
 		change func(w *Welcome, m *memberAD, memberCert **x509.Certificate)
@@ -880,8 +803,6 @@ func TestJoinerChecksTheWelcome(t *testing.T) {
 		{"a member certificate from another CA", func(_ *Welcome, _ *memberAD, c **x509.Certificate) { *c = lookalike }},
 		{"a member that names another device", func(_ *Welcome, m *memberAD, _ **x509.Certificate) { m.Device = group.NewDeviceID() }},
 		{"a certificate for another key", func(w *Welcome, _ *memberAD, _ **x509.Certificate) { w.Cert = certForOtherKey.Raw }},
-		{"no CA keys for Linux", func(w *Welcome, _ *memberAD, _ **x509.Certificate) { w.GroupCAKey = nil }},
-		{"the key of another CA", func(w *Welcome, _ *memberAD, _ **x509.Certificate) { w.GroupCAKey = otherCAKey }},
 		{"a corrupt certificate", func(w *Welcome, _ *memberAD, _ **x509.Certificate) { w.Cert = []byte("junk") }},
 	}
 	for _, tt := range tests {
@@ -988,7 +909,7 @@ func (f *fixture) dial(t *testing.T, j *Joiner, code, fp string) outcome {
 func TestDialAListeningJoiner(t *testing.T) {
 	for _, os := range []string{"macos", "linux", "windows"} {
 		t.Run(os, func(t *testing.T) {
-			f := newLegacyFixture(t)
+			f := newFixture(t)
 			j := newJoiner(t, os)
 			fp, err := j.Fingerprint()
 			if err != nil {
@@ -998,7 +919,7 @@ func TestDialAListeningJoiner(t *testing.T) {
 			if out.joinErr != nil || out.serveErr != nil || out.savedCalls != 1 {
 				t.Fatalf("join %v, serve %v, saved %d", out.joinErr, out.serveErr, out.savedCalls)
 			}
-			if err := out.id.Check(); err != nil || out.id.ServesPhone() != (os != "macos") {
+			if err := out.id.Check(); err != nil || out.id.ServesPhone() {
 				t.Errorf("the new identity: %v, admin %v", err, out.id.ServesPhone())
 			}
 			if res, err := f.window.Result(); err != nil || res.Device != j.ID || !res.Confirmed {
@@ -1056,7 +977,7 @@ func TestWelcomeWithoutCAKeys(t *testing.T) {
 	}
 	clk := &clock{up: time.Hour}
 	code := NewCode()
-	w, err := Open(admin, code, Options{NoCAKeys: true, Now: func() time.Time { return t0 }, Uptime: clk.uptime, AfterFunc: clk.afterFunc})
+	w, err := Open(admin, code, Options{Now: func() time.Time { return t0 }, Uptime: clk.uptime, AfterFunc: clk.afterFunc})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1068,26 +989,6 @@ func TestWelcomeWithoutCAKeys(t *testing.T) {
 	}
 	if err := out.id.Check(); err != nil || out.id.ServesPhone() || out.id.GroupCA.Key != nil || out.id.PhoneCA != nil || out.id.Phone != nil {
 		t.Errorf("the Linux device holds CA keys: %v, admin %v", err, out.id.ServesPhone())
-	}
-}
-
-func TestMacRefusesCAKeys(t *testing.T) {
-	admin, err := group.Create(t0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	j := newJoiner(t, "macos")
-	cert, err := admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w := &Window{admin: admin}
-	wel, err := w.welcome(cert, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := j.identity(wel, admin.Cert, memberAD{Device: admin.ID, Group: group.Tag(admin.GroupCA.Cert)}); err == nil {
-		t.Error("a Mac took the CA keys")
 	}
 }
 
@@ -1376,5 +1277,73 @@ func TestIdleAttemptsFromOneAddress(t *testing.T) {
 	}
 	if closed(f.window) {
 		t.Error("the window closed")
+	}
+}
+
+// withOldCAKeys returns w with the CA key fields that legacy groups sent,
+// which no joiner reads any more.
+func withOldCAKeys(t *testing.T, w *Welcome, ca *group.CA) *Welcome {
+	t.Helper()
+	data, err := json.Marshal(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	key, err := x509.MarshalPKCS8PrivateKey(ca.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m["group_ca_key"], m["phone_ca"], m["phone_ca_key"] = key, ca.Cert.Raw, key
+	if data, err = json.Marshal(m); err != nil {
+		t.Fatal(err)
+	}
+	var out Welcome
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	return &out
+}
+
+// TestJoinerRefusesKeysFromARoot checks that a Linux joiner takes no CA key
+// from a Welcome that still carries the fields of legacy groups.
+func TestJoinerRefusesKeysFromARoot(t *testing.T) {
+	f := newFixture(t)
+	j := newJoiner(t, "linux")
+	cert, err := f.admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := f.window.welcome(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := memberAD{Device: f.admin.ID, Group: group.Tag(f.admin.GroupCA.Cert)}
+	id, err := j.identity(withOldCAKeys(t, w, &f.admin.GroupCA), f.admin.Cert, member)
+	if err != nil || id.GroupCA.Key != nil || id.PhoneCA != nil || id.ServesPhone() {
+		t.Fatalf("a Linux joiner took CA keys: %v", err)
+	}
+}
+
+// TestMacRefusesCAKeys checks the same for a Mac.
+func TestMacRefusesCAKeys(t *testing.T) {
+	admin, err := group.Create(t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := newJoiner(t, "macos")
+	cert, err := admin.GroupCA.IssueMember(j.ID, group.PublicKey(j.Key), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wel, err := (&Window{admin: admin}).welcome(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := j.identity(withOldCAKeys(t, wel, &admin.GroupCA), admin.Cert, memberAD{Device: admin.ID, Group: group.Tag(admin.GroupCA.Cert)})
+	if err != nil || id.GroupCA.Key != nil || id.PhoneCA != nil {
+		t.Fatalf("a Mac took CA keys: %v", err)
 	}
 }

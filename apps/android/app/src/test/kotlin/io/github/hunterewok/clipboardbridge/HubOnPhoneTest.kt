@@ -18,7 +18,7 @@ class HubOnPhoneTest {
     private val phone = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     private val pc = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     private val tv = "cccccccccccccccccccccccccccccccc"
-    private val pin = "sha256:" + "A".repeat(43)
+    private val pin = "A".repeat(43) + "="
 
     private class FakeHub(val memberPort: Int, var held: String) : HubTunnel {
         var registered: List<String>? = null
@@ -86,10 +86,11 @@ class HubOnPhoneTest {
     @Test
     fun forwarderInput() {
         assertTrue(HubState.validPin(pin))
-        assertTrue(HubState.validPin("sha256:" + "a-_9".repeat(10) + "abc"))
-        assertFalse(HubState.validPin("sha256:" + "A".repeat(42)))
-        assertFalse(HubState.validPin("sha1:" + "A".repeat(45)))
-        assertFalse(HubState.validPin("sha256:" + "A".repeat(42) + "="))
+        assertTrue(HubState.validPin("a+/9".repeat(10) + "abc="))
+        assertFalse(HubState.validPin("sha256:" + "A".repeat(43) + "="))
+        assertFalse(HubState.validPin("A".repeat(43)))
+        assertFalse(HubState.validPin("a-_9".repeat(10) + "abc="))
+        assertFalse(HubState.validPin("A".repeat(42) + "B="))
         assertEquals("203.0.113.9:8764", HubState.resolve(" 203.0.113.9:8764 "))
         // IPv6 in brackets, which Go's netip reads in either form.
         val v6 = HubState.resolve("[2001:db8::9]:8764") ?: ""

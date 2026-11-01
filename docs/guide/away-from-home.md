@@ -81,7 +81,7 @@ by an outgoing connection, so nothing at home has to be opened. The forwarder on
 encrypted packets and holds no keys.
 
 ```sh
-sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 The address and the key come from the forwarder. You can [run your own](../admin/self-hosting.md#a-forwarder)

@@ -67,7 +67,7 @@ class CommandsTest {
     fun hubCommand() {
         val root = SoftwareSigner()
         val client = PhoneHub.Client("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ByteArray(32) { 1 }, ByteArray(32) { 2 })
-        val c = Commands.hub(pc, "203.0.113.9:8764" to "sha256:AAAA", emptyList(), listOf(client), "tag", "by", now, root)
+        val c = Commands.hub(pc, "203.0.113.9:8764" to "AAAA", emptyList(), listOf(client), "tag", "by", now, root)
         val o = Wire.parse(c.body)!!
         assertEquals("hub", o.optString("type"))
         val order = o.optObject("hub")!!
@@ -200,7 +200,7 @@ class CommandsTest {
             Commands.mode(pc, "receive", tag, adminBy, now, admin, adminCA),
             Commands.hub(
                 pc,
-                "203.0.113.9:8764" to "sha256:AAAA",
+                "203.0.113.9:8764" to "AAAA",
                 emptyList(),
                 listOf(PhoneHub.Client("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ByteArray(32) { 1 }, ByteArray(32) { 2 })),
                 tag,

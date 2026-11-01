@@ -98,6 +98,7 @@ var scenarios = []struct {
 	{"claim waits and takes effect", TestClaimWaitsAndTakesEffect},
 	{"time unknown", TestTimeUnknown},
 	{"settings delay", TestSettingsDelay},
+	{"key level", TestKeyLevel},
 	{"two claims", TestTwoClaimsStop},
 	{"removed phone after a takeover", TestRemovedPhoneCannotTakeBack},
 	{"claim disputed", TestClaimDisputed},

@@ -14,19 +14,16 @@
 package relay
 
 import (
+	"github.com/HunterEwok/clipboardbridge/internal/frame"
 	"github.com/HunterEwok/clipboardbridge/internal/group"
 
-	"bytes"
-	"encoding/json"
-	"errors"
-	"io"
 	"net"
 	"net/netip"
 	"time"
 )
 
 // Protocol is the ALPN protocol of a member's registration.
-const Protocol = "clipboardbridge-relay/1"
+const Protocol = "clipboardbridge-relay/2"
 
 // proofLabel is the label of the key, from the registration's TLS, under
 // which a member proves its WireGuard key.
@@ -91,38 +88,21 @@ type (
 // maxLine bounds a request or a note.
 const maxLine = 64 << 10
 
-// writeLine sends v as one line, within d.
+// writeLine sends v as one frame (internal/frame), within d.
 func writeLine(c net.Conn, v any, d time.Duration) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
 	c.SetWriteDeadline(time.Now().Add(d))
-	_, err = c.Write(append(b, '\n'))
+	err := frame.Write(c, v, maxLine)
 	c.SetWriteDeadline(time.Time{})
 	return err
 }
 
-// readLine reads one line into v, a byte at a time, so nothing after it is
-// taken from the connection: the member protocol follows an answer's line.
+// readLine reads one frame into v. A frame is read exactly, so nothing
+// after it is taken from the connection: the member protocol follows an
+// answer.
 func readLine(c net.Conn, v any, d time.Duration) error {
 	if d > 0 {
 		c.SetReadDeadline(time.Now().Add(d))
 		defer c.SetReadDeadline(time.Time{})
 	}
-	var b bytes.Buffer
-	one := make([]byte, 1)
-	for {
-		if _, err := io.ReadFull(c, one); err != nil {
-			return err
-		}
-		if one[0] == '\n' {
-			break
-		}
-		if b.Len() >= maxLine {
-			return errors.New("relay: a line too long")
-		}
-		b.WriteByte(one[0])
-	}
-	return json.Unmarshal(b.Bytes(), v)
+	return frame.Read(c, v, maxLine)
 }

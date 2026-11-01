@@ -29,6 +29,8 @@ final class InteropTests: XCTestCase {
             let c = try decoder.singleValueContainer()
             if let o = try? c.decode([String: AnyJSON].self) {
                 value = o.mapValues(\.value)
+            } else if let a = try? c.decode([AnyJSON].self) {
+                value = a.map(\.value)
             } else if let b = try? c.decode(Bool.self) {
                 value = b
             } else if let s = try? c.decode(String.self) {

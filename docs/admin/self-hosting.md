@@ -37,7 +37,7 @@ docker compose -f compose.server.yaml up -d
 docker compose -f compose.server.yaml exec forward cbb forward -show-key
 ```
 
-The last command prints the forwarder's key, `sha256:...`. For a relay, change `command:`
+The last command prints the forwarder's key, 44 characters of base64. For a relay, change `command:`
 in the file to `["relay", "-group", "TAG", "-listen", ":8764"]`. More in the
 [image's README](../../packaging/docker/README.md).
 
@@ -61,7 +61,7 @@ The archive carries the servers' systemd units, `cbb-forward.service` and
 sudo install -m 644 clipboardbridge/packaging/linux/cbb-forward.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cbb-forward
-journalctl -u cbb-forward | grep key          # its key, sha256:...
+journalctl -u cbb-forward | grep key          # its key, 44 characters of base64
 ```
 
 The key file is made on the first start, in the service's own state directory
@@ -102,7 +102,7 @@ With firewalld: `sudo firewall-cmd --permanent --add-port=8764/udp --add-port=87
 Once it runs, give the hub its address and key:
 
 ```sh
-sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 A name works in place of the address (`vpn.example.org:8764`); the hub looks it up once.
@@ -153,7 +153,7 @@ echo 'CBB_RELAY_FLAGS=-group 0123456789abcdef' | sudo tee /etc/clipboardbridge/r
 sudo install -m 644 clipboardbridge/packaging/linux/cbb-relay.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cbb-relay
-sudo journalctl -u cbb-relay | grep key          # its key, sha256:...
+sudo journalctl -u cbb-relay | grep key          # its key, 44 characters of base64
 ```
 
 In Docker, `docker compose -f compose.server.yaml exec forward cbb relay -show-key` prints
@@ -166,7 +166,7 @@ takes every group that registers, within limits per group and per network
 On each computer of the group, after `sudo cbb global on`, in place of a hub:
 
 ```sh
-sudo cbb global relay 198.51.100.9:8764 -key sha256:...
+sudo cbb global relay 198.51.100.9:8764 -key <key>
 ```
 
 It says what the relay learns and asks you to type yes. On a phone, give the same address

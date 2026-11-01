@@ -18,7 +18,7 @@ import (
 )
 
 // MemberProtocol is the ALPN protocol of connections between members.
-const MemberProtocol = "clipboardbridge/1"
+const MemberProtocol = "clipboardbridge/2"
 
 // TLSOptions adjust the TLS configuration of member connections.
 type TLSOptions struct {

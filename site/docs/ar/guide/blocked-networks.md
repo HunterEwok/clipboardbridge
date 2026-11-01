@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- source: f3e807bbde74 -->
+<!-- source: 5a17c9adbba6 -->
 # الشبكات التي تحجب VPN
 
 خارج المنزل تصل أجهزتك إلى المحور عبر نفق WireGuard الخاص بالمجموعة. بعض الشبكات تحجب WireGuard: شبكات Wi-Fi في الفنادق والمكاتب، وبعض مشغّلي الهاتف المحمول، وبلدان كاملة تُرشّح شبكات VPN. لدى Clipboard Bridge طريقتان للالتفاف على ذلك. تُفعَّل كلتاهما على المحور، وتلتقطهما الأجهزة في المرة القادمة التي تلتقي فيها بالمحور في المنزل.
@@ -31,7 +31,7 @@ sudo cbb global hub -obfuscate 203.0.113.7:8764
 ومع مُمرِّر أضف `-obfuscate` بالطريقة نفسها:
 
 ```sh
-sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha256:...
+sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key <key>
 ```
 
 ينشئ المحور إعدادات المجموعة مرة واحدة، عشوائيًا، ويحتفظ بها ما دام `-obfuscate` قائمًا. أحضر كل حاسوب محمول وهاتف إلى المنزل مرة بعد ذلك، أو أبقِ التطبيق مفتوحًا في المنزل، ليأخذ الإعدادات الجديدة. لا يتحدث العضو الخفيف إلا WireGuard العادي: ففي مجموعة معتَّمة يزامن في المنزل فقط.
@@ -51,7 +51,7 @@ sudo cbb global hub -obfuscate -forwarder 198.51.100.9:8764 -forwarder-key sha25
 2. **على المحور**:
 
    ```sh
-   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key sha256:... -vless
+   sudo cbb global hub -forwarder 198.51.100.9:8764 -forwarder-key <key> -vless
    ```
 
    أضف `-obfuscate` أيضًا إن شئت؛ فيسري الاثنان معًا.

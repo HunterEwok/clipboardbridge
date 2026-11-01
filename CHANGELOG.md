@@ -34,6 +34,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   phone, as the phone's own list has it.
 - The Apple Watch app and the Mac app have the app's icon (`tools/icon` draws them too); before,
   watchOS and macOS showed an empty one.
+- The key-level setting's format: the root's `settings` record may carry `key_level`
+  (`proven`, `hardware` or `files`; docs/protocol.md, section 10), and the group's state carries it, in
+  Go and the Rust core alike. The apps' setting and its checks come later.
 - The computers apply the group's stop when its records show a likely thief (docs/protocol.md,
   section 10, "Stopping the exchange"): while two admins act against each other, two claims
   or a disputed claim wait, or a key signed two histories, their connections carry records
@@ -708,6 +711,25 @@ All notable changes to clipboardbridge are documented in this file. The format f
   Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
   bindings, and building the Android app, F-Droid's build included, needs the Rust of
   `cbb.rust` in `apps/android/gradle.properties` with cargo-ndk.
+- One form for each thing on the wire (docs/protocol.md, Conventions), with the next ALPN
+  version of every channel: `clipboardbridge/2`, `clipboardbridge-pair/2`,
+  `clipboardbridge-forward/2` and `clipboardbridge-relay/2`, so members, forwarders and relays
+  of 0.5 and of this version do not connect to each other.
+  - One framing: the registrations at a forwarder and a relay and the requests inside a
+    relay's tunnel are a 4-byte length and JSON, as the member protocol and pairing are,
+    instead of JSON lines (Go's `internal/frame`).
+  - One fingerprint: SHA-256 of a key's SubjectPublicKeyInfo in standard base64, as a
+    record's key hash, for the join QR code, the confirmation of a joining device, a
+    forwarder's or relay's key (`cbb forward` prints it without `sha256:`; set it again on
+    the hubs) and a device's pseudonym at a relay.
+  - Bytes in standard base64 everywhere: an invitation's text and a relay's call tickets too.
+    Identifiers, file digests and the REALITY short ID stay in hex.
+- The hello says what a member supports in `features` (now `media`, in place of the `media`
+  flag) instead of relying on its version, and the rules for members before 0.6 are gone: a
+  tunnel key comes with its preshared key or is ignored.
+- The pairing's Welcome carries no CA key any more (`group_ca_key`, `phone_ca` and
+  `phone_ca_key` are gone, docs/protocol.md, section 6): no device gets one by joining, in
+  Go, the lite member and both phone kits.
 - The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
   member: each record names its signer and follows that signer's previous one, the Rust
   core decides what a set says, and the old records are refused. A group of an earlier

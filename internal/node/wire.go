@@ -69,6 +69,15 @@ const (
 	minRate = 16 << 10 // bytes per second
 )
 
+// FeatureMedia, in a hello's features, tells that the sender serves the
+// content of media events ("Content" of docs/protocol.md, section 4), so
+// that others may send it get. maxFeatures is how many names of a hello's
+// features a receiver reads.
+const (
+	FeatureMedia = "media"
+	maxFeatures  = 32
+)
+
 // Role tells what kind of member is at the other end.
 type Role string
 
@@ -259,10 +268,10 @@ type helloBody struct {
 	// TunnelKey is the sender's WireGuard public key, for the hub.
 	TunnelKey []byte `json:"tunnel_key,omitempty"`
 	// TunnelPSK is the sender's own preshared key, which every hub uses
-	// for it; absent from a member before several hubs.
+	// for it; a tunnel key comes with it.
 	TunnelPSK []byte `json:"tunnel_psk,omitempty"`
 	// Mode is the sender's sync mode, for showing; "" from a member that
-	// predates sync modes, or one that has none, such as a phone.
+	// has none, such as a phone.
 	Mode string `json:"mode,omitempty"`
 	// AdminKey is the admin key the sender offers, for the root.
 	AdminKey []byte `json:"admin_key,omitempty"`
@@ -270,20 +279,21 @@ type helloBody struct {
 	// whose key the sender holds.
 	PhoneCA []byte `json:"phone_ca,omitempty"`
 	// KeyStore is where the sender says its keys live (group.StoreFile or
-	// group.StoreHardware or group.StoreRootless); "" from a member before 0.6.
+	// group.StoreHardware or group.StoreRootless).
 	KeyStore string `json:"key_store,omitempty"`
 	// Actions are the sender's quick actions that are on, for the
-	// buttons; absent from a member before 0.6.
+	// buttons.
 	Actions []string `json:"actions,omitempty"`
-	// Media tells that the sender serves the content of media events.
-	Media bool `json:"media,omitempty"`
+	// Features are what the sender supports beyond the protocol of its
+	// ALPN version (FeatureMedia); a receiver ignores names it does not
+	// know.
+	Features []string `json:"features,omitempty"`
 	// Seal is the sender's public key for sealed messages.
 	Seal []byte `json:"seal,omitempty"`
 	// ReleaseSeq is the seq of the channel file of the signed release
 	// the sender holds; 0 for none.
 	ReleaseSeq uint64 `json:"release_seq,omitempty"`
-	// ReleaseKeys is the seq of that release's keys.json; 0 for none, and
-	// from a member before 0.6.
+	// ReleaseKeys is the seq of that release's keys.json; 0 for none.
 	ReleaseKeys uint64 `json:"release_keys_seq,omitempty"`
 }
 
@@ -317,8 +327,9 @@ type helloOut struct {
 	// Actions are this member's quick actions that are on, for the
 	// admins' buttons.
 	Actions []string `json:"actions,omitempty"`
-	// Media tells that this member serves the content of media events.
-	Media bool `json:"media,omitempty"`
+	// Features are what this member supports beyond the protocol of its
+	// ALPN version.
+	Features []string `json:"features,omitempty"`
 	// Seal is this member's public key for sealed messages, for the root
 	// or an admin to put in its device record.
 	Seal []byte `json:"seal,omitempty"`

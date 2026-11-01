@@ -113,7 +113,7 @@ func contains(s []string, v string) bool {
 	return false
 }
 
-func wrap(js string) string { return prefix + base64.RawURLEncoding.EncodeToString([]byte(js)) }
+func wrap(js string) string { return prefix + base64.StdEncoding.EncodeToString([]byte(js)) }
 
 func makeVectors() vectorFile {
 	var v vectorFile
@@ -150,8 +150,9 @@ func makeVectors() vectorFile {
 	refuse("prefix in capitals", "CLIPBOARDBRIDGE://invite#"+strings.TrimPrefix(good, prefix), NotInvitation)
 	refuse("no-break space around", "\u00a0"+good, NotInvitation)
 	refuse("cut", good[:len(good)-5], Damaged)
-	refuse("padding", good+"==", Damaged)
-	refuse("standard base64", prefix+base64.RawStdEncoding.EncodeToString([]byte(`{"v":1,"g":"???","h":">>>"}`)), Damaged)
+	refuse("padding after the padding", good+"==", Damaged)
+	refuse("without padding", prefix+base64.RawStdEncoding.EncodeToString([]byte(`{"v":1,"g":"??","h":">>>"}`)), Damaged)
+	refuse("base64url", prefix+base64.URLEncoding.EncodeToString([]byte(`{"v":1,"g":"???","h":">>>"}`)), Damaged)
 	refuse("white space inside", good[:40]+" "+good[40:], Damaged)
 	refuse("line break inside", good[:40]+"\n"+good[40:], Damaged)
 	refuse("not JSON", wrap(`v=1`), Damaged)
@@ -216,7 +217,7 @@ func makeVectors() vectorFile {
 }
 
 func mustJSON(text string) string {
-	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(text, prefix))
+	b, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(text, prefix))
 	if err != nil {
 		panic(err)
 	}

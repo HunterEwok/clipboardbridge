@@ -160,7 +160,17 @@ func ParseJoinQR(s string) (JoinCode, bool) {
 	if err != nil || !strings.EqualFold(u.Scheme, "clipboardbridge") || !strings.EqualFold(u.Host, "join") {
 		return JoinCode{}, false
 	}
-	q := u.Query()
+	// Only percent escapes are decoded, never a + as a space, as the phone
+	// kits read the text: a fingerprint's base64 may hold a +.
+	q := url.Values{}
+	for item := range strings.SplitSeq(u.RawQuery, "&") {
+		k, v, _ := strings.Cut(item, "=")
+		k, err1 := url.PathUnescape(k)
+		v, err2 := url.PathUnescape(v)
+		if err1 == nil && err2 == nil && k != "" {
+			q[k] = append(q[k], v)
+		}
+	}
 	jc := JoinCode{Code: q.Get("code"), Fingerprint: q.Get("fp")}
 	for _, a := range q["addr"] {
 		if _, _, err := net.SplitHostPort(a); err == nil && len(jc.Addrs) < maxJoinAddrs {

@@ -208,7 +208,7 @@ mod tests {
         assert_eq!(c.common_name.as_deref(), Some(j.id.as_str()));
         assert!(c.p256);
         assert!(c.signed_by(&c));
-        assert_eq!(j.fingerprint().len(), 43);
+        assert_eq!(j.fingerprint().len(), 44);
         // rustls and the core's provider take the key and the certificate.
         tls::pair_server(&j.cert, &j.key, &tls::clock()).unwrap();
     }

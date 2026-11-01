@@ -17,10 +17,10 @@ import java.util.Base64
  */
 object Pairing {
     /** The ALPN protocol of pairing connections. */
-    const val ALPN = "clipboardbridge-pair/1"
+    const val ALPN = "clipboardbridge-pair/2"
 
     /** The TLS exporter label for the CPace session ID. */
-    const val EXPORTER_LABEL = "EXPERIMENTAL-clipboardbridge-pair-v1"
+    const val EXPORTER_LABEL = "EXPERIMENTAL-clipboardbridge-pair-v2"
 
     /** Frames larger than this are refused. */
     const val MAX_FRAME = 64 shl 10
@@ -28,7 +28,7 @@ object Pairing {
     /** What a Welcome leaves for everything but its records, so that one with them fits in a frame. */
     const val WELCOME_ROOM = 4 shl 10
 
-    private val CHANNEL_PREFIX = "clipboardbridge pair v1\u0000".toByteArray()
+    private val CHANNEL_PREFIX = "clipboardbridge pair v2\u0000".toByteArray()
 
     /** One frame of the exchange; each uses some of the fields. */
     class Frame(
@@ -78,9 +78,6 @@ object Pairing {
         val roots: List<ByteArray>? = null,
         /** The group's records (RecordSet.pathRecords), by which the joiner checks the roots and takes its peers at once. */
         val records: List<Member.Record>? = null,
-        val groupCAKey: ByteArray? = null,
-        val phoneCA: ByteArray? = null,
-        val phoneCAKey: ByteArray? = null,
         /** When the admitting member first held each claim, so the new member counts the claims' delays as it does. */
         val claimTimes: List<RecordSet.ClaimTime>? = null,
     ) {
@@ -90,9 +87,6 @@ object Pairing {
             "group_ca" to Wire.bytes(groupCA),
             "roots" to Wire.list(roots),
             "records" to records?.let { rs -> kotlinx.serialization.json.JsonArray(rs.map { it.toJson() }) },
-            "group_ca_key" to Wire.bytes(groupCAKey),
-            "phone_ca" to Wire.bytes(phoneCA),
-            "phone_ca_key" to Wire.bytes(phoneCAKey),
             "admin_ca" to Wire.bytes(adminCA),
             "claim_times" to claimTimes?.let { ts -> kotlinx.serialization.json.JsonArray(ts.map { it.toJson() }) },
         )
@@ -105,9 +99,6 @@ object Pairing {
                 adminCA = o.optBytes("admin_ca"),
                 roots = o.optBytesList("roots"),
                 records = o.optArray("records")?.map { Member.Record.fromJson(it as? JsonObject ?: throw WireTypeException("a record is not an object")) },
-                groupCAKey = o.optBytes("group_ca_key"),
-                phoneCA = o.optBytes("phone_ca"),
-                phoneCAKey = o.optBytes("phone_ca_key"),
                 claimTimes = o.optArray("claim_times")?.let { RecordSet.ClaimTime.list(it) },
             )
         }
@@ -193,8 +184,13 @@ object Pairing {
     /** The CPace channel identifier: the prefix, then SHA-256 of the member's and the joiner's certificate, in that order. */
     fun channelID(memberCert: ByteArray, joinerCert: ByteArray): ByteArray = CHANNEL_PREFIX + sha256(memberCert) + sha256(joinerCert)
 
-    /** The fingerprint a join QR code carries: SHA-256 of the certificate, in base64url without padding. */
-    fun fingerprint(cert: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(sha256(cert))
+    /**
+     * The fingerprint of a certificate's key, the one form of docs/protocol.md (Conventions, "Fingerprints"):
+     * SHA-256 over its SubjectPublicKeyInfo in standard base64, as a record's key hash; empty for bytes that
+     * are no certificate. A join QR code carries it.
+     */
+    fun fingerprint(cert: ByteArray): String =
+        runCatching { CertificateInfo(cert).publicKey }.getOrNull()?.let { Base64.getEncoder().encodeToString(sha256(it)) } ?: ""
 
     /** Encodes a frame: the length, then the JSON. */
     fun encode(f: Frame): ByteArray {

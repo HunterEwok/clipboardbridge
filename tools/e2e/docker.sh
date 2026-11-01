@@ -104,7 +104,7 @@ eventually "b syncs after its restart" sh -c "[ \"\$(docker exec $run-b cbb past
 
 say "a forwarder starts and shows its key"
 start forward forward -listen :8764
-eventually "the forwarder shows its key" sh -c "docker logs $run-forward 2>&1 | grep -q 'forwarder-key: sha256:'"
+eventually "the forwarder shows its key" sh -c "docker logs $run-forward 2>&1 | grep -q 'forwarder-key: [A-Za-z0-9+/]\{43\}='"
 key=$(docker exec "$run-forward" cbb forward -show-key) || fail "forward -show-key failed"
 docker logs "$run-forward" 2>&1 | grep -qF "forwarder-key: $key" || fail "forward -show-key names another key than the forwarder"
 

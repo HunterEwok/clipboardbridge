@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class AppModelTests: XCTestCase {
-    let qr = "clipboardbridge://join?code=246802&addr=192.168.1.20:8767&fp=qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA"
+    let qr = "clipboardbridge://join?code=246802&addr=192.168.1.20:8767&fp=qFnj7Uv%2BCE%2FWNnna2IEmMaLbkA6tHcKf0VijTRzekKA%3D"
 
     func testRead() {
         guard case let .joinCode(jc) = AppModel.read(scanned: qr) else { return XCTFail() }
@@ -22,12 +22,12 @@ final class AppModelTests: XCTestCase {
     /// phone.JoinQR writes it (percent-encoded, an IPv6 address too), reads
     /// as pasted from a terminal, spaces and newline included.
     func testReadGoJoinText() {
-        let text = "clipboardbridge://join?code=246802&addr=192.168.1.20%3A8767&addr=%5Bfd00%3A%3A5%5D%3A8767&fp=qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA"
+        let text = "clipboardbridge://join?code=246802&addr=192.168.1.20%3A8767&addr=%5Bfd00%3A%3A5%5D%3A8767&fp=qFnj7Uv%2BCE%2FWNnna2IEmMaLbkA6tHcKf0VijTRzekKA%3D"
         for pasted in [text, " " + text + "\n"] {
             guard case let .joinCode(jc) = AppModel.read(scanned: pasted) else { return XCTFail(pasted) }
             XCTAssertEqual(jc.code, "246802")
             XCTAssertEqual(jc.addrs, ["192.168.1.20:8767", "[fd00::5]:8767"])
-            XCTAssertEqual(jc.fingerprint, "qFnj7UvLCE_WNnna2IEmMaLbkA6tHcKf0VijTRzekKA")
+            XCTAssertEqual(jc.fingerprint, "qFnj7Uv+CE/WNnna2IEmMaLbkA6tHcKf0VijTRzekKA=")
         }
     }
 
