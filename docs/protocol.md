@@ -810,7 +810,7 @@ Suite CPACE-X25519-SHA512 of draft-irtf-cfrg-cpace-21, as implemented in
 | PRS (password) | the six ASCII digits of the code, or a remote invitation's secret (its raw bytes) |
 | CI (channel identifier) | `"clipboardbridge pair v1"` + one zero byte + SHA-256(member certificate DER) + SHA-256(joiner certificate DER); 23 + 1 + 32 + 32 = 88 bytes |
 | sid | 32 bytes of TLS exporter output, label `EXPERIMENTAL-clipboardbridge-pair-v1`, empty context |
-| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"windows"\|"macos"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"` and may say `"os":"none"`. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux`, `windows`, `macos` and lite members |
+| ADa (joiner) | JSON `{"name":"<device name>","os":"linux"\|"windows"\|"macos"\|"ios"\|"android"}`; a phone with the app (`ios` for an iPhone, `android` for an Android phone) adds `"admin_key"`, its admin key's SubjectPublicKeyInfo (bytes, DER); a lite member adds `"role":"lite"` and may say `"os":"none"`; a computer or a lite member adds `"seal"`, its public key for sealed messages (bytes, 1216, as `seal` of the hello, section 4), which the admitting member puts in its device record. A phone admits `ios` and `android` joiners as phones and records a lite member with role `lite`; a computer admits only `linux`, `windows`, `macos` and lite members |
 | ADb (member) | JSON `{"device":"<member device ID>","group":"<group tag>"}` |
 | Ya, Yb | 32-byte X25519 u-coordinates |
 | Tags Ta, Tb | HMAC-SHA-512, 64 bytes |
@@ -819,7 +819,7 @@ The AD bytes are used exactly as they travel in the `ad` field. The member MUST 
 is `linux`, `windows` or `macos`, or `none` with `role` `lite` (an admin phone also takes
 `ios` and `android`); `name` is 1 to 64 bytes of
 printable UTF-8; `admin_key`, when present, comes with `ios` or `android` and is a P-256 key; `role`,
-when present, is `lite`. A lite member (a Linux device without CA keys) gets
+when present, is `lite`; `seal`, when present, comes from no phone and is 1216 bytes. A lite member (a Linux device without CA keys) gets
 no CA keys and is recorded with role `lite`. Go members
 take no `ios` joiner: only admin phones admit phones.
 
@@ -2784,8 +2784,10 @@ commands, such as one before 0.5, ignores the message, so the sender gives up af
 
 Each computer and lite member keeps a secret for sealed messages in `seal.json` next to its
 identity (sealed by the TPM where a computer has one, as the WireGuard key) and offers its public key in its hello
-(`seal`, section 4); a root computer records it in the device's record, as it records a
-changed system, and a command for it is sealed (below, "Sealed commands").
+(`seal`, section 4) and in its pairing info (ADa, section 5); a root computer records it in
+the device's record, as it records a changed system, a member that admits it records it at
+once, and the phones keep it when they sign the record again. A command for it is sealed
+(below, "Sealed commands").
 
 A sender that has no connection to the receiver sends a `mode`, `paste`, `paste-off`,
 `action`, `actions-off` or `away-off` command to the group's hubs it is connected to (the
@@ -2895,9 +2897,13 @@ for the command's `type`. Its orders then count as those of a command in the ope
 orders open only under the header they were sealed with, so no other signer can send them
 again under an `id` or a time of its own. The limits of a body (64 KiB, 2 MiB for `paste`)
 hold for the body as sent and for the orders once opened. The members in between pass a
-sealed command on as any other. A receiver still takes a command in the open, as the
-phones and senders before 0.6 send; a member without a key of its own refuses a sealed
-one. The vectors are `go-sealed-commands.json`.
+sealed command on as any other. Every sender seals to a receiver whose record has a `seal`
+key: computers, lite members and both phone apps (the kits through the core's
+`seal_command`). So a receiver whose own record has one refuses a `paste` command in the
+open, whose text was read on its way; it takes the other types in the open, as a watch signs
+them (a watch checks what it signs and cannot read sealed orders). A receiver without a key
+in its record takes commands in the open, and a member without a key of its own refuses a
+sealed one. The vectors are `go-sealed-commands.json`.
 
 ## 16. Signed releases
 

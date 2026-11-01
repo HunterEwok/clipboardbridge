@@ -86,11 +86,11 @@ public enum Commands {
     /// An action command for the device to: run its quick action name,
     /// which only the receiver defines. Signed as mode.
     public static func action(to: String, name: String, group: String, by: String, now: Date, signer: CertificateSigner,
-                              adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+                              adminCA: Data? = nil, seal: Data? = nil, id: String = newID()) throws -> Member.Record {
         guard validActionName(name) else { throw Failure.badAction(name) }
         let ms = Records.ms(now)
         return try sign(Body(type: "action", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS, action: name),
-                        signer: signer, adminCA: adminCA)
+                        signer: signer, adminCA: adminCA, seal: seal)
     }
 
     /// The commands a watch's admin key may sign (docs/protocol.md, section
@@ -100,19 +100,19 @@ public enum Commands {
     /// An away-off command for the device to: it turns sync away from home
     /// off there, and its tunnel keys go. Signed as mode.
     public static func awayOff(to: String, group: String, by: String, now: Date, signer: CertificateSigner,
-                               adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+                               adminCA: Data? = nil, seal: Data? = nil, id: String = newID()) throws -> Member.Record {
         let ms = Records.ms(now)
         return try sign(Body(type: "away-off", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS),
-                        signer: signer, adminCA: adminCA)
+                        signer: signer, adminCA: adminCA, seal: seal)
     }
 
     /// An actions-off command for the device to: it turns every quick
     /// action off there. Signed as mode.
     public static func actionsOff(to: String, group: String, by: String, now: Date, signer: CertificateSigner,
-                                  adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+                                  adminCA: Data? = nil, seal: Data? = nil, id: String = newID()) throws -> Member.Record {
         let ms = Records.ms(now)
         return try sign(Body(type: "actions-off", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS),
-                        signer: signer, adminCA: adminCA)
+                        signer: signer, adminCA: adminCA, seal: seal)
     }
 
     /// The longest text of a paste command, in bytes of UTF-8, and of one
@@ -129,14 +129,11 @@ public enum Commands {
     /// A mode command for the device to, signed with the root key (adminCA
     /// nil) or with an admin CA key, adminCA being that CA's certificate.
     public static func mode(to: String, mode: String, group: String, by: String, now: Date, signer: CertificateSigner,
-                            adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+                            adminCA: Data? = nil, seal: Data? = nil, id: String = newID()) throws -> Member.Record {
         guard Member.modes.contains(mode) else { throw Failure.unknownMode(mode) }
         let ms = Records.ms(now)
         let body = Body(type: "mode", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS, mode: mode)
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let data = try enc.encode(body)
-        return Member.Record(body: data, sig: try signer.signature(for: data), chain: adminCA.map { [$0] })
+        return try sign(body, signer: signer, adminCA: adminCA, seal: seal)
     }
 
     /// A hub command for the admin computer to: it becomes the group's
@@ -145,16 +142,13 @@ public enum Commands {
     /// the keys they have. Signed as mode.
     public static func hub(to: String, forwarder: (endpoint: String, pin: String)?, endpoints: [String] = [], clients: [PhoneHub.Client],
                            group: String, by: String, now: Date, signer: CertificateSigner,
-                           adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+                           adminCA: Data? = nil, seal: Data? = nil, id: String = newID()) throws -> Member.Record {
         guard forwarder != nil || !endpoints.isEmpty, endpoints.count <= 8, clients.count <= maxHubClients else { throw Failure.badHubOrder }
         let order = HubOrder(forwarder: forwarder.map { HubOrder.Forwarder(endpoint: $0.endpoint, key: $0.pin) },
                              endpoints: endpoints.isEmpty ? nil : endpoints, clients: clients.isEmpty ? nil : clients)
         let ms = Records.ms(now)
         let body = Body(type: "hub", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS, hub: order)
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let data = try enc.encode(body)
-        return Member.Record(body: data, sig: try signer.signature(for: data), chain: adminCA.map { [$0] })
+        return try sign(body, signer: signer, adminCA: adminCA, seal: seal)
     }
 
     /// A paste command for the device to: put text where its focus is, by
@@ -163,28 +157,32 @@ public enum Commands {
     /// mode.
     public static func paste(to: String, text: String, method: String = "paste", enter: Bool = false, kind: String = "text",
                              group: String, by: String, now: Date, signer: CertificateSigner,
-                             adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+                             adminCA: Data? = nil, seal: Data? = nil, id: String = newID()) throws -> Member.Record {
         let limit = method == "paste" ? maxPasteText : method == "type" ? maxTypeText : 0
         guard limit > 0, kind == "text" || kind == "secret", !text.isEmpty, text.utf8.count <= limit else { throw Failure.badPaste }
         let ms = Records.ms(now)
         let body = Body(type: "paste", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS, mode: method,
                         enter: enter ? true : nil, kind: kind, text: text)
-        return try sign(body, signer: signer, adminCA: adminCA)
+        return try sign(body, signer: signer, adminCA: adminCA, seal: seal)
     }
 
     /// A paste-off command for the device to: it turns remote paste off
     /// there. Signed as mode.
     public static func pasteOff(to: String, group: String, by: String, now: Date, signer: CertificateSigner,
-                                adminCA: Data? = nil, id: String = newID()) throws -> Member.Record {
+                                adminCA: Data? = nil, seal: Data? = nil, id: String = newID()) throws -> Member.Record {
         let ms = Records.ms(now)
         return try sign(Body(type: "paste-off", group: group, by: by, to: to, id: id, time_ms: ms, expires_ms: ms + lifetimeMS),
-                        signer: signer, adminCA: adminCA)
+                        signer: signer, adminCA: adminCA, seal: seal)
     }
 
-    static func sign(_ body: Body, signer: CertificateSigner, adminCA: Data?) throws -> Member.Record {
+    /// Signs body; with seal, the receiver's key for sealed messages from
+    /// its device record, its orders are sealed to that key first
+    /// (docs/protocol.md, section 15, "Sealed commands"), in the Rust core.
+    static func sign(_ body: Body, signer: CertificateSigner, adminCA: Data?, seal: Data? = nil) throws -> Member.Record {
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let data = try enc.encode(body)
+        var data = try enc.encode(body)
+        if let seal { data = try Core.sealCommand(data, key: seal) }
         return Member.Record(body: data, sig: try signer.signature(for: data), chain: adminCA.map { [$0] })
     }
 

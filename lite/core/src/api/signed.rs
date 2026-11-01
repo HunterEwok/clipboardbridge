@@ -68,10 +68,29 @@ fn parse_body(a: ParseArgs) -> core::result::Result<Vec<u8>, Refusal> {
     Ok(json(Value::Object(m)))
 }
 
+/// The arguments of `seal_command`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SealArgs {
+    #[serde(with = "b64")]
+    body: Vec<u8>,
+    #[serde(with = "b64")]
+    key: Vec<u8>,
+}
+
+/// `seal_command`: a command in the open with its orders sealed to the
+/// receiver's key for sealed messages (docs/protocol.md, section 15,
+/// "Sealed commands"), as `{"body": ...}` for the sender to sign.
+fn seal_command(a: SealArgs) -> core::result::Result<Vec<u8>, Refusal> {
+    let body = crate::command::Command::seal_body(&a.body, &a.key).map_err(|e| refuse(Code::Signed, e))?;
+    Ok(json(super::body_answer(&body)))
+}
+
 /// Runs a call over a signed body; None for an op that is not one.
 pub(super) fn dispatch(op: &str, args: &Value) -> Option<core::result::Result<Vec<u8>, Refusal>> {
     Some(match op {
         "parse_body" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(parse_body),
+        "seal_command" => serde_json::from_value(args.clone()).map_err(bad_args).and_then(seal_command),
         _ => return None,
     })
 }
@@ -102,6 +121,38 @@ mod tests {
 
     fn bytes(v: &Value) -> alloc::vec::Vec<u8> {
         STANDARD.decode(v.as_str().unwrap()).unwrap()
+    }
+
+    /// A command sealed by the call opens with the receiver's secret to
+    /// the same orders, under the same header, and a sealed command or a
+    /// bad key is refused.
+    #[test]
+    fn seals_commands() {
+        let secret = crate::seal::generate_secret().unwrap();
+        let public = crate::seal::public_key(&secret).unwrap();
+        let body = br#"{"by":"00000000000000000000000000000001","enter":true,"expires_ms":31000,"group":"g","id":"0123456789abcdef0123456789abcdef","kind":"text","mode":"paste","text":"hello","time_ms":1000,"to":"00000000000000000000000000000002","type":"paste","v":1}"#;
+        let seal = |body: &[u8], key: &[u8]| -> Value {
+            let req = format!(
+                r#"{{"abi":1,"op":"seal_command","args":{{"body":"{}","key":"{}"}}}}"#,
+                STANDARD.encode(body),
+                STANDARD.encode(key)
+            );
+            serde_json::from_slice(&call(req.as_bytes())).unwrap()
+        };
+        let got = seal(body, &public);
+        let sealed = bytes(&got["ok"]["body"]);
+        assert_eq!(crate::strict::canonicalize(&sealed).unwrap(), sealed);
+        let text = core::str::from_utf8(&sealed).unwrap();
+        assert!(!text.contains("hello") && text.contains(r#""v":2"#), "{text}");
+        let mut c = crate::command::Command::parse(&sealed).unwrap();
+        assert!(c.sealed());
+        c.open(&secret).unwrap();
+        assert_eq!((c.text.as_str(), c.mode.as_str(), c.enter), ("hello", "paste", true));
+        let other = crate::seal::public_key(&crate::seal::generate_secret().unwrap()).unwrap();
+        let mut c = crate::command::Command::parse(&bytes(&seal(body, &other)["ok"]["body"])).unwrap();
+        assert!(c.open(&secret).is_err());
+        assert_eq!(seal(&sealed, &public)["error"]["name"], "signed");
+        assert_eq!(seal(body, &[1, 2, 3])["error"]["name"], "signed");
     }
 
     /// Each case of the strict vectors of these kinds through the call.

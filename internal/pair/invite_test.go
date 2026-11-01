@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -75,7 +76,7 @@ func TestSecretConfirmed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(asked) != 1 || asked[0].Device != j.ID || asked[0].Info != j.Info || asked[0].Fingerprint != fp {
+	if len(asked) != 1 || asked[0].Device != j.ID || !reflect.DeepEqual(asked[0].Info, j.Info) || asked[0].Fingerprint != fp {
 		t.Errorf("the admin was asked %+v, want %s %+v %s", asked, j.ID, j.Info, fp)
 	}
 	if out.id.GroupCA.Key != nil {

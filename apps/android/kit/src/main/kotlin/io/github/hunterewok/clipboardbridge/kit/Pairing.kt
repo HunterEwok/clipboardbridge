@@ -122,6 +122,8 @@ object Pairing {
         val adminKey: ByteArray? = null,
         /** LITE for a lite member, which only dials and never holds CA keys; null for a full device. */
         val role: String? = null,
+        /** A computer's or lite member's public key for sealed messages, which the phone that admits it puts in its device record (docs/protocol.md, section 15); null from a phone. */
+        val seal: ByteArray? = null,
     ) {
         /**
          * Checks it as the member does: a known OS, a printable name of 1
@@ -132,14 +134,16 @@ object Pairing {
             get() {
                 if ((os !in OSES && !(os == "none" && role == LITE)) || name.isEmpty() || name.toByteArray().size > 64 || !printable(name)) return false
                 if (role != null && role != LITE) return false
+                if (seal != null && (isPhone(os) || seal.size != SEAL_KEY_SIZE)) return false
                 val k = adminKey ?: return true
                 return isPhone(os) && p256PublicKey(k) != null
             }
 
-        fun encode(): ByteArray = Wire.encode(Wire.obj("name" to Wire.str(name), "os" to Wire.str(os), "admin_key" to Wire.bytes(adminKey), "role" to Wire.str(role)))
+        fun encode(): ByteArray = Wire.encode(Wire.obj("name" to Wire.str(name), "os" to Wire.str(os), "admin_key" to Wire.bytes(adminKey), "role" to Wire.str(role), "seal" to Wire.bytes(seal)))
 
         override fun equals(other: Any?): Boolean =
-            other is Info && name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) && role == other.role
+            other is Info && name == other.name && os == other.os && adminKey.contentEqualsOrNull(other.adminKey) && role == other.role &&
+                seal.contentEqualsOrNull(other.seal)
 
         override fun hashCode(): Int = name.hashCode()
 
@@ -149,13 +153,16 @@ object Pairing {
             /** The role of a lite member. */
             const val LITE = "lite"
 
+            /** The size of a key for sealed messages (an X-Wing public key). */
+            const val SEAL_KEY_SIZE = 1216
+
             /** Whether a joiner's OS is a phone's, which joins as a phone and may become an admin. */
             fun isPhone(os: String): Boolean = os == "ios" || os == "android"
 
             fun decode(data: ByteArray): Info? {
                 val o = Wire.parse(data) ?: return null
                 return try {
-                    Info(o.optString("name") ?: return null, o.optString("os") ?: return null, o.optBytes("admin_key"), o.optString("role"))
+                    Info(o.optString("name") ?: return null, o.optString("os") ?: return null, o.optBytes("admin_key"), o.optString("role"), o.optBytes("seal"))
                 } catch (e: WireTypeException) {
                     null
                 }

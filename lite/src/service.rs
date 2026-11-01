@@ -463,7 +463,11 @@ impl Service {
         };
         let now = uptime::wall_ms();
         let me = node.identity().id.to_string();
-        let mut body = match node.records().lock().unwrap().verify_command(c, &me, now) {
+        let (verified, sealed_to_me) = {
+            let rs = node.records().lock().unwrap();
+            (rs.verify_command(c, &me, now), rs.devices().iter().any(|d| d.id == me && !d.seal.is_empty()))
+        };
+        let mut body = match verified {
             Ok(b) => b,
             Err(e) => return refused("", e.message().to_string()),
         };
@@ -478,6 +482,15 @@ impl Service {
                 return refused(&body.id, e.message().to_string());
             }
             (self.log)(&format!("cbb: opened a sealed {} command from {peer}", body.kind));
+        }
+        if body.kind == "paste" && !body.opened && sealed_to_me {
+            // The records give this member a key for sealed messages, so
+            // every sender seals a paste to it: one in the open was read on
+            // its way (docs/protocol.md, section 15, "Sealed commands").
+            return refused(
+                &body.id,
+                "a paste for this device must be sealed to its key, and this one came in the open".into(),
+            );
         }
         if body.time_ms < self.started_ms {
             // It may have been carried out before the restart, which the

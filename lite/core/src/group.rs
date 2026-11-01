@@ -63,6 +63,9 @@ pub struct Device {
     /// SHA-256 of the attestation's leaf; empty without one.
     pub kind: String,
     pub proof: String,
+    /// Its public key for sealed messages, which commands for it are
+    /// sealed to; empty when its record has none.
+    pub seal: Vec<u8>,
     /// An admin now: it has an admin key and is not frozen.
     pub admin: bool,
     /// Its admin key, whether or not it is frozen.
@@ -418,6 +421,7 @@ impl Records {
                     store: store_of(&d.store, &d.role).to_string(),
                     kind: d.hardware.clone(),
                     proof: d.proof.clone(),
+                    seal: d.seal.clone(),
                     // A frozen admin is no admin until the freeze ends.
                     admin: d.admin.is_some() && !d.frozen,
                     admin_key: d.admin.map(|a| a.0),

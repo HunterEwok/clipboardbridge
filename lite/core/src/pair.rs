@@ -41,6 +41,8 @@ struct Info<'a> {
     name: &'a str,
     os: &'a str,
     role: &'a str,
+    #[serde(with = "certs::b64", skip_serializing_if = "<[u8]>::is_empty")]
+    seal: &'a [u8],
 }
 
 /// The member's CPace associated data.
@@ -169,6 +171,10 @@ pub struct Joiner {
     pub key: Vec<u8>,
     /// The self-signed certificate it presents in the TLS handshake.
     pub cert: Vec<u8>,
+    /// Its public key for sealed messages (crate::seal), which the info
+    /// carries so that a phone that admits it records it at once; empty
+    /// for none.
+    pub seal: Vec<u8>,
     name: String,
 }
 
@@ -183,7 +189,7 @@ impl Joiner {
         let key = identity::new_key()?;
         let cert =
             certs::self_signed(&id, &identity::signing_key(&key)?).wrap("cannot make the pairing certificate")?;
-        Ok(Joiner { id, key, cert, name: name.to_string() })
+        Ok(Joiner { id, key, cert, seal: Vec::new(), name: name.to_string() })
     }
 
     /// The fingerprint of the joiner's certificate that the QR code carries.
@@ -208,7 +214,7 @@ impl Joiner {
         let code = normalize_code(code)?;
         let member_cert = Cert::parse(member_der).wrap("the member's certificate")?;
         let ci = channel_id(member_der, &self.cert);
-        let ad = serde_json::to_vec(&Info { name: &self.name, os: "linux", role: "lite" })
+        let ad = serde_json::to_vec(&Info { name: &self.name, os: "linux", role: "lite", seal: &self.seal })
             .context("cannot encode the joiner's info")?;
         let (st, msg) = cpace::start(&cpace::Config {
             role: cpace::Role::Initiator,

@@ -80,15 +80,22 @@ public enum Pairing {
         /// `Info.lite` for a lite member, which only dials and never holds
         /// CA keys; nil for a full device.
         public var role: String?
+        /// A computer's or lite member's public key for sealed messages,
+        /// which the phone that admits it puts in its device record
+        /// (docs/protocol.md, section 15); nil from a phone.
+        public var seal: Data?
 
         /// The role of a lite member.
         public static let lite = "lite"
 
-        enum CodingKeys: String, CodingKey { case name, os, adminKey = "admin_key", role }
+        enum CodingKeys: String, CodingKey { case name, os, adminKey = "admin_key", role, seal }
 
-        public init(name: String, os: String, adminKey: Data? = nil, role: String? = nil) {
-            (self.name, self.os, self.adminKey, self.role) = (name, os, adminKey, role)
+        public init(name: String, os: String, adminKey: Data? = nil, role: String? = nil, seal: Data? = nil) {
+            (self.name, self.os, self.adminKey, self.role, self.seal) = (name, os, adminKey, role, seal)
         }
+
+        /// The size of a key for sealed messages (an X-Wing public key).
+        public static let sealKeySize = 1216
 
         /// Whether it comes from a phone with the app, an iPhone or an
         /// Android phone, which joins as a phone and may become an admin.
@@ -119,6 +126,7 @@ public enum Pairing {
             guard ["linux", "windows", "macos", "ios", "android"].contains(os) || (os == "none" && role == Self.lite), !name.isEmpty, name.utf8.count <= 64,
                   name.unicodeScalars.allSatisfy(Self.printable),
                   role == nil || role == Self.lite else { return false }
+            if let seal, isPhone || seal.count != Self.sealKeySize { return false }
             guard let adminKey else { return true }
             return isPhone && P256.Signing.PublicKey(spki: adminKey) != nil
         }
