@@ -70,6 +70,7 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"W17-lite-away", func() { liteAway(ctx, r, f, timeout) }},
 		{"S1-captures", func() { captures(ctx, r, f, timeout) }},
 		{"Y34-secret-memory", func() { secretMemory(ctx, r, f, timeout) }},
+		{"D10-wan", func() { wanSide(ctx, r, f) }},
 		{"W33-two-groups", func() { twoGroupsAway(ctx, r, f, timeout) }},
 		{"W36-relay", func() { relayAway(ctx, r, f, timeout) }},
 		{"W38-relay-limits", func() { relayLimits(ctx, r, f, timeout) }},
