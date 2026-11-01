@@ -91,12 +91,20 @@ final class StartUITests: XCTestCase {
     /// U12: the error details switch shows after seven taps on the version,
     /// and the launch argument ShowErrorDetails sets it.
     func testErrorDetailsSwitch() {
-        var app = launch(["-ShowErrorDetailsSwitch", "NO"])
+        // No launch argument here: one in the arguments domain would hide
+        // what the taps store.
+        var app = launch()
         openSettings(app)
         let version = app.staticTexts["Version"]
         scrollTo(version, in: app)
-        XCTAssertFalse(app.switches["Show error details"].exists, "the switch shows before the taps")
-        for _ in 0..<7 { version.tap() }
+        // The taps are kept, so on a simulator that ran this test before the
+        // switch shows at once; a fresh one, as in CI, shows it only after.
+        if !app.switches["Show error details"].exists {
+            for i in 0..<7 {
+                XCTAssertFalse(app.switches["Show error details"].exists, "the switch shows after \(i) taps")
+                version.tap()
+            }
+        }
         let toggle = app.switches["Show error details"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5), "seven taps on the version show no switch")
         app.terminate()
@@ -127,12 +135,12 @@ final class StartUITests: XCTestCase {
 
         app = launch(language: "de")
         XCTAssertTrue(app.buttons["Connect a new device"].waitForExistence(timeout: 30))
-        XCTAssertTrue(app.buttons["Language"].exists || app.staticTexts["Language"].exists, "no language menu for a language without a translation")
+        XCTAssertTrue(languageMenu(app).exists, "no language menu for a language without a translation")
         app.terminate()
 
         app = launch(language: "en")
         XCTAssertTrue(app.buttons["Connect a new device"].waitForExistence(timeout: 30))
-        XCTAssertFalse(app.buttons["Language"].exists, "the language menu shows in English")
+        XCTAssertFalse(languageMenu(app).exists, "the language menu shows in English")
     }
 
     /// The app's Russian text for an English one, from its string catalog,
@@ -145,6 +153,11 @@ final class StartUITests: XCTestCase {
         let text = bundle.localizedString(forKey: english, value: nil, table: "Localizable")
         if text == english { XCTFail("no Russian for \(english)", file: file, line: line) }
         return text
+    }
+
+    /// The Start screen's language menu, whose label also names the language chosen.
+    private func languageMenu(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Language")).firstMatch
     }
 
     private func openSettings(_ app: XCUIApplication) {
