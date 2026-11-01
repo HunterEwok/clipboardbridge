@@ -54,6 +54,7 @@ struct MainView: View {
                     Notice(symbol: "person.3", title: "This Mac is in no group yet", text: Text("Scan its QR code with the phone app after running cbb pair in Terminal, or make a group of computers with cbb new."))
                 } else {
                     summary
+                    GroupAlerts()
                     devices
                     syncBar
                 }

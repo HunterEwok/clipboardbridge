@@ -276,6 +276,12 @@ func (d *Desk) MakeAdmin(id string) {
 func (d *Desk) Freeze(id string)   { d.admin([]string{"freeze", id}, false, "Frozen.") }
 func (d *Desk) Unfreeze(id string) { d.admin([]string{"unfreeze", id}, false, "Unfrozen.") }
 
+// Resolve, on the group's root, voids both histories of every key that
+// signed two, as cbb resolve does as the administrator.
+func (d *Desk) Resolve() {
+	d.admin([]string{"resolve"}, false, "Both histories are void. The device signs its records again by itself.")
+}
+
 // Update installs the newest signed release the group passed around, as
 // cbb update does as the administrator.
 func (d *Desk) Update() { d.admin([]string{"update"}, false, "Clipboard Bridge is updated.") }

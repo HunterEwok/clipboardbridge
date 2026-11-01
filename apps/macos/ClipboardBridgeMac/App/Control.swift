@@ -52,6 +52,34 @@ enum Control {
         var version: String
         /// The sync mode: own, shared, receive or send; nil when in no group.
         var mode: String?
+        /// How far the group's records stop the exchange: "secrets" or
+        /// "full"; nil when nothing stops. Claims and conflicts say why.
+        var stop: String?
+        var claims: [Claim]?
+        var conflicts: [Conflict]?
+        /// How many records of a later version the service keeps.
+        var newer: Int?
+    }
+
+    /// A claim to take the group over that waits or stops the group.
+    struct Claim: Codable, Equatable {
+        /// The name of the admin that claims the group.
+        var by: String
+        /// pending, competing or disputed.
+        var state: String
+        var leftMS: Int64?
+
+        enum CodingKeys: String, CodingKey {
+            case by, state
+            case leftMS = "left_ms"
+        }
+    }
+
+    /// A conflict that stops the group until its root decides: kind is
+    /// admins, claims or two_histories, devices the names of those involved.
+    struct Conflict: Codable, Equatable {
+        var kind: String
+        var devices: [String]
     }
 
     /// Sync away from home on this device; nil while it is off.

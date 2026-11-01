@@ -7,6 +7,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ## [Unreleased]
 
 ### Added
+- The apps show what stops the group: the phones on Home, the Mac app and the tray app above
+  the devices, in a card that says what is stopped, why, and who decides (a claim to take the
+  group over with the time left, two admins acting against each other, a key that signed
+  two histories, a newer version of the records). On the group's root the card offers the
+  way out: cancel a claim by removing its device, remove one of two admins, or void both
+  histories (`cbb resolve`). The phone kits read it from the state (`GroupAlerts`).
 - A key that signed two histories signs nothing until the group's root resolves them; once
   the root voids both branches, the key goes on from the record below the fork, and what it
   signs counts (docs/protocol.md, section 10, "Going on after two histories").
