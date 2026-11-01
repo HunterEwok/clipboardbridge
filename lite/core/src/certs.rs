@@ -68,6 +68,9 @@ pub fn random_id() -> String {
     hex(&random_bytes::<16>())
 }
 
+/// Random bytes from the platform. A platform without randomness cannot
+/// make keys or IDs at all, so that stops the program instead of going on.
+#[allow(clippy::expect_used, reason = "no randomness means no keys; there is nothing to go on with")]
 pub fn random_bytes<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     getrandom::fill(&mut b).expect("the system has no randomness");
@@ -84,10 +87,10 @@ const P256_SPKI_PREFIX: [u8; 27] = [
 /// The P-256 key in spki, a SubjectPublicKeyInfo with an uncompressed
 /// point; a compressed point is refused, as Go refuses it.
 pub fn p256_spki(spki: &[u8]) -> Option<VerifyingKey> {
-    if spki.len() != 91 || spki[..27] != P256_SPKI_PREFIX {
+    if spki.len() != 91 || spki.get(..27)? != P256_SPKI_PREFIX {
         return None;
     }
-    VerifyingKey::from_sec1_bytes(&spki[26..]).ok()
+    VerifyingKey::from_sec1_bytes(spki.get(26..)?).ok()
 }
 
 pub fn hex(b: &[u8]) -> String {
@@ -277,10 +280,12 @@ fn tlv(b: &[u8]) -> Option<(usize, &[u8])> {
             return None;
         }
         let mut len = 0usize;
-        for &c in b.get(2..2 + n)? {
+        // n is 1 to 4, so neither the sum nor the shifts overflow.
+        let hdr = n.checked_add(2)?;
+        for &c in b.get(2..hdr)? {
             len = len << 8 | c as usize;
         }
-        (2 + n, len)
+        (hdr, len)
     };
     let total = hdr.checked_add(len)?;
     Some((total, b.get(hdr..total)?))
@@ -326,9 +331,9 @@ fn tagged(tag: u8, content: &[u8]) -> Vec<u8> {
         out.push(n as u8);
     } else {
         let len = (n as u32).to_be_bytes();
-        let skip = len.iter().take_while(|b| **b == 0).count();
-        out.push(0x80 | (4 - skip) as u8);
-        out.extend_from_slice(&len[skip..]);
+        let used: &[u8] = len.iter().position(|b| *b != 0).and_then(|i| len.get(i..)).unwrap_or(&len);
+        out.push(0x80 | used.len() as u8);
+        out.extend_from_slice(used);
     }
     out.extend_from_slice(content);
     out
@@ -401,7 +406,7 @@ pub fn check_admin_ca(c: &Cert, root: &Cert) -> Result<()> {
 /// DNS name, cb-<that ID>.local.
 pub fn device_of(c: &Cert) -> Result<DeviceId> {
     let id = DeviceId::parse(c.common_name.as_deref().unwrap_or(""))?;
-    if c.dns_names.len() != 1 || c.dns_names[0] != id.host_name() {
+    if c.dns_names.len() != 1 || c.dns_names.first().is_none_or(|n| *n != id.host_name()) {
         return Err(Error::msg(format!("the certificate of {id} does not name {}", id.host_name())));
     }
     Ok(id)
@@ -438,7 +443,7 @@ pub fn verify_member(chain: &[Cert], trusted: &[Cert], t: i64, usage: Usage) -> 
     let mut ok = trusted.iter().any(|root| root.valid_at(t) && from(leaf, root));
     if !ok {
         // Through one admin CA under a root.
-        ok = chain[1..].iter().any(|admin| {
+        ok = chain.iter().skip(1).any(|admin| {
             admin.valid_at(t)
                 && from(leaf, admin)
                 && trusted.iter().any(|root| {

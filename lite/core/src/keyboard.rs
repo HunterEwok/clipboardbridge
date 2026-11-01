@@ -141,7 +141,7 @@ impl Layout {
     /// types nothing, so a CRLF line end is one Enter. None when the
     /// layout cannot type a character of it (untypeable says which).
     pub fn reports(self, text: &str) -> Option<Vec<[u8; 8]>> {
-        let mut out = Vec::with_capacity(text.len() * 2);
+        let mut out = Vec::with_capacity(text.len().saturating_mul(2));
         for c in text.chars() {
             if c == '\r' {
                 continue;
@@ -156,7 +156,8 @@ impl Layout {
 /// The digits' row and the keys right of it, which most layouts share.
 fn digit(c: char) -> Option<Key> {
     Some(Key::plain(match c {
-        '1'..='9' => 0x1e + (c as u8 - b'1'),
+        // The ranges below keep the sums within a byte.
+        '1'..='9' => 0x1e_u8.wrapping_add((c as u8).wrapping_sub(b'1')),
         '0' => 0x27,
         '-' => 0x2d,
         '=' => 0x2e,
@@ -169,8 +170,8 @@ fn us(c: char) -> Option<Key> {
         return Some(k);
     }
     Some(match c {
-        'a'..='z' => Key::plain(0x04 + (c as u8 - b'a')),
-        'A'..='Z' => Key::shift(0x04 + (c as u8 - b'A')),
+        'a'..='z' => Key::plain(0x04_u8.wrapping_add((c as u8).wrapping_sub(b'a'))),
+        'A'..='Z' => Key::shift(0x04_u8.wrapping_add((c as u8).wrapping_sub(b'A'))),
         '!' => Key::shift(0x1e),
         '@' => Key::shift(0x1f),
         '#' => Key::shift(0x20),

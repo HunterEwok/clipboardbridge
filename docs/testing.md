@@ -116,6 +116,23 @@ go test -coverpkg=./cmd/...,./internal/...,./mobile/... -coverprofile=cover.out 
 go run ./tools/coverage -go cover.out -floor tools/coverage/floor.json
 ```
 
+## Mutation testing
+
+Coverage says a line ran; mutation testing says whether a test would notice if it were wrong.
+The nightly workflow changes the records' code one place at a time (drops a check, turns `<`
+into `<=`, returns early) and runs the tests against each change: `cargo mutants` on
+`lite/core/src/authority.rs` and `strict.rs`, in eight shards, and `gremlins` on
+`internal/authority`. A change that every test still passes is listed as missed, in the run's
+summary and its artifacts. The jobs report and do not fail yet; each missed change gets a
+test, or a note why it cannot matter, and then the jobs fail on a new one.
+
+To run them locally:
+
+```sh
+cd lite && cargo mutants --in-place -p clipboardbridge-core -f core/src/authority.rs -f core/src/strict.rs
+go run github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0 unleash ./internal/authority
+```
+
 ## Not tested yet
 
 What has not run on real devices is listed in the [README](../README.md#status): the

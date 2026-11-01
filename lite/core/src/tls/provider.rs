@@ -100,8 +100,8 @@ impl hash::Context for Sha256Context {
 struct HmacSha256;
 
 impl rhmac::Hmac for HmacSha256 {
+    #[allow(clippy::expect_used, reason = "HMAC takes a key of any length, so this never fails")]
     fn with_key(&self, key: &[u8]) -> Box<dyn rhmac::Key> {
-        // HMAC takes a key of any length.
         Box::new(HmacKey(hmac::Hmac::<Sha256>::new_from_slice(key).expect("HMAC takes any key")))
     }
 
@@ -181,6 +181,8 @@ impl Algorithm for Aes128Gcm {
 
 struct Aead<A>(PhantomData<A>);
 
+// rustls makes the keys key_len() long, the length the cipher takes.
+#[allow(clippy::expect_used, reason = "rustls hands over keys of the length key_len() names")]
 impl<A: Algorithm> Tls13AeadAlgorithm for Aead<A> {
     fn encrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageEncrypter> {
         Box::new(Crypter::<A> { key: A::new_from_slice(key.as_ref()).expect("rustls makes keys of key_len"), iv })
@@ -204,6 +206,7 @@ struct Crypter<A> {
     iv: Iv,
 }
 
+#[allow(clippy::expect_used, reason = "TLS 1.3 nonces are 12 bytes, the size every cipher here takes")]
 fn nonce<A: AeadCore>(iv: &Iv, seq: u64) -> aes_gcm::aead::Nonce<A> {
     let n = Nonce::new(iv, seq).0;
     aes_gcm::aead::Nonce::<A>::try_from(&n[..]).expect("every AEAD here takes a 12-byte nonce")
@@ -226,7 +229,7 @@ impl<A: Algorithm> MessageEncrypter for Crypter<A> {
     }
 
     fn encrypted_payload_len(&self, payload_len: usize) -> usize {
-        payload_len + 1 + TAG_LEN
+        payload_len.saturating_add(1 + TAG_LEN)
     }
 }
 
@@ -234,16 +237,14 @@ impl<A: Algorithm> MessageDecrypter for Crypter<A> {
     fn decrypt<'a>(&mut self, mut msg: InboundOpaqueMessage<'a>, seq: u64) -> Result<InboundPlainMessage<'a>, Error> {
         let payload = &mut msg.payload;
         let len = payload.len();
-        if len < TAG_LEN {
-            return Err(Error::DecryptError);
-        }
         let aad = make_tls13_aad(len);
-        let (data, tag) = payload.split_at_mut(len - TAG_LEN);
+        let at = len.checked_sub(TAG_LEN).ok_or(Error::DecryptError)?;
+        let (data, tag) = payload.split_at_mut(at);
         let tag = aes_gcm::aead::Tag::<A>::try_from(&tag[..]).map_err(|_| Error::DecryptError)?;
         self.key
             .decrypt_inout_detached(&nonce::<A>(&self.iv, seq), &aad, data.into(), &tag)
             .map_err(|_| Error::DecryptError)?;
-        payload.truncate(len - TAG_LEN);
+        payload.truncate(at);
         msg.into_tls13_unpadded_message()
     }
 }

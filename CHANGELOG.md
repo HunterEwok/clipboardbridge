@@ -8,9 +8,23 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- Encryption of a message for one device, for the sealed commands of 0.6: HPKE with
+  X-Wing (ML-KEM-768 and X25519, so it holds against a quantum computer as well),
+  HKDF-SHA256 and ChaCha20-Poly1305, in Go (`internal/seal`) and in the Rust core
+  (`cbb_core::seal`), checked on shared vectors (`testdata/interop/seal-go.json`,
+  `seal-rust.json`). The Rust core needs Rust 1.87.
+- Nightly mutation testing of the records' rules (`cargo mutants` on the Rust core,
+  `gremlins` on Go's `internal/authority`): every change to the code that no test notices is
+  listed in the run (docs/testing.md, "Mutation testing").
 - A model of the rules for handing the group over in records v:2, in Quint
   (`docs/model/claims.qnt`): CI's `model` job checks its scenarios and the promises of
   docs/records-v2.md over random runs.
+- The Rust core (`cbb_core`) and the phones' bindings (`lite/ffi`) may not panic outside
+  their tests: clippy refuses unwrap, expect, indexing that can fail and arithmetic that can
+  overflow there, and the core forbids unsafe code; the few places that cannot fail say why.
+  Property tests (`lite/core/tests/props.rs`, proptest) feed the parsers random bytes and
+  check that the state of a record set does not depend on the records' order or on
+  duplicates.
 - CI checks the workflows with zizmor (template injection, tokens left to later steps, wide
   permissions, cache poisoning) and the lite member's and the ESP32 firmware's crates with
   cargo-deny: each under a license that fits the AGPL-3.0 (`lite/deny.toml`), from crates.io

@@ -5,7 +5,7 @@
 name = "clipboardbridge-core"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.87"
 license = "AGPL-3.0-only"
 description = "The protocol core of the clipboardbridge lite member, without the operating system"
 publish = false
@@ -28,10 +28,13 @@ fuzzing = []
 [dependencies]
 aes-gcm = { version = "0.11", default-features = false, features = ["aes"], optional = true }
 base64 = { version = "0.23", default-features = false, features = ["alloc"] }
+chacha20 = { version = "0.10", default-features = false, features = ["rng"] }
 chacha20poly1305 = { version = "0.11", default-features = false, optional = true }
 der = { version = "0.8", default-features = false, features = ["alloc", "oid"] }
 getrandom = { version = "0.4", default-features = false }
 hmac = { version = "0.13", default-features = false }
+# seal: HPKE with X-Wing (ML-KEM-768 and X25519), HKDF-SHA256 and ChaCha20-Poly1305.
+hpke = { version = "0.15.1", default-features = false, features = ["alloc", "mlkem", "x25519", "chacha", "hkdfsha2"] }
 p256 = { version = "0.14", default-features = false, features = ["alloc", "arithmetic", "ecdsa", "pkcs8"] }
 rustls = { version = "0.23.46", default-features = false, optional = true }
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
@@ -42,6 +45,9 @@ x25519-dalek = { version = "3", default-features = false, features = ["static_se
 x509-cert = { version = "0.3", default-features = false, features = ["hazmat"] }
 
 [dev-dependencies]
+# Property tests (tests/props.rs): random inputs against the parsers and the
+# rules' promises, such as the order of records not changing the state.
+proptest = { version = "1", default-features = false, features = ["std"] }
 # The tests compare the exporter with rustls's own, which needs std.
 rustls = { version = "0.23.46", default-features = false, features = ["std"] }
 serde_json = "1"

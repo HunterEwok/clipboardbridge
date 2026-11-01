@@ -88,9 +88,12 @@ impl Session {
     /// is there now (see peer_closed).
     pub fn read(&mut self, buf: &mut [u8]) -> usize {
         let b = &mut self.bufs;
-        let n = buf.len().min(b.plain.len() - b.plain_pos);
-        buf[..n].copy_from_slice(&b.plain[b.plain_pos..b.plain_pos + n]);
-        b.plain_pos += n;
+        let rest = b.plain.get(b.plain_pos..).unwrap_or_default();
+        let n = buf.len().min(rest.len());
+        if let (Some(to), Some(from)) = (buf.get_mut(..n), rest.get(..n)) {
+            to.copy_from_slice(from);
+        }
+        b.plain_pos = b.plain_pos.saturating_add(n);
         if b.plain_pos == b.plain.len() {
             b.plain.clear();
             b.plain_pos = 0;
@@ -192,7 +195,7 @@ fn pump<D>(
             ConnectionState::ReadTraffic(mut r) => {
                 while let Some(rec) = r.next_record() {
                     let rec = rec?;
-                    discard += rec.discard;
+                    discard = discard.saturating_add(rec.discard);
                     bufs.plain.extend_from_slice(rec.payload);
                 }
             }
@@ -270,10 +273,10 @@ fn append(
     let start = out.len();
     let mut want = 0;
     loop {
-        out.resize(start + want, 0);
-        match f(&mut out[start..]) {
+        out.resize(start.saturating_add(want), 0);
+        match f(out.get_mut(start..).unwrap_or_default()) {
             Ok(Ok(n)) => {
-                out.truncate(start + n);
+                out.truncate(start.saturating_add(n));
                 return Ok(());
             }
             Ok(Err(need)) if need > want => want = need,
