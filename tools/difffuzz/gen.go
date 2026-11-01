@@ -368,5 +368,73 @@ func writeSeeds(dir, out string) error {
 			return err
 		}
 	}
+	return writeAPISeeds(dir, filepath.Join(out, "api"), base)
+}
+
+// writeAPISeeds writes the seeds of the cargo fuzz target api, requests to
+// the core's entry point (docs/core-api.md): each case of v2-records.json
+// as the arguments of evaluate, and of evaluate_saved with a secret, the
+// version, and the first 100 record bodies for check_body and
+// canonicalize.
+func writeAPISeeds(dir, out string, base []Case) error {
+	data, err := os.ReadFile(filepath.Join(dir, "v2-records.json"))
+	if err != nil {
+		return err
+	}
+	var v struct {
+		Cases []map[string]json.RawMessage `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		return fmt.Errorf("v2-records.json: %w", err)
+	}
+	var reqs [][]byte
+	add := func(op string, args any) error {
+		b, err := json.Marshal(map[string]any{"abi": 1, "op": op, "args": args})
+		if err != nil {
+			return err
+		}
+		reqs = append(reqs, b)
+		return nil
+	}
+	if err := add("version", nil); err != nil {
+		return err
+	}
+	for _, c := range v.Cases {
+		args := map[string]json.RawMessage{}
+		for _, k := range []string{"group_ca", "group", "now_ms", "time_unknown", "first_seen", "records"} {
+			if c[k] != nil {
+				args[k] = c[k]
+			}
+		}
+		if err := add("evaluate", args); err != nil {
+			return err
+		}
+		args["secret"] = json.RawMessage(`"c2VjcmV0IG9mIHRoZSBtZW1iZXIhIQ=="`)
+		if err := add("evaluate_saved", args); err != nil {
+			return err
+		}
+	}
+	bodies := 0
+	for _, c := range base {
+		if c.Kind != "record" || len(c.Body) > maxSeed || bodies >= 100 {
+			continue
+		}
+		bodies++
+		body := map[string][]byte{"body": c.Body}
+		if err := add("check_body", body); err != nil {
+			return err
+		}
+		if err := add("canonicalize", body); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
+	for i, r := range reqs {
+		if err := os.WriteFile(filepath.Join(out, fmt.Sprint(i+1)), r, 0o644); err != nil {
+			return err
+		}
+	}
 	return nil
 }
