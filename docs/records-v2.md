@@ -452,6 +452,11 @@ beyond) and check the same bytes.
   iteration limit.
 - The differential run ([differential.md](differential.md)) compares the state bytes of Go
   and Rust, and the strict verdicts of all four, manifests included.
+- [`docs/model/claims.qnt`](model/claims.qnt) states the rules for claims of "Handing the
+  group over" in Quint, and CI's `model` job checks its scenarios and, over random runs of
+  signing, syncing and waiting by the root, two admins and their claimed roots, the promises
+  above: the root always wins, an objection stops the group, a claim after its author's
+  removal and two claims never take the group.
 
 ## What else changes with it
 
