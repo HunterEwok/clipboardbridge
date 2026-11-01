@@ -10,7 +10,8 @@ import (
 )
 
 // letServiceQuery lets the service's account look up this agent's session
-// and user. The service runs as NT SERVICE\clipboardbridge, which may not
+// and user: it may query the process, and the process's token, whose access
+// list is its own. The service runs as NT SERVICE\clipboardbridge, which may not
 // open another user's process; without this it names the agent's user
 // nobody, and gives it no remote pastes and no quick actions.
 func letServiceQuery() error {
@@ -18,17 +19,32 @@ func letServiceQuery() error {
 	if err != nil {
 		return fmt.Errorf("the service's account: %w", err)
 	}
-	self := windows.CurrentProcess()
-	sd, err := windows.GetSecurityInfo(self, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
+	if err := grantAccess(windows.CurrentProcess(), sid, windows.PROCESS_QUERY_LIMITED_INFORMATION); err != nil {
 		return fmt.Errorf("this process's access list: %w", err)
+	}
+	var tok windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.READ_CONTROL|windows.WRITE_DAC, &tok); err != nil {
+		return fmt.Errorf("this process's token: %w", err)
+	}
+	defer tok.Close()
+	if err := grantAccess(windows.Handle(tok), sid, windows.TOKEN_QUERY); err != nil {
+		return fmt.Errorf("the token's access list: %w", err)
+	}
+	return nil
+}
+
+// grantAccess adds an entry that lets sid have access to the kernel object h.
+func grantAccess(h windows.Handle, sid *windows.SID, access windows.ACCESS_MASK) error {
+	sd, err := windows.GetSecurityInfo(h, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
 	}
 	old, _, err := sd.DACL()
 	if err != nil {
-		return fmt.Errorf("this process's access list: %w", err)
+		return err
 	}
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.PROCESS_QUERY_LIMITED_INFORMATION,
+		AccessPermissions: access,
 		AccessMode:        windows.GRANT_ACCESS,
 		Inheritance:       windows.NO_INHERITANCE,
 		Trustee: windows.TRUSTEE{
@@ -38,10 +54,7 @@ func letServiceQuery() error {
 		},
 	}}, old)
 	if err != nil {
-		return fmt.Errorf("the service's entry: %w", err)
+		return err
 	}
-	if err := windows.SetSecurityInfo(self, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
-		return fmt.Errorf("this process's access list: %w", err)
-	}
-	return nil
+	return windows.SetSecurityInfo(h, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
 }
