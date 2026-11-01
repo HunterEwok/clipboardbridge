@@ -92,7 +92,7 @@ These change nothing in a normal installation. How the tests use them is in
 | `CBB_WRITE_INTEROP` | the Swift kit's certificate tests | Writes the certificates that Go's `TestSwiftCertificates` checks. |
 | `CBB_SWIFT_INTEROP` | Go's interop tests | The `clipboardbridge-interop` tool, which plays the phone in Go tests over plain TCP. |
 | `CBB_SWIFT_INTEROP_TLS` | Go's interop tests, on macOS | The same tool for the tests over real TLS, with a key in the keychain. |
-| `CBB_TEAM` | `apps/ios/device.sh` | The Apple team that signs the iPhone app for your own phone, its 10-character ID; without it the script reads it from the Apple Development certificate. |
+| `CBB_TEAM` | `apps/ios/device.sh` | The Apple team that signs the iPhone app for your own phone, its 10-character ID; without it the script takes the Personal Team of the Apple ID signed in to Xcode. |
 | `CBB_DEVICE` | `apps/ios/device.sh` | The iPhone to install on, its identifier, when more than one is connected. |
 | `CBB_BUNDLE_ID` | `apps/ios/device.sh` | The app's bundle identifier for that build, `dev.<team>.clipboardbridge` by default, so that it never takes the release one. |
 | `CBB_LOCK_CHILD`, `CBB_MDNS_CHILD` | Go tests | Set by a test for the child process it starts; never set them yourself. |

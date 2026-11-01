@@ -10,8 +10,8 @@
 #   apps/ios/device.sh --all      also the share extension and the widgets
 #   apps/ios/device.sh --test     run the app's unit tests on the phone
 #
-# The environment can set CBB_TEAM (the team's 10-character ID; found in the
-# Apple Development certificate when there is one), CBB_DEVICE (the phone's
+# The environment can set CBB_TEAM (the team's 10-character ID; by default the
+# Personal Team of the Apple ID signed in to Xcode), CBB_DEVICE (the phone's
 # identifier, when more than one is connected) and CBB_BUNDLE_ID.
 #
 # A free team may have three apps on a phone at a time, an extension counting
@@ -36,14 +36,24 @@ root=$(cd ../.. && pwd)
 
 team=${CBB_TEAM:-}
 if [ -z "$team" ]; then
-	team=$(security find-certificate -a -c "Apple Development" -p 2>/dev/null |
-		openssl x509 -noout -subject -nameopt multiline 2>/dev/null |
-		sed -n 's/^ *organizationalUnitName *= *//p' | head -n 1)
+	# The Personal Team of the Apple ID signed in to Xcode: a certificate of
+	# another team (a paid one whose agreement lapsed, say) would not do.
+	team=$(defaults export com.apple.dt.Xcode - 2>/dev/null | /usr/bin/python3 -I -c '
+import plistlib, sys
+try:
+    p = plistlib.loads(sys.stdin.buffer.read())
+except Exception:
+    sys.exit()
+teams = p.get("IDEProvisioningTeamByIdentifier") or p.get("IDEProvisioningTeams") or {}
+free = {t.get("teamID") for ts in teams.values() for t in ts if t.get("isFreeProvisioningTeam")}
+free.discard(None)
+if len(free) == 1:
+    print(free.pop())
+')
 fi
 if [ -z "$team" ]; then
-	echo "no team: sign in to Xcode (Settings, Accounts) with your Apple ID, open" >&2
-	echo "ClipboardBridge.xcodeproj once and pick your Personal Team under Signing," >&2
-	echo "or set CBB_TEAM to its ID" >&2
+	echo "no Personal Team: sign in to Xcode (Settings, Accounts) with your Apple ID," >&2
+	echo "or set CBB_TEAM to the team's 10-character ID" >&2
 	exit 1
 fi
 lower=$(printf %s "$team" | tr '[:upper:]' '[:lower:]')
