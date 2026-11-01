@@ -5,6 +5,7 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -23,7 +24,9 @@ import (
 func inviteCase(arg string) bool { return strings.HasPrefix(arg, "invite:") }
 
 func runInvite(arg string) error {
-	in := &invite.Invitation{Group: "forge", Hub: string(group.NewDeviceID()), Expires: time.Now().Add(time.Hour), Secret: make([]byte, 32)}
+	tag := make([]byte, 8)
+	rand.Read(tag)
+	in := &invite.Invitation{Group: hex.EncodeToString(tag), Hub: string(group.NewDeviceID()), Expires: time.Now().Add(time.Hour), Secret: make([]byte, 32)}
 	for _, s := range strings.Split(strings.TrimPrefix(arg, "invite:"), ",") {
 		ep, err := netip.ParseAddrPort(s)
 		if err != nil {
