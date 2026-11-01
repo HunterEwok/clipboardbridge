@@ -146,6 +146,13 @@ object Core {
         return ok.optBytes("body") ?: throw Mismatch("the answer to seal_command has no body")
     }
 
+    /** The public key for sealed messages of secret, 32 random bytes the device keeps: the `seal` its pairing and device record carry. */
+    fun sealPublic(secret: ByteArray): ByteArray {
+        val ok = run("seal_public", Wire.obj("secret" to Wire.bytes(secret))) as? JsonObject
+            ?: throw Mismatch("the answer to seal_public is not an object")
+        return ok.optBytes("key") ?: throw Mismatch("the answer to seal_public has no key")
+    }
+
     /** The linked core's version, ABI and the commit it was built from. */
     fun version(): Version {
         val ok = run("version") as? JsonObject ?: throw Mismatch("the answer to version is not an object")
