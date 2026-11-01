@@ -4,10 +4,15 @@
 package io.github.hunterewok.clipboardbridge
 
 import android.Manifest
+import android.app.Notification
+import android.app.NotificationManager
+import android.appwidget.AppWidgetManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -28,6 +33,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
+import java.io.File
 
 /**
  * The phone makes its own group and admits a computer of the bench's fleet
@@ -53,7 +59,10 @@ class GroupTest {
     @Before
     fun show() {
         assumeTrue("the bench's phone suite passes the helper's address", Bench.address != null)
-        model = AppModel(context)
+        // The app's own model, which the tile, the widget and Share use too.
+        model = (context.applicationContext as ClipboardBridgeApp).model
+        // As MainActivity does while the app is open.
+        model.group.setForeground(true)
         compose.setContent { Root(model) }
         compose.waitForIdle()
     }
@@ -195,13 +204,95 @@ class GroupTest {
         val out = pairing.finish(90)
         assertTrue("cbb pair on $second did not join:\n$out", out.contains("Joined the group."))
         until(30, "$second in the phone's devices") { model.group.devices.any { it.name == second } }
+        // A6: one notification that it joined.
+        val joined = context.getString(R.string.event_added, second)
+        until(30, "a notification \"$joined\"; there are ${notifications()}") {
+            runBlocking { model.refresh() }
+            notifications().contains(joined)
+        }
+        assertEquals("notifications of the join: ${notifications()}", 1, notifications().count { it == joined })
         val id = idOf(second)
         runBlocking { model.rename(id, "bench-second") }
         assertEquals("renaming says ${model.message}", R.string.renamed, model.message?.text)
         until(30, "the new name on ${Bench.PC}") { Bench.run(Bench.PC, "cbb status").contains("bench-second") }
-        runBlocking { model.remove(id) }
-        assertEquals("removing says ${model.message}", R.string.removed, model.message?.text)
-        until(60, "$second says it was removed") { Bench.run(second, "cbb status").contains("removed from the group") }
+        // A6: with the switch for devices off, the removal notifies of nothing.
+        model.notifier.set(GroupEvent.Kind.DEVICES, false)
+        try {
+            runBlocking { model.remove(id) }
+            assertEquals("removing says ${model.message}", R.string.removed, model.message?.text)
+            until(60, "$second says it was removed") { Bench.run(second, "cbb status").contains("removed from the group") }
+            runBlocking { model.refresh() }
+            Thread.sleep(2_000)
+            val removed = context.getString(R.string.event_removed, "bench-second")
+            assertFalse("a notification with its switch off: ${notifications()}", notifications().contains(removed))
+        } finally {
+            model.notifier.set(GroupEvent.Kind.DEVICES, true)
+        }
+        // A6: never the clipboard's text.
+        assertFalse("a notification shows a copy: ${notifications()}", notifications().any { it.contains("cbb-bench phone") })
+    }
+
+    /** The texts of the app's notifications that show now. */
+    private fun notifications(): List<String> = context.getSystemService(NotificationManager::class.java).activeNotifications
+        .mapNotNull { it.notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() }
+
+    /** A12: the widget's and the tile's tap opens the send screen, which sends the copy without the app. */
+    @Test
+    fun a9_sendFromTileAndWidget() {
+        val widgets = AppWidgetManager.getInstance(context).getInstalledProvidersForPackage(context.packageName, null)
+        assertTrue("no home-screen widget: $widgets", widgets.any { it.provider.className == SendWidget::class.java.name })
+        val text = "cbb-bench phone A12 from the tile ${System.currentTimeMillis()}"
+        setClip(text)
+        // What the widget's and the tile's PendingIntent start.
+        context.startActivity(SendActivity.intent(context))
+        Bench.arrives(Bench.PC, text)
+    }
+
+    /** O11: Share sends a file, which the computer saves; a file the computer copies lands in Downloads. */
+    @Test
+    fun b1_files() {
+        val stamp = System.currentTimeMillis()
+        val dir = File(context.cacheDir, "bench").apply { mkdirs() }
+        val sent = File(dir, "o11-$stamp.txt").apply { writeText("cbb-bench phone O11 from the phone $stamp\n") }
+        val note = runBlocking { model.sendShared(listOf(Uri.fromFile(sent))) }
+        assertEquals("Share says ${model.message}", R.string.files_sent, note.text)
+        until(60, "${Bench.PC} saves the phone's file") {
+            runCatching { Bench.run(Bench.PC, "rm -rf /tmp/o11 && cbb paste -o /tmp/o11 >/dev/null && cat /tmp/o11/${sent.name}") }
+                .getOrDefault("").contains("from the phone $stamp")
+        }
+        val back = "o11-back-$stamp.txt"
+        Bench.run(Bench.PC, "mkdir -p /tmp/o11src && printf 'cbb-bench phone O11 from the computer $stamp' >/tmp/o11src/$back && cbb copy /tmp/o11src/$back")
+        until(60, "the phone saves ${Bench.PC}'s file; the button says ${model.message}") {
+            runBlocking { model.sync() }
+            model.message?.text == R.string.files_saved
+        }
+        val cr = context.contentResolver
+        val uri = cr.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI, arrayOf(MediaStore.Downloads._ID),
+            "${MediaStore.Downloads.DISPLAY_NAME} = ?", arrayOf(back), null,
+        )?.use { c -> if (c.moveToFirst()) Uri.withAppendedPath(MediaStore.Downloads.EXTERNAL_CONTENT_URI, c.getLong(0).toString()) else null }
+            ?: throw AssertionError("no $back in Downloads")
+        val got = cr.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+        assertEquals("cbb-bench phone O11 from the computer $stamp", got)
+    }
+
+    /** Y35: a computer's secret comes onto the phone marked sensitive; cbb paste -terminal refuses it without -secret. */
+    @Test
+    fun b2_secrets() {
+        val text = "cbbbenchY35secret${System.currentTimeMillis()}"
+        Bench.run(Bench.PC, "cbb copy -secret", stdin = text)
+        val refused = Bench.run(Bench.PC, "cbb paste -terminal 2>&1; echo exit=$?")
+        assertTrue("cbb paste -terminal gave a secret without -secret:\n$refused", refused.contains("add -secret") && !refused.contains("exit=0"))
+        assertEquals(text, Bench.run(Bench.PC, "cbb paste -terminal -secret").trim())
+        until(30, "the secret on the phone's clipboard; it has ${clip()}") {
+            runBlocking { model.sync() }
+            clip() == text
+        }
+        var sensitive = false
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            sensitive = clipboard().primaryClip?.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true
+        }
+        assertTrue("the secret is not marked sensitive on the phone", sensitive)
     }
 }
 
