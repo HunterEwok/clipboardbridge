@@ -139,6 +139,7 @@ and `a`-`f`.
 | `resolve` | `records` | the current root voids the records it names: a cancelled claim, one side of a conflict, one of two records with one number |
 | `settings` | `takeover_delay_ms` | the root's settings for the group |
 | `checkpoint` | `heads`, `keep` | a root's checkpoint: the records it covers and does not keep may be dropped |
+| `hubs` | `hubs` | the user's main hubs for sync away from home, in the order they serve |
 
 ### Field rows
 
@@ -162,6 +163,7 @@ and `a`-`f`.
 | `takeover_delay_ms` | integer | none | from 0 to 604 800 000 (7 days); absent means 259 200 000 (72 hours) |
 | `heads` | array of objects | `checkpoint`, one at least | sorted by `key`, each key once: `{"key": key hash of a signer, "seq": 1 or more, "id": the ID of that signer's record with that seq}` |
 | `keep` | array of strings | none | sorted record IDs: the records below the heads that still count |
+| `hubs` | array of strings | `hubs`, one at least | 1 to 16 device IDs, each once, in the user's order (not sorted) |
 
 A field that a type does not list is refused in it (`form/unknown`), and so is a field
 with an empty value (`form/empty`). An envelope's body is at most 8 KiB, a checkpoint's
@@ -194,6 +196,7 @@ those of the newest such record (the highest `seq` of that root) that names it.
 | `claim` | an admin with `takeover`, under the current root |
 | `resolve`, `settings` | the current root's own key |
 | `checkpoint` | a root's own key |
+| `hubs` | a root's own key, or an admin with `hub` |
 
 A record whose signer may not sign it counts for nothing; so does a `revoke` or `freeze` that
 names any key its signer may not remove or freeze. The powers the apps and `cbb`
@@ -237,7 +240,7 @@ A group's records only grow, and a member keeps at most 1 MiB of them (1024 reco
 own key signs a `checkpoint` so that members may drop what no longer matters: `heads` names,
 for each signer, its newest record the checkpoint covers, and `keep` the records below the
 heads that still count: the newest `device` record of each device, the `revoke`, `freeze` and
-`thaw` records that count, the newest `settings`, every claim not yet decided and the records
+`thaw` records that count, the newest `settings`, the `hubs` record that counts, every claim not yet decided and the records
 its `seen` and its disputes need, and the `resolve` records that end them. The apps sign one
 by themselves when the records pass three quarters of either limit.
 
@@ -292,6 +295,22 @@ chain is left with a hole. A `revoke` naming one still counts.
 
 The apps keep well under these: at the most, 256 devices of about 1.6 KB each (a record with
 its sealing key) are about 0.4 MiB, and a checkpoint drops the old records of each.
+
+### The hubs table
+
+The group's hubs serve in an order every member derives from the records (docs/protocol.md,
+section 11, "Several hubs"). A `hubs` record lets the user put main hubs first: its `hubs`
+come first, in their order, and the other hubs follow in the derived order.
+
+Of the `hubs` records that count, one counts for the table: a root's beats an admin's, of two
+roots' the later root on the path, then the higher `seq`; of two admins' the later `time_ms`,
+then the smaller signer, then the higher `seq`. Between admins this trusts each signer's
+clock: an admin whose clock runs ahead keeps its table until the root signs one, which beats
+any admin's. The state lists in `hubs` the devices of that table that are devices of the state
+with the role `full` or `phone`, in its order; a member puts first those of them that may be
+hubs by the records (the root's own device, or an admin with `hub`), so a table naming a
+removed device or one that lost `hub` does not stop the others. A device the table does not
+name still serves after the main hubs.
 
 ### Removals and freezes keep what the author saw
 
@@ -460,6 +479,7 @@ and returns the state as one canonical JSON object:
 | `newer` | array of strings | sorted IDs of the records of a later version the member keeps, at most 16 |
 | `ignored` | array of objects | `{record, why}`: the records of the set that do not count and why, sorted by ID, at most 64; records listed in `newer` are not, nor a claim that took effect on the path, nor what the checkpoint that counts leaves out |
 | `checkpoint` | string | the ID of the root's checkpoint that counts ("Checkpoints"): a member may delete the records it leaves out |
+| `hubs` | array of strings | the main hubs of the `hubs` record that counts ("The hubs table"): its devices that are in `devices` with the role `full` or `phone`, in its order |
 
 The reasons in `ignored`, in the order they are decided:
 
@@ -497,7 +517,8 @@ beyond) and check the same bytes.
   claimant and resolved either way, a claim after its author's removal, two histories of an admin and of the root,
   a removed admin's later `device` and `claim` records, freezes that cross, a `resolve` of each
   kind; and each limit: 262 devices, 65 admin keys, 16 handovers, a set of 1033 records, then
-  the same with the root's checkpoint. (The 1 MiB limit has a Go test only: its set would be
+  the same with the root's checkpoint; and the hubs table: an admin's, an admin's without
+  `hub`, a later admin's, the root's, and one naming a removed device. (The 1 MiB limit has a Go test only: its set would be
   over a megabyte of vectors.)
 - `testdata/interop/strict-generated.json` and `strict-files.json` written again from the
   tables above, with the canonical-form and unknown-field vectors.

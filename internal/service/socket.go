@@ -338,6 +338,12 @@ func (s *Service) handleControl(ctx context.Context, c net.Conn, admin bool) {
 			return
 		}
 		reply(c, control.Header{Done: true}, nil)
+	case control.OpHubs:
+		if err := s.setHubs(m.Hubs); err != nil {
+			fail(c, err)
+			return
+		}
+		reply(c, control.Header{Done: true}, nil)
 	case control.OpRename:
 		name, err := s.rename(m.Name, m.NewName)
 		if err != nil {

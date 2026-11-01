@@ -553,8 +553,9 @@ impl Records {
 
     /// The devices that may be the group's hubs, in the order in which they
     /// serve, as Go's HubOrder (docs/protocol.md, section 11, "Several
-    /// hubs"): the phones first, then the others, and in each part the
-    /// root's own device first, then by device ID.
+    /// hubs"): the main hubs of the hubs table first, in its order, then
+    /// the others: the phones, then the rest, and in each part the root's
+    /// own device first, then by device ID.
     pub fn hub_order(&self) -> Vec<String> {
         let root = self.root_member().filter(|(_, k)| !self.revoked(k)).map(|(id, _)| id);
         let mut hubs: Vec<(bool, bool, String)> = self
@@ -564,7 +565,10 @@ impl Records {
             .map(|d| (d.role != "phone", root.as_deref() != Some(d.id.as_str()), d.id))
             .collect();
         hubs.sort();
-        hubs.into_iter().map(|(_, _, id)| id).collect()
+        let order: Vec<String> = hubs.into_iter().map(|(_, _, id)| id).collect();
+        let main: Vec<String> = self.state().hubs.into_iter().filter(|id| order.contains(id)).collect();
+        let rest = order.into_iter().filter(|id| !main.contains(id));
+        main.iter().cloned().chain(rest).collect()
     }
 
     /// The key that signed c, a command, and the root on the path it was
@@ -815,6 +819,24 @@ mod tests {
             n += 1;
         }
         assert!(n >= 5, "only {n} cases compared");
+    }
+
+    /// The hubs table's main hubs that may be hubs come first in the order
+    /// of hubs, in the table's order, and the others follow as without it.
+    #[test]
+    fn hubs_table_first() {
+        let mut n = 0;
+        for c in cases().iter().filter(|c| c["name"].as_str().unwrap().starts_with("hubs table")) {
+            let rs: Vec<Record> = serde_json::from_value(c["records"].clone()).unwrap();
+            let s = set_of(c, &rs);
+            let order = s.hub_order();
+            let main: Vec<String> = s.state().hubs.into_iter().filter(|h| s.may_host(h)).collect();
+            assert_eq!(order[..main.len()], main[..], "{}", c["name"]);
+            let all = s.devices().into_iter().filter(|d| s.may_host(&d.id)).count();
+            assert_eq!(order.len(), all, "{}", c["name"]);
+            n += usize::from(!main.is_empty());
+        }
+        assert!(n >= 3, "only {n} cases with main hubs");
     }
 
     /// A file of version 1, a bare array, is an empty set.

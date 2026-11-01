@@ -9,6 +9,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,7 @@ func TestSignVerify(t *testing.T) {
 		{Type: authority.TypeSettings, Group: tag, Seq: 1},
 		{Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{2}, Seq: 4, ID: authority.Hash{7}}, {Key: authority.Hash{1}, Seq: 1, ID: authority.Hash{8}}}},
 		bigCheckpoint(),
+		{Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("b", 32), strings.Repeat("a", 32)}},
 	}
 	for _, b := range bodies {
 		for _, admin := range []bool{false, true} {
@@ -232,6 +234,16 @@ func TestSignRefuses(t *testing.T) {
 		"a checkpoint without heads": {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Keep: []authority.Hash{{1}}},
 		"a head with seq 0":          {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{1}, ID: authority.Hash{2}}}},
 		"heads twice":                {Type: authority.TypeCheckpoint, Group: tag, Seq: 1, Heads: []authority.Head{{Key: authority.Hash{1}, Seq: 1}, {Key: authority.Hash{1}, Seq: 2}}},
+		"hubs empty":                 {Type: authority.TypeHubs, Group: tag, Seq: 1},
+		"hubs twice":                 {Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("a", 32), strings.Repeat("a", 32)}},
+		"a hub not a device ID":      {Type: authority.TypeHubs, Group: tag, Seq: 1, Hubs: []string{strings.Repeat("A", 32)}},
+		"17 hubs": func() authority.Body {
+			b := authority.Body{Type: authority.TypeHubs, Group: tag, Seq: 1}
+			for i := range authority.MaxHubs + 1 {
+				b.Hubs = append(b.Hubs, fmt.Sprintf("%032x", i))
+			}
+			return b
+		}(),
 		"a seal one byte short": func() authority.Body {
 			b := deviceBody(t)
 			b.Seal = sealKey(t)[1:]

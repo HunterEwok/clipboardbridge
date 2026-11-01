@@ -66,7 +66,11 @@ const (
 	TypeResolve    = "resolve"
 	TypeSettings   = "settings"
 	TypeCheckpoint = "checkpoint"
+	TypeHubs       = "hubs"
 )
+
+// MaxHubs is how many devices a hubs record names.
+const MaxHubs = 16
 
 // The powers an admin's device record may give.
 const (
@@ -181,6 +185,9 @@ type Body struct {
 
 	Heads []Head `json:"heads,omitempty"`
 	Keep  []Hash `json:"keep,omitempty"`
+
+	// Hubs is the user's main hubs, in the order they serve.
+	Hubs []string `json:"hubs,omitempty"`
 }
 
 // fields lists, for each type, the fields beyond those every record has
@@ -195,6 +202,7 @@ var (
 		TypeResolve:    set("records"),
 		TypeSettings:   set("takeover_delay_ms"),
 		TypeCheckpoint: set("heads", "keep"),
+		TypeHubs:       set("hubs"),
 	}
 	common = []string{"v", "alg", "type", "group", "signer", "seq", "time_ms"}
 )
@@ -235,6 +243,7 @@ func (b *Body) present() []string {
 	add(b.TakeoverDelayMS != nil, "takeover_delay_ms")
 	add(len(b.Heads) > 0, "heads")
 	add(len(b.Keep) > 0, "keep")
+	add(len(b.Hubs) > 0, "hubs")
 	return names
 }
 
@@ -350,6 +359,24 @@ func (b *Body) check() error {
 			}
 		}
 		return sortedHashes(b.Keep, "keep")
+	case TypeHubs:
+		return checkHubs(b.Hubs)
+	}
+	return nil
+}
+
+// checkHubs checks a hubs record's hubs: 1 to MaxHubs device IDs, each
+// once, in the user's order.
+func checkHubs(hubs []string) error {
+	if len(hubs) == 0 || len(hubs) > MaxHubs {
+		return fmt.Errorf("authority: a hubs record names %d devices, not 1 to %d", len(hubs), MaxHubs)
+	}
+	seen := map[string]bool{}
+	for _, h := range hubs {
+		if !deviceID(h) || seen[h] {
+			return errors.New("authority: a hubs record's hubs are not device IDs, each once")
+		}
+		seen[h] = true
 	}
 	return nil
 }

@@ -591,8 +591,8 @@ type hubVectors struct {
 // the lite member to agree with.
 func TestGoHubVectors(t *testing.T) {
 	var file hubVectors
+	pg := newPhoneGroup(t)
 	{
-		pg := newPhoneGroup(t)
 		g := pg.root.Cert
 		rootMember := member(t, pg.root)
 		rootDev := DeviceID(rootMember.Subject.CommonName)
@@ -644,6 +644,25 @@ func TestGoHubVectors(t *testing.T) {
 	}
 	if string(got[2]) > string(got[3]) {
 		t.Error("the computers are not in the order of their device IDs")
+	}
+
+	// The root's hubs table puts its main hubs first, in its order,
+	// without a device that may not be a hub; the others follow.
+	ids := map[string]string{}
+	for id, n := range names {
+		ids[n] = string(id)
+	}
+	table, err := signRecord(RecordBody{Type: RecordHubs, Group: Tag(ca), TimeMS: nextTime(), Hubs: []string{ids["pc two"], ids["plain pc"], ids["pc one"]}}, pg.root.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustAdd(t, s, table)
+	gotNames = nil
+	for _, d := range s.HubOrder() {
+		gotNames = append(gotNames, names[d])
+	}
+	if want := []string{"pc two", "pc one", "root phone", "admin phone"}; !slices.Equal(gotNames, want) {
+		t.Errorf("with a table the hubs are %v, want %v", gotNames, want)
 	}
 }
 

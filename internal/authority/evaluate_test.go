@@ -72,7 +72,10 @@ func (w *world) signerHash(signer string) authority.Hash {
 func (w *world) sign(name, signer string, b authority.Body, seen []authority.Seen) authority.Record {
 	w.t.Helper()
 	h := w.signerHash(signer)
-	b.Group, b.TimeMS = tag, 1
+	b.Group = tag
+	if b.TimeMS == 0 {
+		b.TimeMS = 1
+	}
 	b.Seq = w.seq[h] + 1
 	if b.Seq > 1 {
 		p := w.last[h]
