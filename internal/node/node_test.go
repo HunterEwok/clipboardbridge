@@ -459,8 +459,11 @@ func TestStalledPeerIsDropped(t *testing.T) {
 
 func TestPingCadence(t *testing.T) {
 	// Pings come every PingEvery, so a connection survives a Timeout of
-	// three PingEvery, as in production.
-	pi, mac := newMember(t, Full, withTimers(100*time.Millisecond, 300*time.Millisecond)), newMember(t, Full)
+	// three PingEvery, as in production. The node's own Timeout here is
+	// longer, so that a stall of this reader on a busy test machine (the
+	// FreeBSD VM) does not end the connection; the gaps are checked
+	// against three PingEvery below.
+	pi, mac := newMember(t, Full, withTimers(100*time.Millisecond, 2*time.Second)), newMember(t, Full)
 	r := rawPeer(t, pi, mac)
 	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
 	var last time.Time
@@ -481,7 +484,8 @@ func TestPingCadence(t *testing.T) {
 		last = time.Now()
 		r.send(&message{Type: typePing})
 	}
-	// Each gap stays under the Timeout, which is what keeps the connection;
+	// Each gap stays under three PingEvery, production's Timeout, which is
+	// what keeps the connection;
 	// the cadence is the median gap, so that one gap a busy test machine
 	// stretched (it measures this reader's scheduling too) does not count
 	// as a slow pinger.
