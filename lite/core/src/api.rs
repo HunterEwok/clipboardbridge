@@ -24,7 +24,7 @@ use serde_json::Value;
 use sha2::Sha256;
 
 use crate::authority::{self, Body, Hash, Input, Record, SigCache, State};
-use crate::certs::{Cert, b64};
+use crate::certs::{self, Cert, b64};
 use crate::error::Error;
 use crate::strict;
 
@@ -167,6 +167,7 @@ fn dispatch(op: &str, args: Value) -> Result<Vec<u8>, Refusal> {
         "canonical_body" => canonical_body(args),
         "check_body" => check_body(serde_json::from_value(args).map_err(bad_args)?),
         "canonicalize" => canonicalize(serde_json::from_value(args).map_err(bad_args)?),
+        "check_member" => check_member(serde_json::from_value(args).map_err(bad_args)?),
         _ => Err(refuse(Code::Op, Error::msg(alloc::format!("The core has no call named {op:?}.")))),
     }
 }
@@ -393,6 +394,37 @@ fn check_body(a: BodyArgs) -> Result<Vec<u8>, Refusal> {
 fn canonicalize(a: BodyArgs) -> Result<Vec<u8>, Refusal> {
     let bytes = strict::canonicalize(&a.body).map_err(|e| refuse(Code::Strict, e))?;
     Ok(json(body_answer(&bytes)))
+}
+
+/// The arguments of `check_member`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemberArgs {
+    #[serde(with = "b64::list")]
+    chain: Vec<Vec<u8>>,
+    #[serde(with = "b64::list")]
+    trusted: Vec<Vec<u8>>,
+    usage: String,
+    now_ms: i64,
+}
+
+/// `check_member`: a peer's member chain checked against the roots the
+/// member trusts, the current root first, at now_ms raised to that root's
+/// start, as a member whose clock is years behind still connects.
+fn check_member(a: MemberArgs) -> Result<Vec<u8>, Refusal> {
+    let usage = match a.usage.as_str() {
+        "server" => certs::Usage::Server,
+        "client" => certs::Usage::Client,
+        _ => return Err(refuse(Code::Request, Error::msg("The usage is neither \"server\" nor \"client\"."))),
+    };
+    let parse = |ders: &[Vec<u8>]| ders.iter().map(|d| Cert::parse(d)).collect::<crate::error::Result<Vec<_>>>();
+    let trusted = parse(&a.trusted).map_err(|e| refuse(Code::Cert, e))?;
+    let current = trusted.first().ok_or_else(|| refuse(Code::Request, Error::msg("No root is trusted.")))?;
+    let chain = parse(&a.chain).map_err(|e| refuse(Code::Cert, e))?;
+    let t = a.now_ms.div_euclid(1000).max(current.not_before);
+    let (dev, used) = certs::member_chain(chain, &trusted, t, usage).map_err(|e| refuse(Code::Cert, e))?;
+    let used: Vec<Value> = used.iter().map(|c| b64_value(&c.der)).collect();
+    Ok(json(serde_json::json!({ "device": dev.as_str(), "used": used })))
 }
 
 #[cfg(test)]
@@ -725,5 +757,41 @@ mod tests {
         let v = ask("version", Value::Null);
         assert_eq!(v["ok"]["abi"], ABI);
         assert_eq!(v["ok"]["core"], VERSION);
+    }
+
+    /// check_member gives each case of member-chains.json, written by Go
+    /// from crypto/tls's chain building, the device and the certificates
+    /// Go gives, or refuses it with code 11.
+    #[test]
+    fn checks_member_chains() {
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interop/member-chains.json");
+        let v: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let cases = v["cases"].as_array().unwrap();
+        assert!(cases.len() >= 20);
+        for c in cases {
+            let name = c["name"].as_str().unwrap();
+            let mut args = c.clone();
+            let m = args.as_object_mut().unwrap();
+            for k in ["name", "device", "used"] {
+                m.remove(k);
+            }
+            let a = ask("check_member", args);
+            let want = c["device"].as_str().unwrap();
+            if want.is_empty() {
+                assert_eq!(code(&a), Code::Cert as u64, "{name}: {a}");
+                continue;
+            }
+            assert_eq!(a["ok"]["device"], want, "{name}: {a}");
+            assert_eq!(a["ok"]["used"], c["used"], "{name}");
+        }
+        // A request of the wrong shape is no certificate's fault.
+        let bad = serde_json::json!({"chain": [], "trusted": [], "usage": "server", "now_ms": 0});
+        assert_eq!(code(&ask("check_member", bad)), Code::Request as u64);
+        let first = &cases[0];
+        let mut bad = first.clone();
+        bad["usage"] = "both".into();
+        bad.as_object_mut().unwrap().retain(|k, _| ["chain", "trusted", "usage", "now_ms"].contains(&k.as_str()));
+        assert_eq!(code(&ask("check_member", bad)), Code::Request as u64);
     }
 }
