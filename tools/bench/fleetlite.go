@@ -29,7 +29,7 @@ func (f *Fleet) AddLite(ctx context.Context) (*Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("-cbb-lite: %w", err)
 	}
-	d, err := f.containerOf(ctx, abs, f.net, nil, nil, "mkdir -p /run/clipboardbridge /var/lib/clipboardbridge; while :; do cbb run; sleep 1; done")
+	d, err := f.containerOf(ctx, abs, f.net, nil, nil, "mkdir -p /run/clipboardbridge /var/lib/clipboardbridge; while :; do cbb run $(cat /tmp/cbb-run-opts 2>/dev/null); sleep 1; done")
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,13 @@ func joinLite(ctx context.Context, hub, d *Device) error {
 	if err != nil {
 		return err
 	}
-	out, err := RunFor(ctx, d, "cbb join -name lite -code "+net.JoinHostPort(ip, "8764"), code+"\n", time.Minute)
+	// Under systemd the join runs as the service's user, as lite/README.md
+	// tells, so that the service reads what it saves.
+	join := "cbb join -name lite -code " + net.JoinHostPort(ip, "8764")
+	if out, _ := Run(ctx, d, "id -u clipboardbridge 2>/dev/null; true", ""); strings.TrimSpace(out) != "" {
+		join = "su -s /bin/sh clipboardbridge -c '" + join + "'"
+	}
+	out, err := RunFor(ctx, d, join, code+"\n", time.Minute)
 	stop()
 	if err != nil {
 		return err
@@ -66,7 +72,6 @@ func joinLite(ctx context.Context, hub, d *Device) error {
 	if err != nil {
 		return err
 	}
-	// The service starts again on its own and finds the identity.
 	if err := eventually(ctx, 30*time.Second, func() error {
 		got, err := groupOf(ctx, d)
 		if err == nil && got != want {
@@ -218,6 +223,7 @@ func liteMember(ctx context.Context, r *Report, f *Fleet, timeout time.Duration)
 		}
 		return nil
 	})
+	liteOptions(ctx, r, f, g, hub, lite, timeout)
 	liteRelease(ctx, r, lite)
 }
 

@@ -57,6 +57,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   window loses one guess, and the joiner then joins directly (G8).
 - The bench's time suite runs the hub's key renewed each credential period, with a client
   away from home taking the next key ahead and one off across the switch (W12).
+- The bench's fleet runs install.sh again over an install (I5), the unit's sandbox score and
+  TPM device (I20), the ufw rules install.sh adds and removes (S12), `get.sh --lite` over an
+  old `cbb-lite` (I26), the hub's addresses allowed only while a join by invitation runs
+  (G15), the invitation file as a secret (S7), a removed client reaching no one (S6) and the
+  lite member's options (H5).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
@@ -741,6 +746,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   turned sync away from home off there, no longer resets them: it stops sending and reads
   what the other device still sends before it closes. A reset could make the admin lose the
   command's result and report that the device closed the connection before it answered.
+- install.sh no longer fails with ufw on a computer whose kernel has no IPv6
+  (`ipv6.disable=1`) or whose ufw has `IPV6=no`: the firewall rules it lists, prints and
+  adds then name the IPv4 home networks only.
 - A relay on Windows told to listen on any free port no longer gives up when
   the ports the system hands out fall in a range Windows reserves for the other protocol; it
   takes turns picking the UDP port first and the TCP port first.
