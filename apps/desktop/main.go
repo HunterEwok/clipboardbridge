@@ -11,6 +11,7 @@ import (
 	"embed"
 	_ "embed"
 	"log"
+	"runtime"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -59,6 +60,12 @@ func main() {
 	tray := app.SystemTray.New()
 	tray.SetIcon(icon)
 	tray.SetTooltip("Clipboard Bridge")
+	if runtime.GOOS == "linux" {
+		// Wails names the StatusNotifierItem (its title and tooltip) after
+		// the label it has when the tray starts, else "Wails", and does not
+		// pass a later tooltip on there yet.
+		tray.SetLabel("Clipboard Bridge")
+	}
 	tray.OnClick(desk.Open)
 	desk.tray = tray
 	desk.updateTray()
