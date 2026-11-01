@@ -604,17 +604,21 @@ mod tests {
         let mut found = 0;
         for case in v["cases"].as_array().unwrap() {
             let recs = case["records"].as_array().unwrap();
-            // A checkpoint's case may drop the record (a_pruned_set_is_no_rollback).
-            if case["name"].as_str().unwrap().starts_with("checkpoint") {
-                continue;
-            }
-            let heads: Vec<(String, i64)> = recs
+            let bodies: Vec<Value> = recs
                 .iter()
                 .map(|r| {
                     let body = base64::engine::general_purpose::STANDARD.decode(r["body"].as_str().unwrap()).unwrap();
-                    let b: Value = serde_json::from_slice(&body).unwrap();
-                    (b["signer"].as_str().unwrap_or_default().into(), b["seq"].as_i64().unwrap_or(0))
+                    serde_json::from_slice(&body).unwrap()
                 })
+                .collect();
+            // A case with a checkpoint may drop the record
+            // (a_pruned_set_is_no_rollback).
+            if bodies.iter().any(|b| b["type"] == "checkpoint") {
+                continue;
+            }
+            let heads: Vec<(String, i64)> = bodies
+                .iter()
+                .map(|b| (b["signer"].as_str().unwrap_or_default().into(), b["seq"].as_i64().unwrap_or(0)))
                 .collect();
             // A record with the next seq of its signer after it, and no
             // other record of that seq.

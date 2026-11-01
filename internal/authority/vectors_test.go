@@ -20,9 +20,17 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/authority"
 )
 
-var update = flag.Bool("update", false, "write testdata/interop/v2-records.json")
+var update = flag.Bool("update", false, "write testdata/interop/v2-records.json and v2-flood.json")
 
-const vectorsPath = "../../testdata/interop/v2-records.json"
+const (
+	vectorsPath = "../../testdata/interop/v2-records.json"
+	// floodPath holds the cases of sets at MaxRecords, apart so that
+	// neither file passes the repository's limit on a file's size.
+	floodPath = "../../testdata/interop/v2-flood.json"
+)
+
+// flooded are the scenarios whose cases go to floodPath.
+var flooded = map[string]bool{"record limit": true}
 
 // vectorFile is testdata/interop/v2-records.json: record sets of version 2
 // with the state every implementation must give for them, byte for byte,
@@ -110,48 +118,51 @@ var scenarios = []struct {
 	{"stranger's claim", TestStrangersClaim},
 	{"times at the ends", TestTimesAtTheEnds},
 	{"device seal", TestDeviceSeal},
+	{"device limit", TestDeviceLimit},
+	{"admin limit", TestAdminLimit},
+	{"path limit", TestPathLimit},
+	{"record limit", TestRecordLimit},
 }
 
 // TestV2Vectors writes (with -update) and checks
 // testdata/interop/v2-records.json for the other implementations.
 func TestV2Vectors(t *testing.T) {
 	if *update {
-		var cases []vectorCase
-		collecting = &cases
+		var cases, flood []vectorCase
 		// A fixed random source and the bubble's fixed clock make the same
 		// keys, certificates and signatures each time, so that a change of
 		// the rules changes only the cases it touches.
 		for _, s := range scenarios {
+			collecting = &cases
+			if flooded[s.name] {
+				collecting = &flood
+			}
 			t.Run(s.name, func(t *testing.T) {
 				cryptotest.SetGlobalRandom(t, 1)
 				synctest.Test(t, s.fn)
 			})
 		}
 		collecting = nil
-		data, err := json.MarshalIndent(vectorFile{
-			Comment: "Written by internal/authority's TestV2Vectors -update. Each case's records, in any order, must evaluate to state, byte for byte (docs/records-v2.md).",
-			Cases:   cases,
-		}, "", "\t")
+		writeVectors(t, vectorsPath, cases)
+		writeVectors(t, floodPath, flood)
+	}
+	var all []vectorCase
+	for _, path := range []string{vectorsPath, floodPath} {
+		data, err := os.ReadFile(filepath.FromSlash(path))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.FromSlash(vectorsPath), append(data, '\n'), 0o644); err != nil {
+		var f vectorFile
+		if err := json.Unmarshal(data, &f); err != nil {
 			t.Fatal(err)
 		}
+		all = append(all, f.Cases...)
 	}
-	data, err := os.ReadFile(filepath.FromSlash(vectorsPath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var f vectorFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		t.Fatal(err)
-	}
-	if len(f.Cases) < len(scenarios) {
-		t.Fatalf("%d cases, fewer than the %d scenarios", len(f.Cases), len(scenarios))
+	if len(all) < len(scenarios) {
+		t.Fatalf("%d cases, fewer than the %d scenarios", len(all), len(scenarios))
 	}
 	rng := rand.New(rand.NewPCG(3, 5))
-	for _, c := range f.Cases {
+	for _, c := range all {
 		in := authority.Input{Group: c.Group, NowMS: c.NowMS, TimeUnknown: c.TimeUnknown, FirstSeen: map[authority.Hash]int64{}}
 		ca, err := x509.ParseCertificate(c.GroupCA)
 		if err != nil {
@@ -178,5 +189,18 @@ func TestV2Vectors(t *testing.T) {
 				t.Fatalf("%s, order %d:\n got %s\nwant %s", c.Name, i, got, c.State)
 			}
 		}
+	}
+}
+
+func writeVectors(t *testing.T, path string, cases []vectorCase) {
+	data, err := json.MarshalIndent(vectorFile{
+		Comment: "Written by internal/authority's TestV2Vectors -update. Each case's records, in any order, must evaluate to state, byte for byte (docs/records-v2.md).",
+		Cases:   cases,
+	}, "", "\t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.FromSlash(path), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

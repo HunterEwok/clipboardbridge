@@ -10,6 +10,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 - `cbb version` of the lite member names the Rust core it was built with: its version, the
   ABI of its entry point and, in a release, the commit it was built from.
+- Limits on a group's record set, the same in Go and the Rust core (docs/records-v2.md,
+  "Limits"): 1024 records, 1 MiB, 256 devices, 64 admin keys and 16 roots on the path.
+  Records past a limit count for nothing, with the reason `limit`; the set is never refused,
+  the root's records go first, and the root's checkpoint brings a set back under the limits.
+  The Rust core checks a signer's chain in one pass instead of once per record.
 - The nightly `cargo fuzz` run covers the Rust core's entry point (`api`), starting from
   requests for each operation built from the interop vectors.
 - The remote invitation is read the same way by Go and the Rust core (`cbb_core::invite`),
@@ -85,6 +90,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
   uninstall.sh ends them with its exit status and says so, or with `CBB_ERROR_DETAILS=1` shows
   every command (I25, Linux). The forge's invitation to a missing hub names a group, as
   invitations must now.
+- The bench's fleet checks the system's limit on a computer that install.sh set up (W2,
+  Linux): joined away from home by invitation, its unit lets the service reach exactly the
+  hub and the forwarder; once the hub's address changes, `cbb global` and `cbb status` say so
+  and nothing goes to the new address until `sudo cbb global allow`. The bench now deletes
+  each release feed it builds, close to 1 GiB a run, when the scenario ends. A member
+  limited to its home interface (`CBB_INTERFACES`, as on OpenWrt) refuses member TLS from a
+  second network with no firewall, even one it takes as its group's (D10).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
