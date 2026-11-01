@@ -244,10 +244,11 @@ final class PhoneJoinTests: XCTestCase {
     }
 
     func testJoinCodeText() {
-        let jc = JoinCode(code: "246802", addrs: ["192.168.1.20:8767", JoinCode.address(host: "fd00::5", port: 8767)], fingerprint: "abc_-")
+        let jc = JoinCode(code: "246802", addrs: ["192.168.1.20:8767", JoinCode.address(host: "fd00::5", port: 8767)], fingerprint: "ab+c/d=")
         XCTAssertEqual(jc.addrs[1], "[fd00::5]:8767")
         XCTAssertEqual(JoinCode(qr: jc.qrText), jc)
-        XCTAssertTrue(jc.qrText.hasPrefix("clipboardbridge://join?code=246802&addr=192.168.1.20:8767&"))
+        XCTAssertTrue(jc.qrText.hasPrefix("clipboardbridge://join?code=246802&addr=192.168.1.20%3A8767&"))
+        XCTAssertTrue(jc.qrText.hasSuffix("&fp=ab%2Bc%2Fd%3D"))
         for _ in 0..<20 { XCTAssertTrue(JoinCode(code: JoinCode.newCode(), addrs: [], fingerprint: "").codeIsValid) }
     }
 
