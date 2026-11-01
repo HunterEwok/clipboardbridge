@@ -461,7 +461,11 @@ make: the TV lists the computer twice under one name (its classic Bluetooth and 
 keyboard over Bluetooth LE, the one with a battery), so the keyboard needs a name of its own;
 and forgetting either entry on the TV forgets both, while the computer keeps its key and
 then fails every connection ("PIN or Key Missing"), so the keyboard drops a bond its host
-lost and becomes visible again. The Apple TV accepts a new
+lost and becomes visible again. It typed in the TV's own layout: with Russian on the TV and
+`-layout us` on the computer, "clipboardbridge ble 123" came out in Cyrillic, the
+Russian letters on those keys, since a keyboard sends keys, not letters. So the keyboard switches the device's layout
+itself (the device's shortcut, Control-Space on Apple's) where a text mixes Latin and
+Cyrillic, and the steps say which layout the device must have until it does. The Apple TV accepts a new
 remote only while Settings, AirPlay and HomeKit, Allow Access is "Everyone on the Same
 Network" (or "Everyone"); with "Only People Sharing This Home" it refuses every pairing, so
 the app's steps and the user guide say to switch it before pairing. A keyboard types with
