@@ -16,11 +16,11 @@ import (
 var stamped = regexp.MustCompile(`(?m)^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d cbb: `)
 
 // deviceLogs (I21): each device in no group logs where its system keeps
-// logs. On Windows the service's log, filled past 1 MiB while the service
-// is stopped, is moved to service.log.1 at the service's first line and
-// started again, each line after the time; the agent's log is in the
-// user's LocalAppData. On Linux the unit's journal has the service's
-// lines; on a Mac the launchd job's file does.
+// logs. On Windows and a Mac the service's log, filled past 1 MiB, is moved
+// to service.log.1 at the restarted service's first line and started
+// again, each line after the time; the agent's log is in the user's
+// LocalAppData or ~/Library/Logs. On Linux the unit's journal has the
+// service's lines.
 func deviceLogs(ctx context.Context, r *Report, devices []*Device) {
 	const p = "desktop/I21-logs/"
 	for _, d := range devices {
@@ -52,13 +52,17 @@ func deviceLogs(ctx context.Context, r *Report, devices []*Device) {
 				return nil
 			})
 		case "darwin":
-			r.Do(p+d.Name+"/file", func() error {
-				out, err := Run(ctx, d, "sudo -n "+macHelper+" logs", "")
+			r.Do(p+d.Name+"/rotated", func() error { return macRotated(ctx, d) })
+			r.Do(p+d.Name+"/agent", func() error {
+				out, err := Run(ctx, d, `f=~/Library/Logs/clipboardbridge/agent.log; if [ -f "$f" ]; then tail -n 20 "$f"; else echo none; fi`, "")
 				if err != nil {
-					return noSudo(d, err)
+					return err
 				}
-				if !strings.Contains(out, "cbb") {
-					return fmt.Errorf("/Library/Logs/clipboardbridge/service.log has no line of the service: %q", firstLine(out))
+				if strings.TrimSpace(out) == "none" {
+					return nil // the agent has said nothing yet
+				}
+				if !stamped.MatchString(out) {
+					return fmt.Errorf("the agent's log has no line that starts with the time: %q", firstLine(out))
 				}
 				return nil
 			})
@@ -96,6 +100,41 @@ func winRotated(ctx context.Context, d *Device) error {
 			return fmt.Errorf("after a start with a log of over 1 MiB, service.log has %d bytes and service.log.1 %d: not rotated", now, old)
 		}
 		body, err := Run(ctx, d, `Get-Content -Raw "`+log+`"`, "")
+		if err == nil && !stamped.MatchString(body) {
+			err = fmt.Errorf("the new log has no line that starts with the time: %q", firstLine(body))
+		}
+		return err
+	})
+}
+
+// macRotated fills the Mac service's log past 1 MiB and restarts it through
+// the bench's root helper: in no group, the service says so at once, and
+// that line moves the full log to service.log.1.
+func macRotated(ctx context.Context, d *Device) error {
+	if _, err := RunFor(ctx, d, "sudo -n "+macHelper+" fill-log", "", 2*time.Minute); err != nil {
+		return noSudo(d, err)
+	}
+	if err := eventually(ctx, 30*time.Second, func() error {
+		_, err := groupOf(ctx, d)
+		return err
+	}); err != nil {
+		return fmt.Errorf("the service did not answer after its restart: %w", err)
+	}
+	return eventually(ctx, 30*time.Second, func() error {
+		out, err := Run(ctx, d, "sudo -n "+macHelper+" log-sizes", "")
+		if err != nil {
+			return noSudo(d, err)
+		}
+		f := strings.Fields(out)
+		if len(f) != 2 {
+			return fmt.Errorf("the sizes of the logs are %q", out)
+		}
+		now, _ := strconv.Atoi(f[0])
+		old, _ := strconv.Atoi(f[1])
+		if old < 1<<20 || now < 0 || now >= 64<<10 {
+			return fmt.Errorf("after a restart with a log of over 1 MiB, service.log has %d bytes and service.log.1 %d: not rotated", now, old)
+		}
+		body, err := Run(ctx, d, "sudo -n "+macHelper+" logs", "")
 		if err == nil && !stamped.MatchString(body) {
 			err = fmt.Errorf("the new log has no line that starts with the time: %q", firstLine(body))
 		}

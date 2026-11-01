@@ -121,8 +121,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
   text arrives exactly, 1 MiB pasted and 4 KiB typed, the clipboard's own text comes back and
   nothing is copied to the group (T3, T5); a secret paste is in no log (T11); the log of
   pastes names each one without its text (T12).
-- The bench's `desktop` suite also checks each device's log, the Windows service's log
-  rotated past 1 MiB (I21); `cbb copy` on purpose in every mode (M2); one Linux agent per
+- The bench's `desktop` suite also checks each device's log, the Windows and Mac services'
+  logs rotated past 1 MiB (I21); `cbb copy` on purpose in every mode (M2); one Linux agent per
   session and a restarted one (H2); tmux's copy and paste keys (H3); and a large copy's
   progress in `cbb status` (O13).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
@@ -624,6 +624,10 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- On a Mac the service and the agent write their own logs, as on Windows:
+  `/Library/Logs/clipboardbridge/service.log` and `~/Library/Logs/clipboardbridge/agent.log`,
+  each line after the time, each moved to `.1` at 1 MiB, so a log no longer grows without
+  end; the agent's log is new.
 - The group's records are of version 2 (docs/records-v2.md) on the computers and the lite
   member: each record names its signer and follows that signer's previous one, the Rust
   core decides what a set says, and the old records are refused. A group of an earlier

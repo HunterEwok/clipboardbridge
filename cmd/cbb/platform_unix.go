@@ -18,20 +18,19 @@ import (
 	"github.com/HunterEwok/clipboardbridge/internal/rootless"
 )
 
-// runService runs the service until a signal stops it; systemd and launchd
-// keep its output.
+// runService runs the service until a signal stops it; systemd keeps its
+// output, and on a Mac its own log does (serviceLog).
 func runService(stderr io.Writer, run func(context.Context, func(string, ...any)) error) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	stderr, closeLog := serviceLog(stderr)
+	defer closeLog()
 	logf := func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) }
 	if err := run(ctx, logf); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
 }
-
-// agentLog returns where the agent logs: launchd keeps its output.
-func agentLog(stderr io.Writer) (io.Writer, func(), error) { return stderr, func() {}, nil }
 
 // firstAgent reports that no other agent runs; launchd starts only one.
 func firstAgent() bool { return true }

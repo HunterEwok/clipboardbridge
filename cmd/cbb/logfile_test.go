@@ -45,3 +45,23 @@ func TestLogFile(t *testing.T) {
 		t.Errorf("the new log holds %d bytes", len(data))
 	}
 }
+
+// Each file the log opens, also after a move to ".1", is handed on, as the
+// Mac's service makes it its standard error.
+func TestLogFileOpened(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "service.log")
+	var opened []string
+	l, err := openLogThen(path, func(f *os.File) { opened = append(opened, f.Name()) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	line := strings.Repeat("x", 1000) + "\n"
+	for l.size < maxLog {
+		l.Write([]byte(line))
+	}
+	l.Write([]byte("after\n"))
+	if len(opened) != 2 || opened[0] != path || opened[1] != path {
+		t.Errorf("opened %q, want the log twice", opened)
+	}
+}
