@@ -299,10 +299,16 @@ them; a done item keeps one line and points to where [design.md](design.md) desc
     command `cbb`, its subcommands and the paths. Icon labels show the full name too, even where the
     system shortens it: the iPhone's home screen, Android's launcher, the Windows Start menu
     and taskbar, the Linux desktop's menus and tray.
-- **49.** **Planned for 0.7.** A language choice in the Mac app and the tray app, as on the
-    phones: System, English or Русский in Settings, remembered. Today the Mac app follows the
-    system's language (macOS can set one per app) and the tray app the system's interface
-    language on Windows and `LANGUAGE`/`LANG` on Linux.
+- **49.** **Planned for 0.7.** One set of languages across the project: every app (the
+    phones, the watches, the Mac app, the tray app) speaks the languages of the website
+    (Chinese, English, Spanish, Russian, Arabic, Swahili, Hebrew, Hindi) and offers a choice
+    in Settings, System or one of them, remembered. Today only the phones offer System,
+    English or Russian; the Mac app follows the system's language and the tray app the
+    system's interface language on Windows and `LANGUAGE`/`LANG` on Linux. The command line
+    (`cbb`, the lite member) picks the language from the locale, and English where the
+    project has no translation for it. One list of the languages serves the site, the apps and
+    the command line; Arabic and Hebrew lay the screens out right to left; a native speaker
+    reads the new translations before a release.
 
 ## Devices that are hard to type into
 

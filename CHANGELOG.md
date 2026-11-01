@@ -906,6 +906,8 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- The tray app's buttons draw their icons in the middle: they were text symbols, which
+  Windows takes from fallback fonts that set them off centre.
 - A computer takes member connections to its IPv6 link-local address: it closed them at once,
   as from a network it had not met its group on, so a phone that reached it that way (as
   iOS often does) never connected. The log now says when it closes a connection for that.
