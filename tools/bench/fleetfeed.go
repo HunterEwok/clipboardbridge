@@ -204,4 +204,6 @@ func updates(ctx context.Context, r *Report, f *Fleet, timeout time.Duration) {
 	getScript(ctx, r, f, fd, builds)
 	groupUpdate(ctx, r, f, fd, builds)
 	installers(ctx, r, f, builds)
+	ufwRules(ctx, r, f, builds["0.6.0"])
+	inviteGrant(ctx, r, f, builds["0.6.0"])
 }
