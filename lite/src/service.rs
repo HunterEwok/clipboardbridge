@@ -712,6 +712,9 @@ impl Service {
                     crate::rootless::sudo()
                 );
             }
+            Ok(_) if body.paste_kind == "secret" && node.secrets_stopped() => {
+                res.reason = "the group's records stop secrets until its root decides (cbb status says why)".into();
+            }
             Ok(_) if !self.pastes.lock().unwrap().allow(&from.key, uptime::wall_ms()) => {
                 res.reason = "too many pastes: at most one a second and 30 a minute from one device".into();
             }
@@ -1032,6 +1035,7 @@ impl Service {
                     away: self.away()?.status(&node),
                     paste: self.paste_status(),
                     actions: action_status(&actions::load(&self.state_dir).unwrap_or_default()),
+                    stop: node.stop(),
                 };
                 Ok(control::reply(Header { status: Some(status), ..Default::default() }, Vec::new()))
             }

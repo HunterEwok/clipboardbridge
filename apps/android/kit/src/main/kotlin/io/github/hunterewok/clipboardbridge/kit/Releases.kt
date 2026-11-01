@@ -146,6 +146,8 @@ object Releases {
 
     /** Reads body as a body of type [type] that has v, type and each field of [required]. */
     private fun decode(body: ByteArray, type: String, vararg required: String): JsonObject {
+        // The core decides whether the body is taken (parse_body); the checks here and in the callers only read its fields.
+        Core.bodyRefusal(type, body)?.let { throw Refused("the file is not valid: $it") }
         // The strict form of signed bodies first, so that every program reads a file alike (docs/protocol.md, section 16).
         try {
             Strict.check(body, "v", "type", *required)

@@ -112,7 +112,7 @@ final class PhoneJoinTests: XCTestCase {
 
         // The admin cannot remove the root; the root removes the admin and
         // every listed device stays: the computer it admitted, and the root,
-        // whose certificate it renewed (docs/records-v2.md, "Removals and
+        // whose certificate it renewed (docs/protocol.md, section 10, "Removals and
         // freezes keep what the author saw").
         XCTAssertThrowsError(try admin.revoke(device: root.device, caSigner: adminKey, now: t0)) {
             XCTAssertEqual($0 as? PhoneGroup.Failure, .cannotRemoveRoot)

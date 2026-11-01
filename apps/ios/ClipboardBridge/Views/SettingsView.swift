@@ -23,7 +23,7 @@ struct SettingsView: View {
     /// Android's build number shows its developer options.
     @State private var versionTaps = 0
     @AppStorage("ShowErrorDetails") private var errorDetails = AppModel.showsErrorDetails
-    @AppStorage("ShowErrorDetailsSwitch") private var detailsSwitch = false
+    @AppStorage("ShowErrorDetailsSwitch") private var detailsSwitch = UserDefaults.standard.bool(forKey: "ShowErrorDetailsSwitch")
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -401,7 +401,7 @@ struct ColorSwatches: View {
 
 extension SettingsView {
     /// The root phone makes its paired watch an admin, for the emergency
-    /// actions (docs/protocol.md, section 10, rule 8).
+    /// actions (docs/protocol.md, section 10, "Watches").
     @ViewBuilder var watchSection: some View {
         let watches = model.devices.filter { $0.role == "watch" }
         Section {

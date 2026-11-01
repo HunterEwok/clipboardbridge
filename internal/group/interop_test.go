@@ -278,11 +278,9 @@ type rootChain struct {
 // TestGoRootVectors checks a handover by a claim (TestRootHandover) for
 // the chains a member takes and refuses after it, and the cases of
 // testdata/interop/v2-records.json about claims that take effect through a
-// Records set. The records of version 1 that go-root.json keeps for the
-// phone kits are refused.
+// Records set.
 func TestGoRootVectors(t *testing.T) {
 	checkV2Cases(t, "claim waits and takes effect", "chain of claims", "settings delay")
-	checkV1Refused(t, "go-root.json")
 	h := newHandover(t)
 	s := h.records(t)
 	thiefCA := adminCA(t, h.pg.root)
@@ -319,10 +317,10 @@ func TestGoRootVectors(t *testing.T) {
 }
 
 // TestGoUpgradeVectors checks that the records of a legacy group that cbb
-// upgrade gave a root (go-upgrade.json, version 1) are refused: legacy
-// groups and cbb upgrade went with version 1.
+// upgrade gave a root (version 1) are refused: legacy groups and cbb
+// upgrade went with version 1.
 func TestGoUpgradeVectors(t *testing.T) {
-	checkV1Refused(t, "go-upgrade.json")
+	checkV1Refused(t)
 }
 
 func mustJSON(t *testing.T, v any) string {
@@ -458,31 +456,24 @@ func TestSwiftComputerAdmin(t *testing.T) {
 
 // TestGoAdminVectors checks what a computer's admin CA may do in a phone's
 // group, as TestAdminPowers tells it: the cases of
-// testdata/interop/v2-records.json about powers through a Records set. The
-// records of version 1 that go-admins.json keeps for the phone kits are
-// refused.
+// testdata/interop/v2-records.json about powers through a Records set.
 func TestGoAdminVectors(t *testing.T) {
 	checkV2Cases(t, "powers", "one record under two admin CAs", "two histories of an admin")
-	checkV1Refused(t, "go-admins.json")
 }
 
 // TestGoFreezeVectors checks an admin computer freezing another, as
 // TestFreeze tells it: the cases of testdata/interop/v2-records.json about
-// freezes through a Records set. The records of version 1 that
-// go-freeze.json keeps for the phone kits are refused.
+// freezes through a Records set.
 func TestGoFreezeVectors(t *testing.T) {
 	checkV2Cases(t, "freeze and thaw", "freezes crossed")
-	checkV1Refused(t, "go-freeze.json")
 }
 
 // TestGoTakeoverVectors checks claims to take a group over, as
 // TestComputerTakeover tells it for an admin computer: the cases of
 // testdata/interop/v2-records.json about claims that are disputed, void or
-// early through a Records set. The records of version 1 that
-// go-takeover.json keeps for the phone kits are refused.
+// early through a Records set.
 func TestGoTakeoverVectors(t *testing.T) {
 	checkV2Cases(t, "claim disputed", "claim while another waits", "claimed root signs early", "stranger's claim", "two histories of the root", "checkpoint", "times at the ends", "record of a later version", "device seal")
-	checkV1Refused(t, "go-takeover.json")
 }
 
 // TestSwiftCommand checks the commands a phone kit signed
@@ -566,7 +557,7 @@ type hubVectors struct {
 }
 
 // TestGoHubVectors writes (with -update) and checks
-// testdata/interop/go-hubs.json: the order of a group's hubs
+// testdata/interop/v2-hubs.json: the order of a group's hubs
 // (docs/protocol.md, section 11, "Several hubs"), the phones first and the
 // root's own device first among them, then the admin computers by device
 // ID, without a plain computer or a removed admin, for the phone kits and
@@ -599,6 +590,7 @@ func TestGoHubVectors(t *testing.T) {
 		}
 		v := hubVectors{GroupCA: g.Raw, Records: all, HubOrder: s.HubOrder()}
 		file = v
+		writeV2Vectors(t, "v2-hubs.json", v)
 	}
 	v := file
 	ca, err := x509.ParseCertificate(v.GroupCA)
@@ -667,7 +659,7 @@ type commandVector struct {
 }
 
 // TestGoCommandVectors writes (with -update) and checks
-// testdata/interop/go-commands.json: mode, paste and paste-off commands for one phone, signed by
+// testdata/interop/v2-commands.json: mode, paste and paste-off commands for one phone, signed by
 // the root, an admin phone and admin computers (one frozen, one removed),
 // or for another device or group, expired, from the future or altered, and
 // whether each counts (docs/protocol.md, section 15), for the phone kits

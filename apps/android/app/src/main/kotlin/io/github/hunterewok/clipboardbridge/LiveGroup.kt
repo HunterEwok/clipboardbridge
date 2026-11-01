@@ -11,6 +11,8 @@ import android.net.NetworkRequest
 import android.os.Build
 import android.provider.Settings as SystemSettings
 import android.util.Log
+import io.github.hunterewok.clipboardbridge.kit.alerts
+import io.github.hunterewok.clipboardbridge.kit.GroupAlert
 import io.github.hunterewok.clipboardbridge.kit.AndroidAttestation
 import io.github.hunterewok.clipboardbridge.kit.CertificateInfo
 import io.github.hunterewok.clipboardbridge.kit.CredentialKeeper
@@ -219,6 +221,12 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
      * one when it adds a computer.
      */
     val isAdmin: Boolean get() = synchronized(lock) { state?.isAdmin ?: true }
+
+    /** Whether this phone holds the group's root, which ends conflicts. */
+    val isRoot: Boolean get() = synchronized(lock) { state?.isRoot ?: false }
+
+    /** What the group's records stop and what ends it (GroupAlert). */
+    val alerts: List<GroupAlert> get() = synchronized(lock) { state?.records?.alerts.orEmpty() }
 
     /** Every device of the group, this phone included. */
     val devices: List<Device>
@@ -757,8 +765,23 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     }
 
     /**
+     * Ends a conflict or cancels a claim (docs/protocol.md, section 10,
+     * "Stopping the exchange"): a resolve of the records ids, signed with the
+     * root key after the fingerprint or the screen lock, sent to every
+     * connected member.
+     */
+    suspend fun resolve(ids: List<ByteArray>) {
+        if (!isRoot) throw Failure(Failure.Kind.NOT_ADMIN)
+        val root = caSigner(R.string.reason_resolve)
+        val g = copyOfState() ?: return
+        val r = withContext(Dispatchers.IO) { g.resolve(ids, root, Instant.now()) }
+        withContext(Dispatchers.IO) { adopt(g) }
+        published(listOf(r))
+    }
+
+    /**
      * Unfreezes an admin computer that another admin froze
-     * (docs/protocol.md, section 10, rule 4): a thaw record signed with this
+     * (docs/protocol.md, section 10, "Removals and freezes keep what the author saw"): a thaw record signed with this
      * phone's root or admin key, sent to every connected computer.
      */
     suspend fun unfreeze(id: String) {
@@ -1091,7 +1114,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /**
      * Makes the watch's key an admin key with the role watch (docs/protocol.md,
-     * section 10, rule 8): the root key, after the fingerprint, the face or
+     * section 10, "Watches"): the root key, after the fingerprint, the face or
      * the screen lock, issues its admin CA and signs its device record, which
      * every member gets. Returns what the watch keeps.
      */
@@ -1109,7 +1132,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     fun watchActions(id: String): List<String> = synchronized(lock) { state?.watchActions(id).orEmpty().map { it.key } }
 
     /**
-     * The body the watch signs (docs/protocol.md, section 10, rule 8): any
+     * The body the watch signs (docs/protocol.md, section 10, "Watches"): any
      * phone of the group builds it, since what counts is the watch's
      * signature.
      */
@@ -1144,7 +1167,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
     /**
      * Removes the phone that holds the group's root, when it is lost: this
      * admin phone makes a new root key and claims the group for it
-     * (docs/records-v2.md, "Handing the group over"). The claim waits the
+     * (docs/protocol.md, section 10, "Handing the group over"). The claim waits the
      * group's delay, in which the root, if it is still in use, cancels it;
      * [finishTakeOverIfDue] then makes this phone the root.
      */
@@ -1420,6 +1443,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         }
 
         override fun refused(chain: List<ByteArray>): String? = synchronized(lock) { state?.records?.refused(chain) }
+        override fun stopped(chain: List<ByteArray>): Boolean = synchronized(lock) { state?.records?.stopped(chain) ?: false }
+        override fun noSecrets(device: String?): Boolean = synchronized(lock) { state?.records?.noSecrets(device) ?: false }
 
         override fun mayHost(device: String, chain: List<ByteArray>): Boolean =
             synchronized(lock) { state?.records?.mayHost(device, chain) == true }

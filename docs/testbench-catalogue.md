@@ -128,7 +128,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | G26 | `cbb takeover` when the root computer is lost; the new root admits and makes admins; the old root comes back and is refused [L6] | real, fleet | |
 | G27 | A takeover undone: the old root is still there and removes the admin that took over, before or after it hears of the takeover (its status names that admin); the takeover stops counting | fleet | |
 | G28 | A phone's group: an admin phone takes over from a lost root phone (`root` records); no device pairs again; members that were off follow | ui, fleet | |
-| G29 | `cbb upgrade` of a group made before 0.4: a new root, the old keys deleted, `cbb status` marks those that still hold them and `cbb revoke` refuses them until they have [L9] | fleet | |
+| G29 | The records `cbb upgrade` gave a group made before 0.4 (version 1) are refused, in Go and in the Rust core the phones and the lite member use: legacy groups and `cbb upgrade` went with records version 2, and such a group is set up again [L9] | fleet | |
 | G30 | `cbb rename` on an admin for any device, the root and itself; every device and app shows the new name; 1 and 64 characters taken, 0 and 65 refused, Unicode names | real, fleet | |
 | G31 | Records converge in any order: 200 records delivered to 10 members in random orders give one devices list | fleet | |
 | G32 | Record limits: 4096 records, 1024 per signer; an admin that floods records cannot push out the root's removal | fleet | |
@@ -231,7 +231,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | Y24 | No echo: a written text is not sent back, even 10 s late; Windows clipboard history, a GNOME clipboard manager and KDE's Klipper offering it again make no event [P3] | real, helper | |
 | Y25 | A clipboard manager putting back an old text makes no event; a deliberate `cbb copy` of the same text does | real | |
 | Y26 | Linux's primary selection gets the text; a mouse selection is not sent | real, helper | |
-| Y27 | Auto-paste after a phone's event (Shift+Insert through uinput): only for `phone` events, never for Universal Clipboard, never on the lock screen | real, helper | |
+| Y27 | Auto-paste after a phone's event (Shift+Insert through uinput): only for `phone` events, never for Universal Clipboard, never on the lock screen | real, helper | roadmap item 10 |
 
 ### 5.4 Secrets
 
@@ -273,7 +273,7 @@ account (`Apple account`, `Google account`, `signing`), or a device (`TV`, `Appl
 | O11 | Phones: the share sheet up to 50 MB on the iPhone and 100 MiB on Android; the button saves files in Files or Downloads; an image already received is nothing new; phones serve their own copies | ui | |
 | O12 | Flatpak apps: copied files through the document portal, written files through FileTransfer | helper | |
 | O13 | Progress in `cbb status` and the apps' notification | real, ui | |
-| O14 | The router's media cache is off by default; on, a hub on the router serves media without running out of memory | fleet, real | |
+| O14 | A member with a router's memory (`GOMEMLIMIT` as the OpenWrt package sets it, 64 MiB) passes a 90 MiB copy on to a member that reaches only it, without running out of memory: the parts go through its cache on disk | fleet, real | |
 | O15 | Fetch limits: gets of at most 1 MiB, 4 MiB ahead, 64 gets per connection; chunks padded to 16 KiB; a peer that asks for more is refused | fleet | |
 
 ## 8. Remote paste (T)

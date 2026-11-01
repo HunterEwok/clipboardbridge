@@ -39,7 +39,7 @@ const (
 	MaxPerSigner = 1024
 )
 
-// Record types (docs/records-v2.md, "Types").
+// Record types (docs/protocol.md, section 10, "Types").
 const (
 	RecordDevice     = authority.TypeDevice
 	RecordRevoke     = authority.TypeRevoke
@@ -151,7 +151,7 @@ func KeyHashOf(cert *x509.Certificate) KeyHash { return sha256.Sum256(cert.RawSu
 // PhoneKeyHash returns the key hash that names an iPhone's token.
 func PhoneKeyHash(phoneID []byte) KeyHash { return sha256.Sum256(phoneID) }
 
-// A RecordBody is what a record says (docs/records-v2.md, "The record").
+// A RecordBody is what a record says (docs/protocol.md, section 10, "Records").
 type RecordBody = authority.Body
 
 // A Record is a signed record body: the body's exact bytes, an ECDSA
@@ -241,7 +241,7 @@ func (s *Records) Add(r Record) (bool, error) {
 		}
 		// A record of a later version is kept and passed on, never
 		// applied; the state lists it when its signer may raise the
-		// signal (docs/records-v2.md, "Records of a later version").
+		// signal (docs/protocol.md, section 10, "Records of a later version").
 		if s.bySigner[signer] >= MaxPerSigner || len(s.recs) >= MaxRecords {
 			return false, errors.New("group: too many records")
 		}
@@ -399,7 +399,7 @@ type parsed struct {
 	r  Record
 }
 
-// State returns what the records say (docs/records-v2.md, "The state"),
+// State returns what the records say (docs/protocol.md, section 10, "The state"),
 // from the Rust core when the build links it.
 func (s *Records) State() *authority.State {
 	now := s.now()
@@ -416,14 +416,14 @@ func (s *Records) State() *authority.State {
 	if err != nil {
 		// The evaluation refuses only a broken input, such as a group CA
 		// it cannot read: nothing counts then, and the group stops.
-		st = &authority.State{Roots: []KeyHash{KeyHashOf(s.groupCA)}, Stop: "full"}
+		st = &authority.State{Roots: []KeyHash{KeyHashOf(s.groupCA)}, Stop: authority.StopFull}
 	}
 	s.st, s.at = st, now
 	return st
 }
 
-// Stop returns how far the records stop the exchange: "", "secrets" or
-// "full" (docs/records-v2.md, "Stopping the exchange").
+// Stop returns how far the records stop the exchange: "none", "secrets"
+// or "full" (docs/protocol.md, section 10, "Stopping the exchange").
 func (s *Records) Stop() string { return s.State().Stop }
 
 // path returns the roots on the path as certificates, the group CA first.
@@ -566,13 +566,17 @@ func (s *Records) adminDevice(k KeyHash) (authority.Device, bool) {
 }
 
 // Refused returns why a member's chain is not taken, nil when it is
-// (docs/records-v2.md, "Certificates"): its key must be a listed device's
+// (docs/protocol.md, section 10, "Certificates"): its key must be a listed device's
 // that is not revoked nor frozen, and its issuer a root on the path or the
 // admin CA, under one, of an admin that may admit or renew, not frozen.
 // A chain that passes all but the first rule, as a device whose record has
 // not reached this member yet or a new member that holds no records yet,
 // is refused with ErrNotListed, which lets records through
 // (ErrRecordsOnly), so that the records reach the member that lacks them.
+//
+// A chain that passes every rule while the state stops the exchange with
+// its device (Stopped) is refused with ErrStopped, which lets records
+// through too, so that the root's decision reaches every member.
 func (s *Records) Refused(chain []*x509.Certificate) error {
 	if err := s.refusedChain(chain); err != nil {
 		return err
@@ -580,7 +584,29 @@ func (s *Records) Refused(chain []*x509.Certificate) error {
 	if !s.listed(KeyHashOf(chain[0])) {
 		return ErrNotListed
 	}
+	if dev, err := DeviceOf(chain[0]); err == nil && s.Stopped(dev) {
+		return ErrStopped
+	}
 	return nil
+}
+
+// Stopped reports whether the state stops the exchange with dev: the
+// whole group stops (stop full), or dev is a device that gets nothing
+// (docs/protocol.md, section 10, "Stopping the exchange"). A connection
+// with it carries records only.
+func (s *Records) Stopped(dev DeviceID) bool {
+	st := s.State()
+	return st.Stop == authority.StopFull || slices.Contains(st.NothingTo, string(dev))
+}
+
+// NoSecretsTo reports whether this member sends dev no secret: while the
+// state stops secrets or everything, or names dev among the devices that
+// get no secrets or nothing (docs/protocol.md, section 10, "Stopping the
+// exchange"). Such a device gets the mark of a secret, never its text, and
+// no secret paste.
+func (s *Records) NoSecretsTo(dev DeviceID) bool {
+	st := s.State()
+	return st.Stop != authority.StopNone || slices.Contains(st.NoSecretsTo, string(dev)) || slices.Contains(st.NothingTo, string(dev))
 }
 
 // refusedChain is Refused without the rule that a device record names the
@@ -626,7 +652,7 @@ func (s *Records) refusedChain(chain []*x509.Certificate) error {
 }
 
 // RefusedAdminCA returns why an admin CA is not taken, nil when it is
-// (docs/records-v2.md, "Certificates"): it is under a root on the path,
+// (docs/protocol.md, section 10, "Certificates"): it is under a root on the path,
 // its key is not revoked, and a device record that counts names it as an
 // admin key; one whose record has not reached this member yet is refused
 // with ErrNotListed.
@@ -656,6 +682,20 @@ func (notListed) Error() string {
 }
 
 func (notListed) Is(target error) bool { return target == ErrRecordsOnly }
+
+// ErrStopped is what Refused returns for a chain it takes while the state
+// stops the exchange with its device (Records.Stopped); errors.Is(ErrStopped,
+// ErrRecordsOnly) holds, so the connection carries records only until the
+// root's records end the stop.
+var ErrStopped error = stopped{}
+
+type stopped struct{}
+
+func (stopped) Error() string {
+	return "group: the group's records stop the exchange until its root decides; the connection carries records only"
+}
+
+func (stopped) Is(target error) bool { return target == ErrRecordsOnly }
 
 // signedByAny reports whether one of roots signed c.
 func signedByAny(c *x509.Certificate, roots []*x509.Certificate) bool {
@@ -817,7 +857,7 @@ func (s *Records) FreezesOf(admin KeyHash) []KeyHash {
 // current root, which certified it. It returns the device and admin key
 // of the claimant. Such a peer is refused, but its connections carry
 // records (ErrRecordsOnly), so that the old root, if it is still in use,
-// can cancel the claim (docs/records-v2.md, "Handing the group over").
+// can cancel the claim (docs/protocol.md, section 10, "Handing the group over").
 func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool) {
 	if len(chain) == 0 {
 		return "", KeyHash{}, false
@@ -861,12 +901,18 @@ func (s *Records) TakenOver(chain []*x509.Certificate) (DeviceID, KeyHash, bool)
 var ErrRecordsOnly = errors.New("group: the group was taken over from this root; its connection carries records only")
 
 // Next returns the seq and prev of the next record the key signer signs:
-// one above its newest record in the set.
+// one above its newest record in the set that is on no branch a root's
+// resolve voided. So once the root voids both histories of a key
+// (docs/protocol.md, section 10, "Two numbers"), the key goes on from the
+// record below the fork, and what it signs counts.
 func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
+	own, dead := s.branches(signer)
 	var seq int64
 	var prev KeyHash
-	for _, p := range s.bodies() {
-		if p.b.Signer == signer && p.b.Seq > seq {
+	// Of two records with one seq, which only a key that signed two
+	// histories has, the lower ID, so that every member gives the same.
+	for _, p := range own {
+		if !dead(p) && (p.b.Seq > seq || p.b.Seq == seq && bytes.Compare(p.id[:], prev[:]) < 0) {
 			seq, prev = p.b.Seq, p.id
 		}
 	}
@@ -874,6 +920,82 @@ func (s *Records) Next(signer KeyHash) (int64, *KeyHash) {
 		return 1, nil
 	}
 	return seq + 1, &prev
+}
+
+// Voided returns the records of signer that are on a branch a root's
+// resolve voided, by seq: what its device may sign again once the root
+// voided both of its histories.
+func (s *Records) Voided(signer KeyHash) []Record {
+	own, dead := s.branches(signer)
+	var ps []parsed
+	for _, p := range own {
+		if dead(p) {
+			ps = append(ps, p)
+		}
+	}
+	sort.Slice(ps, func(i, j int) bool { return ps[i].b.Seq < ps[j].b.Seq })
+	out := make([]Record, len(ps))
+	for i, p := range ps {
+		out[i] = p.r
+	}
+	return out
+}
+
+// branches returns the records of signer, by ID, and whether one is on a
+// voided branch: its prev chain, as far as the set holds it, passes
+// through a record that a root's resolve names and that has a sibling.
+func (s *Records) branches(signer KeyHash) (map[KeyHash]parsed, func(parsed) bool) {
+	roots := map[KeyHash]bool{}
+	for _, k := range s.State().Roots {
+		roots[k] = true
+	}
+	voided := map[KeyHash]bool{}
+	byID := map[KeyHash]parsed{}
+	bySeq := map[int64]int{}
+	for _, p := range s.bodies() {
+		if p.b.Type == RecordResolve && roots[p.b.Signer] && len(p.r.Chain) == 0 {
+			for _, id := range p.b.Records {
+				voided[id] = true
+			}
+		}
+		if p.b.Signer == signer {
+			byID[p.id] = p
+			bySeq[p.b.Seq]++
+		}
+	}
+	dead := func(p parsed) bool {
+		for steps := 0; steps <= authority.MaxSeq; steps++ {
+			if voided[p.id] && bySeq[p.b.Seq] > 1 {
+				return true
+			}
+			if p.b.Prev == nil {
+				return false
+			}
+			q, ok := byID[*p.b.Prev]
+			if !ok {
+				return false
+			}
+			p = q
+		}
+		return false
+	}
+	return byID, dead
+}
+
+// ErrTwoHistories is what Sign returns for a key that signed two histories
+// the root has not resolved yet: a record it signed now would count for
+// nothing (docs/protocol.md, section 10, "Two numbers").
+var ErrTwoHistories = errors.New("group: this key signed two histories; the group's root must resolve them before it signs again")
+
+// TwoHistories reports whether the state names signer in a conflict of two
+// histories.
+func (s *Records) TwoHistories(signer KeyHash) bool {
+	for _, c := range s.State().Conflicts {
+		if c.Kind == authority.ConflictTwoHistories && slices.Contains(c.Signers, signer) {
+			return true
+		}
+	}
+	return false
 }
 
 // Seen returns, for every signer of the set, the highest seq the set holds
@@ -902,6 +1024,11 @@ func (s *Records) Sign(body RecordBody, key crypto.Signer, adminCA *x509.Certifi
 	if err != nil {
 		return Record{}, err
 	}
+	// A root ends its own two histories with a resolve, which counts
+	// whatever forks its chain has; nothing else of a forked key counts.
+	if body.Type != RecordResolve && s.TwoHistories(signer) {
+		return Record{}, ErrTwoHistories
+	}
 	body.Group = s.tag
 	body.Seq, body.Prev = s.Next(signer)
 	switch body.Type {
@@ -928,7 +1055,7 @@ func (s *Records) ClaimTimes() []ClaimTime {
 // it is earlier than the set's own and not in the future: a new member
 // takes the times of the member that admitted it from the Welcome, so a
 // claim that took effect there takes effect on the new member too
-// (docs/records-v2.md, "Handing the group over").
+// (docs/protocol.md, section 10, "Handing the group over").
 func (s *Records) TakeClaimTimes(ts []ClaimTime) {
 	now := s.now().UnixMilli()
 	for _, t := range ts {
@@ -1016,3 +1143,23 @@ func (s *Records) AuthorityRecords() []Record { return s.All() }
 // that the Welcome's roots are the group's: all of them, since it evaluates
 // the set as every member does.
 func (s *Records) PathRecords() []Record { return s.All() }
+
+// SignerName names the device of a signer's key for the user: the device
+// whose newest root record names it as its admin key, the root's own
+// device for a root key on the path, or the key hash when neither does.
+func (s *Records) SignerName(k KeyHash) string {
+	st := s.State()
+	for _, d := range st.Devices {
+		if d.Admin != nil && *d.Admin == k {
+			return d.Name
+		}
+	}
+	if slices.Contains(st.Roots, k) {
+		for _, d := range st.Devices {
+			if d.Device == st.RootDevice {
+				return d.Name
+			}
+		}
+	}
+	return k.String()
+}

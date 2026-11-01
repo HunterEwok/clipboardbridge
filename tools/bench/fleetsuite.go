@@ -108,7 +108,10 @@ func FleetSuite(ctx context.Context, r *Report, cbb string, size int, timeout ti
 		{"G17-joiner-listens", func() { joinerListens(ctx, r, f, timeout) }},
 		{"G8-relay", func() { pairRelay(ctx, r, f, timeout) }},
 		{"U9-lite", func() { liteMember(ctx, r, f, timeout) }},
+		{"D9-subnets", func() { acrossSubnets(ctx, r, f, timeout) }},
+		{"O14-router", func() { routerMedia(ctx, r, f, timeout) }},
 		{"E3-many", func() { manyMembers(ctx, r, f, size, timeout) }},
+		{"E10-soak", func() { soak(ctx, r, f, timeout) }},
 	} {
 		if ctx.Err() == nil && scenario(s.name) {
 			s.run()

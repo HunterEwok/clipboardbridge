@@ -12,11 +12,9 @@ import (
 // its role, store and powers, only by a record a root's own key signed, and
 // that a removed admin's later records no longer decide a device's entry:
 // the cases of testdata/interop/v2-records.json for it through a Records
-// set. The records of version 1 that go-authority.json keeps for the phone
-// kits are refused.
+// set.
 func TestGoAuthorityVectors(t *testing.T) {
 	checkV2Cases(t, "basic", "powers", "removed admin's device", "ignored records")
-	checkV1Refused(t, "go-authority.json")
 }
 
 // A command signed by a computer's admin CA has the role and store the

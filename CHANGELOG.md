@@ -7,7 +7,20 @@ All notable changes to clipboardbridge are documented in this file. The format f
 ## [Unreleased]
 
 ### Added
-
+- The apps show what stops the group: the phones on Home, the Mac app and the tray app above
+  the devices, in a card that says what is stopped, why, and who decides (a claim to take the
+  group over with the time left, two admins acting against each other, a key that signed
+  two histories, a newer version of the records). On the group's root the card offers the
+  way out: cancel a claim by removing its device, remove one of two admins, or void both
+  histories (`cbb resolve`). The phone kits read it from the state (`GroupAlerts`).
+- A key that signed two histories signs nothing until the group's root resolves them; once
+  the root voids both branches, the key goes on from the record below the fork, and what it
+  signs counts (docs/protocol.md, section 10, "Going on after two histories").
+- `cbb resolve`: on the group's root computer, voids both histories of every key that signed
+  two; the admin computer whose key it was signs again by itself what it signed since its
+  last backup (`signed.json` in the state directory keeps its log).
+- Before a record its user asks for, a computer waits up to 10 seconds for another member's
+  records, so that one brought back from a backup does not sign a number it signed already.
 - The phone's Send or receive says where a text went or came from and that it is ready to
   paste ("Ready to paste: “…” from Mac.lan", "Sent to Mac.lan"), with a tap in the hand while
   the app is in front; the Shortcuts action (Back Tap) shows its progress while it connects,
@@ -15,6 +28,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 - `apps/ios/device.sh` installs the iPhone app and its watch app on your own phone and watch,
   signed by a free Personal Team (an Apple ID in Xcode, no developer account), with a bundle
   identifier of its own; CONTRIBUTING.md, "The iPhone app on your own phone".
+- The computers apply the group's stop when its records show a likely thief (docs/protocol.md,
+  section 10, "Stopping the exchange"): while two admins act against each other, two claims
+  or a disputed claim wait, or a key signed two histories, their connections carry records
+  only, or no secret leaves them, until the group's root decides. `cbb status` says what
+  stops, why, and what ends it, and shows the claims to take the group over with the time
+  left.
 - A recovery key for a group whose phones are all lost (docs/records-v2.md, "The recovery
   key"): the root names an offline admin key in a `recovery` record, and that key may only
   claim the group, waiting the delay the root set for admins and cancelled the same ways. The
@@ -43,6 +62,9 @@ All notable changes to clipboardbridge are documented in this file. The format f
   `group_command` and the other `group_` calls, docs/core-api.md, "The record set"), so the
   phones keep the records file and ask the core instead of applying the group's rules
   themselves.
+- Commands, server credentials and release files are read through the Rust core's
+  `parse_body` (docs/core-api.md, "Signed bodies") by Go in the release builds and by the
+  phone apps, so every program takes exactly the same bodies.
 - The Rust core's entry point checks a peer's member certificates (`check_member`, docs/core-api.md),
   for the TLS verify callbacks of the computers and the phones, and gives the same answer as Go's
   crypto/tls on shared vectors (`testdata/interop/member-chains.json`). The lite member now takes
@@ -84,6 +106,21 @@ All notable changes to clipboardbridge are documented in this file. The format f
   clipboards and the e2e), the lite member, the Swift kit and the Kotlin kit, prints it in
   the run's summary, and fails when a part falls below its floor (`tools/coverage`,
   docs/testing.md, "Coverage").
+- The bench's desktop suite runs on the Linux member alone too: the primary selection kept
+  out of the group (Y26), HTML and a PNG image copied on Linux and arriving with their types
+  (O4, O1), the session's kind and a copy from an X11 program under Wayland (H1), the keys
+  helper's refusals (T15), the console's tmux on a new virtual terminal (H4), keys in the
+  TPM in the hub's device list (K13) and files through the Flatpak portals (O12); with
+  `-disruptive` it locks, puts to sleep and restarts the computers through the quick actions
+  (Q3, I18, H7) and turns a Mac's application firewall on (H8). CI's OpenWrt job checks the UCI memory limit, procd's
+  respawn and sysupgrade's keep list (I23, H9), and its FreeBSD VM the ipfw rules and
+  pfSense's refusal to open ports (H10).
+- The bench's fleet runs a lite member on another subnet behind a router with avahi, found
+  through the mDNS reflector and reached with `-peer` (D9), a member with a router's memory
+  passing a 90 MiB copy on (O14), and a soak for `-soak-for` with a fault every hour (E10).
+- `release-sign verify` checks SHA256SUMS against the files and the signed manifest and
+  prints the manifest's Docker image; the published workflow checks every published release
+  with it, each file's build attestation, and the image's digest on ghcr.io (I22).
 - The bench's fleet runs the holder's election and handover (D4, D5), dial-back (D11), what a
   stranger learns (S21), the forwarder's hub rule (W30) and fuzzing for `-fuzz-for` (S20).
 - The bench's fleet runs the key-file warnings (K11), the join matrix (G41, Y6) and, in a
@@ -145,6 +182,15 @@ All notable changes to clipboardbridge are documented in this file. The format f
   text arrives exactly, 1 MiB pasted and 4 KiB typed, the clipboard's own text comes back and
   nothing is copied to the group (T3, T5); a secret paste is in no log (T11); the log of
   pastes names each one without its text (T12).
+- The bench's `desktop` suite also checks each device's log, the Windows and Mac services'
+  logs rotated past 1 MiB (I21); `cbb copy` on purpose in every mode (M2); one Linux agent per
+  session and a restarted one (H2); tmux's copy and paste keys (H3); and a large copy's
+  progress in `cbb status` (O13).
+- CI runs the tray app's window in a headless Chrome or Edge against its real Go side: the
+  colours and layouts, collections, Russian, error details and the admin actions (A5, A8,
+  A9, A15, A16, U12); the bench's coverage counts such CI tests as `ci`. XCUITest drives
+  the iPhone app's screens before a group on the simulator and the Mac app's window with no
+  service, and Robolectric the Android app's screens (A2, A4, A14).
 - The bench's time suite checks certificates near the end of the group CA: a new member's
   certificate ends with the CA, and neither it nor the root's is renewed past it (K5).
 - The bench's fleet and time suites take `-coverdir DIR`, where containers running a `cbb` built
@@ -644,6 +690,14 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Changed
 
+- On a Mac the service and the agent write their own logs, as on Windows:
+  `/Library/Logs/clipboardbridge/service.log` and `~/Library/Logs/clipboardbridge/agent.log`,
+  each line after the time, each moved to `.1` at 1 MiB, so a log no longer grows without
+  end; the agent's log is new.
+- The protocol's section 10 now specifies the group records of version 2 (docs/protocol.md,
+  from "Records" to "The state", and the records' canonical form in Conventions, "Signed
+  bodies"), in place of version 1's rules; docs/records-v2.md keeps why the records changed
+  and how the implementations are tested.
 - Both phone apps link the Rust core, the group's rules every member shares: the Swift and
   Kotlin kits call its C functions (`lite/ffi/include/cbb_core.h`) instead of generated
   bindings, and building the Android app, F-Droid's build included, needs the Rust of
@@ -840,12 +894,25 @@ All notable changes to clipboardbridge are documented in this file. The format f
   with the greater record ID as its own device, as the computers and the lite member do, so
   every member agrees which device holds the root and whether it is a phone or a computer.
 
+### Removed
+
+- The Rust core's reader of group records of version 1 (`records`): commands now live in
+  `command`, and the interop vectors of version 1 (`go-*.json` for records, commands, hubs
+  and credentials) give way to the `v2-*.json` vectors of the same cases.
+
 ### Fixed
 
 - The phone app finds the computers again when iOS stopped its browsing: on the first launch,
   where it browses before the user allows the local network, and in the background. A browser
   that waits or fails starts again (after 1 s, doubling to 30 s), and the app browses again
   when it comes back to the front without a computer connected.
+- The tray app keeps the last of quick changes in its settings: two changes close together
+  could leave the earlier one in `desktop.json`.
+- The tray app no longer hangs when the service does not answer, and opened while the
+  service is not running it says so instead of showing an empty window.
+- On Linux the tray item is named Clipboard Bridge instead of Wails.
+- The Mac and iPhone apps take ShowErrorDetails given as YES or NO text, as a launch argument gives it;
+  before, such a value was ignored.
 - A computer that signs two group records in one pass, or at the same moment, gives them
   consecutive numbers: before, both could take one number, which reads as two histories of
   the signer and, for the root, stops the group.

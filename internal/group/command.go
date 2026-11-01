@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HunterEwok/clipboardbridge/internal/core"
 	"github.com/HunterEwok/clipboardbridge/internal/seal"
 )
 
@@ -45,7 +46,7 @@ const (
 )
 
 // WatchCommand reports whether a watch's admin key may sign a command of
-// type t (docs/protocol.md, section 10, rule 8): one that turns remote
+// type t (docs/protocol.md, section 10, "Watches"): one that turns remote
 // paste, the quick actions or sync away from home off, or that runs a
 // quick action, which the receiver's user allows for each kind of signer.
 func WatchCommand(t string) bool {
@@ -452,6 +453,15 @@ func (s *Records) VerifyCommand(c Record, self DeviceID, now time.Time) (Command
 // of signed bodies.
 func parseCommandBody(data []byte) (CommandBody, error) {
 	var body CommandBody
+	if checked, err := core.CheckBody(core.KindCommand, data); checked {
+		if err != nil {
+			return body, fmt.Errorf("group: a command: %w", err)
+		}
+		if err := json.Unmarshal(data, &body); err != nil {
+			return body, fmt.Errorf("group: a command: %w", err)
+		}
+		return body, nil
+	}
 	if len(data) > maxPasteBody {
 		return body, errors.New("group: the command is too large")
 	}

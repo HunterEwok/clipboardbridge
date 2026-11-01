@@ -33,6 +33,12 @@ interface RecordStore {
 
     /** Whether the peer with this verified chain may be the group's hub, as RecordSet.mayHost. */
     fun mayHost(device: String, chain: List<ByteArray>): Boolean = true
+
+    /** Whether the state stops the exchange with the peer of this chain, as RecordSet.stopped: its connection carries records only. */
+    fun stopped(chain: List<ByteArray>): Boolean = false
+
+    /** Whether this member sends the device no secret, as RecordSet.noSecrets. */
+    fun noSecrets(device: String?): Boolean = false
 }
 
 /**
@@ -295,7 +301,7 @@ class MemberNode(
      */
     fun send(text: String, kind: Member.Kind, via: Member.Via = Member.Via.COPY, media: Media.Manifest? = null): Member.Event = synchronized(lock) {
         val e = engine.local(text, kind, via, media)
-        for (c in conns) c.enqueue(Member.Message.Event(e))
+        for (c in conns) forward(e, c)
         e
     }
 
@@ -308,9 +314,14 @@ class MemberNode(
         val c = Conn(t, peer)
         synchronized(lock) {
             conns.add(c)
+            // While the records stop the exchange with the peer, the
+            // connection carries records only, so that the root's decision
+            // reaches it (docs/protocol.md, section 10, "Stopping the exchange").
+            c.recordsOnly = records?.stopped(t.peerChain) ?: false
             val keys = tunnelKey()
             // A phone's keys are in the Secure Enclave or the Keystore.
-            val hello = engine.hello(name).copy(
+            val base = engine.hello(name)
+            val hello = (if (c.recordsOnly) base.copy(current = null) else base).copy(
                 records = records?.digest, tunnelKey = keys?.first, tunnelPSK = keys?.second, os = os, device = device, mode = mode(),
                 keyStore = Records.HARDWARE, media = content != null,
             )
@@ -330,6 +341,14 @@ class MemberNode(
                     if (m !is Member.Message.Hello) throw ProtocolException("the peer's first message is no hello")
                     first = false
                     records?.refused(t.peerChain)?.let { why -> throw ProtocolException("the peer is refused: $why") }
+                    if (c.recordsOnly) {
+                        val store = records
+                        val mine = store?.digest
+                        if (store != null && mine != null && mine != m.hello.records) {
+                            Member.Record.chunks(store.all).forEach { c.enqueue(Member.Message.Records(it)) }
+                        }
+                        continue
+                    }
                     synchronized(lock) {
                         c.adminKey = m.hello.adminKey
                         c.keyStore = m.hello.keyStore
@@ -359,6 +378,14 @@ class MemberNode(
                     if (c.peer != null && chain.isNotEmpty()) hubShare?.invoke(c.peer, chain)?.let { c.enqueue(Member.Message.Hubs(it)) }
                     for (e in evidence()) c.enqueue(Member.Message.Evidence(e))
                     credentials?.all?.takeIf { it.isNotEmpty() }?.let { c.enqueue(Member.Message.Credentials(it)) }
+                    continue
+                }
+                if (c.recordsOnly) {
+                    if (m is Member.Message.Records && m.records.isNotEmpty()) {
+                        synchronized(lock) { if (records?.add(m.records).orEmpty().isNotEmpty()) dropRefusedLocked() }
+                    } else if (m == Member.Message.Bye) {
+                        return
+                    }
                     continue
                 }
                 when (m) {
@@ -609,7 +636,7 @@ class MemberNode(
     /** Closes the connections whose peers the records now refuse, as a device just removed. */
     private fun dropRefusedLocked() {
         val store = records ?: return
-        for (c in conns) if (store.refused(c.transport.peerChain) != null) c.goodbye()
+        for (c in conns) if (store.refused(c.transport.peerChain) != null || store.stopped(c.transport.peerChain) != c.recordsOnly) c.goodbye()
     }
 
     /** Sends server credentials signed on this phone to every connected member. */
@@ -626,7 +653,7 @@ class MemberNode(
 
     private fun apply(r: SyncEngine.Result, from: Conn) {
         val e = r.forward
-        if (e != null) for (c in conns) if (c !== from) c.enqueue(Member.Message.Event(e))
+        if (e != null) for (c in conns) if (c !== from) forward(e, c)
         if (r.changed) engine.currentEvent?.let(onChange)
     }
 
@@ -635,6 +662,22 @@ class MemberNode(
      * while no message waits, and the times of the last read and write for
      * the ping and the timeout.
      */
+    /**
+     * Sends an event on c: none on a connection that carries records only,
+     * and the mark of a secret, never its text, to a peer the records stop
+     * secrets to (docs/protocol.md, section 10, "Stopping the exchange").
+     */
+    private fun forward(e: Member.Event, c: Conn) {
+        if (c.recordsOnly) return
+        var out = e
+        val store = records
+        if (e.kind == Member.Kind.SECRET && store != null) {
+            val leaf = c.transport.peerChain.firstOrNull()?.let { runCatching { CertificateInfo(it).commonName }.getOrNull() }
+            if (store.noSecrets(c.peer ?: leaf)) out = e.copy(text = "")
+        }
+        c.enqueue(Member.Message.Event(out))
+    }
+
     internal class Conn(val transport: FrameTransport, val peer: String?) {
         private val queue = Object()
         private val messages = ArrayDeque<Any>()
@@ -665,6 +708,9 @@ class MemberNode(
 
         /** The admin key the peer's hello offered. */
         @Volatile var adminKey: ByteArray? = null
+
+        /** Whether the records stop the exchange with the peer, which then carries records only. */
+        @Volatile var recordsOnly = false
 
         /** Where the peer's hello says its keys live. */
         @Volatile var keyStore: String? = null

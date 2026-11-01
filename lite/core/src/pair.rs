@@ -176,7 +176,7 @@ impl Joiner {
     /// A joiner with a new device ID and key; name is shown in the devices
     /// list.
     pub fn new(name: &str) -> Result<Joiner> {
-        if !crate::records::valid_name(name) {
+        if !crate::command::valid_name(name) {
             return Err(Error::msg("the device name must be 1 to 64 bytes without control characters"));
         }
         let id = DeviceId::random();

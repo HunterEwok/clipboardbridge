@@ -114,6 +114,9 @@ func (d *Desk) snapshot() State {
 	defer d.mu.Unlock()
 	st := State{Lang: d.lang, Problem: d.problem, Status: d.status, Devices: d.devices, Busy: d.busy,
 		Message: d.message, Settings: d.settings, Version: version.String(), ShowDetails: details}
+	if st.Devices == nil {
+		st.Devices = []control.Device{} // the window takes null for no list
+	}
 	if a, ids, self, ok := d.arrangementLocked(); ok {
 		st.Arranged = a.View(ids, self)
 		st.Custom = len(a.Items) > 0
@@ -159,10 +162,9 @@ func (d *Desk) Arrange(op ArrangeOp) {
 	}
 	d.mu.Lock()
 	d.settings.Arrangement = &a
-	s := d.settings
 	d.message = ""
 	d.mu.Unlock()
-	if err := d.writeSettings(s); err != nil {
+	if err := d.writeSettings(); err != nil {
 		log.Printf("settings: %v", err)
 	}
 }
@@ -201,17 +203,21 @@ func (d *Desk) refresh() {
 			}
 		}
 	}
+	// describe reads the settings under d.mu, so it runs before the lock.
+	problem := ""
+	if err != nil {
+		problem = d.describe(err)
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err != nil {
-		d.problem = d.describe(err)
+		d.problem = problem
 		return
 	}
 	d.problem, d.status, d.devices = "", st, devices
 	if d.pruneLocked() {
-		s := d.settings
 		go func() {
-			if err := d.writeSettings(s); err != nil {
+			if err := d.writeSettings(); err != nil {
 				log.Printf("settings: %v", err)
 			}
 		}()
@@ -276,6 +282,12 @@ func (d *Desk) MakeAdmin(id string) {
 func (d *Desk) Freeze(id string)   { d.admin([]string{"freeze", id}, false, "Frozen.") }
 func (d *Desk) Unfreeze(id string) { d.admin([]string{"unfreeze", id}, false, "Unfrozen.") }
 
+// Resolve, on the group's root, voids both histories of every key that
+// signed two, as cbb resolve does as the administrator.
+func (d *Desk) Resolve() {
+	d.admin([]string{"resolve"}, false, "Both histories are void. The device signs its records again by itself.")
+}
+
 // Update installs the newest signed release the group passed around, as
 // cbb update does as the administrator.
 func (d *Desk) Update() { d.admin([]string{"update"}, false, "Clipboard Bridge is updated.") }
@@ -303,7 +315,7 @@ func (d *Desk) SetMode(id, mode string) {
 func (d *Desk) admin(args []string, yes bool, done string) {
 	details := d.showDetails()
 	d.act(func() (string, error) {
-		if err := runAdmin(args, yes, details); err != nil {
+		if err := adminRun(args, yes, details); err != nil {
 			return "", err
 		}
 		return d.T(done), nil
@@ -340,13 +352,18 @@ func (d *Desk) SaveSettings(s Settings) error {
 	s.Arrangement = d.settings.Arrangement
 	d.settings = s
 	d.mu.Unlock()
-	return d.writeSettings(s)
+	return d.writeSettings()
 }
 
-// writeSettings writes the settings to desktop.json.
-func (d *Desk) writeSettings(s Settings) error {
+// writeSettings writes the current settings to desktop.json. It reads them
+// under settingsMu, so that of two writes close together the last one
+// holds the newer settings, never a copy taken before the other's.
+func (d *Desk) writeSettings() error {
 	d.settingsMu.Lock()
 	defer d.settingsMu.Unlock()
+	d.mu.Lock()
+	s := d.settings
+	d.mu.Unlock()
 	if d.settingsPath == "" {
 		return errors.New("no configuration folder")
 	}

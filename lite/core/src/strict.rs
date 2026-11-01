@@ -72,7 +72,7 @@ pub fn integers_only(b: &[u8]) -> Result<()> {
 }
 
 /// Checks that b is a signed body in the strict form and in its canonical
-/// form (docs/records-v2.md, "Canonical form of signed bodies"): exactly
+/// form (docs/protocol.md, Conventions, "Signed bodies"): exactly
 /// the bytes canonicalize gives for what it holds, as Go's
 /// strict.CheckCanonical.
 pub fn check_canonical(b: &[u8], required: &[&str]) -> Result<()> {

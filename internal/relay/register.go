@@ -346,7 +346,7 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 			// of this registration: the records stay with the group's
 			// devices.
 			for _, o := range r.groups[tag] {
-				if recs.set.Refused(o.chain) != nil {
+				if refusedHere(recs.set, o.chain) != nil {
 					r.dropLocked(o)
 				}
 			}
@@ -355,7 +355,7 @@ func (r *Relay) register(raw net.Conn, from netip.Addr) (*member, error) {
 		// A group the relay holds no verified record of is one it knows
 		// nothing about: only records it holds can refuse a device.
 		if recs != nil && recs.set.Len() > 0 {
-			if err := recs.set.Refused(cs.PeerCertificates); err != nil {
+			if err := refusedHere(recs.set, cs.PeerCertificates); err != nil {
 				r.forgetRecords(tag)
 				return refuse(strings.TrimPrefix(err.Error(), "group: "))
 			}
@@ -420,4 +420,14 @@ func proof(shared []byte, cs tls.ConnectionState) ([]byte, error) {
 	m := hmac.New(sha256.New, shared)
 	m.Write(k)
 	return m.Sum(nil), nil
+}
+
+// refusedHere is why the relay refuses a device of a group: what the
+// records refuse, except a stop of the exchange (group.ErrStopped), under
+// which the group's devices still exchange records through the relay.
+func refusedHere(set *group.Records, chain []*x509.Certificate) error {
+	if err := set.Refused(chain); err != nil && !errors.Is(err, group.ErrStopped) {
+		return err
+	}
+	return nil
 }

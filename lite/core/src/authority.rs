@@ -38,6 +38,11 @@ pub const ALG_ES256: &str = "es256";
 pub const MAX_NEWER: usize = 16;
 /// The largest seq a signer gives a record.
 pub const MAX_SEQ: i64 = (1 << 31) - 1;
+
+/// The kinds of a conflict (docs/protocol.md, section 10, "The state").
+pub const CONFLICT_ADMINS: &str = "admins";
+pub const CONFLICT_CLAIMS: &str = "claims";
+pub const CONFLICT_TWO_HISTORIES: &str = "two_histories";
 /// The longest takeover delay the root may set (7 days), in milliseconds.
 pub const MAX_DELAY: i64 = 7 * 24 * 3600 * 1000;
 /// The takeover delay without a settings record (72 hours).
@@ -71,6 +76,13 @@ pub const POWERS: [&str; 8] =
 
 /// Every command type an admin may be given, sorted.
 pub const COMMANDS: [&str; 7] = ["action", "actions-off", "away-off", "hub", "mode", "paste", "paste-off"];
+
+/// The values of State::stop (docs/protocol.md, section 10, "Stopping the
+/// exchange"): nothing stops, no member sends a secret, or every member
+/// exchanges records only.
+pub const STOP_NONE: &str = "none";
+pub const STOP_SECRETS: &str = "secrets";
+pub const STOP_FULL: &str = "full";
 
 const ROLES: [&str; 5] = ["full", "phone", "lite", "watch", "shortcut"];
 const OSES: [&str; 8] = ["linux", "windows", "macos", "ios", "android", "watchos", "wearos", "none"];
@@ -151,7 +163,7 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-/// A record's body (docs/records-v2.md, "The record").
+/// A record's body (docs/protocol.md, section 10, "Records").
 #[derive(Clone, Serialize, Deserialize, Default, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Body {
@@ -296,7 +308,7 @@ impl Body {
 
     /// Reads a record body: its size, the strict and canonical form, no
     /// field its type does not know and none empty, and each field against
-    /// its row (docs/records-v2.md, "Field rows").
+    /// its row (docs/protocol.md, section 10, "Field rows").
     pub fn parse(data: &[u8]) -> Result<Body> {
         if data.len() > MAX_CHECKPOINT_BODY {
             return Err(Error::msg(format!("a record body of {} bytes is over {MAX_CHECKPOINT_BODY}", data.len())));
@@ -629,7 +641,7 @@ pub fn verify<'a>(r: &Record, root_key: impl Fn(&Hash) -> Option<&'a Cert>, sigs
     Ok(Signed { record: r.clone(), body, id: r.id(), admin_ca })
 }
 
-/// What the evaluation takes (docs/records-v2.md, "The state").
+/// What the evaluation takes (docs/protocol.md, section 10, "The state").
 pub struct Input<'a> {
     /// The group's first root; its tag is group.
     pub group_ca: &'a Cert,
@@ -642,13 +654,13 @@ pub struct Input<'a> {
     pub first_seen: &'a BTreeMap<Hash, i64>,
     /// The member does not know how long it has held its claims: its clock
     /// started again and it kept no time. No claim then takes effect by
-    /// waiting (docs/records-v2.md, "Handing the group over").
+    /// waiting (docs/protocol.md, section 10, "Handing the group over").
     pub time_unknown: bool,
     /// Signatures already checked, when the caller keeps them.
     pub sigs: Option<&'a SigCache>,
 }
 
-/// The group's state (docs/records-v2.md, "The state").
+/// The group's state (docs/protocol.md, section 10, "The state").
 #[derive(Clone, Serialize, PartialEq, Debug, Default)]
 pub struct State {
     pub roots: Vec<Hash>,
@@ -680,7 +692,7 @@ pub struct State {
     pub checkpoint: Option<Hash>,
     /// The user's main hubs from the hubs record that counts, the devices
     /// of the state with the role full or phone, in its order
-    /// (docs/records-v2.md, "The hubs table").
+    /// (docs/protocol.md, section 10, "The hubs table").
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hubs: Vec<String>,
     /// The admin key of the group's recovery key, from the newest recovery
@@ -725,7 +737,7 @@ pub const WHY_UNDECIDED: &str = "undecided";
 /// MAX_ADMINS).
 pub const WHY_LIMIT: &str = "limit";
 
-// The limits on a record set (docs/records-v2.md, "Limits"). Records over
+// The limits on a record set (docs/protocol.md, section 10, "Limits"). Records over
 // them count for nothing, with the reason WHY_LIMIT; the set is never
 // refused, so that no admin can stop the group by filling it.
 
@@ -815,7 +827,7 @@ pub fn evaluate_seqs(input: &Input) -> (State, BTreeMap<Hash, i64>) {
     let seqs = full.seqs(group_ca);
     // The set a root's checkpoint prunes is evaluated as if the member had
     // dropped what it leaves out; the checkpoint that counts is the newest
-    // that still counts there (docs/records-v2.md, "Checkpoints").
+    // that still counts there (docs/protocol.md, section 10, "Checkpoints").
     let mut best: Option<((usize, i64, Hash), State)> = None;
     for c in full.checkpoints(group_ca) {
         let Some(r) = full.recs.get(c) else { continue };
@@ -870,7 +882,7 @@ fn prune(records: &[Record], group: &str, c: &Body) -> Vec<Record> {
 
 /// The IDs of the records of a later version for this group that a
 /// current root or admin of the state signed, sorted, at most MAX_NEWER
-/// (docs/records-v2.md, "Records of a later version").
+/// (docs/protocol.md, section 10, "Records of a later version").
 fn newer(input: &Input, state: &State, roots: &BTreeMap<Hash, Cert>) -> Vec<Hash> {
     let admins: BTreeSet<Hash> = state.devices.iter().filter_map(|d| d.admin).collect();
     let mut ids = BTreeSet::new();
@@ -1676,7 +1688,7 @@ impl<'a> Epoch<'a> {
             by_root.entry(find(&parent, r)).or_default().push(r);
         }
         for rs in by_root.values() {
-            let mut c = Conflict { kind: "admins", records: Vec::new(), signers: Vec::new() };
+            let mut c = Conflict { kind: CONFLICT_ADMINS, records: Vec::new(), signers: Vec::new() };
             for &r in rs {
                 c.records.push(self.r(r).s.id);
                 if !c.signers.contains(&self.r(r).b().signer) {
@@ -1762,7 +1774,7 @@ impl<'a> Epoch<'a> {
         for (signer, seq) in forked {
             let records =
                 self.of(&signer).iter().filter(|&&i| self.r(i).b().seq == seq).map(|&i| self.r(i).s.id).collect();
-            self.conflicts.push(Conflict { kind: "two_histories", records, signers: vec![signer] });
+            self.conflicts.push(Conflict { kind: CONFLICT_TWO_HISTORIES, records, signers: vec![signer] });
             if self.on_path.contains_key(&signer) {
                 self.stop_full = true;
             }
@@ -1894,7 +1906,7 @@ impl<'a> Epoch<'a> {
             }
         }
         if first.len() > 1 {
-            let mut conflict = Conflict { kind: "claims", records: Vec::new(), signers: Vec::new() };
+            let mut conflict = Conflict { kind: CONFLICT_CLAIMS, records: Vec::new(), signers: Vec::new() };
             for &r in &first {
                 let cl = self.claim(r, "competing");
                 self.claims.push(cl);
@@ -1910,7 +1922,7 @@ impl<'a> Epoch<'a> {
             let cl = self.claim(c, "disputed");
             self.claims.push(cl);
             let mut conflict =
-                Conflict { kind: "claims", records: vec![self.r(c).s.id], signers: vec![self.r(c).b().signer] };
+                Conflict { kind: CONFLICT_CLAIMS, records: vec![self.r(c).s.id], signers: vec![self.r(c).b().signer] };
             for &r in ds {
                 conflict.records.push(self.r(r).s.id);
                 if !conflict.signers.contains(&self.r(r).b().signer) {
@@ -1947,7 +1959,7 @@ impl<'a> Epoch<'a> {
 
     /// Builds the state of the last epoch.
     fn state(&self) -> State {
-        let mut s = State { roots: self.path.clone(), stop: "none".into(), ..State::default() };
+        let mut s = State { roots: self.path.clone(), stop: STOP_NONE.into(), ..State::default() };
         if let Some(d) = self.root_device() {
             if !self.r(d).b().key.is_some_and(|k| self.revoked.contains(&k)) {
                 s.root_device = self.r(d).b().device.clone();
@@ -1993,9 +2005,9 @@ impl<'a> Epoch<'a> {
             }
         }
         if self.stop_full {
-            s.stop = "full".into();
+            s.stop = STOP_FULL.into();
         } else if forked_admin {
-            s.stop = "secrets".into();
+            s.stop = STOP_SECRETS.into();
         }
         s
     }

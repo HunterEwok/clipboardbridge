@@ -77,7 +77,7 @@ type Identity struct {
 	// Claim is the new root, with its key, of a claim this admin signed
 	// to take the group over that has not taken effect yet: when the
 	// records make it the current root, TakenOver makes this device the
-	// root with it (docs/records-v2.md, "Handing the group over"). Nil
+	// root with it (docs/protocol.md, section 10, "Handing the group over"). Nil
 	// elsewhere.
 	Claim *CA
 }

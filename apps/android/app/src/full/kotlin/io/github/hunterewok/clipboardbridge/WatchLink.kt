@@ -21,7 +21,7 @@ import kotlinx.coroutines.withTimeout
  * group as the app sees it, in a data item of the Wearable Data Layer, and
  * turns sync away from home on or off when the watch asks (docs/apps.md,
  * Wear OS); on the root phone it asks the watch for its admin key and hands
- * it the admin CA (docs/protocol.md, section 10, rule 8). Without Google
+ * it the admin CA (docs/protocol.md, section 10, "Watches"). Without Google
  * Play services there is no watch to tell. This is the full build's; the
  * F-Droid build's (src/fdroid) has no watch.
  */
@@ -135,7 +135,7 @@ object WatchLink {
 /** The watch's away switch, the same as the one in Settings; Play services start it when the watch asks. */
 class WatchListener : WearableListenerService() {
     /**
-     * The watch's emergency actions (docs/protocol.md, section 10, rule 8):
+     * The watch's emergency actions (docs/protocol.md, section 10, "Watches"):
      * the body it asks for, or what it signed brought into the group; the
      * answer goes back to the watch that asked.
      */

@@ -278,7 +278,7 @@ func TestRename(t *testing.T) {
 	if err != nil || m.Name != "deck" {
 		t.Fatalf("rename: %+v %v", m, err)
 	}
-	// Only the root renames itself or an admin (docs/records-v2.md, "Who
+	// Only the root renames itself or an admin (docs/protocol.md, section 10, "Who
 	// signs what").
 	if _, err := deck.do(t, control.Header{Op: control.OpRename, Name: "pi", NewName: "pi4"}, ""); err == nil || !strings.Contains(err.Error(), "only the group's root") {
 		t.Errorf("the admin renamed the root: %v", err)

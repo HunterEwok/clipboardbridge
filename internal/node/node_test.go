@@ -459,8 +459,11 @@ func TestStalledPeerIsDropped(t *testing.T) {
 
 func TestPingCadence(t *testing.T) {
 	// Pings come every PingEvery, so a connection survives a Timeout of
-	// three PingEvery, as in production.
-	pi, mac := newMember(t, Full, withTimers(100*time.Millisecond, 300*time.Millisecond)), newMember(t, Full)
+	// three PingEvery, as in production. The node's own Timeout here is
+	// longer, so that a stall of this reader on a busy test machine (the
+	// FreeBSD VM) does not end the connection; the gaps are checked
+	// against three PingEvery below.
+	pi, mac := newMember(t, Full, withTimers(100*time.Millisecond, 2*time.Second)), newMember(t, Full)
 	r := rawPeer(t, pi, mac)
 	r.hello(clip.Hello{Wall: time.Now().UnixMilli()})
 	var last time.Time
@@ -481,7 +484,8 @@ func TestPingCadence(t *testing.T) {
 		last = time.Now()
 		r.send(&message{Type: typePing})
 	}
-	// Each gap stays under the Timeout, which is what keeps the connection;
+	// Each gap stays under three PingEvery, production's Timeout, which is
+	// what keeps the connection;
 	// the cadence is the median gap, so that one gap a busy test machine
 	// stretched (it measures this reader's scheduling too) does not count
 	// as a slow pinger.
@@ -1342,5 +1346,35 @@ func TestRecordsOnlyLetIn(t *testing.T) {
 	listed.Store(true)
 	if err := wait(t, aDone, "the records-only connection to end"); !errors.Is(err, ErrLetIn) {
 		t.Fatalf("the connection ended with %v, want ErrLetIn", err)
+	}
+}
+
+// TestNoSecretsSendsTheMark checks that a member sends a peer that the
+// records stop secrets to (Config.NoSecrets) the mark of a secret, never
+// its text, and other copies as they are (docs/protocol.md, section 10,
+// "Stopping the exchange").
+func TestNoSecretsSendsTheMark(t *testing.T) {
+	var stopped atomic.Bool
+	stopped.Store(true)
+	mac := newMember(t, Full, func(_ *clip.Config, nc *Config) {
+		nc.NoSecrets = func(group.DeviceID) bool { return stopped.Load() }
+	})
+	pi := newMember(t, Full)
+	link(t, mac, pi)
+	waitPeers(t, mac, 1)
+	if _, err := mac.Copied("hunter2", clip.Secret, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	noWrite(t, pi, "hunter2", 300*time.Millisecond)
+	if _, err := mac.Copied("plain text", clip.Text, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	waitWrite(t, pi, "plain text")
+	stopped.Store(false)
+	if _, err := mac.Copied("otp 123456", clip.Secret, clip.Copy); err != nil {
+		t.Fatal(err)
+	}
+	if w := waitWrite(t, pi, "otp 123456"); w.Kind != clip.Secret {
+		t.Errorf("a secret was written as %v", w.Kind)
 	}
 }

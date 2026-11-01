@@ -192,7 +192,7 @@
   "Differential fuzzing": "Fuzzing linganishi",
   "the four implementations reading changed bodies and record sets alike, in CI and nightly": "utekelezaji wote wanne husoma kwa njia moja miili na seti za rekodi zilizobadilishwa, katika CI na kila usiku",
   "Group records, version 2": "Rekodi za kikundi, toleo la 2",
-  "the next format of the group's authority records and the one rule that evaluates them, built for 0.6": "muundo ujao wa rekodi za mamlaka za kikundi na kanuni moja inayozitathmini, kwa 0.6",
+  "why the group's authority records moved to version 2 in 0.6 and how they are tested; the rules are in protocol.md, section 10": "kwa nini rekodi za mamlaka za kikundi zilihamia toleo la 2 katika 0.6 na jinsi zinavyojaribiwa; kanuni ziko katika protocol.md, sehemu ya 10",
   "The core's entry point": "Mlango wa kiini",
   "the one call, bytes in and bytes out, through which the phones and Go use the Rust core's rules, and its error codes": "mwito mmoja, baiti zinaingia na baiti zinatoka, ambao simu na Go hutumia sheria za kiini cha Rust kupitia, na misimbo yake ya makosa",
   "Security policy": "Sera ya usalama",

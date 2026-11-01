@@ -209,6 +209,10 @@ final class MacModel: ObservableObject {
     /// which -allow-file-key consents to.
     func makeAdmin(_ id: String) async { await admin(["admin", "-allow-file-key", id], done: String(localized: "It is an admin now.")) }
     func freeze(_ id: String) async { await admin(["freeze", id], done: String(localized: "Frozen.")) }
+    /// On the group's root: voids both histories of every key that signed two.
+    func resolve() async {
+        await admin(["resolve"], done: String(localized: "Both histories are void. The device signs its records again by itself."))
+    }
     func unfreeze(_ id: String) async { await admin(["unfreeze", id], done: String(localized: "Unfrozen.")) }
 
     /// Sets the sync mode: this Mac's with id nil, or on an admin another
@@ -250,7 +254,9 @@ final class MacModel: ObservableObject {
     /// ShowErrorDetails default when it is set (Settings, or
     /// defaults write io.github.hunterewok.clipboardbridge.mac ShowErrorDetails -bool YES).
     nonisolated static var showsErrorDetails: Bool {
-        if let set = UserDefaults.standard.object(forKey: "ShowErrorDetails") as? Bool { return set }
+        // bool(forKey:) reads YES and NO given as text too, as a launch
+        // argument (-ShowErrorDetails NO) gives them.
+        if UserDefaults.standard.object(forKey: "ShowErrorDetails") != nil { return UserDefaults.standard.bool(forKey: "ShowErrorDetails") }
         #if DEBUG
         return true
         #else
