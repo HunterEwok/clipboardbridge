@@ -929,6 +929,13 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Fixed
 
+- Android: making the phone's first group on a new install no longer fails while saving the
+  phone's sync mode, whose folder did not exist yet.
+- Android: the phone's first group on a new install now gets its key for sealed messages;
+  the secret was saved before its folder existed, so the commands for the phone came in the
+  open.
+- Android: a camera that does not start on the add-device screen (none at the back, or held
+  by another app) no longer ends the app; it says so, and the QR code's text still works.
 - The tray app keeps the last of quick changes in its settings: two changes close together
   could leave the earlier one in `desktop.json`.
 - The tray app no longer hangs when the service does not answer, and opened while the
@@ -1327,6 +1334,12 @@ All notable changes to clipboardbridge are documented in this file. The format f
 
 ### Added
 
+- The bench's `phone` suite: the Android app on an emulator in a group with members of the
+  fleet, driven by instrumented tests (`apps/android/app/src/androidTest`) through a helper
+  that runs cbb on the members: the phone makes its own group, admits computers, syncs both
+  ways, pastes on a computer, runs a quick action, notifies of the group's events, sends from
+  the tile and the widget, shares files, takes a computer's secret, syncs through a
+  computer hub's tunnel and is the hub itself at a forwarder. CI's new `Android app on an emulator` job runs it.
 - An open blind relay: `cbb relay -open` serves every group that registers, as the project's
   relay at `cbb.tools` will, within limits that keep groups nobody vouches for from filling
   it: 4096 groups, 16 registrations from one address and 64 from one network, and 1 MiB a
