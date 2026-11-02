@@ -676,12 +676,25 @@ Pi's side uses GPIO 16 and 17 (the ESP honours it only on an issue 4 board). Nex
   UART is a trace inside the case, so it carries no encryption of its own; the texts in
   paste frames are already the user's, as on every other member's screen.
 
+**Time.** The Pi Zero has no clock of its own (NextPi keeps a saved time, which is wrong
+after every power-up), and TLS checks certificates against the time. The Next has a
+battery-backed DS1307 that NextZXOS reads (`.date`, `.time`), so the driver or `.cbb` reads
+it at the start and sends it to the Pi in a frame of its own, and the lite member sets the
+system clock; the group's time is the fallback when the Next's battery has run down.
+
+**What NextPi gives** (read on the bench, NextPi 1.91D): the user partition `/NextPi` is
+writable and on the shell's `PATH` (`/NextPi/nextpi`), and NextPi's start script runs
+`/NextPi/nextpi/autoexec.sh` when it exists, so the lite member is installed and started
+without touching the read-only root. The shell on the UART is a systemd service that
+restarts bash at once; GPIO 16 and 17 are plain inputs, so there is no RTS and CTS, and
+flow control towards the Next is XON and XOFF.
+
 **Speeds.** At 115200 baud the 512-byte buffer holds about two frames' worth of bytes, so
 one missed interrupt (a long SD card access runs with interrupts off) loses data. The ESP
 runs at 19200 baud instead (`AT+UART_CUR`), about 2 KB a second, which a text and a TLS
 handshake need, with more than 0.2 s of margin; a lost byte breaks the TLS session, and the
 Pi dials again. Towards the Pi, the driver stops the Pi with XOFF (NextPi's terminal has
-`ixon`), or with RTS and CTS if the Accelerated board wires GPIO 16 and 17.
+`ixon`).
 
 **Open questions, for the bench.**
 
@@ -692,11 +705,9 @@ Pi dials again. Towards the Pi, the driver stops the Pi with XOFF (NextPi's term
    shell. Terminex reads the Pi's UART itself, so the driver must leave that UART alone
    while it runs; how the driver tells (the UART selection it finds, or a key) is to be
    tried.
-2. Start at boot: whether NextPi runs a start script from its user partition, or the root
-   must be opened once to add a service.
-3. Copying from the Next: a key in the driver that sends the current BASIC line or a marked
+2. Copying from the Next: a key in the driver that sends the current BASIC line or a marked
    part of the screen, or `.cbb copy` through the driver's API.
-4. Whether the driver and the replacement keyboard driver should be one, and how much of the
+3. Whether the driver and the replacement keyboard driver should be one, and how much of the
    key buffer fits in 512 bytes.
 
 Steps: the frames and `cbb next link` on the Pi, tested on Linux against a program that
