@@ -1684,7 +1684,7 @@ jobs:
           find "$results" -type f 2>/dev/null | head -50
           find "$results" -name '*.xml' -exec cat {} + 2>/dev/null | head -400
           # logcat waits for a device that never came up; the timeout ends that.
-          timeout 30 "$ANDROID_HOME/platform-tools/adb" logcat -d -s TestRunner:* AndroidRuntime:* clipboardbridge:* System.err:* || true
+          timeout 30 "$ANDROID_HOME/platform-tools/adb" logcat -d -s TestRunner:* AndroidRuntime:* clipboardbridge:* GoLog:* System.err:* || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

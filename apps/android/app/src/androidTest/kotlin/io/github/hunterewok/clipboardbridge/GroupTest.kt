@@ -350,6 +350,8 @@ class GroupTest {
                 // so the computer reaches the phone through the forwarder.
                 Bench.run(Bench.PC, CUT_HOME)
                 until(180, "${Bench.PC} connected to the phone hub") {
+                    // What the phone sends on its old connection meets the reset.
+                    runBlocking { model.sync() }
                     global = runCatching { Bench.run(Bench.PC, "cbb global") }.getOrElse { it.toString() }
                     global.contains("connected to the hub")
                 }
@@ -430,11 +432,11 @@ class GroupTest {
 
     private companion object {
         /**
-         * Cuts the phone off from a member's port: what comes in is dropped,
-         * and the member's own end of a connection there is reset. With -D
-         * in place of -A it undoes it.
+         * Cuts the phone off from a member's port: both ends of a connection
+         * there are reset, so neither keeps a stale one. With -D in place of
+         * -A it undoes it.
          */
-        const val CUT_HOME = "iptables -A INPUT -p tcp --dport 8764 -j DROP && " +
+        const val CUT_HOME = "iptables -A INPUT -p tcp --dport 8764 -j REJECT --reject-with tcp-reset && " +
             "iptables -A OUTPUT -p tcp --sport 8764 -j REJECT --reject-with tcp-reset"
     }
 }
