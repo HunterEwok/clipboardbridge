@@ -365,7 +365,11 @@ class GroupTest {
             val guest = Bench.add()
             Bench.run(guest, "umask 077 && cat >/tmp/invite", stdin = invite.file.readText())
             val join = Bench.start(guest, "echo yes | cbb pair -invite /tmp/invite")
-            until(120, "the phone asks about $guest; the job says ${join.output().first}") { model.invite?.request != null }
+            try {
+                until(120, "the phone asks about $guest") { model.invite?.request != null }
+            } catch (e: AssertionError) {
+                throw AssertionError("${e.message}; the job says ${join.output().first}\n$guest's log:\n${Bench.logs(guest)}")
+            }
             InstrumentationRegistry.getInstrumentation().runOnMainSync { model.answer(true) }
             val out = join.finish(120)
             assertTrue("cbb pair -invite on $guest did not join:\n$out", out.contains("Joined the group."))
