@@ -336,13 +336,20 @@ class GroupTest {
             assertEquals("setting the forwarder says ${model.hubNote}", null, model.hubNote)
             until(60, "the phone registered at $fwd; the app says ${model.hub}") { hubNow().status == HubOnPhone.Status.REGISTERED }
 
-            // A computer away (the fleet sees no mDNS from the emulator) reaches the phone through the forwarder.
+            // At home the computer learns the phone hub's offer over its connection to the phone.
             Bench.run(Bench.PC, "cbb global on", stdin = "yes\n")
             var global = ""
             try {
-                until(120, "${Bench.PC} connected to the phone hub") {
+                until(120, "${Bench.PC} learns the phone hub's offer") {
                     // The computer connects again for its hello to carry its tunnel key; the phone dials it.
                     runBlocking { model.sync() }
+                    global = runCatching { Bench.run(Bench.PC, "cbb global") }.getOrElse { it.toString() }
+                    global.contains("the hub is")
+                }
+                // Away: the phone no longer reaches the computer's member port, whose connection ends,
+                // so the computer reaches the phone through the forwarder.
+                Bench.run(Bench.PC, CUT_HOME)
+                until(180, "${Bench.PC} connected to the phone hub") {
                     global = runCatching { Bench.run(Bench.PC, "cbb global") }.getOrElse { it.toString() }
                     global.contains("connected to the hub")
                 }
@@ -367,6 +374,7 @@ class GroupTest {
             runBlocking { model.addHomeNetwork() }
             assertTrue("the hub does not count this network as home: ${model.hub}", hubNow().home)
         } finally {
+            runCatching { Bench.run(Bench.PC, CUT_HOME.replace(" -A ", " -D ")) }
             runCatching { Bench.run(Bench.PC, "cbb global off", stdin = "yes\n") }
             runBlocking { model.setHub(false) }
         }
@@ -419,5 +427,14 @@ class GroupTest {
         runBlocking { model.setAway(false) }
         assertEquals("off again", AwayFromHome.Status.OFF, status()?.status ?: AwayFromHome.Status.OFF)
     }
-}
 
+    private companion object {
+        /**
+         * Cuts the phone off from a member's port: what comes in is dropped,
+         * and the member's own end of a connection there is reset. With -D
+         * in place of -A it undoes it.
+         */
+        const val CUT_HOME = "iptables -A INPUT -p tcp --dport 8764 -j DROP && " +
+            "iptables -A OUTPUT -p tcp --sport 8764 -j REJECT --reject-with tcp-reset"
+    }
+}
