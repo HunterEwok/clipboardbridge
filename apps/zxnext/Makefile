@@ -16,10 +16,10 @@ build/CBB: $(SRC) src/frame.h src/link.h
 	cd build && $(ZCC) +zxn -vn -O2 -clib=new -subtype=dotn -startup=30 -I../src \
 		$(addprefix ../,$(SRC)) -o cbb -create-app
 
-build/PIBRIDGE: src/pibridge.c src/link.c src/link.h
+build/PIBRIDGE: src/pibridge.c src/link.c src/link.h src/frame.c src/frame.h
 	mkdir -p build
 	cd build && $(ZCC) +zxn -vn -O2 -clib=new -subtype=dotn -startup=30 -I../src \
-		../src/pibridge.c ../src/link.c -o pibridge -create-app
+		../src/pibridge.c ../src/link.c ../src/frame.c -o pibridge -create-app
 
 test: build/frame_test
 	./build/frame_test

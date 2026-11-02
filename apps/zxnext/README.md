@@ -59,16 +59,26 @@ travels in the clear: use it only on a network of your own, and only while testi
    ```
 
 3. On the Next: `.pibridge COMPUTER_IP 2323` (`.pibridge -d ...` shows the ESP's answers,
-   its firmware version among them). The computer gets the `SUP>` prompt.
+   its firmware version among them). The computer gets the `SUP>` prompt. The bridge keeps
+   the address in `PIBRIDGE.CFG` next to itself, so later a plain `.pibridge` dials it again.
 4. SPACE on the Next stops it. It then says how many bytes went each way, how full its ring
    towards the ESP got, and whether a receive buffer filled up, which would mean lost bytes.
 
 It runs the Z80 at 28 MHz while it works. The ESP can take the Pi's output more slowly than
 the Pi writes it, so the bridge sends the Pi XOFF when its ring is three quarters full and
 XON when it has room again; that needs `ixon` on the Pi's terminal (`stty -a` shows it).
+Tried on a real Next: 12.5 KB of the Pi's output arrived whole; at 3.5 MHz the bridge lost
+bytes.
 
-Not yet run on a real Next: the ESP's speed (115200, its stock one), the UART status bit
-for a full buffer, and passthrough's timing.
+**Updates while it runs.** The computer can replace a file in the bridge's own folder (a new
+`PIBRIDGE`, say) without the card leaving the Next. It sends the bytes `00 1B 43 42 42 55`
+(`CBBU` after NUL and ESC), then a line `NAME LENGTH CRC32` ending in CR, with an 8.3 name
+and the CRC-32 in 8 hex digits as zlib computes it. The bridge answers `CBBU GO`, takes the
+file in blocks of 256 bytes, answering `+` after writing each, so the computer sends the
+next block only then; it writes to `UPDATE.TMP` and replaces the file only when the CRC-32
+matches, then answers `CBBU OK` or `CBBU ERR` with the cause. The Pi waits (XOFF) meanwhile.
+Before the first such update, copy the bridge to the card once, for example with NextZXOS's
+`.http`, which downloads through the same ESP.
 
 ## Build
 
