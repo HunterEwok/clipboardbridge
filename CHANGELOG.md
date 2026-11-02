@@ -18,6 +18,11 @@ All notable changes to clipboardbridge are documented in this file. The format f
   in its pairing info, so a phone records it as it admits the device, and keeps it when it
   signs the record again; the core's devices list gives it (`seal`). A receiver whose record
   has a key refuses a paste in the open (docs/protocol.md, section 15, "Sealed commands").
+- The phones have keys for sealed messages of their own: a secret in the keychain, or under a
+  key of the Android Keystore, whose public key (the core's new `seal_public`) goes in the
+  phone's device record when it makes a group or joins one, so the commands for a phone come
+  sealed too. The core's `group_command` opens them with the secret, and refuses a paste in the
+  open for a device whose record has a key, for the phones as for the members.
 - The apps show what stops the group: the phones on Home, the Mac app and the tray app above
   the devices, in a card that says what is stopped, why, and who decides (a claim to take the
   group over with the time left, two admins acting against each other, a key that signed

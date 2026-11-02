@@ -76,9 +76,9 @@ public enum Pairing {
         /// `Info.lite` for a lite member, which only dials and never holds
         /// CA keys; nil for a full device.
         public var role: String?
-        /// A computer's or lite member's public key for sealed messages,
-        /// which the phone that admits it puts in its device record
-        /// (docs/protocol.md, section 15); nil from a phone.
+        /// The joiner's public key for sealed messages, which the phone
+        /// that admits it puts in its device record (docs/protocol.md,
+        /// section 15).
         public var seal: Data?
 
         /// The role of a lite member.
@@ -122,7 +122,7 @@ public enum Pairing {
             guard ["linux", "windows", "macos", "ios", "android"].contains(os) || (os == "none" && role == Self.lite), !name.isEmpty, name.utf8.count <= 64,
                   name.unicodeScalars.allSatisfy(Self.printable),
                   role == nil || role == Self.lite else { return false }
-            if let seal, isPhone || seal.count != Self.sealKeySize { return false }
+            if let seal, seal.count != Self.sealKeySize { return false }
             guard let adminKey else { return true }
             return isPhone && P256.Signing.PublicKey(spki: adminKey) != nil
         }

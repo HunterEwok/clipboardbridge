@@ -16,6 +16,7 @@ import io.github.hunterewok.clipboardbridge.kit.GroupAlert
 import io.github.hunterewok.clipboardbridge.kit.AndroidAttestation
 import io.github.hunterewok.clipboardbridge.kit.CertificateInfo
 import io.github.hunterewok.clipboardbridge.kit.CredentialKeeper
+import io.github.hunterewok.clipboardbridge.kit.Core
 import io.github.hunterewok.clipboardbridge.kit.CredentialRefresh
 import io.github.hunterewok.clipboardbridge.kit.CredentialStore
 import io.github.hunterewok.clipboardbridge.kit.Commands
@@ -64,6 +65,7 @@ import java.net.Inet4Address
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -517,7 +519,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val member = withContext(Dispatchers.IO) { memberSigner() }
         val name = deviceName
         val existing = withContext(Dispatchers.IO) { copyOfState() }
-        val g = existing ?: withContext(Dispatchers.IO) { PhoneGroup.create(ca, member.publicKeyDER, Instant.now(), PhoneGroup.validName(name)) }
+        val g = existing ?: withContext(Dispatchers.IO) { PhoneGroup.create(ca, member.publicKeyDER, Instant.now(), PhoneGroup.validName(name), sealKey()) }
         var failure: Exception? = null
         for (addr in SyncRule.ordered(code.addrs)) {
             currentCoroutineContext().ensureActive()
@@ -678,7 +680,7 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val (parts, code) = listening
         val (listener, cert, admin) = parts
         show(code)
-        val info = Pairing.Info(PhoneGroup.validName(deviceName), "android", admin?.publicKeyDER)
+        val info = Pairing.Info(PhoneGroup.validName(deviceName), "android", admin?.publicKeyDER, seal = withContext(Dispatchers.IO) { sealKey() })
         val stopped = AtomicBoolean(false)
         val stop = {
             stopped.set(true)
@@ -922,7 +924,8 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
         val g = synchronized(lock) { state } ?: return refused("this device is in no group")
         val now = System.currentTimeMillis()
         val body = try {
-            synchronized(lock) { Commands.verify(c, g.records, g.device, now) }
+            val secret = sealSecret()
+            synchronized(lock) { Commands.verify(c, g.records, g.device, now, secret) }
         } catch (e: Commands.Refused) {
             return refused(e.message ?: "the command is not valid")
         }
@@ -1655,6 +1658,37 @@ class LiveGroup(private val context: Context, private val file: File = defaultFi
 
     /** Called on the node's thread when records arrived that change the group, for the notifications. */
     @Volatile var onRecords: (() -> Unit)? = null
+
+    /** This phone's secret for sealed messages (docs/protocol.md, section 15), 32 random bytes under a Keystore key. */
+    private val sealFile = SealedFile(File(file.parentFile, "seal-secret"), "clipboardbridge.seal")
+
+    /** The secret, made and kept on its first use; null, with the reason in the log, when the Keystore refuses it. */
+    private fun sealSecret(): ByteArray? =
+        try {
+            synchronized(sealFile) {
+                sealFile.read()?.takeIf { it.size == 32 } ?: ByteArray(32).also {
+                    SecureRandom().nextBytes(it)
+                    sealFile.write(it)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "no key for sealed messages", e)
+            null
+        }
+
+    /**
+     * This phone's public key for sealed messages, which its pairing and device record carry so that commands for it
+     * come sealed; null when there is none, and the commands for it then come in the open.
+     */
+    private fun sealKey(): ByteArray? =
+        sealSecret()?.let {
+            try {
+                Core.sealPublic(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "no public key for sealed messages", e)
+                null
+            }
+        }
 
     companion object {
         private const val TAG = "clipboardbridge"

@@ -118,14 +118,15 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
 
     /// Creates a group: a root CA for caSigner's key, a member certificate
     /// for this phone's member key (a SubjectPublicKeyInfo), and the phone's
-    /// own device record under name.
-    public static func create(caSigner: CertificateSigner, memberKey: Data, name: String = "iPhone", now: Date) throws -> PhoneGroup {
+    /// own device record under name, with seal, the phone's public key for
+    /// sealed messages (SealKey), when it has one.
+    public static func create(caSigner: CertificateSigner, memberKey: Data, name: String = "iPhone", seal: Data? = nil, now: Date) throws -> PhoneGroup {
         let ca = try GroupCertificates.groupCA(signer: caSigner, now: now, pathLength: 1)
         let device = SyncEngine.newID()
         let cert = try GroupCertificates.member(device: device, publicKey: memberKey, ca: ca, caSigner: caSigner, now: now)
         var g = PhoneGroup(device: device, groupCA: ca, memberCert: cert, computers: [])
         _ = try g.record(device: device, name: Self.validName(name), role: "phone", os: "ios", key: Records.keyHash(spki: memberKey),
-                         store: Records.hardware, caSigner: caSigner, now: now)
+                         store: Records.hardware, seal: seal, caSigner: caSigner, now: now)
         return g
     }
 
@@ -654,7 +655,7 @@ public struct PhoneGroup: Codable, Equatable, Sendable {
         if admitted.info.isPhone {
             _ = try record(device: admitted.device, name: name, role: "phone", os: admitted.info.os, key: key,
                            admin: adminKey.map(Records.keyHash(spki:)), store: Records.hardware,
-                           caSigner: caSigner, now: now)
+                           seal: admitted.info.seal, caSigner: caSigner, now: now)
             return admitted
         }
         computers.removeAll { $0.device == admitted.device }

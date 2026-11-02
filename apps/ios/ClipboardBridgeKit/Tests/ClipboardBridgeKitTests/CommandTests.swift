@@ -112,6 +112,50 @@ final class CommandTests: XCTestCase {
         XCTAssertThrowsError(try Commands.paste(to: pc, text: "x", group: "tag", by: pc, now: now, signer: SoftwareSigner(), seal: Data([1, 2, 3])))
     }
 
+    /// Reads testdata/interop/go-sealed-commands.json, from Go: commands
+    /// sealed to this member open with its secret, whose public key the
+    /// core gives, and are refused without it or when they do not open.
+    func testOpenGoSealedCommands() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { url.deleteLastPathComponent() }
+        struct C: Decodable {
+            var name: String
+            var command: Member.Record
+            var ok: Bool
+            var opens: Bool
+            var mode: String?
+            var text: String?
+        }
+        struct V: Decodable {
+            var group_ca: Data
+            var `self`: String
+            var now_ms: Int64
+            var secret: Data
+            var `public`: Data
+            var commands: [C]
+        }
+        let v = try JSONDecoder().decode(V.self, from: Data(contentsOf: url.appendingPathComponent("testdata/interop/go-sealed-commands.json")))
+        XCTAssertEqual(try Core.sealPublic(v.secret), v.public)
+        XCTAssertThrowsError(try Core.sealPublic(Data([1, 2, 3])))
+        var set = RecordSet()
+        _ = set.addAll([], groupCA: v.group_ca)
+        var opened = 0
+        for c in v.commands {
+            let got = Result { try Commands.verify(c.command, records: set, me: v.`self`, nowMS: v.now_ms, secret: v.secret) }
+            switch got {
+            case let .success(b):
+                XCTAssertTrue(c.ok && c.opens, c.name)
+                XCTAssertEqual(b.mode, c.mode, c.name)
+                XCTAssertEqual(b.text, c.text, c.name)
+                XCTAssertThrowsError(try Commands.verify(c.command, records: set, me: v.`self`, nowMS: v.now_ms), c.name)
+                opened += 1
+            case let .failure(e):
+                XCTAssertFalse(c.ok && c.opens, "\(c.name): \(e)")
+            }
+        }
+        XCTAssertEqual(opened, 2)
+    }
+
     /// A command for a member this one is not connected to goes through
     /// one that is, and the result comes back, once.
     func testCommandPassedOn() async throws {

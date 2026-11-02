@@ -263,7 +263,8 @@ class PhoneGroup internal constructor(
         claimedFrom = null
         val out = mutableListOf<Member.Record>()
         list.firstOrNull { it.id == device }?.let { me ->
-            out += record(device, me.name, "phone", me.key, rootSigner, now, os = me.os ?: "android", store = me.store, kind = me.kind, proof = me.proof)
+            out += record(device, me.name, "phone", me.key, rootSigner, now, os = me.os ?: "android", store = me.store, kind = me.kind, proof = me.proof,
+                seal = me.seal)
         }
         val revoke = mutableListOf<ByteArray>()
         for (d in list) {
@@ -683,7 +684,8 @@ class PhoneGroup internal constructor(
         val name = validName(admitted.info.name)
         val key = Records.keyHashOfCert(admitted.cert)
         if (Pairing.Info.isPhone(admitted.info.os)) {
-            record(admitted.device, name, "phone", key, caSigner, now, adminKey?.let { Records.keyHash(it) }, admitted.info.os, Records.HARDWARE)
+            record(admitted.device, name, "phone", key, caSigner, now, adminKey?.let { Records.keyHash(it) }, admitted.info.os, Records.HARDWARE,
+                seal = admitted.info.seal)
             return admitted
         }
         computers.removeAll { it.device == admitted.device }
@@ -737,14 +739,15 @@ class PhoneGroup internal constructor(
         /**
          * Creates a group: a root CA for caSigner's key, a member certificate
          * for this phone's member key (a SubjectPublicKeyInfo), and the
-         * phone's own device record under name.
+         * phone's own device record under name, with seal, the phone's public
+         * key for sealed messages, when it has one.
          */
-        fun create(caSigner: CertificateSigner, memberKey: ByteArray, now: Instant, name: String = "Android"): PhoneGroup {
+        fun create(caSigner: CertificateSigner, memberKey: ByteArray, now: Instant, name: String = "Android", seal: ByteArray? = null): PhoneGroup {
             val ca = GroupCertificates.groupCA(caSigner, now, pathLength = 1)
             val device = SyncEngine.newID()
             val cert = GroupCertificates.member(device, memberKey, ca, caSigner, now)
             val g = PhoneGroup(device, ca, cert)
-            g.record(device, validName(name), "phone", Records.keyHash(memberKey), caSigner, now, os = "android", store = Records.HARDWARE)
+            g.record(device, validName(name), "phone", Records.keyHash(memberKey), caSigner, now, os = "android", store = Records.HARDWARE, seal = seal)
             return g
         }
 

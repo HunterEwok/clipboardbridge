@@ -59,13 +59,15 @@ class PhoneGroupTest {
     @Test
     fun secondPhoneBecomesAdmin() {
         val rootKey = SoftwareSigner()
-        val root = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, t0, "First")
+        val seal = Interop.read("go-sealed-commands.json").jsonObject.optBytes("public")!!
+        val root = PhoneGroup.create(rootKey, SoftwareSigner().publicKeyDER, t0, "First", seal)
         assertEquals(root.device, root.records.rootDevice)
+        assertTrue(root.devices.first { it.id == root.device }.seal.contentEqualsOrNull(seal), "the root phone's own key for sealed messages")
 
         // The second phone joins with an admin key and gets its admin CA.
         val second = Listener()
         val adminKey = SoftwareSigner()
-        val (m, j) = pair(root, rootKey, second, Pairing.Info("Second", "android", adminKey.publicKeyDER))
+        val (m, j) = pair(root, rootKey, second, Pairing.Info("Second", "android", adminKey.publicKeyDER, seal = seal))
         val joined = j.getOrThrow()
         assertTrue(m.getOrThrow().confirmed)
         assertEquals(second.device, joined.device)
@@ -75,6 +77,7 @@ class PhoneGroupTest {
         val listed = assertNotNull(root.devices.firstOrNull { it.id == second.device })
         assertEquals("phone", listed.role)
         assertTrue(listed.admin)
+        assertTrue(listed.seal.contentEqualsOrNull(seal), "a phone's key for sealed messages, from its pairing")
 
         val admin = PhoneGroup.joined(joined)
         assertFalse(admin.isRoot)
