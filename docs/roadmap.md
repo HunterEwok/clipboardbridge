@@ -680,7 +680,8 @@ Pi's side uses GPIO 16 and 17 (the ESP honours it only on an issue 4 board). Nex
 after every power-up), and TLS checks certificates against the time. The Next has a
 battery-backed DS1307 that NextZXOS reads (`.date`, `.time`), so the driver or `.cbb` reads
 it at the start and sends it to the Pi in a frame of its own, and the lite member sets the
-system clock; the group's time is the fallback when the Next's battery has run down.
+system clock. The DS1307 keeps local time without a zone, so the lite member takes the zone
+from its own setting; the group's time is the fallback when the Next's battery has run down.
 
 **What NextPi gives** (read on the bench, NextPi 1.91D): the user partition `/NextPi` is
 writable and on the shell's `PATH` (`/NextPi/nextpi`), and NextPi's start script runs
