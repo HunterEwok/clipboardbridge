@@ -25,7 +25,7 @@
 #include "frame.h"
 #include "link.h"
 
-#define VERSION "0.4.0"
+#define VERSION "0.4.1"
 // Rings for each direction: the UARTs' own buffers are small, so the Z80
 // takes in what arrives at once and passes it on as the other side has
 // room, one byte at a time, without waiting on either.
@@ -279,6 +279,69 @@ static void esp_answer(const char *s)
     link_send_str("\r\n");
 }
 
+// Copies `from` over `to` (or only reads `to` when from is 0) and returns
+// the CRC-32 of what `to` holds afterwards, or 1 with err set on a failure.
+static const char *copy_err;
+static uint8_t kept; // UPDATE.TMP is the only good copy: keep it
+
+static uint32_t copy_file(const char *from, const char *to)
+{
+    uint8_t in = 0, out;
+    uint16_t n;
+    uint32_t crc = 0;
+    copy_err = 0;
+    errno = 0;
+    if (from) {
+        in = esx_f_open(from, ESX_MODE_R | ESX_MODE_OPEN_EXIST);
+        if (errno) {
+            copy_err = "cannot read " TEMP_NAME;
+            return 1;
+        }
+        out = esx_f_open(to, ESX_MODE_W | ESX_MODE_OPEN_CREAT_TRUNC);
+        if (errno) {
+            esx_f_close(in);
+            copy_err = "cannot open the old file";
+            return 1;
+        }
+        while ((n = esx_f_read(in, block, BLOCK)) != 0) {
+            if (esx_f_write(out, block, n) != n) {
+                copy_err = "cannot write the old file";
+                break;
+            }
+        }
+        esx_f_close(in);
+        esx_f_close(out);
+        if (copy_err) return 1;
+    }
+    in = esx_f_open(to, ESX_MODE_R | ESX_MODE_OPEN_EXIST);
+    if (errno) {
+        copy_err = "cannot read the new file back";
+        return 1;
+    }
+    while ((n = esx_f_read(in, block, BLOCK)) != 0) crc = crc32_update(crc, block, n);
+    esx_f_close(in);
+    return crc;
+}
+
+// When the file exists (NextZXOS keeps a running dot command's file from
+// being renamed over), its contents are replaced instead and read back;
+// UPDATE.TMP goes only once the copy checks out, so a failure never leaves
+// the folder without either file.
+static const char *replace(const char *name, uint32_t want)
+{
+    uint32_t crc = copy_file(TEMP_NAME, name);
+    if (copy_err) {
+        kept = 1;
+        return copy_err;
+    }
+    if (crc != want) {
+        kept = 1; // the old file may be half written: keep the good one
+        return "the copy did not check out; the new file is in " TEMP_NAME;
+    }
+    esx_f_unlink(TEMP_NAME);
+    return 0;
+}
+
 static const char *receive(const char *name, uint32_t len, uint32_t want)
 {
     uint8_t fh, c;
@@ -308,11 +371,10 @@ static const char *receive(const char *name, uint32_t len, uint32_t want)
     }
     esx_f_close(fh);
     if (crc != want) return "CRC-32 mismatch";
-    esx_f_unlink(name); // may not exist yet
     errno = 0;
-    esx_f_rename(TEMP_NAME, name);
-    if (errno) return "cannot rename " TEMP_NAME;
-    return 0;
+    esx_f_rename(TEMP_NAME, name); // works when name does not exist yet
+    if (!errno) return 0;
+    return replace(name, want);
 }
 
 static void update(void)
@@ -340,9 +402,10 @@ static void update(void)
     NO_SCROLL_PROMPT();
     printf("Update %s, %lu bytes...\n", name, len);
     esp_answer("CBBU GO");
+    kept = 0;
     err = receive(name, len, want);
     if (err) {
-        esx_f_unlink(TEMP_NAME);
+        if (!kept) esx_f_unlink(TEMP_NAME);
         NO_SCROLL_PROMPT();
         printf("  failed: %s\n", err);
         sprintf(line, "CBBU ERR %s", err);
